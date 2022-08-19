@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Wanq  
+    $Date: 2012-11-21 下午4:27:19  
+    $Revision: 1.0  
+    $Purpose:销售提单行表 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" alias="t1" baseTable="ERPORD_DELIVERY_LINES" defaultOrderBy="customer_code_name,item_code_name,warehouse_code_name" needAccessControl="true">
+    <bm:query-fields>
+        <bm:query-field name="customer_id" queryExpression="v.customer_id = ${@customer_id}"/>
+        <bm:query-field name="item_id" queryExpression="v.item_id = ${@item_id}"/>
+        <bm:query-field name="warehouse_id" queryExpression="v.warehouse_id = ${@warehouse_id}"/>
+    </bm:query-fields>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                	(select f.company_full_name from fnd_companies_vl f where f.company_id = ${@company_id}) AS company_name,
+                    v.customer_id,
+                    p.partner_code
+                    || '-'
+                    || p.partner_name customer_code_name,
+                    v.item_id,
+                    b.item_code
+                    || '-'
+                    || b.item_name item_code_name,
+                    v.warehouse_id,
+                    w.warehouse_code
+                    || '-'
+                    || w.warehouse_name warehouse_code_name,
+                    NVL(v.post_trade_quantity,0) post_trade_quantity,
+                    v.trade_uom,
+                    (select
+                    	d.uom_description
+                    from
+                    	erpinv_uom_codes d
+                    where
+                    	d.uom_code = v.trade_uom and
+                    	d.company_id = v.company_id
+                    ) trade_uom_name,
+                    NVL(v.post_primary_quantity, 0) post_primary_quantity,
+                    v.primary_uom,
+                    (SELECT
+                        c.uom_description
+                    FROM
+                        erpinv_uom_codes c
+                    WHERE
+                        c.uom_code   = v.primary_uom AND
+                        c.company_id = v.company_id
+                    ) primary_uom_name,
+                    v.currency_code
+                FROM
+                    erpfnd_business_partners p,
+                    erpinv_items_basics b,
+                    erpinv_warehouses w,
+                    (SELECT
+                        h.customer_id,
+                        l.item_id,
+                        dl.warehouse_id,
+                        SUM(l.post_trade_quantity) post_trade_quantity,
+                        l.trade_uom,
+                        SUM(l.post_primary_quantity) post_primary_quantity,
+                        l.primary_uom,
+                        oh.currency_code,
+                        h.company_id
+                        
+                        -- sum(l.entered_billing_net_amount) entered_billing_net_amount
+                    FROM
+                        erpord_delivery_lines l,
+                        erpord_delivery_headers h,
+                        erpord_sales_order_headers oh,
+                        erpord_sales_order_lines ol,
+                        erpinv_document_delivery_h dh,
+                        erpinv_document_delivery_l dl
+                    WHERE
+                        h.company_id                              = ${@company_id} AND
+                        dh.document_header_id                     = dl.document_header_id AND
+                        dl.source_delivery_line_id                = l.delivery_line_id AND
+                        l.delivery_header_id                      = h.delivery_header_id AND
+                        dh.doc_date >= to_date(nvl(${/parameter/@order_date_from},'1000-01-01'),'yyyy-mm-dd') AND
+                        dh.doc_date <= to_date(nvl(${/parameter/@order_date_to},'9999-12-31'),'yyyy-mm-dd') AND
+                        l.sales_order_line_id                     = ol.sales_order_line_id AND
+                        ol.sales_order_id                         = oh.sales_order_id AND
+                        NVL(l.post_trade_quantity,0)             <> 0 AND
+                        dh.ord_delivery_flag                      = 'Y' AND
+                        dh.transaction_type                      IN ('STO', 'COR', 'GS', 'GSR')
+                    GROUP BY
+                        h.customer_id,
+                        l.item_id,
+                        dl.warehouse_id,
+                        l.trade_uom,
+                        l.primary_uom,
+                        h.company_id,
+                        oh.currency_code
+                    ) v #WHERE_CLAUSE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter enforceOperations="query" expression=" p.partner_id = v.customer_id and b.item_id = v.item_id and v.warehouse_id = w.warehouse_id"/>
+    </bm:data-filters>
+</bm:model>

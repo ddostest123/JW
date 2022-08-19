@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Dru  
+    $Date: 2014-7-22 下午2:43:16  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT *
+				  FROM (SELECT pll.pur_line_location_id,
+				               l.pur_line_id,
+				               l.line_num,
+				               pll.shipment_num,
+				               NVL(msi.display_item_code, l.item_code) item_code,
+				               l.item_description,
+				               msi.item_specs,
+				               msi.brand,
+				               l.pur_header_id,
+				               l.line_desc,
+				               l.rate_type,
+				               l.unit_price * l.quantity settlement_amount,
+				               l.unit_price * l.quantity * l.rate parent_currency_amount,
+				               msi.agent_vendor_id,
+				               msi.origin,
+				               msi.ean_code,
+				               nvl(pll.occupy_quantity, 0) ship_quantity,
+				               nvl(pll.deliver_quantity, 0) deliver_quantity,
+				               nvl(pll.quantity_shipped, 0) road_quantity,
+				               pll.quantity_invoice,
+				               pll.return_quantity,
+				               nvl(pll.quantity_received, 0) quantity_received,
+				               (SELECT short_name
+				                  FROM pur_vendors_vl pv
+				                 WHERE pv.vendor_id = msi.agent_vendor_id) agent_vendor_short_name,
+				               msi.item_model,
+				               NVL((SELECT vl.uom_desc
+				                     FROM fnd_uom_codes_vl vl
+				                    WHERE l.unit_meas_lookup_code = vl.uom_code
+				                      AND vl.business_group = h.owner_business_group),
+				                   l.unit_meas_lookup_code) unit_meas_lookup_code,
+				               pll.quantity,
+				               fnd_document_control_pkg.get_reality_value(p_rule_code       => 'PRICE_SECRECY',
+				                                                          p_role_id         => ${/session/@role_id},
+				                                                          p_foundation_code => 'PUR_PO',
+				                                                          p_document_id     => h.pur_header_id,
+				                                                          p_control_area    => 'INTERNAL',
+				                                                          p_business_group  => ${/session/@business_group},
+				                                                          p_value           => l.unit_price) unit_price,
+				               fnd_document_control_pkg.get_reality_value(p_rule_code       => 'PRICE_SECRECY',
+				                                                          p_role_id         => ${/session/@role_id},
+				                                                          p_foundation_code => 'PUR_PO',
+				                                                          p_document_id     => h.pur_header_id,
+				                                                          p_control_area    => 'INTERNAL',
+				                                                          p_business_group  => ${/session/@business_group},
+				                                                          p_value           => pll.quantity * l.unit_price) AS line_amount,
+				               TO_CHAR(pll.need_by_date, 'yyyy-mm-dd') AS need_by_date,
+				               TO_CHAR(pll.promised_date, 'yyyy-mm-dd') AS promised_date,
+				               DECODE(pll.consigned_flag, 'Y', '是', '否') AS consigned_flag,
+				               pll.vendor_desc,
+				               pll.ship_to_location_name,
+				               h.bill_to_location_name,
+				               l.line_type_name,
+				               l.category_name,
+				               l.secondary_unit_of_measure,
+				               l.secondary_quantity,
+				               pll.c_attribute1,
+				               pll.c_attribute2,
+				               pll.c_attribute3,
+				               pll.warehouse_id,
+				               (SELECT iwv.description
+				                  FROM inv_warehouses_vl iwv
+				                 WHERE iwv.warehouse_id = pll.warehouse_id) warehouse_name,
+				               pll.inv_location_id,
+				               (SELECT ilv.description
+				                  FROM inv_locations_vl ilv
+				                 WHERE ilv.location_id = pll.inv_location_id) inv_location_name,
+				               (SELECT su.user_id
+				                  FROM sys_user su, pur_buyers pb
+				                 WHERE su.user_id = pb.user_id
+				                   AND pb.buyer_id = h.agent_id
+				                   AND rownum = 1) agent_user_id,
+				               h.company_id,
+				               h.coop_company_id,
+				               h.coop_business_group,
+				               h.owner_company_id,
+				               h.owner_business_group,
+				               h.business_unit_id,
+				               h.vendor_id,
+				               (SELECT t.partner_item_id
+				                  FROM mtl_item_partners t, pur_vendors pv
+				                 WHERE t.business_group = pv.business_group
+				                   AND t.partner_way = 'SUPPLY'
+				                   AND t.item_id = l.item_id
+				                   and pv.vendor_id = h.vendor_id) vendor_item_id,
+				               (SELECT nvl(siv.display_item_code, siv.item_code)
+				                  FROM mtl_system_items_vl siv,
+				                       mtl_item_partners   t,
+				                       pur_vendors         pv
+				                 WHERE siv.item_id = t.partner_item_id
+				                   and t.business_group = pv.business_group
+				                   AND t.partner_way = 'SUPPLY'
+				                   AND t.item_id = l.item_id
+				                   and pv.vendor_id = h.vendor_id) vendor_item_code,
+				               (SELECT siv.item_name
+				                  FROM mtl_system_items_vl siv,
+				                       mtl_item_partners   t,
+				                       pur_vendors         pv
+				                 WHERE siv.item_id = t.partner_item_id
+				                   and t.business_group = pv.business_group
+				                   AND t.partner_way = 'SUPPLY'
+				                   AND t.item_id = l.item_id
+				                   and pv.vendor_id = h.vendor_id) vendor_item_name,
+				               (SELECT siv.packing_uom_code
+				                  FROM mtl_system_items_vl siv,
+				                       mtl_item_partners   t,
+				                       pur_vendors         pv
+				                 WHERE siv.item_id = t.partner_item_id
+				                   and t.business_group = pv.business_group
+				                   AND t.partner_way = 'SUPPLY'
+				                   AND t.item_id = l.item_id
+				                   and pv.vendor_id = h.vendor_id) vendor_packing_uom_code,
+				               TO_CHAR(pll.request_arrival_date, 'YYYY-MM-DD') request_arrival_date_desc,
+				               l.is_returned_flag,
+				               (SELECT v.code_value_name
+				                  FROM sys_code_values_v v
+				                 WHERE v.code = 'YES_NO'
+				                   AND v.code_value = NVL(l.is_returned_flag, 'N')) AS is_returned_flag_desc,
+				               l.is_free_flag,
+				               (SELECT v.code_value_name
+				                  FROM sys_code_values_v v
+				                 WHERE v.code = 'YES_NO'
+				                   AND v.code_value = NVL(l.is_free_flag, 'N')) AS is_free_flag_desc,
+				               l.is_immed_shipped_flag,
+				               (SELECT v.code_value_name
+				                  FROM sys_code_values_v v
+				                 WHERE v.code = 'YES_NO'
+				                   AND v.code_value = NVL(l.is_immed_shipped_flag, 'N')) AS is_immed_shipped_flag_desc,
+				               l.actual_receiver_code,
+				               l.actual_receiver_name,
+				               l.ship_to_location_address,
+				               l.contacts_info,
+				               (SELECT iov.description
+				                  FROM inv_organizations_vl iov
+				                 WHERE iov.inv_organization_id = pll.ship_to_organization_id) ship_to_organization_name,
+			                    DECODE(
+			                    (SELECT
+			                        cbi.bg_config_item_value FROM fnd_config_center_bg_item cbi WHERE cbi.business_group = h.owner_business_group AND
+			                        cbi.config_classify_code                                                             = 'PO' AND
+			                        cbi.config_item_code                                                                 = 'PO_10'
+			                    ), 'Y', l.tax_rate,
+			                    (SELECT
+			                        tc.bg_tax_type_rate
+			                    FROM
+			                        fnd_tax_type_codes_bg tc
+			                    WHERE
+			                        tc.tax_type_id    = NVL(pll.tax_code_id, l.tax_code_id) AND
+			                        tc.business_group = h.owner_business_group
+			                    )) tax_rate,
+				               (SELECT tc.tax_type_rate
+				                  FROM fnd_tax_type_codes tc
+				                 WHERE tc.tax_type_id = l.tax_code_id) tax_rate_code,
+				               l.tax_amount,
+				               fnd_document_control_pkg.get_reality_value(p_rule_code       => 'PRICE_SECRECY',
+				                                                          p_role_id         => ${/session/@role_id},
+				                                                          p_foundation_code => 'PUR_PO',
+				                                                          p_document_id     => h.pur_header_id,
+				                                                          p_control_area    => 'INTERNAL',
+				                                                          p_business_group  => ${/session/@business_group},
+				                                                          p_value           => l.original_unit_price) original_unit_price,
+				               l.currency_code,
+				               l.rate,
+				               (SELECT v.code_value_name
+				                  FROM sys_code_values_v v
+				                 WHERE v.code = 'YES_NO'
+				                   AND v.code_value = NVL(pll.user_hold_flag, 'N')) AS user_hold_flag_desc,
+				               (SELECT v.code_value_name
+				                  FROM sys_code_values_v v
+				                 WHERE v.code = 'YES_NO'
+				                   AND v.code_value = NVL(pll.frozen_flag, 'N')) AS frozen_flag_desc,
+				               NULL useless_id_3,
+				               NULL useless_id_4,
+				               NULL useless_id_5,
+				               NULL useless_id_6,
+				               NULL useless_id_7,
+				               NULL useless_id_8,
+				               NULL useless_id_9,
+				               NULL useless_id_10,
+				               NULL useless_id_11
+				          FROM mtl_system_items       msi,
+				               pur_headers_all_v      h,
+				               pur_lines_all          l,
+				               pur_line_locations_all pll
+				         WHERE msi.item_id(+) = l.item_id
+				           AND h.pur_header_id = l.pur_header_id
+				           AND l.pur_line_id = pll.pur_line_id
+				           AND pll.cancel_flag = 'N'
+				           AND h.owner_business_group = ${/session/@business_group}
+				           AND h.pur_header_id = ${@pur_header_id}) v 
+	        	#WHERE_CLAUSE#
+				ORDER BY lpad(line_num, 10, '0') ASC, lpad(shipment_num, 10, '0') ASC
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <!-- <bm:data-filters>
+        <bm:data-filter expression="1 = 1"/>
+    </bm:data-filters>
+    <authority foundation_code="PUR_PO">
+        <authority-segment source_alias="v" source_name="agent_user_id" type="CREATER"/>
+        <authority-segment source_alias="v" source_name="owner_company_id" type="COMPANY"/>
+        <authority-segment source_alias="v" source_name="useless_id_3" type="RECEIVER"/>
+        <authority-segment source_alias="v" source_name="business_unit_id" type="BUSINESS_UNIT"/>
+        <authority-segment source_alias="v" source_name="useless_id_5" type="PUR_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="inv_organization_id" type="INV_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id_7" type="SD_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="vendor_id" type="VENDOR"/>
+        <authority-segment source_alias="v" source_name="useless_id_9" type="CLIENT"/>
+        <authority-segment source_alias="v" source_name="useless_id_10" type="PURHASE_MATERIAL"/>
+        <authority-segment source_alias="v" source_name="useless_id_11" type="SALES_PRODUCTION"/>
+        <authority-segment source_alias="v" source_name="useless_id_4" type="CLIENT_SITE"/>
+        <authority-segment source_alias="v" source_name="useless_id_6" type="VENDOR_SITE"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+            var cx = Packages.aurora.javascript.Context.getCurrentContext();
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features> -->
+</bm:model>

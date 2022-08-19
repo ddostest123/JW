@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao
+    $Date: 2018年4月1日 下午6:01:44  
+    $Revision: 1.0  
+    $Purpose: 珀莱雅，柜台类对账申请，变更事务查询LOVBM
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT *
+				  FROM (SELECT tl.rcv_trx_line_id,
+				               pvv.coop_company_id,
+				               (SELECT bu.company_id FROM fnd_business_units bu WHERE bu.business_unit_id = tl.business_unit_id) AS company_id,
+				               tl.trx_date,
+				               th.receipt_num,
+				               to_number(tl.line_number) AS receipt_line_num,
+				               (SELECT (CASE
+				                         WHEN tt.deliver_flag = 'Y' THEN
+				                          tl.trx_quantity
+				                         WHEN tt.return_to_receiving_flag = 'Y' THEN
+				                          tl.trx_quantity * -1
+				                       END) AS trx_quantity
+				                  FROM pur_rcv_trx_types tt
+				                 WHERE tt.rcv_trx_type = tl.rcv_trx_type) AS trx_quantity,
+				               decode(fnd_config_cnt_get_pkg.get_bg_item_value_po_05(p_business_group => th.owner_business_group),
+				                      'Y',
+				                      public_tools_pkg.get_real_trx_price(p_rcv_trx_line_id => tl.rcv_trx_line_id) *
+				                      (1 +
+				                       (SELECT tc.bg_tax_type_rate
+				                          FROM fnd_tax_type_codes_bg tc
+				                         WHERE tc.tax_type_id =
+				                               nvl((SELECT pll.tax_code_id
+				                                     FROM pur_line_locations_all pll
+				                                    WHERE pll.pur_line_location_id = tl.from_po_line_location_id),
+				                                   (SELECT pla.tax_code_id FROM pur_lines_all pla WHERE pla.pur_line_id = tl.from_po_line_id))
+				                               AND tc.bg_enabled_flag = 'Y'
+				                               AND tc.business_group = th.owner_business_group) / 100),
+				                      (SELECT round(l.original_unit_price,
+				                                    8)
+				                         FROM pur_lines_all l
+				                        WHERE l.pur_line_id = tl.from_po_line_id)) AS tax_unit_price,
+				               tl.from_po_display_number,
+				               tl.from_po_line_num,
+				               decode(tl.crm_order,
+				                      NULL,
+				                      '',
+				                      tl.crm_order || ',' || tl.terminal_store) AS terminal_information,
+				               tl.freight,
+				               NULL AS useless_id
+				          FROM pur_rcv_trx_lines   tl,
+				               pur_rcv_trx_headers th,
+				               pur_vendors_v       pvv
+				         WHERE tl.rcv_trx_header_id = th.rcv_trx_header_id
+				               AND tl.bill_matched_flag = 'N'
+				               AND pvv.coop_business_group = ${/session/@business_group}
+				               AND EXISTS (SELECT 1
+				                  FROM pur_rcv_trx_types tt
+				                 WHERE tt.create_bill_flag = 'Y'
+				                       AND tt.rcv_trx_type = tl.rcv_trx_type)
+				               AND tl.stock_type <> 'CONSIGNMENT'
+				               AND tl.vendor_id = pvv.vendor_id
+				               AND pvv.coop_company_id IS NOT NULL
+				               AND NOT EXISTS (SELECT 1
+				                  FROM fnd_config_center_bg_item_dtl ccbid
+				                 WHERE ccbid.config_classify_code = 'PO'
+				                       AND ccbid.config_item_code = 'PO_02'
+				                       AND ccbid.config_item_detail_code = 'PO_02_02'
+				                       AND ccbid.business_group = th.owner_business_group
+				                       AND ccbid.bg_config_item_value = 'N')) v
+            	#AUTHORIY_FROM#
+            	#WHERE_CLAUSE#  
+            	#AUTHORIY_WHERE# 
+            	#ORDER_BY_CLAUSE#	
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter expression="1=1"/>
+    </bm:data-filters>
+    <bm:fields>
+        <bm:field name="rcv_trx_line_id" databaseType="NUMBER" datatype="java.lang.Long" forDisplay="false" forQuery="false"/>
+        <bm:field name="receipt_num" databaseType="VARCHAR2" datatype="java.lang.String" forDisplay="true" forQuery="true" prompt="接收编号"/>
+        <bm:field name="receipt_line_num" databaseType="VARCHAR2" datatype="java.lang.String" forDisplay="true" forQuery="false" prompt="接收行号"/>
+        <bm:field name="trx_date" databaseType="DATE" datatype="java.util.Date" forDisplay="true" forQuery="true" prompt="事务日期"/>
+        <bm:field name="terminal_information" databaseType="VARCHAR2" datatype="java.lang.String" forDisplay="true" forQuery="true" prompt="终端信息"/>
+        <bm:field name="freight" databaseType="NUMBER" datatype="java.lang.Double" forDisplay="true" forQuery="false" prompt="运费金额"/>
+        <bm:field name="trx_quantity" databaseType="NUMBER" datatype="java.lang.Double" forDisplay="true" forQuery="false" prompt="数量"/>
+        <bm:field name="tax_unit_price" databaseType="NUMBER" datatype="java.lang.Double" forDisplay="true" forQuery="false" prompt="含税单价"/>
+        <bm:field name="from_po_display_number" databaseType="VARCHAR2" datatype="java.lang.String" forDisplay="true" forQuery="true" prompt="订单号"/>
+        <bm:field name="from_po_line_num" databaseType="VARCHAR2" datatype="java.lang.String" forDisplay="true" forQuery="false" prompt="订单行号"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field name="from_po_display_number" queryExpression="v.from_po_display_number like &apos;%&apos;||trim(${@from_po_display_number})||&apos;%&apos;"/>
+        <bm:query-field name="receipt_num" queryExpression="v.receipt_num like &apos;%&apos;||trim(${@receipt_num})||&apos;%&apos;"/>
+        <bm:query-field name="trx_date" queryExpression="trunc(v.trx_date) = to_date(${@trx_date},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="terminal_information" queryExpression="v.terminal_information like &apos;%&apos;||trim(${@terminal_information})||&apos;%&apos;"/>
+    </bm:query-fields>
+    <authority foundation_code="AP_BILL">
+        <authority-segment source_alias="v" source_name="coop_company_id" type="COMPANY"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="CREATER"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="RECEIVER"/>
+        <authority-segment source_alias="v" source_name="company_id" type="CLIENT"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="CLIENT_SITE"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="PUR_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="SD_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="PURHASE_MATERIAL"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="SALES_PRODUCTION"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="VENDOR"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="VENDOR_SITE"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="BUSINESS_UNIT"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="INV_ORGANIZATION"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+        	var cx = Packages.aurora.javascript.Context.getCurrentContext();
+			Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+        	Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

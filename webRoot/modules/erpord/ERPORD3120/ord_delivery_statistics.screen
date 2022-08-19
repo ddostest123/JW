@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Wanq  
+    $Date: 2012-11-19 上午10:31:11  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="enabled_flag=&apos;Y&apos;" model="erpord.ERPORD3120.ord_warehouses" rootPath="erpord_3120_warehouses_root"/>
+        <a:model-query model="erppublic.get_system_currentDate" rootPath="erpord_3120_currentDate"/>
+        <a:model-query model="db.erpfnd_precision_pkg.get_amount_precision" rootPath="erpord_3120_get_amount_precision"/>
+        <a:model-query model="db.erpfnd_precision_pkg.get_quantity_precision" rootPath="erpord_3120_get_quantity_accuracy"/>
+        <a:model-query model="db.erpfnd_precision_pkg.get_price_precision" rootPath="erpord_3120_get_price_precision"/>
+    </a:init-procedure>
+    <a:view>
+        <script><![CDATA[
+            function erpord_3120_init() {
+                var header_record = $('erpord_3120_service_query_ds').getAt(0);
+                var currentDay = $('erpord_3120_currentDate_ds').getAt(0).get('currentdate');
+                var day = Aurora.parseDate(currentDay);
+                var firstDay = new Date(day.getFullYear(), day.getMonth(), 1);
+                var lastDay = getLastDay(day.getFullYear(), day.getMonth() + 1);
+                header_record.set('order_date_from', Aurora.formatDate(firstDay));
+                header_record.set('order_date_to', Aurora.formatDate(lastDay));
+            }
+            
+            function getLastDay(year, month) {
+                var new_year = year; //取当前的年份
+                var new_month = month++; //取下一个月的第一天，方便计算（最后一天不固定）
+                if (month > 12) {
+                    new_month -= 12; //月份减
+                    new_year++; //年份增
+                }
+                var new_date = new Date(new_year, new_month, 1); //取当年当月中的第一天
+                return (new Date(new_date.getTime() - 1000 * 60 * 60 * 24)); //获取当月最后一天日期
+            }
+            
+            function erpord_3120_queryHook(value, ds) {}
+            
+            function erpord_3120_queryFunction() {
+                $('erpord_3120_function_query_form').doSearch();
+                // $('erpord_3120_order_data_ds').query();
+            }
+            
+            function erpord_3120_show_positive_number(value, record, name) {
+                // if(value<0){
+                // value = -value;
+                // }
+                if (name == "amount" || name == "sent_cost_amount") {
+                    value = Aurora.formatNumber(value, '${/model/erpord_3120_get_amount_precision/record/@value}');
+                }
+                if (name == "price") {
+                    value = Aurora.formatNumber(value, '${/model/erpord_3120_get_price_precision/record/@value}');
+                }
+                if (name == "trade_quantity" || name == "primary_quantity" || name == "post_trade_quantity" || name == "post_primary_quantity") {
+                    value = Aurora.formatNumber(value, '${/model/erpord_3120_get_quantity_accuracy/record/@value}');
+                }
+                return value;
+            }
+            
+            function erpord3120_head_update(dataset, record, name, value, oldValue) {
+                if (name == 'company_id') {
+            
+                    record.set('warehouse_id', '');
+                    record.set('warehouse_code_name', '');
+                    $('erpord_3120_warehouses_ds').setQueryParameter('company_id', value);
+                    $('erpord_3120_warehouses_ds').setQueryParameter('enabled_flag', 'Y');
+                    $('erpord_3120_warehouses_ds').query();
+            
+                    record.set('currency_code', '');
+                    record.set('currency_code_name', '');
+                    $('erpord_3120_currency_ds').setQueryParameter('company_id', value);
+                    $('erpord_3120_currency_ds').query();
+            
+                    var metadata = record.getMeta();
+            
+                    record.set('customer_id', '');
+                    record.set('customer_code_name', '');
+                    var vender = metadata.getField('customer_code_name');
+                    if (!record.get('company_id') || record.get('company_id') == '') {
+                        vender.setLovService('');
+                    } else {
+                        vender.setLovService('erpord.ERPORD5010.ord_sales_order_customer');
+                        vender.setLovPara('enabled_flag', 'Y');
+                        vender.setLovPara('company_id', record.get('company_id') || '');
+                    }
+            
+                    record.set('item_id', '');
+                    record.set('item_code_name', '');
+                    var item = metadata.getField('item_code_name');
+                    if (!record.get('company_id') || record.get('company_id') == '') {
+                        item.setLovService('');
+                    } else {
+                        item.setLovService('erppur.ERPPUR5010.inv_items_basics_lov');
+                        item.setLovPara('enabled_flag', 'Y');
+                        item.setLovPara('company_id', record.get('company_id') || '');
+                    }
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="erpord_3120_assign_company_ds" loadData="true" model="public.fnd_company_list"/>
+            <a:dataSet id="erpord_3120_warehouses_ds" model="erpord.ERPORD3120.ord_warehouses"/>
+            <a:dataSet id="erpord_3120_currentDate_ds" autoCreate="true">
+                <a:datas dataSource="erpord_3120_currentDate"/>
+            </a:dataSet>
+            <a:dataSet id="erpord_3120_currency_ds" model="erppur.ERPPUR5010.gld_currency_lov"/>
+            <a:dataSet id="erpord_3120_service_query_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="company_id" defaultValue="${/session/@default_company_id}"/>
+                    <a:field name="company_name" defaultValue="${/session/@default_company_name}" displayField="company_full_name" options="erpord_3120_assign_company_ds" required="true" returnField="company_id" valueField="company_id"/>
+                    <a:field name="customer_id"/>
+                    <a:field name="customer_code_name" autoComplete="true" autoCompleteField="code_name" autoCompleteSize="1" lovGridHeight="320" lovHeight="450" lovWidth="500" title="供应商查询">
+                        <a:mapping>
+                            <a:map from="partner_description" to="customer_code_name"/>
+                            <a:map from="partner_id" to="customer_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="item_id"/>
+                    <a:field name="item_code_name" autoComplete="true" autoCompleteField="item_code_name" autoCompleteSize="1" lovGridHeight="320" lovHeight="450" lovService="erppur.ERPPUR5010.inv_items_basics_lov" lovWidth="500" title="物品查询">
+                        <a:mapping>
+                            <a:map from="item_code_name" to="item_code_name"/>
+                            <a:map from="item_id" to="item_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="order_date_from"/>
+                    <a:field name="order_date_from"/>
+                    <a:field name="warehouse_id"/>
+                    <a:field name="warehouse_code_name" displayField="code_name" options="erpord_3120_warehouses_ds" returnField="warehouse_id" valueField="warehouse_id"/>
+                    <!-- <a:field name="warehouse_code_name" autoComplete="true" autoCompleteField="code_name" autoCompleteSize="1" lovGridHeight="320" lovHeight="450" lovService="erppur.ERPPUR5010.inv_warehouses_lov" lovWidth="500" title="库房查询">
+                        <a:mapping>
+                            <a:map from="code_name" to="warehouse_code_name"/>
+                            <a:map from="warehouse_id" to="warehouse_id"/>
+                        </a:mapping>
+                    </a:field> -->
+                    <a:field name="currency_code"/>
+                    <a:field name="currency_code_name" displayField="currency_code" options="erpord_3120_currency_ds" returnField="currency_code" valueField="currency_code"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="erpord3120_head_update"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="erpord_3120_order_data_ds" autoPageSize="true" model="erpord.ERPORD3120.ord_delivery_lines" queryDataSet="erpord_3120_service_query_ds" selectable="true" selectionModel="multiple"/>
+        </a:dataSets>
+        <a:defaultScreen>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:gridButton bind="erpord_3120_order_grid" type="excel" width="100"/>
+                <a:gridButton bind="erpord_3120_order_grid" type="clear" width="100"/>
+            </a:screenTopToolbar>
+            <a:queryForm id="erpord_3120_function_query_form" bindTarget="erpord_3120_service_query_ds" createSearchButton="false" defaultQueryField="account_code" defaultQueryHint="请输入订单号或者供应商名称" queryHook="erpord_3120_queryHook" resultTarget="erpord_3120_order_data_ds" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:textField style="width:100%;display:none"/>
+                    <a:hBox>
+                        <a:comboBox name="company_name" bindTarget="erpord_3120_service_query_ds" prompt="公司名称"/>
+                        <a:lov name="customer_code_name" bindTarget="erpord_3120_service_query_ds" prompt="客户">
+                            <a:events>
+                                <a:event name="enterdown" handler="erpord_3120_queryFunction"/>
+                            </a:events>
+                        </a:lov>
+                        <a:datePicker name="order_date_from" bindTarget="erpord_3120_service_query_ds" prompt="提单日期">
+                            <a:events>
+                                <a:event name="enterdown" handler="erpord_3120_queryFunction"/>
+                            </a:events>
+                        </a:datePicker>
+                        <a:datePicker name="order_date_to" bindTarget="erpord_3120_service_query_ds" prompt="至">
+                            <a:events>
+                                <a:event name="enterdown" handler="erpord_3120_queryFunction"/>
+                            </a:events>
+                        </a:datePicker>
+                    </a:hBox>
+                    <a:toolbarButton className="item-rbtn-gray" click="erpord_3120_queryFunction" text="HAP_QUERY" width="80"/>
+                </a:formToolBar>
+                <a:formBody style="margin-left:8px">
+                    <a:hBox>
+                        <a:lov name="item_code_name" bindTarget="erpord_3120_service_query_ds" prompt="物品">
+                            <a:events>
+                                <a:event name="enterdown" handler="erpord_3120_queryFunction"/>
+                            </a:events>
+                        </a:lov>
+                        <a:comboBox name="warehouse_code_name" bindTarget="erpord_3120_service_query_ds" prompt="发货库房">
+                            <a:events>
+                                <a:event name="enterdown" handler="erpord_3120_queryFunction"/>
+                            </a:events>
+                        </a:comboBox>
+                        <a:comboBox name="currency_code_name" bindTarget="erpord_3120_service_query_ds" prompt="币种">
+                            <a:events>
+                                <a:event name="enterdown" handler="erpord_3120_queryFunction"/>
+                            </a:events>
+                        </a:comboBox>
+                    </a:hBox>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="erpord_3120_order_grid" bindTarget="erpord_3120_order_data_ds" height="320" marginHeight="135" marginWidth="50" navBar="true" width="1545">
+                <a:columns>
+                    <a:column name="customer_code_name" align="left" lock="true" prompt="客户" width="250"/>
+                    <a:column name="item_code_name" align="left" lock="true" prompt="物品" width="250"/>
+                    <a:column name="warehouse_code_name" align="left" prompt="发货库房" width="130"/>
+                    <a:column name="trade_quantity" align="right" prompt="提单数量" width="100"/>
+                    <a:column name="post_trade_quantity" align="right" prompt="已发货" width="100"/>
+                    <a:column name="trade_uom_name" align="left" prompt="交易单位" width="80"/>
+                    <a:column name="primary_quantity" align="right" prompt="主数量" width="100"/>
+                    <a:column name="post_primary_quantity" align="right" prompt="已发货" width="100"/>
+                    <a:column name="primary_uom_name" align="left" prompt="主单位" width="70"/>
+                    <a:column name="currency_code" align="left" prompt="币种" width="80"/>
+                    <!-- <a:column name="sent_cost_amount" align="right" prompt="确认出库成本" renderer="erpord_3120_show_positive_number" width="120"/> -->
+                </a:columns>
+            </a:grid>
+        </a:defaultScreen>
+        <script><![CDATA[
+        erpord_3120_init();
+        ]]></script>
+    </a:view>
+</a:screen>

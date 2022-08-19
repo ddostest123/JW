@@ -1,0 +1,808 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*,
+                    (v.quantity * unit_price_1) price_total_1,
+                    (v.quantity * unit_price_2) price_total_2,
+                    (v.quantity * unit_price_3) price_total_3,
+                    (v.quantity * unit_price_4) price_total_4,
+                    (v.quantity * unit_price_5) price_total_5
+                FROM
+                    (SELECT
+                        fc.company_full_name,
+                        REPLACE(bi.item_desc,chr(10),'') item_desc,
+                        bi.quantity,
+                        bi.uom_code AS uom,
+                        NVL(
+                        (SELECT
+                            vl.uom_desc
+                        FROM
+                            fnd_uom_codes_vl vl
+                        WHERE
+                            bi.uom_code       = vl.uom_code AND
+                            vl.business_group = bh.owner_business_group
+                        ), bi.uom_code) uom_code,
+                        bi.tax_type_rate,
+                        bh.score_mode,
+                        (SELECT
+                            fcc.registered_capital
+                        FROM
+                            fnd_companies fcc
+                        WHERE
+                            fcc.company_id = fc.company_id
+                        ) registered_capital,
+                        (SELECT
+                            REPLACE(dl.technical_deviation, chr(10), '')
+                        FROM
+                            bid_bidding_docm_headers dh,
+                            bid_bidding_docm_lines dl
+                        WHERE
+                            dh.entrustment_header_id    = bh.entrustment_header_id AND
+                            fc.company_id               = dh.bidder_company_id AND
+                            dl.entrustment_line_item_id = bi.line_item_id AND
+                            dl.bid_header_id            = dh.bid_header_id AND
+                            dh.status                   = 'SUBMITTED' AND
+                            dh.round                    = bh.round
+                        ) technical_deviation,
+                        (SELECT
+                            dl.production_cycle
+                        FROM
+                            bid_bidding_docm_headers dh,
+                            bid_bidding_docm_lines dl
+                        WHERE
+                            dh.entrustment_header_id = bh.entrustment_header_id AND
+                            fc.company_id            = dh.bidder_company_id AND
+                            dl.bid_header_id         = dh.bid_header_id AND
+                            dh.round                 = bh.round AND
+                            dl.production_cycle     IS NOT NULL AND
+                            dh.status                = 'SUBMITTED' AND
+                            rownum                   = 1
+                        ) production_cycle,
+                        (SELECT
+                            REPLACE(dl.implementation_cycle, chr(10), '')
+                        FROM
+                            bid_bidding_docm_headers dh,
+                            bid_bidding_docm_lines dl
+                        WHERE
+                            dh.entrustment_header_id = bh.entrustment_header_id AND
+                            fc.company_id            = dh.bidder_company_id AND
+                            dl.implementation_cycle IS NOT NULL AND
+                            dl.bid_header_id         = dh.bid_header_id AND
+                            dh.round                 = bh.round AND
+                            dh.status                = 'SUBMITTED' AND
+                            rownum                   = 1
+                        ) implementation_cycle,
+                        (SELECT
+                            REPLACE(dh.comments, chr(10), '')
+                        FROM
+                            bid_bidding_docm_headers dh
+                        WHERE
+                            dh.entrustment_header_id = bh.entrustment_header_id AND
+                            fc.company_id            = dh.bidder_company_id AND
+                            dh.status                = 'SUBMITTED' AND
+                            dh.round                 = bh.round
+                        ) bidding_comments,
+                        NVL(
+                        (SELECT
+                            REPLACE(dh.payment_terms, chr(10), '<Br/>')
+                        FROM
+                            bid_bidding_docm_headers dh
+                        WHERE
+                            dh.entrustment_header_id = bh.entrustment_header_id AND
+                            fc.company_id            = dh.bidder_company_id AND
+                            dh.status                = 'SUBMITTED' AND
+                            dh.round                 = bh.round
+                        ), REPLACE(bh.payment_terms, chr(10), '<Br/>')) payment_terms,
+                        (SELECT
+                            REPLACE(t.description, chr(10), '<Br/>')
+                        FROM
+                            csh_payment_methods_vl t
+                        WHERE
+                            t.payment_method_id = NVL(
+                            (SELECT
+                                dh.payment_method_id
+                            FROM
+                                bid_bidding_docm_headers dh
+                            WHERE
+                                dh.entrustment_header_id = bh.entrustment_header_id AND
+                                fc.company_id            = dh.bidder_company_id AND
+                                dh.status                = 'SUBMITTED' AND
+                                dh.round                 = bh.round
+                            ), bh.payment_method_id)
+                        ) payment_methods,
+                        (SELECT
+                            dl.unit_price
+                        FROM
+                            bid_bidding_docm_headers dh,
+                            bid_bidding_docm_lines dl
+                        WHERE
+                            dh.bid_header_id            = dl.bid_header_id AND
+                            dh.entrustment_header_id    = bh.entrustment_header_id AND
+                            fc.company_id               = dh.bidder_company_id AND
+                            dl.entrustment_line_item_id = bi.line_item_id AND
+                            dh.round                    = 1 AND
+                            dh.submit_once_flag         = 'Y'
+                        ) unit_price_1,
+                        (SELECT
+                            1
+                        FROM
+                            bid_bidding_docm_headers dh,
+                            bid_bidding_docm_lines dl
+                        WHERE
+                            dh.bid_header_id            = dl.bid_header_id AND
+                            dh.entrustment_header_id    = bh.entrustment_header_id AND
+                            fc.company_id               = dh.bidder_company_id AND
+                            dl.entrustment_line_item_id = bi.line_item_id AND
+                            dh.round                    = 1 AND
+                            dh.submit_once_flag         = 'Y' AND
+                            NOT EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                bid_bidding_docm_lines dll,
+                                bid_bidding_docm_headers dhh
+                            WHERE
+                                dll.entrustment_line_item_id = bi.line_item_id AND
+                                dll.bid_line_id             <> dl.bid_line_id AND
+                                dll.unit_price               < dl.unit_price AND
+                                dhh.bid_header_id            = dll.bid_header_id AND
+                                dhh.round                    = 1 AND
+                                dhh.submit_once_flag         = 'Y' AND
+                                dhh.entrustment_header_id    = dh.entrustment_header_id AND
+                                dhh.bidder_company_id       IN
+                                (SELECT
+                                    elb.bidder_company_id
+                                FROM
+                                    bid_entrustment_ln_bidders elb
+                                WHERE
+                                    elb.entrustment_header_id = dh.entrustment_header_id
+                                )
+                            )
+                        ) lowest_flag_1,
+                        (
+                            CASE
+                                WHEN
+                                    (
+                                        bh.round > 1 AND
+                                        (SELECT
+                                                bhh.score_mode
+                                            FROM
+                                                bid_entrustment_hds_hist bhh
+                                            WHERE
+                                                bhh.entrustment_header_id = bh.entrustment_header_id AND
+                                                bhh.round                 = 1 AND
+                                                rownum                    = 1
+                                        )
+                                        = 'NONDISTINCTION'
+                                    )
+                                    OR
+                                    (
+                                        bh.round      = 1 AND
+                                        bh.score_mode = 'NONDISTINCTION'
+                                    )
+                                THEN TO_CHAR(bid_score_pkg.get_bidding_score(
+                                    (SELECT
+                                        dh.bid_header_id
+                                    FROM
+                                        bid_bidding_docm_headers dh
+                                    WHERE
+                                        dh.entrustment_header_id = bh.entrustment_header_id AND
+                                        fc.company_id            = dh.bidder_company_id AND
+                                        dh.round                 = 1
+                                    ), 1))
+                                WHEN
+                                    (
+                                        bh.round > 1 AND
+                                        (SELECT
+                                                bhh.score_mode
+                                            FROM
+                                                bid_entrustment_hds_hist bhh
+                                            WHERE
+                                                bhh.entrustment_header_id = bh.entrustment_header_id AND
+                                                bhh.round                 = 1 AND
+                                                rownum                    = 1
+                                        )
+                                        IS NULL
+                                    )
+                                    OR
+                                    (
+                                        bh.round       = 1 AND
+                                        bh.score_mode IS NULL
+                                    )
+                                THEN NULL
+                                ELSE '商务组：'
+                                    || bid_score_pkg.get_bidding_bus_score(
+                                    (SELECT
+                                        dh.bid_header_id
+                                    FROM
+                                        bid_bidding_docm_headers dh
+                                    WHERE
+                                        dh.entrustment_header_id = bh.entrustment_header_id AND
+                                        fc.company_id            = dh.bidder_company_id AND
+                                        dh.round                 = 1
+                                    ), 1)
+                                    || '<br/>技术组：'
+                                    || bid_score_pkg.get_bidding_tech_score(
+                                    (SELECT
+                                        dh.bid_header_id
+                                    FROM
+                                        bid_bidding_docm_headers dh
+                                    WHERE
+                                        dh.entrustment_header_id = bh.entrustment_header_id AND
+                                        fc.company_id            = dh.bidder_company_id AND
+                                        dh.round                 = 1
+                                    ), 1)
+                            END) score_1,
+                        (SELECT
+                            REPLACE(dl.comments,chr(10),'')
+                        FROM
+                            bid_bidding_docm_headers dh,
+                            bid_bidding_docm_lines dl
+                        WHERE
+                            dh.bid_header_id            = dl.bid_header_id AND
+                            dh.entrustment_header_id    = bh.entrustment_header_id AND
+                            fc.company_id               = dh.bidder_company_id AND
+                            dl.entrustment_line_item_id = bi.line_item_id AND
+                            dh.round                    = 1 AND
+                            dh.submit_once_flag         = 'Y'
+                        ) comments_1,
+                        (SELECT
+                            dl.unit_price
+                        FROM
+                            bid_bidding_docm_headers dh,
+                            bid_bidding_docm_lines dl
+                        WHERE
+                            dh.bid_header_id            = dl.bid_header_id AND
+                            dh.entrustment_header_id    = bh.entrustment_header_id AND
+                            fc.company_id               = dh.bidder_company_id AND
+                            dl.entrustment_line_item_id = bi.line_item_id AND
+                            dh.round                    = 2 AND
+                            dh.submit_once_flag         = 'Y'
+                        ) unit_price_2,
+                        (SELECT
+                            1
+                        FROM
+                            bid_bidding_docm_headers dh,
+                            bid_bidding_docm_lines dl
+                        WHERE
+                            dh.bid_header_id            = dl.bid_header_id AND
+                            dh.entrustment_header_id    = bh.entrustment_header_id AND
+                            fc.company_id               = dh.bidder_company_id AND
+                            dl.entrustment_line_item_id = bi.line_item_id AND
+                            dh.round                    = 2 AND
+                            dh.submit_once_flag         = 'Y' AND
+                            NOT EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                bid_bidding_docm_lines dll,
+                                bid_bidding_docm_headers dhh
+                            WHERE
+                                dll.entrustment_line_item_id = bi.line_item_id AND
+                                dll.bid_line_id             <> dl.bid_line_id AND
+                                dll.unit_price               < dl.unit_price AND
+                                dhh.bid_header_id            = dll.bid_header_id AND
+                                dhh.round                    = 2 AND
+                                dhh.submit_once_flag         = 'Y' AND
+                                dhh.entrustment_header_id    = dh.entrustment_header_id AND
+                                dhh.bidder_company_id       IN
+                                (SELECT
+                                    elb.bidder_company_id
+                                FROM
+                                    bid_entrustment_ln_bidders elb
+                                WHERE
+                                    elb.entrustment_header_id = dh.entrustment_header_id
+                                )
+                            )
+                        ) lowest_flag_2,
+                        (
+                            CASE
+                                WHEN
+                                    (
+                                        bh.round > 2 AND
+                                        (SELECT
+                                                bhh.score_mode
+                                            FROM
+                                                bid_entrustment_hds_hist bhh
+                                            WHERE
+                                                bhh.entrustment_header_id = bh.entrustment_header_id AND
+                                                bhh.round                 = 2 AND
+                                                rownum                    = 1
+                                        )
+                                        = 'NONDISTINCTION'
+                                    )
+                                    OR
+                                    (
+                                        bh.round      = 2 AND
+                                        bh.score_mode = 'NONDISTINCTION'
+                                    )
+                                THEN TO_CHAR(bid_score_pkg.get_bidding_score(
+                                    (SELECT
+                                        dh.bid_header_id
+                                    FROM
+                                        bid_bidding_docm_headers dh
+                                    WHERE
+                                        dh.entrustment_header_id = bh.entrustment_header_id AND
+                                        fc.company_id            = dh.bidder_company_id AND
+                                        dh.round                 = 2
+                                    ), 1))
+                                WHEN
+                                    (
+                                        bh.round > 2 AND
+                                        (SELECT
+                                                bhh.score_mode
+                                            FROM
+                                                bid_entrustment_hds_hist bhh
+                                            WHERE
+                                                bhh.entrustment_header_id = bh.entrustment_header_id AND
+                                                bhh.round                 = 2 AND
+                                                rownum                    = 1
+                                        )
+                                        IS NULL
+                                    )
+                                    OR
+                                    (
+                                        bh.round       = 2 AND
+                                        bh.score_mode IS NULL
+                                    )
+                                THEN NULL
+                                ELSE '商务组：'
+                                    || bid_score_pkg.get_bidding_bus_score(
+                                    (SELECT
+                                        dh.bid_header_id
+                                    FROM
+                                        bid_bidding_docm_headers dh
+                                    WHERE
+                                        dh.entrustment_header_id = bh.entrustment_header_id AND
+                                        fc.company_id            = dh.bidder_company_id AND
+                                        dh.round                 = 2
+                                    ), 1)
+                                    || '<br/>技术组：'
+                                    || bid_score_pkg.get_bidding_tech_score(
+                                    (SELECT
+                                        dh.bid_header_id
+                                    FROM
+                                        bid_bidding_docm_headers dh
+                                    WHERE
+                                        dh.entrustment_header_id = bh.entrustment_header_id AND
+                                        fc.company_id            = dh.bidder_company_id AND
+                                        dh.round                 = 2
+                                    ), 1)
+                            END) score_2,
+                        (SELECT
+                            REPLACE(dl.comments,chr(10),'')
+                        FROM
+                            bid_bidding_docm_headers dh,
+                            bid_bidding_docm_lines dl
+                        WHERE
+                            dh.bid_header_id            = dl.bid_header_id AND
+                            dh.entrustment_header_id    = bh.entrustment_header_id AND
+                            fc.company_id               = dh.bidder_company_id AND
+                            dl.entrustment_line_item_id = bi.line_item_id AND
+                            dh.round                    = 2 AND
+                            dh.submit_once_flag         = 'Y'
+                        ) comments_2,
+                        (SELECT
+                            dl.unit_price
+                        FROM
+                            bid_bidding_docm_headers dh,
+                            bid_bidding_docm_lines dl
+                        WHERE
+                            dh.bid_header_id            = dl.bid_header_id AND
+                            dh.entrustment_header_id    = bh.entrustment_header_id AND
+                            fc.company_id               = dh.bidder_company_id AND
+                            dl.entrustment_line_item_id = bi.line_item_id AND
+                            dh.round                    = 3 AND
+                            dh.submit_once_flag         = 'Y'
+                        ) unit_price_3,
+                        (SELECT
+                            1
+                        FROM
+                            bid_bidding_docm_headers dh,
+                            bid_bidding_docm_lines dl
+                        WHERE
+                            dh.bid_header_id            = dl.bid_header_id AND
+                            dh.entrustment_header_id    = bh.entrustment_header_id AND
+                            fc.company_id               = dh.bidder_company_id AND
+                            dl.entrustment_line_item_id = bi.line_item_id AND
+                            dh.round                    = 3 AND
+                            dh.submit_once_flag         = 'Y' AND
+                            NOT EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                bid_bidding_docm_lines dll,
+                                bid_bidding_docm_headers dhh
+                            WHERE
+                                dll.entrustment_line_item_id = bi.line_item_id AND
+                                dll.bid_line_id             <> dl.bid_line_id AND
+                                dll.unit_price               < dl.unit_price AND
+                                dhh.bid_header_id            = dll.bid_header_id AND
+                                dhh.round                    = 3 AND
+                                dhh.submit_once_flag         = 'Y' AND
+                                dhh.entrustment_header_id    = dh.entrustment_header_id AND
+                                dhh.bidder_company_id       IN
+                                (SELECT
+                                    elb.bidder_company_id
+                                FROM
+                                    bid_entrustment_ln_bidders elb
+                                WHERE
+                                    elb.entrustment_header_id = dh.entrustment_header_id
+                                )
+                            )
+                        ) lowest_flag_3,
+                        (
+                            CASE
+                                WHEN
+                                    (
+                                        bh.round > 3 AND
+                                        (SELECT
+                                                bhh.score_mode
+                                            FROM
+                                                bid_entrustment_hds_hist bhh
+                                            WHERE
+                                                bhh.entrustment_header_id = bh.entrustment_header_id AND
+                                                bhh.round                 = 3 AND
+                                                rownum                    = 1
+                                        )
+                                        = 'NONDISTINCTION'
+                                    )
+                                    OR
+                                    (
+                                        bh.round      = 3 AND
+                                        bh.score_mode = 'NONDISTINCTION'
+                                    )
+                                THEN TO_CHAR(bid_score_pkg.get_bidding_score(
+                                    (SELECT
+                                        dh.bid_header_id
+                                    FROM
+                                        bid_bidding_docm_headers dh
+                                    WHERE
+                                        dh.entrustment_header_id = bh.entrustment_header_id AND
+                                        fc.company_id            = dh.bidder_company_id AND
+                                        dh.round                 = 3
+                                    ), 1))
+                                WHEN
+                                    (
+                                        bh.round > 3 AND
+                                        (SELECT
+                                                bhh.score_mode
+                                            FROM
+                                                bid_entrustment_hds_hist bhh
+                                            WHERE
+                                                bhh.entrustment_header_id = bh.entrustment_header_id AND
+                                                bhh.round                 = 3 AND
+                                                rownum                    = 1
+                                        )
+                                        IS NULL
+                                    )
+                                    OR
+                                    (
+                                        bh.round       = 3 AND
+                                        bh.score_mode IS NULL
+                                    )
+                                THEN NULL
+                                ELSE '商务组：'
+                                    || bid_score_pkg.get_bidding_bus_score(
+                                    (SELECT
+                                        dh.bid_header_id
+                                    FROM
+                                        bid_bidding_docm_headers dh
+                                    WHERE
+                                        dh.entrustment_header_id = bh.entrustment_header_id AND
+                                        fc.company_id            = dh.bidder_company_id AND
+                                        dh.round                 = 3
+                                    ), 1)
+                                    || '<br/>技术组：'
+                                    || bid_score_pkg.get_bidding_tech_score(
+                                    (SELECT
+                                        dh.bid_header_id
+                                    FROM
+                                        bid_bidding_docm_headers dh
+                                    WHERE
+                                        dh.entrustment_header_id = bh.entrustment_header_id AND
+                                        fc.company_id            = dh.bidder_company_id AND
+                                        dh.round                 = 3
+                                    ), 1)
+                            END) score_3,
+                        (SELECT
+                            REPLACE(dl.comments,chr(10),'')
+                        FROM
+                            bid_bidding_docm_headers dh,
+                            bid_bidding_docm_lines dl
+                        WHERE
+                            dh.bid_header_id            = dl.bid_header_id AND
+                            dh.entrustment_header_id    = bh.entrustment_header_id AND
+                            fc.company_id               = dh.bidder_company_id AND
+                            dl.entrustment_line_item_id = bi.line_item_id AND
+                            dh.round                    = 3 AND
+                            dh.submit_once_flag         = 'Y'
+                        ) comments_3,
+                        (SELECT
+                            dl.unit_price
+                        FROM
+                            bid_bidding_docm_headers dh,
+                            bid_bidding_docm_lines dl
+                        WHERE
+                            dh.bid_header_id            = dl.bid_header_id AND
+                            dh.entrustment_header_id    = bh.entrustment_header_id AND
+                            fc.company_id               = dh.bidder_company_id AND
+                            dl.entrustment_line_item_id = bi.line_item_id AND
+                            dh.round                    = 4 AND
+                            dh.submit_once_flag         = 'Y'
+                        ) unit_price_4,
+                        (SELECT
+                            1
+                        FROM
+                            bid_bidding_docm_headers dh,
+                            bid_bidding_docm_lines dl
+                        WHERE
+                            dh.bid_header_id            = dl.bid_header_id AND
+                            dh.entrustment_header_id    = bh.entrustment_header_id AND
+                            fc.company_id               = dh.bidder_company_id AND
+                            dl.entrustment_line_item_id = bi.line_item_id AND
+                            dh.round                    = 4 AND
+                            dh.submit_once_flag         = 'Y' AND
+                            NOT EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                bid_bidding_docm_lines dll,
+                                bid_bidding_docm_headers dhh
+                            WHERE
+                                dll.entrustment_line_item_id = bi.line_item_id AND
+                                dll.bid_line_id             <> dl.bid_line_id AND
+                                dll.unit_price               < dl.unit_price AND
+                                dhh.bid_header_id            = dll.bid_header_id AND
+                                dhh.round                    = 4 AND
+                                dhh.submit_once_flag         = 'Y' AND
+                                dhh.entrustment_header_id    = dh.entrustment_header_id AND
+                                dhh.bidder_company_id       IN
+                                (SELECT
+                                    elb.bidder_company_id
+                                FROM
+                                    bid_entrustment_ln_bidders elb
+                                WHERE
+                                    elb.entrustment_header_id = dh.entrustment_header_id
+                                )
+                            )
+                        ) lowest_flag_4,
+                        (
+                            CASE
+                                WHEN
+                                    (
+                                        bh.round > 4 AND
+                                        (SELECT
+                                                bhh.score_mode
+                                            FROM
+                                                bid_entrustment_hds_hist bhh
+                                            WHERE
+                                                bhh.entrustment_header_id = bh.entrustment_header_id AND
+                                                bhh.round                 = 4 AND
+                                                rownum                    = 1
+                                        )
+                                        = 'NONDISTINCTION'
+                                    )
+                                    OR
+                                    (
+                                        bh.round      = 4 AND
+                                        bh.score_mode = 'NONDISTINCTION'
+                                    )
+                                THEN TO_CHAR(bid_score_pkg.get_bidding_score(
+                                    (SELECT
+                                        dh.bid_header_id
+                                    FROM
+                                        bid_bidding_docm_headers dh
+                                    WHERE
+                                        dh.entrustment_header_id = bh.entrustment_header_id AND
+                                        fc.company_id            = dh.bidder_company_id AND
+                                        dh.round                 = 4
+                                    ), 1))
+                                WHEN
+                                    (
+                                        bh.round > 4 AND
+                                        (SELECT
+                                                bhh.score_mode
+                                            FROM
+                                                bid_entrustment_hds_hist bhh
+                                            WHERE
+                                                bhh.entrustment_header_id = bh.entrustment_header_id AND
+                                                bhh.round                 = 4 AND
+                                                rownum                    = 1
+                                        )
+                                        IS NULL
+                                    )
+                                    OR
+                                    (
+                                        bh.round       = 4 AND
+                                        bh.score_mode IS NULL
+                                    )
+                                THEN NULL
+                                ELSE '商务组：'
+                                    || bid_score_pkg.get_bidding_bus_score(
+                                    (SELECT
+                                        dh.bid_header_id
+                                    FROM
+                                        bid_bidding_docm_headers dh
+                                    WHERE
+                                        dh.entrustment_header_id = bh.entrustment_header_id AND
+                                        fc.company_id            = dh.bidder_company_id AND
+                                        dh.round                 = 4
+                                    ), 1)
+                                    || '<br/>技术组：'
+                                    || bid_score_pkg.get_bidding_tech_score(
+                                    (SELECT
+                                        dh.bid_header_id
+                                    FROM
+                                        bid_bidding_docm_headers dh
+                                    WHERE
+                                        dh.entrustment_header_id = bh.entrustment_header_id AND
+                                        fc.company_id            = dh.bidder_company_id AND
+                                        dh.round                 = 4
+                                    ), 1)
+                            END) score_4,
+                        (SELECT
+                            REPLACE(dl.comments,chr(10),'')
+                        FROM
+                            bid_bidding_docm_headers dh,
+                            bid_bidding_docm_lines dl
+                        WHERE
+                            dh.bid_header_id            = dl.bid_header_id AND
+                            dh.entrustment_header_id    = bh.entrustment_header_id AND
+                            fc.company_id               = dh.bidder_company_id AND
+                            dl.entrustment_line_item_id = bi.line_item_id AND
+                            dh.round                    = 4 AND
+                            dh.submit_once_flag         = 'Y'
+                        ) comments_4,
+                        (SELECT
+                            dl.unit_price
+                        FROM
+                            bid_bidding_docm_headers dh,
+                            bid_bidding_docm_lines dl
+                        WHERE
+                            dh.bid_header_id            = dl.bid_header_id AND
+                            dh.entrustment_header_id    = bh.entrustment_header_id AND
+                            fc.company_id               = dh.bidder_company_id AND
+                            dl.entrustment_line_item_id = bi.line_item_id AND
+                            dh.round                    = 5 AND
+                            dh.submit_once_flag         = 'Y'
+                        ) unit_price_5,
+                        (SELECT
+                            1
+                        FROM
+                            bid_bidding_docm_headers dh,
+                            bid_bidding_docm_lines dl
+                        WHERE
+                            dh.bid_header_id            = dl.bid_header_id AND
+                            dh.entrustment_header_id    = bh.entrustment_header_id AND
+                            fc.company_id               = dh.bidder_company_id AND
+                            dl.entrustment_line_item_id = bi.line_item_id AND
+                            dh.round                    = 5 AND
+                            dh.submit_once_flag         = 'Y' AND
+                            NOT EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                bid_bidding_docm_lines dll,
+                                bid_bidding_docm_headers dhh
+                            WHERE
+                                dll.entrustment_line_item_id = bi.line_item_id AND
+                                dll.bid_line_id             <> dl.bid_line_id AND
+                                dll.unit_price               < dl.unit_price AND
+                                dhh.bid_header_id            = dll.bid_header_id AND
+                                dhh.round                    = 5 AND
+                                dhh.submit_once_flag         = 'Y' AND
+                                dhh.entrustment_header_id    = dh.entrustment_header_id AND
+                                dhh.bidder_company_id       IN
+                                (SELECT
+                                    elb.bidder_company_id
+                                FROM
+                                    bid_entrustment_ln_bidders elb
+                                WHERE
+                                    elb.entrustment_header_id = dh.entrustment_header_id
+                                )
+                            )
+                        ) lowest_flag_5,
+                        (
+                            CASE
+                                WHEN
+                                    (
+                                        bh.round > 5 AND
+                                        (SELECT
+                                                bhh.score_mode
+                                            FROM
+                                                bid_entrustment_hds_hist bhh
+                                            WHERE
+                                                bhh.entrustment_header_id = bh.entrustment_header_id AND
+                                                bhh.round                 = 5 AND
+                                                rownum                    = 1
+                                        )
+                                        = 'NONDISTINCTION'
+                                    )
+                                    OR
+                                    (
+                                        bh.round      = 5 AND
+                                        bh.score_mode = 'NONDISTINCTION'
+                                    )
+                                THEN TO_CHAR(bid_score_pkg.get_bidding_score(
+                                    (SELECT
+                                        dh.bid_header_id
+                                    FROM
+                                        bid_bidding_docm_headers dh
+                                    WHERE
+                                        dh.entrustment_header_id = bh.entrustment_header_id AND
+                                        fc.company_id            = dh.bidder_company_id AND
+                                        dh.round                 = 5
+                                    ), 1))
+                                WHEN
+                                    (
+                                        bh.round > 5 AND
+                                        (SELECT
+                                                bhh.score_mode
+                                            FROM
+                                                bid_entrustment_hds_hist bhh
+                                            WHERE
+                                                bhh.entrustment_header_id = bh.entrustment_header_id AND
+                                                bhh.round                 = 5 AND
+                                                rownum                    = 1
+                                        )
+                                        IS NULL
+                                    )
+                                    OR
+                                    (
+                                        bh.round       = 5 AND
+                                        bh.score_mode IS NULL
+                                    )
+                                THEN NULL
+                                ELSE '商务组：'
+                                    || bid_score_pkg.get_bidding_bus_score(
+                                    (SELECT
+                                        dh.bid_header_id
+                                    FROM
+                                        bid_bidding_docm_headers dh
+                                    WHERE
+                                        dh.entrustment_header_id = bh.entrustment_header_id AND
+                                        fc.company_id            = dh.bidder_company_id AND
+                                        dh.round                 = 5
+                                    ), 1)
+                                    || '<br/>技术组：'
+                                    || bid_score_pkg.get_bidding_tech_score(
+                                    (SELECT
+                                        dh.bid_header_id
+                                    FROM
+                                        bid_bidding_docm_headers dh
+                                    WHERE
+                                        dh.entrustment_header_id = bh.entrustment_header_id AND
+                                        fc.company_id            = dh.bidder_company_id AND
+                                        dh.round                 = 5
+                                    ), 1)
+                            END) score_5,
+                        (SELECT
+                            REPLACE(dl.comments,chr(10),'')
+                        FROM
+                            bid_bidding_docm_headers dh,
+                            bid_bidding_docm_lines dl
+                        WHERE
+                            dh.bid_header_id            = dl.bid_header_id AND
+                            dh.entrustment_header_id    = bh.entrustment_header_id AND
+                            fc.company_id               = dh.bidder_company_id AND
+                            dl.entrustment_line_item_id = bi.line_item_id AND
+                            dh.round                    = 5 AND
+                            dh.submit_once_flag         = 'Y'
+                        ) comments_5
+                    FROM
+                        bid_entrustment_headers bh,
+                        fnd_companies_vl fc,
+                        bid_entrustment_ln_items bi
+                    WHERE
+                        bh.entrustment_header_id = ${@entrustment_header_id} AND
+                        fc.company_id            = ${@bidder_company_id} AND
+                        bi.entrustment_header_id = bh.entrustment_header_id
+                    ) v
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+              SELECT * FROM (
+  WITH ability_t AS
+    (SELECT pv.ability_hds_id
+           ,pv.ability_hds_code
+           ,pv.vendor_id
+          ,pv.display_vendor_code
+          ,pv.full_name
+        ,pv.business_group
+        ,pv.company_id
+        ,pv.creation_date
+        ,pv.last_update_date
+    FROM pur_supply_ability_hds_v2 pv
+   WHERE pv.business_group = ${/session/@business_group}),
+ company_life AS
+ (SELECT decode(t.stage_code,
+                'REGISTER',
+                 '注册',
+                 'RECOMMEND',
+                 '推荐',
+                 'QUALIFIED',
+                  '合格',
+                 'ELIMINATED',
+                 '淘汰',
+                 'POTENTIAL',
+                 '潜在') stage_code
+        ,t.coop_company_id
+        ,row_number() over(PARTITION BY t.coop_company_id ORDER BY t.life_cycle_id DESC) rn
+    FROM pur_vendor_life_cycle t
+        ,ability_t
+   WHERE ability_t.company_id = t.coop_company_id),
+company_concat as 
+ (SELECT c.contact_name
+        ,c.position
+        ,c.mobile_phone
+        ,c.email
+        ,pvs.supplier_company_id
+        ,row_number() over(PARTITION BY pvs.supplier_company_id ORDER BY pvs.survey_header_id DESC) rn
+    FROM pur_vendor_survey_contacts c
+        ,pur_vendor_survey_headers  pvs
+        ,ability_t
+   WHERE c.survey_header_id = pvs.survey_header_id
+     AND c.default_contact_flag = 'Y'
+     AND pvs.status = '40_APPROVED'
+     and ability_t.company_id = pvs.supplier_company_id)
+SELECT ability_t.ability_hds_id
+      ,ability_t.ability_hds_code
+      ,ability_t.vendor_id
+      ,ability_t.display_vendor_code
+      ,ability_t.full_name
+      ,ability_t.business_group
+      ,ability_t.company_id
+      ,company_life.stage_code
+      ,company_concat.contact_name
+      ,company_concat.position
+      ,company_concat.mobile_phone
+      ,company_concat.email
+      ,ability_t.creation_date
+      ,ability_t.last_update_date
+  FROM ability_t
+      ,company_life
+      ,company_concat
+ WHERE ability_t.company_id = company_life.coop_company_id
+   AND company_life.rn = 1
+   AND ability_t.company_id = company_concat.supplier_company_id
+   AND company_concat.rn = 1) psahv
+   #WHERE_CLAUSE#
+   #ORDER_BY_CLAUSE#
+  			]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:parameters>
+                <bm:parameter name="ability_hds_id" input="false" output="true" outputPath="@ability_hds_id"/>
+            </bm:parameters>
+            <bm:update-sql><![CDATA[
+    			begin
+				  pur_vendor_supply_ability_pkg.create_supply_ability_hds(x_ability_hds_id => ${@ability_hds_id},
+				                                                          p_vendor_id      => ${@vendor_id},
+				                                                          p_comments       => ${@comments},
+    																	  p_language       => ${/session/@lang},
+				                                                          p_user_id        => ${/session/@user_id});
+				end;
+    		]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+    			begin
+				  pur_vendor_supply_ability_pkg.modify_supply_ability_hds(p_ability_hds_id => ${@ability_hds_id},
+				                                                          p_comments       => ${@comments},
+    																	  p_language       => ${/session/@lang},
+				                                                          p_user_id        => ${/session/@user_id});
+				end;
+    		]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+    			begin
+				  pur_vendor_supply_ability_pkg.delete_supply_ability_hds(p_ability_hds_id => ${@ability_hds_id},
+				                                                          p_user_id        => ${/session/@user_id});
+				end;
+    		]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="ability_hds_id" queryExpression="ability_hds_id = ${@ability_hds_id}"/>
+        <bm:query-field name="vendor_id" queryExpression="vendor_id = ${@vendor_id}"/>
+        <bm:query-field name="ability_hds_code" queryExpression="ability_hds_code like &apos;%&apos;||upper(${@ability_hds_code})||&apos;%&apos;"/>
+        <bm:query-field name="category_udf_id" queryExpression="exists (select 1 from pur_supply_ability_lns l where l.ability_hds_id = psahv.ability_hds_id and l.category_udf_id = ${@category_udf_id})"/>
+        <bm:query-field name="create_date_from" queryExpression="to_date(psahv.creation_date, &apos;yyyy-mm-dd&apos;) &gt;= to_date(${@create_date_from}, &apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="create_date_to" queryExpression="to_date(psahv.creation_date, &apos;yyyy-mm-dd&apos;) &lt;= to_date(${@create_date_to}, &apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="purchase_category_name" queryExpression="exists (select 1 from pur_supply_ability_lns_vl l where l.ability_hds_id = psahv.ability_hds_id and l.category_code like (${@purchase_category_name})||&apos;%&apos;)"/>
+        <bm:query-field name="last_update_date_from" queryExpression="to_date(psahv.last_update_date, &apos;yyyy-mm-dd&apos;) &gt;= to_date(${@last_update_date_from}, &apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="last_update_date_to" queryExpression="to_date(psahv.last_update_date, &apos;yyyy-mm-dd&apos;) &lt;= to_date(${@last_update_date_to}, &apos;yyyy-mm-dd&apos;)"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <!-- <bm:data-filter name="filter" expression="(pur_vendor_supply_ability_pkg.supply_ability_query_validate(psahv.ability_hds_id,t1.vendor_id,${/session/@user_id}) = &apos;Y&apos;)"/> -->
+        <bm:data-filter expression="1=1"/>
+    </bm:data-filters>
+    <!-- <authority foundation_code="PUR_RECOMMEND_VENDOR">
+        <authority-segment source_alias="psahv" source_name="useless_id_1" type="CREATER"/>
+        <authority-segment source_alias="psahv" source_name="company_id" type="COMPANY"/>
+        <authority-segment source_alias="psahv" source_name="useless_id_3" type="RECEIVER"/>
+        <authority-segment source_alias="psahv" source_name="useless_id_4" type="BUSINESS_UNIT"/>
+        <authority-segment source_alias="psahv" source_name="useless_id_5" type="PUR_ORGANIZATION"/>
+        <authority-segment source_alias="psahv" source_name="useless_id_6" type="INV_ORGANIZATION"/>
+        <authority-segment source_alias="psahv" source_name="useless_id_7" type="SD_ORGANIZATION"/>
+        <authority-segment source_alias="psahv" source_name="vendor_id" type="VENDOR"/>
+        <authority-segment source_alias="psahv" source_name="useless_id_9" type="CLIENT"/>
+        <authority-segment source_alias="psahv" source_name="useless_id_10" type="PURHASE_MATERIAL"/>
+        <authority-segment source_alias="psahv" source_name="useless_id_11" type="SALES_PRODUCTION"/>
+        <authority-segment source_alias="psahv" source_name="useless_id_12" type="CLIENT_SITE"/>
+        <authority-segment source_alias="psahv" source_name="useless_id_13" type="VENDOR_SITE"/>
+    </authority> -->
+    <bm:features>
+        <s:bm-script><![CDATA[
+            var cx = Packages.aurora.javascript.Context.getCurrentContext();
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

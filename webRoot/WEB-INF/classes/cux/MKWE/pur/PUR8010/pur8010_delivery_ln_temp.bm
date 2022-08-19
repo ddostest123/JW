@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*,
+                    (v.quantity - v.trx_amount ) un_trx_amount --未交货数量
+                FROM
+                    (SELECT
+                        lt.line_id,
+                        lt.header_id,
+                        lt.segment1,
+                        lt.line_num,
+                        lt.source_po_header_id,
+                        lt.source_po_line_id,
+                        lt.item_code,
+                        lt.item_name,
+                        lt.quantity,
+                        lt.unit_meas_lookup_code,
+                        (
+                        (SELECT
+                            NVL(l.quantity,0)
+                        FROM
+                            pur_headers_all h,
+                            pur_lines_all l
+                        WHERE
+                            h.pur_header_id     = l.pur_header_id AND
+                            h.display_po_number = lt.segment1 AND
+                            l.line_num          = lt.line_num
+                        ) -
+                        (SELECT
+                            NVL(SUM(pl.need_del_quantity), 0)
+                        FROM
+                            pur_del_plan_lines pl
+                        WHERE
+                            pl.segment1             = lt.segment1 AND
+                            pl.line_num             = lt.line_num AND
+                            NVL(PL.CANCEL_FLAG,'N') = 'N'
+                        )) remain_split_quantity, --剩余可拆数量,
+                        lt.need_del_quantity,
+                        TO_CHAR(lt.po_create_date,'YYYY-MM-DD HH24:MI:SS') po_create_date,
+                        TO_CHAR(lt.po_need_date,'YYYY-MM-DD') po_need_date,
+                        TO_CHAR(lt.need_arrive_date,'YYYY-MM-DD') need_arrive_date,
+                        TO_CHAR(lt.supplier_reply_date,'YYYY-MM-DD HH24:MI:SS') supplier_reply_date,
+                        lt.supplier_comment,
+                        lt.agent_comment,
+                        lt.packing_standard,
+                        lt.job_number,
+                        lt.created_by,
+                        TO_CHAR(lt.creation_date,'YYYY-MM-DD HH24:MI:SS') creation_date,
+                        lt.last_updated_by,
+                        TO_CHAR(lt.last_update_date,'YYYY-MM-DD HH24:MI:SS') last_update_date,
+                        lt.is_split_line,
+                        lt.item_specs,
+                        lt.business_unit_id,
+                        lt.business_unit_name,
+                        (SELECT
+                            NVL(SUM(DECODE(rcv_trx_type, 'RETURN_DIRECT', prtl.trx_amount * -1, prtl.trx_amount)),0) trx_amount
+                        FROM
+                            pur_rcv_trx_lines prtl,
+                            pur_rcv_trx_headers prth
+                        WHERE
+                            prtl.rcv_trx_header_id    = prth.rcv_trx_header_id AND
+                            prth.processed_flag       = 'Y' AND
+                            prtl.from_po_line_id      = lt.source_po_line_id AND
+                            prtl.business_group       = ${/session/@business_group} AND
+                            prth.owner_business_group = ${/session/@business_group}
+                        ) trx_amount
+                    FROM
+                        pur_del_plan_lines_temp lt #WHERE_CLAUSE#
+                    ORDER BY
+                        lt.segment1,
+                        lt.line_num
+                    ) v
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="header_id" queryExpression="lt.header_id = ${@header_id}"/>
+    </bm:query-fields>
+</bm:model>

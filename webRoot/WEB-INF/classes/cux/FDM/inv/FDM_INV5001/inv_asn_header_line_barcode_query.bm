@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            	SELECT *
+				  FROM (SELECT h.asn_header_id,
+				               l.asn_line_id,
+				               h.owner_business_group,
+				               l.c_attribute50 AS barcode_type,
+				               decode(l.c_attribute50,
+				                      '01',
+				                      '物料条码',
+				                      '02',
+				                      '批次条码',
+				                      '03',
+				                      '单包重量条码',
+				                      '04',
+				                      '单包数量条码',
+				                      '05',
+				                      '单件条码') AS barcode_type_display,
+				               to_number(l.asn_detail_number) as asn_detail_number,
+				               h.asn_number,
+				               l.asn_line_num,
+				               (SELECT iov.description
+				                  FROM inv_organizations_vl iov
+				                 WHERE iov.inv_organization_id = h.ship_to_organization_id) AS ship_to_organization_name,
+				               to_char(h.creation_date,
+				                       'yyyy-mm-dd') AS creation_date,
+				               to_char(h.expected_date,
+				                       'yyyy-mm-dd') AS expected_date,
+				               (SELECT ph.display_po_number
+				                  FROM pur_line_locations_all pll,
+				                       pur_headers_all        ph
+				                 WHERE pll.pur_header_id = ph.pur_header_id
+				                       AND pll.pur_line_location_id = l.line_location_id) AS po_number,
+				               (SELECT pl.line_num
+				                  FROM pur_line_locations_all pll,
+				                       pur_lines_all          pl
+				                 WHERE pll.pur_line_id = pl.pur_line_id
+				                       AND pll.pur_line_location_id = l.line_location_id) AS po_line_num,
+				               (SELECT to_char(pll.need_by_date,
+				                               'yyyy-mm-dd')
+				                  FROM pur_line_locations_all pll
+				                 WHERE pll.pur_line_location_id = l.line_location_id) AS need_by_date,
+				               (SELECT to_char(pll.promised_date,
+				                               'yyyy-mm-dd')
+				                  FROM pur_line_locations_all pll
+				                 WHERE pll.pur_line_location_id = l.line_location_id) AS promised_date,
+				               nvl(l.outside_box_status,
+				                   'NEW') AS outside_box_status,
+				               decode(nvl(l.outside_box_status,
+				                          'NEW'),
+				                      'NEW',
+				                      '新建',
+				                      'IMPORTING',
+				                      '导入中',
+				                      'IMPORT_FAILED',
+				                      '导入失败',
+				                      'IMPORT_SUCCESS',
+				                      '导入成功') AS outside_box_status_display,
+				               nvl(l.cancel_flag,
+                   					'N') AS asn_cancel_flag,
+				               decode(l.cancel_flag,
+				                      'Y',
+				                      '已取消',
+				                      decode(l.close_flag,
+				                             'Y',
+				                             '已关闭',
+				                             '已发运')) AS asn_status,
+				               decode(nvl(l.outside_box_status,
+				                          'NEW'),
+				                      'IMPORT_SUCCESS',
+				                      l.outside_box_quantity,
+				                      '') AS outside_box_quantity,
+				               l.ship_quantity,
+				               l.uom_code,
+				               l.item_code,
+				               l.item_name,
+				               l.lots_num,
+				               (SELECT imv.partner_item_code
+				                  FROM mtl_item_mapping_vendor_v imv,
+				                       pur_vendors_v             pvv
+				                 WHERE imv.partner_business_group = pvv.coop_business_group
+				                       AND imv.item_id = l.item_id
+				                       AND pvv.vendor_id = h.vendor_id) AS my_item_code,
+				               (SELECT imv.partner_item_name
+				                  FROM mtl_item_mapping_vendor_v imv,
+				                       pur_vendors_v             pvv
+				                 WHERE imv.partner_business_group = pvv.coop_business_group
+				                       AND imv.item_id = l.item_id
+				                       AND pvv.vendor_id = h.vendor_id) AS my_item_name,
+				               (SELECT buv.business_unit_name
+				                  FROM fnd_business_units_vl buv
+				                 WHERE buv.business_unit_id = h.coop_business_unit_id) AS client_business_unit_name,
+				               l.comments,
+				               l.level_2_barcode,
+				               l.level_3_barcode,
+				               l.level_4_barcode
+				          FROM inv_asn_headers h,
+				               inv_asn_lines   l
+				         WHERE h.asn_header_id = l.asn_header_id
+				           AND l.process_status = 'SUCCESSED'
+				           AND nvl(l.cancel_flag,'N') = 'N') v
+				 #WHERE_CLAUSE#
+				 ORDER BY v.asn_header_id DESC,
+				 	      v.asn_detail_number ASC
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter expression="v.owner_business_group = ${/session/@business_group}"/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field name="asn_line_id" queryExpression="v.asn_line_id = ${@asn_line_id}"/>
+        <bm:query-field name="asn_number" queryExpression="v.asn_number like ${@asn_number}"/>
+        <bm:query-field name="po_number" queryExpression="v.po_number like ${@po_number}"/>
+        <bm:query-field name="item_name" queryExpression="v.item_name like ${@item_name}"/>
+        <bm:query-field name="barcode_status" queryExpression="v.outside_box_status = ${@barcode_status}"/>
+        <bm:query-field name="asn_line_number" queryExpression="v.asn_line_num = ${@asn_line_number}"/>
+        <bm:query-field name="po_line_number" queryExpression="v.po_line_num = ${@po_line_number}"/>
+        <bm:query-field name="asn_uncancel_flag" queryExpression="((${@asn_uncancel_flag} = &apos;Y&apos; and v.asn_cancel_flag = &apos;N&apos;) or (${@asn_uncancel_flag} = &apos;N&apos; and 1=1))"/>
+        <bm:query-field name="barcode_type" queryExpression="v.barcode_type = ${@barcode_type}"/>
+    </bm:query-fields>
+</bm:model>

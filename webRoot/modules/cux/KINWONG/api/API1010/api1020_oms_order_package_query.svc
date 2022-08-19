@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lianghuihao 
+    $Date: 2018年12月21日20:43:17 
+    $Revision: 1.0  
+    $Purpose: 订单信息查询
+-->
+<a:service xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <p:echo/>
+        <a:model-query fetchAll="true" model="cux.KINWONG.api.API1020.api1020_oms_query_sub_order" rootPath="packages"/>
+        <s:server-script import="request2.js"><![CDATA[
+            var packages = $ctx.model.getChild('packages').getChildren();
+            var bm = new ModelService('cux.KINWONG.api.PUBLIC.api_get_request_all');
+            //接收传参
+            var packages_info = [];
+            $ctx.parameter.api_code = 'OMS_ORDER_TRACK';
+            var res = bm.queryAsMap();
+            var arr = res.getChildren()[0];
+            for (var b = 0;b < packages.length;b++) {
+                var packageId = packages[b].eb_order_id;
+                var para_str = '?token=' + arr.ACCESS_TOKEN + '&supplierOrderId=' + packageId;
+                var message;
+                var result = {};
+                if (para_str) {
+                    try {
+                        request({
+                            url: arr.API_URL,
+                            para: para_str,
+                            success: function(args) {
+                                var data = JSON.parse(args);
+                                if (data['success'] == true) {
+                                    data['result']['success'] = true;
+                                    data['result']['supplierOrderId'] = packageId;
+                                    result = data['result'];
+                                }
+                            },
+                            failure: function(args) {
+                                raise_app_error(args.error.message);
+                            }
+                        });
+                    } catch (e) {
+                        status = 'failure';
+                        message = e.message;
+                        result = null;
+                    } finally {
+                        if (message) {
+                            raise_app_error(message.substring(47));
+                        } else {
+                            packages_info.push(result);
+                        }
+                    }
+                }
+            }
+            $ctx.parameter.response = JSON.stringify(packages_info);
+            log('track' + JSON.stringify(packages_info));
+        ]]></s:server-script>
+    </a:init-procedure>
+    <a:service-output output="/parameter/"/>
+</a:service>

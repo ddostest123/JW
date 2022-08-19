@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wubin
+    $Date: 2015-03-24 14:35:10  
+    $Revision: 1.0  
+    $Purpose: 非寄销网上发票创建(第三方)，开票单信息查询BM
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="v.bill_number ASC,v.receipt_num ASC,v.receipt_line_num ASC">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT *
+				  FROM (SELECT d.rcv_trx_line_id,
+				               d.detail_id AS bill_detail_id,
+				               l.line_id AS bill_line_id,
+				               h.header_id AS bill_header_id,
+				               d.detail_num AS bill_detail_num,
+				               h.bill_number,
+				               h.owner_business_group,
+				               h.owner_company_id,
+				               h.coop_business_group,
+				               h.coop_company_id,
+				               l.bill_line_num,
+				               (SELECT io.business_unit_id
+				                  FROM acp_bill_details  bd,
+				                       inv_organizations io
+				                 WHERE bd.organization_id = io.inv_organization_id
+				                       AND bd.detail_id = d.detail_id) AS business_unit_id,
+				               (SELECT buv.business_unit_name
+				                  FROM acp_bill_details      bd,
+				                       inv_organizations     io,
+				                       fnd_business_units_vl buv
+				                 WHERE bd.organization_id = io.inv_organization_id
+				                       AND io.business_unit_id = buv.business_unit_id
+				                       AND bd.detail_id = d.detail_id) AS business_unit_name,
+				               d.po_header_id,
+				               d.po_line_id,
+				               d.po_line_location_id,
+				               d.distribution_id AS po_distribution_id,
+				               d.segment1,
+				               d.line_num,
+				               d.shipment_num,
+				               d.release_num,
+				               d.distribution_num,
+				               l.item_id,
+				               l.item_code,
+				               l.item_name,
+				               l.unit_meas_lookup_code,
+				               h.currency_code,
+				               d.quantity,
+				               d.billed_quantity,
+				               (d.quantity - d.billed_quantity) AS bill_quantity,
+				               d.unit_price,
+				               (d.quantity * d.unit_price) AS line_amount,
+				               (d.quantity - d.billed_quantity) AS transaction_quantity,
+				               fnd_document_control_pkg.get_reality_value(p_rule_code       => 'PRICE_SECRECY',
+				                                                          p_role_id         => ${/session/@role_id},
+				                                                          p_foundation_code => 'AP_BILL',
+				                                                          p_document_id     => h.header_id,
+				                                                          p_control_area    => 'EXTERNAL',
+				                                                          p_business_group  => ${/session/@business_group},
+				                                                          p_value           => d.unit_price) AS display_unit_price,
+				               fnd_document_control_pkg.get_reality_value(p_rule_code       => 'PRICE_SECRECY',
+				                                                          p_role_id         => ${/session/@role_id},
+				                                                          p_foundation_code => 'AP_BILL',
+				                                                          p_document_id     => h.header_id,
+				                                                          p_control_area    => 'EXTERNAL',
+				                                                          p_business_group  => ${/session/@business_group},
+				                                                          p_value           => (d.quantity * d.unit_price)) AS display_line_amount,
+				               decode(fnd_document_control_pkg.get_reality_value(p_rule_code       => 'PRICE_SECRECY',
+				                                                                 p_role_id         => ${/session/@role_id},
+				                                                                 p_foundation_code => 'AP_BILL',
+				                                                                 p_document_id     => h.header_id,
+				                                                                 p_control_area    => 'EXTERNAL',
+				                                                                 p_business_group  => ${/session/@business_group},
+				                                                                 p_value           => d.unit_price),
+				                      '***',
+				                      NULL,
+				                      rtrim(to_char(d.unit_price,
+				                                    'FM999999990.9999'),
+				                            '.')) AS display_transaction_price,
+				               decode(fnd_document_control_pkg.get_reality_value(p_rule_code       => 'PRICE_SECRECY',
+				                                                                 p_role_id         => ${/session/@role_id},
+				                                                                 p_foundation_code => 'AP_BILL',
+				                                                                 p_document_id     => h.header_id,
+				                                                                 p_control_area    => 'EXTERNAL',
+				                                                                 p_business_group  => ${/session/@business_group},
+				                                                                 p_value           => round(((d.quantity -
+				                                                                                            d.billed_quantity) *
+				                                                                                            d.unit_price),
+				                                                                                            2)),
+				                      '***',
+				                      NULL,
+				                      round(((d.quantity - d.billed_quantity) * d.unit_price),
+				                            2)) AS display_bill_amount,
+				               d.organization_id,
+				               (SELECT iov.inv_organization_code FROM inv_organizations_vl iov WHERE iov.inv_organization_id = d.organization_id) AS organization_code,
+       						   (SELECT iov.description FROM inv_organizations_vl iov WHERE iov.inv_organization_id = d.organization_id) AS organization_name,
+				               h.company_id,
+				               (SELECT fcv.company_code FROM fnd_companies_vl fcv WHERE fcv.company_id = h.company_id) AS company_code,
+				               (SELECT fcv.company_full_name FROM fnd_companies_vl fcv WHERE fcv.company_id = h.company_id) AS company_name,
+						       v.vendor_id,
+						       v.vendor_code,
+						       v.vendor_name,
+				               h.vendor_site_id,
+				               (SELECT nvl(pvs.display_site_code,
+						                   pvs.vendor_site_code)
+						          FROM pur_vendor_sites_vl pvs
+						         WHERE pvs.vendor_site_id = h.vendor_site_id) AS vendor_site_code,
+						       (SELECT pvs.site_name FROM pur_vendor_sites_vl pvs WHERE pvs.vendor_site_id = h.vendor_site_id) AS vendor_site_name,
+				               d.terms_id,
+				               d.rate_type,
+				               d.rate_date,
+				               d.rate,
+				               d.erp_transaction_id,
+				               d.transaction_date,
+				               to_char(d.transaction_date,
+				                       'yyyy-mm-dd hh24:mi:ss') AS transaction_date_fmt,
+				               h.confirm_date,
+				               to_char(h.confirm_date,
+				                       'yyyy-mm-dd hh24:mi:ss') AS confirm_date_fmt,
+				               l.request_date,
+				               to_char(l.request_date,
+				                       'yyyy-mm-dd hh24:mi:ss') AS request_date_fmt,
+				               d.receipt_num,
+				               to_number(d.receipt_line_num) as receipt_line_num,
+				               (SELECT tcb.tax_type_id
+				                  FROM fnd_tax_type_codes_bg_v tcb
+				                 WHERE tcb.enabled_flag = 'Y'
+				                       AND tcb.bg_enabled_flag = 'Y'
+				                       AND tcb.default_flag = 'Y'
+				                       AND tcb.business_group = h.owner_business_group
+				                       AND rownum = 1) AS tax_type_id,
+				               (SELECT tcb.tax_type_code
+				                  FROM fnd_tax_type_codes_bg_v tcb
+				                 WHERE tcb.enabled_flag = 'Y'
+				                       AND tcb.bg_enabled_flag = 'Y'
+				                       AND tcb.default_flag = 'Y'
+				                       AND tcb.business_group = h.owner_business_group
+				                       AND rownum = 1) AS tax_type_code,
+				               (SELECT tcb.tax_type_rate
+				                  FROM fnd_tax_type_codes_bg_v tcb
+				                 WHERE tcb.enabled_flag = 'Y'
+				                       AND tcb.bg_enabled_flag = 'Y'
+				                       AND tcb.default_flag = 'Y'
+				                       AND tcb.business_group = h.owner_business_group
+				                       AND rownum = 1) AS tax_rate,
+				               NULL AS useless_id_1,
+				               NULL AS useless_id_2,
+				               NULL AS useless_id_3,
+				               NULL AS useless_id_4,
+				               NULL AS useless_id_5,
+				               NULL AS useless_id_6,
+				               NULL AS useless_id_7,
+				               NULL AS useless_id_8,
+				               NULL AS useless_id_9,
+				               NULL AS useless_id_10,
+				               NULL AS useless_id_11,
+				               NULL AS useless_id_12
+				          FROM acp_bill_headers h,
+				               acp_bill_lines   l,
+				               acp_bill_details d,
+				               pur_headers_all_v v
+				         WHERE h.header_id = l.header_id
+				               AND l.line_id = d.line_id
+				               AND d.po_header_id = v.pur_header_id
+				               AND h.status = 'CONFIRMED'
+				               AND d.invoice_flag = 'Y'
+				               --AND sgacp_bill_pkg.is_agent(d.po_header_id) = 'Y'
+				               AND EXISTS (SELECT 1
+							                  FROM pur_po_partners p
+							                 WHERE p.pur_header_id = v.pur_header_id
+							                   AND p.vendor_id <> v.vendor_id)
+				               ) v
+                    #AUTHORIY_FROM#
+                    #WHERE_CLAUSE#
+                    #AUTHORIY_WHERE# 
+                    #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:update-sql><![CDATA[
+                BEGIN
+                  acp_web_invoice_pkg.insert_web_invoice_line(p_bill_detail_id        => ${@bill_detail_id},
+														      p_invoice_line_num      => ${@invoice_line_num},
+														      p_bill_detail_num       => ${@bill_detail_num},
+														      p_company_id            => ${@company_id},
+														      p_company_code          => ${@company_code},
+														      p_company_name          => ${@company_name},
+														      p_po_header_id          => ${@po_header_id},
+														      p_po_line_id            => ${@po_line_id},
+														      p_po_line_location_id   => ${@po_line_location_id},
+														      p_po_distribution_id    => ${@po_distribution_id},
+														      p_segment1              => ${@segment1},
+														      p_line_num              => ${@line_num},
+														      p_shipment_num          => ${@shipment_num},
+														      p_distribution_num      => ${@distribution_num},
+														      p_item_id               => ${@item_id},
+														      p_item_code             => ${@item_code},
+														      p_item_name             => ${@item_name},
+														      p_unit_meas_lookup_code => ${@unit_meas_lookup_code},
+														      p_currency_code         => ${@currency_code},
+														      p_unit_price            => ${@unit_price},
+														      p_invoice_price         => ${@display_transaction_price},
+														      p_bill_quantity         => ${@transaction_quantity},
+														      p_bill_amount           => ${@display_bill_amount},
+														      p_tax_rate_id           => ${@tax_type_id},
+														      p_tax_rate              => ${@tax_rate},
+														      p_tax_bill_amount       => ${@tax_bill_amount},
+														      p_transaction_id        => ${@rcv_trx_line_id},
+														      p_recept_num            => ${@receipt_num},
+														      p_recept_line_num       => ${@receipt_line_num},
+														      p_transaction_date      => to_date(${@transaction_date_fmt},'yyyy-mm-dd hh24:mi:ss'),
+														      p_user_id               => ${/session/@user_id},
+														      p_session_id            => ${/session/@session_id});
+                END;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:parameters>
+                <bm:parameter name="invoice_header_id" dataType="java.lang.Long" output="true" outputPath="@invoice_header_id"/>
+            </bm:parameters>
+            <bm:update-sql><![CDATA[
+                BEGIN
+                  acp_web_invoice_pkg.insert_web_invoice_header(p_session_id         => ${/session/@session_id},
+															    p_user_id            => ${/session/@user_id},
+															    p_action_type        => ${@action_type},
+															    p_tax_total_amount   => ${@tax_total_amount},
+															    p_tax_amount         => ${@tax_amount},
+															    p_invoice_amount     => ${@invoice_amount},
+															    p_invoice_tax_amount => ${@invoice_tax_amount},
+															    p_tax_invoice_num    => ${@tax_invoice_num},
+															    p_vendor_comments    => ${@vendor_comments},
+															    o_invoice_header_id  => ${@invoice_header_id});
+                END;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter expression="1=1"/>
+        <bm:data-filter expression="v.coop_business_group = ${/session/@business_group}"/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field name="header_id" queryExpression="v.header_id = ${@bill_header_id}"/>
+        <bm:query-field name="company_id" queryExpression="v.owner_company_id = ${@company_id}"/>
+        <bm:query-field name="line_id" queryExpression="v.line_id = ${@bill_line_id}"/>
+        <bm:query-field name="bill_number" queryExpression="v.bill_number like &apos;%&apos;||trim(${@bill_number})||&apos;%&apos;"/>
+        <bm:query-field name="po_number" queryExpression="v.segment1 like &apos;%&apos;||trim(${@po_number})||&apos;%&apos;"/>
+        <bm:query-field name="confirm_date_from" queryExpression="trunc(v.confirm_date) &gt;= to_date(${@confirm_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="confirm_date_to" queryExpression="trunc(v.confirm_date) &lt;= to_date(${@confirm_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="business_unit_id" queryExpression="v.business_unit_id = ${@business_unit_id}"/>
+        <bm:query-field name="receipt_num" queryExpression="v.receipt_num like &apos;%&apos;||trim(${@receipt_num})||&apos;%&apos;"/>
+    </bm:query-fields>
+    <authority foundation_code="AP_INVOICE">
+        <authority-segment source_alias="v" source_name="coop_company_id" type="COMPANY"/>
+        <authority-segment source_alias="v" source_name="useless_id_1" type="CREATER"/>
+        <authority-segment source_alias="v" source_name="useless_id_2" type="RECEIVER"/>
+        <authority-segment source_alias="v" source_name="useless_id_3" type="CLIENT"/>
+        <authority-segment source_alias="v" source_name="useless_id_4" type="CLIENT_SITE"/>
+        <authority-segment source_alias="v" source_name="useless_id_5" type="PUR_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id_6" type="SD_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id_7" type="PURHASE_MATERIAL"/>
+        <authority-segment source_alias="v" source_name="useless_id_8" type="SALES_PRODUCTION"/>
+        <authority-segment source_alias="v" source_name="useless_id_9" type="VENDOR"/>
+        <authority-segment source_alias="v" source_name="useless_id_10" type="VENDOR_SITE"/>
+        <authority-segment source_alias="v" source_name="useless_id_11" type="BUSINESS_UNIT"/>
+        <authority-segment source_alias="v" source_name="useless_id_12" type="INV_ORGANIZATION"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+        	var cx = Packages.aurora.javascript.Context.getCurrentContext();
+			Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+        	Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

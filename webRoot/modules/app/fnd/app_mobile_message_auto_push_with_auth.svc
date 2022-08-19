@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:service xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <a:model-execute model="app.fnd.app_mobile_message_instance_create"/>
+        <a:model-query model="app.fnd.app_mobile_message_check_instance" rootPath="check_instance"/>
+        <!-- 判断是否生成实例 -->
+        <p:switch test="/model/check_instance/record/@instance_flag">
+            <p:case value="Y">
+                <!-- 获取TOKENurl  -->
+                <a:model-query model="app.main.app_external_request_token" rootPath="token_url"/>
+                <!-- 获取valuePath ,任意传值，避免空指针异常 -->
+                <a:model-execute model="app.main.app_external_request_token"/>
+                <p:switch test="/parameter/@token_flag">
+                    <p:case value="0">
+                        <!-- token失效时，调用RESTFUL风格接口获取TOKEN -->
+                        <a:rest-invoker acceptLanguage="zh-CN,zh;q=0.8" cacheControl="no-cache" contentType="application/json" raiseExceptionOnError="true" requestMethod="POST" returnPath="/parameter/RESPONSE" url="${/model/token_url/record/@token_url}" valuePath="/soapRequest/requestValue"/>
+                        <a:model-insert model="app.main.app_external_check_token"/>
+                    </p:case>
+                    <p:case value="1">
+                        <a:model-query model="app.main.app_external_check_token" rootPath="token_value"/>
+                    </p:case>
+                </p:switch>
+                <s:server-script><![CDATA[
+            //日志函数
+            var logger = $logger('server-script');
+            
+            function log(msg) {
+                logger.info(msg);
+            }
+            //调用接口得到access_token
+            var token_flag = $ctx.get('/parameter/@token_flag');
+            if (token_flag == 0) {
+                var access_token = $ctx.get('/parameter/RESPONSE/@access_token');
+                var token_type = $ctx.get('/parameter/RESPONSE/@token_type');
+                var p = $ctx.parameter;
+                p.authoration = token_type + access_token;
+            }
+            //token未失效时得到access_token
+            if (token_flag == 1) {
+                var access_token = $ctx.get('/model/token_value/record/@access_token');
+                var token_type = $ctx.get('/model/token_value/record/@token_type');
+                var p = $ctx.parameter;
+                p.authoration = token_type + access_token;
+            }
+        ]]></s:server-script>
+                <a:model-query model="app.fnd.app_mobile_message_push_url" rootPath="push_url"/>
+                <a:model-execute model="app.fnd.app_mobile_message_instance_push_user"/>
+                <!-- <a:ws-invoker inputPath="/soapResponse/HEADER/REQUEST" raiseExceptionOnError="true" returnPath="/soapResponse/RESPONSE" url="${/model/push_url/record/@push_url}"/> -->
+                <a:rest-invoker acceptLanguage="zh-CN,zh;q=0.8" authoration="${/parameter/@authoration}" cacheControl="no-cache" contentType="application/json;charset=UTF-8" raiseExceptionOnError="true" requestMethod="POST" returnPath="/soapResponse/RESPONSE" url="${/model/push_url/record/@push_url}" valuePath="/soapRequest2/requestValue2"/>
+                <p:method-invoke className="uncertain.composite.CompositeUtil" methodName="expand">
+                    <p:arguments>
+                        <p:argument path="/soapResponse" type="uncertain.composite.CompositeMap"/>
+                    </p:arguments>
+                </p:method-invoke>
+                <s:server-script import="app_mobile_construct_node.js"><![CDATA[
+             $ctx.parameter.response_status = $ctx.getChild('soapResponse').getChild('RESPONSE').getChild('success').getText();
+            $ctx.parameter.response_message = $ctx.getChild('soapResponse').getChild('RESPONSE').getChild('message').getText();
+        ]]></s:server-script>
+                <p:echo/>
+                <p:switch test="/parameter/@response_status">
+                    <p:case value="true">
+                        <a:model-insert model="app.fnd.app_mobile_message_instance_create"/>
+                    </p:case>
+                    <p:case value="*">
+                        <a:model-update model="app.fnd.app_mobile_message_instance_create"/>
+                    </p:case>
+                </p:switch>
+            </p:case>
+        </p:switch>
+    </a:init-procedure>
+</a:service>

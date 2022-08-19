@@ -1,0 +1,422 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lhc  
+    $Date: 2012-10-18 下午12:27:43  
+    $Revision: 1.0  
+    $Purpose:拣配过账 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="t1.doc_type=&apos;INV_TRANSACTION&apos;" model="erpfnd.ERPFND1090.fnd_coding_rule_docs" rootPath="erpinv5310_get_manual_flag"/>
+        <a:model-query model="erppublic.get_default_information" rootPath="erpinv_5310_date"/>
+        <!-- <a:model-query model="db.erpfnd_precision_pkg.get_quantity_precision" rootPath="erpinv_5310_sales_quantity_precision"/> -->
+    </a:init-procedure>
+    <a:view>
+        <a:link id="erpinv_sales_deliver_save_link" url="${/request/@context_path}/modules/erpinv/ERPINV5310/inv_sales_deliver_save.svc"/>
+        <a:link id="erpinv5310_document_date_check" model="db.erpgld_periods_pkg.get_open_inv_period" modelaction="query"/>
+        <a:link id="erpinv_get_item_quantities_link" model="erpinv.public.inv_get_item_quantities" modelaction="execute"/>
+        <script><![CDATA[
+            function erpinv_5310_sales_delivery_data_init() {
+                var company_id = ${/parameter/@company_id};
+                var query_record = $('erpinv_5310_sales_query_ds').getAt(0);
+                var header_record = $('erpinv_5310_document_delivery_header_ds').getAt(0);
+                var goods_issue_flag = query_record.get('goods_issue_flag');
+                var is_return_delivery_flag = query_record.get('return_delivery_flag');
+                header_record.set('returned_flag', is_return_delivery_flag);
+                header_record.set('goods_issue_flag', goods_issue_flag);
+            
+                var main_result_ds = $('erpinv_5310_sales_result_ds');
+                var line_ds = $('erpinv_5310_document_delivery_line_ds');
+                var records = main_result_ds.getSelected();
+                for (var i = 0;i < records.length;i++) {
+                    var this_quantity = records[i].get('this_quantity');
+                    if (this_quantity > 0) {
+                        var trade_uom = records[i].get('trade_uom');
+                        var primary_uom = records[i].get('primary_uom');
+                        var delivery_line_number = records[i].get('delivery_line_number');
+                        var obj = records[i].getObject();
+                        obj.line_number = (i + 1) * 10;
+                        obj.trade_quantity = this_quantity;
+                        if (trade_uom == primary_uom) {
+                            obj.primary_quantity = this_quantity;
+                        } else {
+                            var sales_primary_quantity = records[i].get('sales_primary_quantity');
+                            var sales_trade_quantity = records[i].get('sales_trade_quantity');
+                            obj.primary_quantity = this_quantity * sales_primary_quantity / sales_trade_quantity;
+                        }
+                        line_ds.add(new Aurora.Record(obj));
+                    }
+                }
+                records = $('erpinv5310_get_manual_flag_ds').getAll();
+                var field = header_record.getField('document_num');
+                if (records.length > 0) {
+                    if (records[0].get('manual_flag') == 'Y') {
+                        field.setReadOnly(false);
+                        field.setRequired(true);
+                        header_record.set('manual_flag', 'Y');
+                    } else {
+                        header_record.set('document_num', '等待系统产生');
+                        field.setReadOnly(true);
+                        header_record.set('manual_flag', 'N');
+                    }
+                }
+                erpinv_5310_sales_delivery_view_init(goods_issue_flag);
+            }
+            
+            function erpinv_5310_sales_delivery_view_init(goods_issue_flag) {
+                var ds = $('erpinv5310_warehouse_list');
+                ds.setQueryParameter('enabled_flag', 'Y');
+                if (goods_issue_flag == 'Y') {
+                    ds.setQueryParameter('warehouse_type', 'ISSUE');
+                } else {
+                    ds.setQueryParameter('warehouse_type_not', 'ISSUE');
+                }
+                ds.query();
+                var line_records = $('erpinv_5310_document_delivery_line_ds').getAll();
+                for (var i = 0;i < line_records.length;i++) {
+                    var trade_uom = line_records[i].get('trade_uom');
+                    var primary_uom = line_records[i].get('primary_uom');
+                    line_records[i].set('is_submit_flag', 'N');
+                    if (trade_uom == primary_uom) {
+                        line_records[i].getField('primary_quantity').setReadOnly(true);
+                    }
+                    line_records[i].set('_status', 'insert');
+                }
+            }
+            
+            function erpinv_5310_send_ds_clear() {
+                $('erpinv_5310_document_delivery_line_grid').clear();
+            }
+            
+            function erpinv_5310_send_formatQuantity(value, record, name) {
+                if (value < 0) {
+                    value = -value;
+                }
+                return Aurora.formatNumber(value, '${/model/erpinv_5310_document_delivery_line_ds/record/@value}');
+            }
+            
+            function erpinv_5310_warehouse_formatQuantity(value, record, name) {
+                return Aurora.formatNumber(value, '${/model/erpinv_5310_document_delivery_line_ds/record/@value}');
+            }
+            
+            function erpinv_5310_send_back() {
+                /* var header_ds = $('erpinv_5310_document_delivery_header_ds');
+                 var line_ds = $('erpinv_5310_document_delivery_line_ds');
+                 if (header_ds.isModified() || line_ds.isModified()) {
+                 Aurora.showConfirm('提示', '当前页面已修改，是否确认离开？', function() { */
+                $('erpinv_5310_sales_delivery_goods').close();
+                /*  });
+                 } */
+            }
+            
+            function erpinv_5310_send_ds_ok() {
+                var company_id = '${/parameter/@company_id}';
+                var header_ds = $('erpinv_5310_document_delivery_header_ds');
+                var line_ds = $('erpinv_5310_document_delivery_line_ds');
+                var records = line_ds.getAll();
+                if (header_ds.validateSelf()) {
+                    var url = $('erpinv_sales_deliver_save_link').getUrl() + '?company_id=' + company_id;
+                    if (records.length == 0) {
+                        Aurora.showMessage('提示', '未维护行信息不得过账！', function() {
+                            $('erpinv_5310_sales_delivery_goods').close();
+                        });
+                    } else {
+                        if (line_ds.validate()) {
+                            Aurora.showConfirm('提示', '是否确认过账？', function() {
+                                header_ds.setSubmitUrl(url);
+                                header_ds.submit();
+                            });
+                        }
+                    }
+                }
+            }
+            
+            function erpinv_5310_doc_send_update(ds, record, name, value, oldvalue) {
+                var company_id = '${/parameter/@company_id}';
+                record.set('company_id', company_id);
+                if (name == 'trade_quantity') {
+                    var trade_uom = record.get('trade_uom');
+                    var primary_uom = record.get('primary_uom');
+                    if (trade_uom == primary_uom) {
+                        record.set('primary_quantity', value);
+                    } else {
+                        var sales_primary_quantity = record.get('sales_primary_quantity');
+                        var sales_trade_quantity = record.get('sales_trade_quantity');
+                        var primary_quantity = value * sales_primary_quantity / sales_trade_quantity;
+                        record.set('primary_quantity', primary_quantity);
+                    }
+                }
+                if (name == 'warehouse_id') {
+                    var url = $('erpinv_get_item_quantities_link').getUrl();
+                    var para = {};
+                    var warehouse_id = value;
+                   
+                    var item_id = record.get('item_id');
+                    var customer_id = record.get('customer_id');
+                    para = {
+                        'company_id': company_id,
+                        'warehouse_id': warehouse_id,
+                        'item_id': item_id
+                    };
+                    var goods_issue_flag = $('erpinv_5310_document_delivery_header_ds').getAt(0).get('goods_issue_flag');
+                    if (goods_issue_flag == 'Y') {
+                        para = {
+                            'company_id': company_id,
+                            'warehouse_id': warehouse_id,
+                            'item_id': item_id,
+                            'customer_id': customer_id
+                        };
+                    }
+                    //alert(warehouse_id);
+                    //alert(item_id);
+                    Aurora.request({
+                        url: url,
+                        para: para,
+                        success: function(res) {
+                            var item_quantities = res.result.item_quantities;
+                            //alert(item_quantities);
+                            record.set('warehouse_numbers', item_quantities);
+                        }
+                    });
+                }
+            }
+            
+            function erpinv_5310_sales_num_validator(record, name, value) {
+                var line_records = $('erpinv_5310_document_delivery_line_ds').getAll();
+                var n = 0;
+                for (var i = 0;i < line_records.length;i++) {
+                    var line_number = line_records[i].get('line_number');
+                    if (value == line_number) {
+                        n = n + 1;
+                    }
+                }
+                if (n > 1) {
+                    return '行号重复';
+                }
+                return true;
+            }
+            
+            function erpinv_5310_trade_quantity_validator(record, name, value) {
+                var unfilled_quantity = record.get('unfilled_quantity');
+                var warehouse_numbers = record.get('warehouse_numbers');
+                if (value === 0) {
+                    return '本次发货数量不能为0';
+                }
+                if (Math.abs(value) > Math.abs(unfilled_quantity)) {
+                    return '本次发货数量不能大于未发货数量';
+                }
+                if (value > warehouse_numbers) {
+                    return '本次发货数量不能大于库存数量';
+                }
+                return true;
+            }
+            
+            function erpinv_5310_primary_quantity_validator(record, name, value) {
+                //debugger;
+                var validator_primary_quantity = record.get('validator_primary_quantity');
+                
+                if (value === 0) {
+                    return '本次发货主数量不能为0';
+                }
+                if (Math.abs(value) > Math.abs(validator_primary_quantity)) {
+                    return '本次发货主数量不能大于未发货主数量';
+                }
+                
+            
+            
+                return true;
+            }
+            //sumit event
+            
+            function erpinv_5310_sales_submit() {
+                Aurora.Masker.mask($('erpinv_5310_sales_delivery_goods').wrap, '正在过账...');
+            }
+            
+            function erpinv_5310_sales_submitfailed() {
+                Aurora.Masker.unmask($('erpinv_5310_sales_delivery_goods').wrap);
+            }
+            
+            function erpinv_5310_sales_submitsuccess(ds, res) {
+                //var company_id = '${/parameter/@company_id}';
+                //record.set('company_id',company_id);
+                Aurora.Masker.unmask($('erpinv_5310_sales_delivery_goods').wrap);
+                /* var document_num = res.result.record.document_num;
+                 Aurora.showMessage('提示', '过账成功,事务号为:' + document_num); */
+                var message = '过账成功!';
+                Aurora.SideBar.enable = true;
+                Aurora.SideBar.show({
+                    msg: message,
+                    duration: 6000
+                });
+                $('erpinv_5310_sales_result_ds').query();
+                var header_ds_record = $('erpinv_5310_document_delivery_header_ds').getAt(0);
+                var line_ds = $('erpinv_5310_document_delivery_line_ds');
+                header_ds_record.getField('doc_date').setReadOnly(true);
+                header_ds_record.getField('note').setReadOnly(true);
+                var records = line_ds.getAll();
+                for (var i = 0;i < records.length;i++) {
+                    records[i].set('is_submit_flag', 'Y');
+                    /* records[i].getField('notes').setReadOnly(true);
+                     records[i].getField('warehouse_name').setReadOnly(true);
+                     records[i].getField('primary_quantity').setReadOnly(true);
+                     records[i].getField('trade_quantity').setReadOnly(true); */
+                }
+                $('erpinv_5310_ok_btn').disable();
+                $('erpinv_5310_clear_btn').disable();
+            }
+            
+            function erpinv5310_doc_date_validator(record, name, value) {
+                var url = $('erpinv5310_document_date_check').getUrl();
+                var company_id = ${/parameter/@company_id};
+                var flag = true;
+                Aurora.request({
+                    url: url + '?company_id=' + company_id,
+                    para: {
+                        date: value
+                    },
+                    success: function(res) {
+                        var period_name = res.result.record.period_name;
+                        if (Aurora.isEmpty(period_name)) {
+                            //Aurora.showMessage('提示','事务日期所在库存期间未打开,请修改事务日期！');
+                            flag = '事务日期所在库存期间必须处于打开状态!';
+                        } else {
+                            record.set('period_name', period_name);
+                        }
+                    },
+                    scope: this,
+                    sync: true
+                });
+                return flag;
+            }
+            
+            function erpinv_5310_sales_notes_edf(record, name) {
+                var erpinv5310_submit_flag = record.get('is_submit_flag');
+                if (erpinv5310_submit_flag == 'N') {
+                    return 'erpinv_5310_sales_edf';
+                }
+                return '';
+            }
+            
+            function erpinv_5310_sales_warehouse_ef(record, name) {
+                var erpinv5310_submit_flag = record.get('is_submit_flag');
+                if (erpinv5310_submit_flag == 'N') {
+                    return 'erpinv_5310_sales_combox';
+                }
+                return '';
+            }
+            
+            function erpinv_5310_sales_quantity_ef(record, name) {
+                var erpinv5310_submit_flag = record.get('is_submit_flag');
+                if (erpinv5310_submit_flag == 'N') {
+                    return 'erpinv_5310_sales_nbf_2';
+                }
+                return '';
+            }
+            
+            function erpinv_5310_sales_quantity_ef_pri(record, name) {
+                var erpinv5310_submit_flag = record.get('is_submit_flag');
+                var trade_uom = record.get('trade_uom');
+                var primary_uom = record.get('primary_uom');
+                if ((erpinv5310_submit_flag == 'N') && (trade_uom != primary_uom)) {
+                    return 'erpinv_5310_sales_nbf_2';
+                }
+                if (trade_uom == primary_uom) {
+                    return '';
+                }
+                return '';
+            }
+            
+            function erpinv_5310_doc_send_Gridcellclick(grid, row, name, record) {
+                // var metadata = record.getMeta();
+                var company_id = record.get('company_id');
+            
+                if (name == 'warehouse_name') {
+                    $('erpinv5310_warehouse_list').setQueryParameter('warehouse_type', '(\'NORMAL\')');
+                    $('erpinv5310_warehouse_list').setQueryParameter('enable_flag', 'Y');
+                    $('erpinv5310_warehouse_list').setQueryParameter('company_id', company_id);
+                    $('erpinv5310_warehouse_list').query();
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="erpinv5310_get_manual_flag_ds">
+                <a:datas dataSource="/model/erpinv5310_get_manual_flag"/>
+            </a:dataSet>
+            <a:dataSet id="erpinv5310_warehouse_list" autoQuery="false" fetchAll="true" model="erpinv.ERPINV5310.inv_sales_warehouses_lov"/>
+            <a:dataSet id="erpinv_5310_document_delivery_header_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="company_id" defaultValue="${/parameter/@company_id}"/>
+                    <a:field name="document_num"/>
+                    <a:field name="returned_flag" checkedValue="Y" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="goods_issue_flag" checkedValue="Y" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="doc_date" defaultValue="${/model/erpinv_5310_date/record/@current_date}" required="true" validator="erpinv5310_doc_date_validator"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="submit" handler="erpinv_5310_sales_submit"/>
+                    <a:event name="submitfailed" handler="erpinv_5310_sales_submitfailed"/>
+                    <a:event name="ajaxfailed" handler="erpinv_5310_sales_submitfailed"/>
+                    <a:event name="submitsuccess" handler="erpinv_5310_sales_submitsuccess"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="erpinv_5310_document_delivery_line_ds" bindName="result_ds" bindTarget="erpinv_5310_document_delivery_header_ds" model="erpinv.ERPINV5310.inv_document_delivery_lines" selectable="true">
+                <a:fields>
+                    <a:field name="company_id" defaultValue="${/parameter/@company_id}"/>
+                    <a:field name="line_number" required="true" validator="erpinv_5310_sales_num_validator"/>
+                    <a:field name="warehouse_name" displayField="warehouse_desc" options="erpinv5310_warehouse_list" required="true" returnField="warehouse_id" valueField="warehouse_id"/>
+                    <a:field name="warehouse_id"/>
+                    <a:field name="warehouse_numbers"/>
+                    <a:field name="trade_quantity" required="true" validator="erpinv_5310_trade_quantity_validator"/>
+                    <a:field name="primary_quantity" required="true" validator="erpinv_5310_primary_quantity_validator"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="erpinv_5310_doc_send_update"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <script><![CDATA[
+        	erpinv_5310_sales_delivery_data_init();
+        ]]></script>
+        <a:popupScreen>
+            <a:screenTopToolbar>
+                <a:toolbarButton id="erpinv_5310_ok_btn" className="item-rbtn-blue post" click="erpinv_5310_send_ds_ok" text="过账" width="100"/>
+                <a:gridButton id="erpinv_5310_clear_btn" bind="erpinv_5310_document_delivery_line_grid" text="清除" type="clear" width="100"/>
+                <a:toolbarButton className="item-rbtn-blue back" click="erpinv_5310_send_back" text="GLD_ACCOUNTS.BACK" width="100"/>
+            </a:screenTopToolbar>
+            <!-- <div align="center">
+                <font size="5"><![CDATA[销售发货]]></font>
+            </div> -->
+            <a:hBox width="800">
+                <a:textField name="document_num" bindTarget="erpinv_5310_document_delivery_header_ds" prompt="事务号"/>
+                <a:checkBox name="returned_flag" bindTarget="erpinv_5310_document_delivery_header_ds" prompt="退货提单"/>
+                <!-- <a:checkBox name="goods_issue_flag" bindTarget="erpinv_5310_document_delivery_header_ds" prompt="发出商品"/> -->
+                <a:datePicker name="doc_date" bindTarget="erpinv_5310_document_delivery_header_ds" prompt="事务日期"/>
+            </a:hBox>
+            <a:hBox>
+                <a:textField name="note" bindTarget="erpinv_5310_document_delivery_header_ds" prompt="备注" width="668"/>
+            </a:hBox>
+            <a:grid id="erpinv_5310_document_delivery_line_grid" autoAppend="false" bindTarget="erpinv_5310_document_delivery_line_ds" height="300" marginHeight="175" marginWidth="50" submask="false" width="860">
+                <a:columns>
+                    <a:column name="line_number" align="right" prompt="行号" width="40"/>
+                    <a:column name="item_desc" prompt="物品" width="170"/>
+                    <a:column name="trade_quantity" align="right" editorFunction="erpinv_5310_sales_quantity_ef" prompt="本次发货" width="80"/>
+                    <a:column name="trade_uom_description" prompt="交易单位" width="50"/>
+                    <a:column name="primary_quantity" align="right" editorFunction="erpinv_5310_sales_quantity_ef_pri" prompt="本次发货" width="80"/>
+                    <a:column name="primary_uom_description" prompt="主单位" width="50"/>
+                    <a:column name="warehouse_name" editorFunction="erpinv_5310_sales_warehouse_ef" prompt="发货库房" width="100"/>
+                    <a:column name="warehouse_numbers" align="right" prompt="库存数量" width="80"/>
+                    <a:column name="notes" editorFunction="erpinv_5310_sales_notes_edf" prompt="备注" width="180"/>
+                </a:columns>
+                <a:editors>
+                    <a:numberField id="erpinv_5310_sales_nbf_1" allowDecimals="false" allowNegative="false"/>
+                    <a:numberField id="erpinv_5310_sales_nbf_2" allowFormat="true" allowNegative="false"/>
+                    <!-- decimalPrecision="${/model/erpinv_5310_sales_quantity_precision/record/@value}" -->
+                    <a:textField id="erpinv_5310_sales_edf"/>
+                    <a:comboBox id="erpinv_5310_sales_combox"/>
+                </a:editors>
+                <a:events>
+                    <a:event name="cellclick" handler="erpinv_5310_doc_send_Gridcellclick"/>
+                </a:events>
+            </a:grid>
+        </a:popupScreen>
+    </a:view>
+</a:screen>

@@ -1,0 +1,496 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;QMS_TASK_TYPE&apos;" fetchAll="true" model="qms.QMS5050.fnd_flex_value_sets_query" rootPath="qms5080_task_type_data"/>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;QMS_TASK_STATUS&apos; and flex_value in (&apos;NEW&apos;,&apos;RELEASED&apos;,&apos;FEEDBACK&apos;,&apos;FINISHED&apos;,&apos;DISABLED&apos;)" fetchAll="true" model="qms.QMS5050.fnd_flex_value_sets_query" rootPath="qms5080_task_status_data"/>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;QMS_TASK_PROCESS_STATUS&apos;" fetchAll="true" model="qms.QMS5050.fnd_flex_value_sets_query" rootPath="qms5080_process_status_data"/>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;QMS_TASK_QUARTERS&apos;" fetchAll="true" model="qms.QMS5050.fnd_flex_value_sets_query" rootPath="qms5080_task_quarters_data"/>
+        <a:model-query fetchAll="true" model="qms.QMS5080.qms_task_years" rootPath="qms5080_task_years_data"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="qms5080_task_create_link" url="${/request/@context_path}/modules/qms/QMS5080/qms5080_task_maintain.screen"/>
+        <a:link id="qms5080_task_upload_link" url="${/request/@context_path}/modules/qms/QMS5080/attachment_file_upload.screen"/>
+        <a:link id="qms5080_task_import_link" url="${/request/@context_path}/modules/qms/QMS5080/qms_task_batch_import.screen"/>
+        <a:link id="qms5080_task_batch_delete_link" model="qms.QMS5080.qms_tasks" modelaction="batch_update"/>
+        <a:link id="qms5080_task_batch_release_link" model="qms.QMS5080.qms_tasks" modelaction="batch_update"/>
+        <a:link id="qms5080_task_batch_highlight_link" model="qms.QMS5080.qms_task_highlight" modelaction="batch_update"/>
+        <a:link id="qms5080_task_batch_unhighlight_link" model="qms.QMS5080.qms_task_unhighlight" modelaction="batch_update"/>
+        <a:link id="qms5080_task_batch_disable_link" model="qms.QMS5080.qms_task_disable" modelaction="batch_update"/>
+        <a:link id="qms5080_task_batch_confirm_link" model="qms.QMS5080.qms_task_confirm" modelaction="batch_update"/>
+        <style type="text/css"><![CDATA[
+
+			.status-text {
+			    color: #fff;
+			    border-radius: 2px;
+			}
+			
+			.status-red {
+			    background-color: #f6504d;
+			}
+			
+        ]]></style>
+        <script><![CDATA[
+        	//初始化年份
+        	function qms5080_init(){
+        	 	var year = new Date().getFullYear();
+        	 	//设置查询条件中年份为当前年份
+        	 	$('qms5080_task_query_ds').getCurrentRecord().set('task_year_display',year); 
+        	 	$('qms5080_task_query_ds').getCurrentRecord().set('task_year',year); 
+        	}
+        	
+        	function qms5080_task_query(){
+        		$('qms5080_task_result_ds').query();	    
+        	}
+        
+			//创建工作任务
+			function qms5080_task_query_create(){
+				new Aurora.Window({
+        	        id:'qms5080_task_create_win',
+        	        title:'布置工作任务',
+        	        url:$('qms5080_task_create_link').getUrl(),
+        	        fullScreen:true
+        	    });
+        	    $('qms5080_task_create_win').on('close', function(){
+        	        qms5080_task_query();
+        	    });
+			}
+			
+			//删除工作任务
+			function qms5080_task_query_delete(){
+			 	var records = $('qms5080_task_result_ds').getSelected();
+			 	//只有新建状态的工作任务可以被发布
+        	        for(var i = 0; i < records.length; i++){
+	        	            if(records[i].get('task_status') !== 'NEW'){
+	        	             	Aurora.showMessage('${l:PROMPT}', '仅有新建状态的工作任务允许被删除,请重新维护！',function(){},300,120);
+	        	             	return ;	   
+	        	            }
+	        	    }
+        	    if(records.length > 0){
+        	        Aurora.showConfirm('${l:PROMPT}', '确定删除工作任务？', function(){
+	        	        var para = [];
+	        	        for(var i = 0; i < records.length; i++){
+	        	            records[i].set('_status', 'delete');
+	        	            para.push(records[i].data);
+	        	        }
+	        	        Aurora.Masker.mask(Ext.getBody(),'正在提交...'); 
+	        	        Aurora.request({
+		        	        url:$('qms5080_task_batch_delete_link').getUrl(),
+		        	        para:para,
+		        	        success:function(){
+	        	                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function(){
+		        	                qms5080_task_query();
+		        	                Aurora.Masker.unmask(Ext.getBody()); 	
+	        	                });
+		        	        },
+		        	        failure:function(){
+		        	        	Aurora.Masker.unmask(Ext.getBody()); 	    
+		        	        },
+		        	        error:function(){
+		        	        	Aurora.Masker.unmask(Ext.getBody()); 	    
+		        	        },
+		        	        scope:this
+		        	    });
+	        	    }, function(){}, 300, 100);
+        	    }   
+			}
+			
+			//导入工作任务
+			function qms5080_task_query_load(){
+        		window.open($('qms5080_task_import_link').getUrl());
+			}
+			
+			//发布工作任务
+			function qms5080_task_query_release(){
+			 	var records = $('qms5080_task_result_ds').getSelected();
+        	    if(records.length > 0){
+        	        //只有新建状态的工作任务可以被发布
+        	        for(var i = 0; i < records.length; i++){
+	        	            if(records[i].get('task_status') !== 'NEW'){
+	        	             	Aurora.showMessage('${l:PROMPT}', '仅有新建状态的工作任务允许被发布,请重新维护！',function(){},300,120);
+	        	             	return ;	   
+	        	            }
+	        	    }
+        	        Aurora.showConfirm('${l:PROMPT}', '确定发布工作任务？', function(){
+	        	        var para = [];
+	        	        for(var i = 0; i < records.length; i++){
+	        	            records[i].set('_status', 'execute');
+	        	            para.push(records[i].data);
+	        	        }
+	        	        Aurora.Masker.mask(Ext.getBody(),'正在提交...'); 
+	        	        Aurora.request({
+		        	        url:$('qms5080_task_batch_release_link').getUrl(),
+		        	        para:para,
+		        	        success:function(){
+	        	                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function(){
+		        	                qms5080_task_query();
+		        	                Aurora.Masker.unmask(Ext.getBody()); 	
+	        	                });
+		        	        },
+		        	        failure:function(){
+		        	        	Aurora.Masker.unmask(Ext.getBody()); 	    
+		        	        },
+		        	        error:function(){
+		        	        	Aurora.Masker.unmask(Ext.getBody()); 	    
+		        	        },
+		        	        scope:this
+		        	    });
+	        	    }, function(){}, 300, 100);
+        	    }      
+			}
+			
+			//终止工作任务
+			function qms5080_task_query_disable(){
+				var records = $('qms5080_task_result_ds').getSelected();
+        	    if(records.length > 0){
+        	        //只有新建状态的工作任务可以被发布
+        	        for(var i = 0; i < records.length; i++){
+        	            	if((records[i].get('task_status') === 'DISABLED')){
+	        	             	Aurora.showMessage('${l:PROMPT}', '工作任务已经被终止！',function(){},300,120);
+	        	             	return ;	   
+	        	            }
+	        	            if((records[i].get('task_status') === 'NEW') || (records[i].get('task_status') === 'DELETED') || (records[i].get('task_status') === 'FINISHED')){
+	        	             	Aurora.showMessage('${l:PROMPT}', '新建,已完成的工作任务不允许被终止,请重新维护！',function(){},300,120);
+	        	             	return ;	   
+	        	            }
+	        	    }
+        	        Aurora.showConfirm('${l:PROMPT}', '确定终止工作任务？', function(){
+	        	        var para = [];
+	        	        for(var i = 0; i < records.length; i++){
+	        	            records[i].set('_status', 'execute');
+	        	            para.push(records[i].data);
+	        	        }
+	        	        Aurora.Masker.mask(Ext.getBody(),'正在提交...'); 
+	        	        Aurora.request({
+		        	        url:$('qms5080_task_batch_disable_link').getUrl(),
+		        	        para:para,
+		        	        success:function(){
+	        	                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function(){
+		        	                qms5080_task_query();
+		        	                Aurora.Masker.unmask(Ext.getBody()); 	
+	        	                });
+		        	        },
+		        	        failure:function(){
+		        	        	Aurora.Masker.unmask(Ext.getBody()); 	    
+		        	        },
+		        	        error:function(){
+		        	        	Aurora.Masker.unmask(Ext.getBody()); 	    
+		        	        },
+		        	        scope:this
+		        	    });
+	        	    }, function(){}, 300, 100);
+        	    }   
+			}
+			
+			
+			//核准完成工作任务
+			function qms5080_task_query_confirm(){
+			 	var records = $('qms5080_task_result_ds').getSelected();
+        	    if(records.length > 0){
+        	        //只有新建状态的工作任务可以被发布
+        	        for(var i = 0; i < records.length; i++){
+	        	            if(records[i].get('task_status') !== 'FINISHED'){
+	        	             	Aurora.showMessage('${l:PROMPT}', '仅有已完成状态的工作任务允许被核准完成,请重新维护！',function(){},300,120);
+	        	             	return ;	   
+	        	            }
+	        	    }
+        	        Aurora.showConfirm('${l:PROMPT}', '确定核准完成？', function(){
+	        	        var para = [];
+	        	        for(var i = 0; i < records.length; i++){
+	        	            records[i].set('_status', 'execute');
+	        	            para.push(records[i].data);
+	        	        }
+	        	        Aurora.Masker.mask(Ext.getBody(),'正在提交...'); 
+	        	        Aurora.request({
+		        	        url:$('qms5080_task_batch_confirm_link').getUrl(),
+		        	        para:para,
+		        	        success:function(){
+	        	                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function(){
+		        	                qms5080_task_query();
+		        	                Aurora.Masker.unmask(Ext.getBody()); 	
+	        	                });
+		        	        },
+		        	        failure:function(){
+		        	        	Aurora.Masker.unmask(Ext.getBody()); 	    
+		        	        },
+		        	        error:function(){
+		        	        	Aurora.Masker.unmask(Ext.getBody()); 	    
+		        	        },
+		        	        scope:this
+		        	    });
+	        	    }, function(){}, 300, 100);
+        	    }       
+			}
+			
+			//高关注标识
+			function qms5080_task_query_highlight_enable(){
+			 	var records = $('qms5080_task_result_ds').getSelected();
+        	    if(records.length > 0){
+        	        Aurora.showConfirm('${l:PROMPT}', '确定高关注标识？', function(){
+	        	        var para = [];
+	        	        for(var i = 0; i < records.length; i++){
+	        	            records[i].set('_status', 'execute');
+	        	            para.push(records[i].data);
+	        	        }
+	        	        Aurora.Masker.mask(Ext.getBody(),'正在提交...'); 
+	        	        Aurora.request({
+		        	        url:$('qms5080_task_batch_highlight_link').getUrl(),
+		        	        para:para,
+		        	        success:function(){
+	        	                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function(){
+		        	                qms5080_task_query();
+		        	                Aurora.Masker.unmask(Ext.getBody()); 	
+	        	                });
+		        	        },
+		        	        failure:function(){
+		        	        	Aurora.Masker.unmask(Ext.getBody()); 	    
+		        	        },
+		        	        error:function(){
+		        	        	Aurora.Masker.unmask(Ext.getBody()); 	    
+		        	        },
+		        	        scope:this
+		        	    });
+	        	    }, function(){}, 300, 100);
+        	    }      
+			}
+			
+			//取消高光度标识
+			function qms5080_task_query_highlight_disable(){
+			 	var records = $('qms5080_task_result_ds').getSelected();
+        	    if(records.length > 0){
+        	        Aurora.showConfirm('${l:PROMPT}', '确定取消高关注标识？', function(){
+	        	        var para = [];
+	        	        for(var i = 0; i < records.length; i++){
+	        	            records[i].set('_status', 'execute');
+	        	            para.push(records[i].data);
+	        	        }
+	        	        Aurora.Masker.mask(Ext.getBody(),'正在提交...'); 
+	        	        Aurora.request({
+		        	        url:$('qms5080_task_batch_unhighlight_link').getUrl(),
+		        	        para:para,
+		        	        success:function(){
+	        	                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function(){
+		        	                qms5080_task_query();
+		        	                Aurora.Masker.unmask(Ext.getBody()); 	
+	        	                });
+		        	        },
+		        	        failure:function(){
+		        	        	Aurora.Masker.unmask(Ext.getBody()); 	    
+		        	        },
+		        	        error:function(){
+		        	        	Aurora.Masker.unmask(Ext.getBody()); 	    
+		        	        },
+		        	        scope:this
+		        	    });
+	        	    }, function(){}, 300, 100);
+        	    }         
+			}
+			
+			//任务号渲染
+			function qms5080_task_code_renderer(value, record, name){
+			    /*if(record.get('highlight_flag') === 'Y'){
+			     	return '<div class="status-text status-red"><a class="status-red" href="javascript:qms5080_task_query_maintain('+record.get('task_id')+');">'+value+'</a></div>';      
+			    } else {
+			    	return '<a href="javascript:qms5080_task_query_maintain('+record.get('task_id')+');">'+value+'</a>';       
+			    } */
+			    return '<a href="javascript:qms5080_task_query_maintain('+record.get('task_id')+');">'+value+'</a>';
+			}
+			
+			//任务状态渲染
+			function qms5080_task_status_renderer(value, record, name){
+				if(record.get('highlight_flag') === 'Y'){
+			     	return '<div class="status-text status-red">'+value+'</div>';      
+			    } else {
+			    	return value;       
+			    } 	   
+			}
+			
+			//附件信息渲染
+			function qms5080_attachment_renderer(value, record, name){
+				return '<a href="javascript:qms5080_task_query_attachment('+record.get('task_id')+');">上传/下载</a>';         
+			}
+
+			
+			//工作任务维护
+			function qms5080_task_query_maintain(task_id){
+				new Aurora.Window({
+        	        id:'qms5080_task_create_win',
+        	        title:'布置工作任务',
+        	        url:$('qms5080_task_create_link').getUrl()+'?task_id='+task_id,
+        	        fullScreen:true
+        	    });
+        	    $('qms5080_task_create_win').on('close', function(){
+        	        qms5080_task_query();
+        	    });    
+			}
+			
+			//附件上传下载
+			function qms5080_task_query_attachment(task_id){
+				new Aurora.Window({
+	                    id: 'qms5080_task_qeury_upload_win',
+	                    title: '${l:ATM.UPLOAD_ATTACHMENT}',
+	                    url: $('qms5080_task_upload_link').getUrl()+'?pkvalue='+task_id+'&qms_task_file=QMS_TASK_FILE&qms_task_feedback_file=QMS_TASK_FEEDBACK_FILE',
+	                    width: 900,
+	                    height: 500
+	            }); 
+	            $('qms5080_task_qeury_upload_win').on('close', function(){
+        	        qms5080_task_query();
+        	    });	   
+			}
+		]]></script>
+        <a:dataSets>
+            <a:dataSet id="qms5080_yes_no_ds" lookupCode="YES_NO"/>
+            <a:dataSet id="qms5080_years_ds">
+                <a:datas dataSource="qms5080_task_years_data"/>
+            </a:dataSet>
+            <a:dataSet id="qms5080_months_ds">
+                <a:datas>
+                    <a:record name="1" code="1"/>
+                    <a:record name="2" code="2"/>
+                    <a:record name="3" code="3"/>
+                    <a:record name="4" code="4"/>
+                    <a:record name="5" code="5"/>
+                    <a:record name="6" code="6"/>
+                    <a:record name="7" code="7"/>
+                    <a:record name="8" code="8"/>
+                    <a:record name="9" code="9"/>
+                    <a:record name="10" code="10"/>
+                    <a:record name="11" code="11"/>
+                    <a:record name="12" code="12"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="qms5080_task_type_ds">
+                <a:datas dataSource="qms5080_task_type_data"/>
+            </a:dataSet>
+            <a:dataSet id="qms5080_task_status_ds">
+                <a:datas dataSource="qms5080_task_status_data"/>
+            </a:dataSet>
+            <a:dataSet id="qms5080_process_status_ds">
+                <a:datas dataSource="qms5080_process_status_data"/>
+            </a:dataSet>
+            <a:dataSet id="qms5080_task_quarters_ds">
+                <a:datas dataSource="qms5080_task_quarters_data"/>
+            </a:dataSet>
+            <a:dataSet id="qms5080_task_query_ds" autoCreate="true" model="qms.QMS5080.qms_tasks">
+                <a:fields>
+                    <a:field name="task_year_display" displayField="year_name" options="qms5080_years_ds" returnField="task_year" valueField="year_name"/>
+                    <a:field name="task_quarter_display" displayField="flex_desc" options="qms5080_task_quarters_ds" returnField="task_quarter" valueField="flex_value"/>
+                    <a:field name="task_status_display" displayField="flex_desc" options="qms5080_task_status_ds" returnField="task_status" valueField="flex_value"/>
+                    <a:field name="task_month_display" displayField="name" options="qms5080_months_ds" returnField="task_month" valueField="code"/>
+                    <a:field name="task_month_from" displayField="name" options="qms5080_months_ds" returnField="task_month_from" valueField="code"/>
+                    <a:field name="task_month_to" displayField="name" options="qms5080_months_ds" returnField="task_month_to" valueField="code"/>
+                    <a:field name="vendor_desc" lovHeight="530" lovService="qms.QMS5050.pur_vendors_lov" lovWidth="530" title="任务对象选择">
+                        <a:mapping>
+                            <a:map from="vendor_id" to="vendor_id"/>
+                            <a:map from="vendor_name" to="vendor_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="person_in_charge_display" lovHeight="530" lovService="qms.QMS5080.sys_user_lov" lovWidth="530" title="任务责任人选择">
+                        <a:mapping>
+                            <a:map from="employee_id" to="person_in_charge"/>
+                            <a:map from="name" to="person_in_charge_display"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="qms5080_task_result_ds" autoCount="true" autoPageSize="true" model="qms.QMS5080.qms_tasks" queryDataSet="qms5080_task_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="task_status_display" displayField="flex_desc" options="qms5080_task_status_ds" returnField="task_status" valueField="flex_value"/>
+                    <a:field name="process_status_display" displayField="flex_desc" options="qms5080_process_status_ds" returnField="process_status" valueField="flex_value"/>
+                    <a:field name="task_type_display" displayField="flex_desc" options="qms5080_task_type_ds" required="true" returnField="task_type" valueField="flex_value"/>
+                    <a:field name="task_quarter_display" displayField="flex_desc" options="qms5080_task_quarters_ds" returnField="task_quarter" valueField="flex_value"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="qms5080_task_query_create" text="创建工作任务" width="100"/>
+                <a:toolbarButton click="qms5080_task_query_delete" text="删除工作任务" width="100"/>
+                <a:toolbarButton click="qms5080_task_query_load" text="导入工作任务" width="100"/>
+                <a:toolbarButton click="qms5080_task_query_release" text="发布工作任务" width="100"/>
+                <a:toolbarButton click="qms5080_task_query_disable" text="终止工作任务" width="100"/>
+                <a:toolbarButton click="qms5080_task_query_confirm" text="核准完成" width="100"/>
+                <a:toolbarButton click="qms5080_task_query_highlight_enable" text="高关注标识" width="100"/>
+                <a:toolbarButton click="qms5080_task_query_highlight_disable" text="取消高关注" width="100"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="qms5080_task_query_ds" resultTarget="qms5080_task_result_ds" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:hBox labelWidth="110">
+                        <a:comboBox name="task_year_display" bindTarget="qms5080_task_query_ds" prompt="任务年度" width="150">
+                            <a:events>
+                                <a:event name="enterdown" handler="qms5080_task_query"/>
+                            </a:events>
+                        </a:comboBox>
+                        <a:comboBox name="task_quarter_display" bindTarget="qms5080_task_query_ds" prompt="任务季度" width="150">
+                            <a:events>
+                                <a:event name="enterdown" handler="qms5080_task_query"/>
+                            </a:events>
+                        </a:comboBox>
+                        <a:comboBox name="task_month_display" bindTarget="qms5080_task_query_ds" prompt="任务月度" width="150">
+                            <a:events>
+                                <a:event name="enterdown" handler="qms5080_task_query"/>
+                            </a:events>
+                        </a:comboBox>
+                    </a:hBox>
+                </a:formToolBar>
+                <a:formBody>
+                    <a:hBox labelWidth="110">
+                        <a:textField name="task_code" bindTarget="qms5080_task_query_ds" width="150">
+                            <a:events>
+                                <a:event name="enterdown" handler="qms5080_task_query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:comboBox name="task_month_from" bindTarget="qms5080_task_query_ds" prompt="任务月度从" width="150">
+                            <a:events>
+                                <a:event name="enterdown" handler="qms5080_task_query"/>
+                            </a:events>
+                        </a:comboBox>
+                        <a:comboBox name="task_month_to" bindTarget="qms5080_task_query_ds" prompt="任务月度至" width="150">
+                            <a:events>
+                                <a:event name="enterdown" handler="qms5080_task_query"/>
+                            </a:events>
+                        </a:comboBox>
+                        <a:comboBox name="task_status_display" bindTarget="qms5080_task_query_ds" prompt="任务状态" width="150">
+                            <a:events>
+                                <a:event name="enterdown" handler="qms5080_task_query"/>
+                            </a:events>
+                        </a:comboBox>
+                    </a:hBox>
+                    <a:hBox labelWidth="110">
+                        <a:lov name="vendor_desc" bindTarget="qms5080_task_query_ds" width="150">
+                            <a:events>
+                                <a:event name="enterdown" handler="qms5080_task_query"/>
+                            </a:events>
+                        </a:lov>
+                        <a:lov name="person_in_charge_display" bindTarget="qms5080_task_query_ds" prompt="任务责任人" width="150">
+                            <a:events>
+                                <a:event name="enterdown" handler="qms5080_task_query"/>
+                            </a:events>
+                        </a:lov>
+                    </a:hBox>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid bindTarget="qms5080_task_result_ds" marginHeight="180" marginWidth="80" navBar="true" width="1000">
+                <a:columns>
+                    <a:column name="task_status_display" align="center" prompt="任务状态" renderer="qms5080_task_status_renderer" width="80"/>
+                    <a:column name="task_code" align="center" renderer="qms5080_task_code_renderer" sortable="true" width="80"/>
+                    <a:column name="task_type_display" align="center" prompt="任务类型" width="80"/>
+                    <a:column name="task_title"/>
+                    <a:column name="vendor_desc"/>
+                    <a:column name="process_status_display" align="center" prompt="进展状态" width="80"/>
+                    <a:column name="person_in_charge_display" align="center" width="80"/>
+                    <a:column name="plan_start_date" align="center" renderer="Aurora.formatDate" sortable="true" width="80"/>
+                    <a:column name="plan_end_date" align="center" renderer="Aurora.formatDate" sortable="true" width="80"/>
+                    <a:column name="task_year" align="right" sortable="true" width="60"/>
+                    <a:column name="task_quarter_display" align="center" prompt="任务季度" sortable="true" width="60"/>
+                    <a:column name="task_month" align="right" sortable="true" width="60"/>
+                    <a:column name="release_again_sum" align="right" sortable="true" width="65"/>
+                    <a:column name="attachment_info" align="center" prompt="附件信息" renderer="qms5080_attachment_renderer" width="80"/>
+                    <a:column name="attachment_counts" align="right" prompt="附件个数" width="60"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+        <script><![CDATA[
+        	qms5080_init();
+        ]]></script>
+    </a:view>
+</a:screen>

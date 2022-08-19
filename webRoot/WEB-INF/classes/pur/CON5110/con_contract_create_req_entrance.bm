@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        dp.demand_pool_id pur_key_id,
+                        NVL(dp.es_req_number, dp.req_number) req_number_es, --采购申请号
+                        dp.line_num,                                        --行号
+                        t1.vendor_id,                                       --供应商ID
+                        t1.vendor_code,                                     --供应商代码
+                        t1.vendor_desc,                                     --供应商描述
+                        h.own_company_id,                                   --公司ID
+                        (SELECT
+                            company_code
+                        FROM
+                            fnd_companies_vl v1
+                        WHERE
+                            v1.company_id = h.own_company_id
+                        ) company_code,                                          --公司代码
+                        NVL(t1.item_name, dp.item_description) item_description, --物料名称
+                        NVL(t1.item_code, dp.item_code) item_code,               --物料编码
+                        NVL(t1.allotted_quantity, dp.quantity) quantity,         --需求数量
+                        NVL(
+                        (SELECT
+                            SUM(ccl.quantity)
+                        FROM
+                            con_contract_lines_new ccl,
+                            con_contract_headers_new cch
+                        WHERE
+                            ccl.source_ref_id      = dp.demand_pool_id AND
+                            ccl.source_ref_type    = 'PUR_REQ'AND
+                            cch.vendor_id          = NVL(t1.vendor_id,cch.vendor_id) AND
+                            cch.contract_header_id = ccl.contract_header_id AND
+                            cch.status            <> 'CANCELED'
+                        ), 0) quantity_created_num, --已创建合同数量
+                        (
+                            CASE dp.sourcing_flag
+                                WHEN 'N'
+                                THEN dp.unit_price
+                                ELSE t1.unit_price
+                            END) unit_price, --单价
+                        t1.tax_type_rate,    --税率
+                        t1.currency_code,    --币种
+                        '采购申请' doc_type,     --单据类型
+                        'PUR_REQ' pur_req_type,
+                        TO_CHAR(dp.need_by_date, 'yyyy-mm-dd') need_by_date, --需求日期
+                        dp.req_status,                                       --寻源状态
+                        (
+                            CASE dp.req_status
+                                WHEN 'FINISHED'
+                                THEN 'Y'
+                                ELSE 'N'
+                            END) AS status_flag,
+                        t1.document_number,      --寻源单号
+                        t1.pur_organization_code --采购组织
+                    FROM
+                        (SELECT
+                            p.demand_pool_id pur_key_id,
+                            r.vendor_id, --供应商id
+                            (SELECT
+                                v.display_vendor_code
+                            FROM
+                                pur_vendors v
+                            WHERE
+                                v.vendor_id = r.vendor_id
+                            ) vendor_code, --供应商代码
+                            (SELECT
+                                pv.full_name
+                            FROM
+                                pur_vendors_vl pv
+                            WHERE
+                                pv.vendor_id     = r.vendor_id AND
+                                pv.business_group=p.business_group
+                            ) vendor_desc,          --供应商名称
+                            r.item_name,            --物料名称
+                            r.item_code,            --物料编码
+                            fl.allotted_quantity,   --分配数量
+                            r.unit_price,           --单价
+                            r.tax_type_rate,        --税率
+                            r.currency_code,        --币种
+                            r.document_number,      --寻源单号
+                            r.pur_organization_code --采购组织
+                        FROM
+                            pur_demand_pool p,
+                            pur_req_headers h,
+                            pur_req_lines l,
+                            pur_rfx_headers rh,
+                            pur_rfx_ln_items li,
+                            pur_rfx_feedback_lines fl,
+                            pur_purchase_info_records r
+                        WHERE
+                            p.sourcing_doc_number = r.document_number AND
+                            fl.feedback_line_id   = r.source_id AND
+                            p.sourcing_doc_number = rh.rfx_number AND
+                            p.req_header_id       = li.req_header_id AND
+                            p.req_line_id         = li.req_line_id AND
+                            p.req_header_id       = h.req_header_id AND
+                            p.req_line_id         = l.req_line_id AND
+                            fl.rfx_line_item_id   = li.rfx_line_item_id AND
+                            rh.rfx_header_id      = li.rfx_header_id
+                        ) t1,
+                        pur_demand_pool dp,
+                        pur_req_headers h
+                    WHERE
+                        dp.demand_pool_id = t1.pur_key_id(+) AND
+                        h.req_header_id   = dp.req_header_id AND
+                        (
+                            dp.req_status <> 'SOURCING' OR
+                            dp.req_status IS NULL
+                        )
+                        AND
+                        dp.business_group = ${/session/@business_group}
+                    ) v1 #WHERE_CLAUSE#
+                ORDER BY
+                    req_number_es DESC,
+                    line_num ASC
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+            begin
+			  con_contract_pkg.con_contract_create(p_pur_type           =>${@pur_req_type},
+			                                       p_contract_header_id =>${@contract_header_id},
+			                                       p_pur_key            =>${@pur_key_id},
+			                                       p_user_id            =>${/session/@user_id},
+			                                       p_vendor_id          =>${@vendor_id});
+			end;
+         
+         ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:update-sql><![CDATA[
+            begin
+			  con_contract_pkg.con_contract_create_manual(p_contract_header_id =>${@contract_header_id},
+			                                              p_user_id            =>${/session/@user_id});
+			end;
+         
+         ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter name="quantity" expression="v1.quantity&gt;v1.quantity_created_num"/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field name="status_flag" queryExpression="(v1.status_flag =${@status_flag} or ${@status_flag} = &apos;N&apos;)"/>
+        <bm:query-field name="vender_code" queryExpression="(v1.vender_code like &apos;%&apos;||${@vender_code}||&apos;%&apos;)"/>
+        <bm:query-field name="vendor_desc" queryExpression="(v1.vendor_desc like &apos;%&apos;||${@vendor_desc}||&apos;%&apos;)"/>
+        <bm:query-field name="item_code" queryExpression="(v1.item_code like &apos;%&apos;||${@item_code}||&apos;%&apos;)"/>
+        <bm:query-field name="item_description" queryExpression="(replace(replace(v1.item_description,&apos;（&apos;,&apos;(&apos;),&apos;）&apos;,&apos;)&apos;)           like &apos;%&apos;||${@item_description}||&apos;%&apos;)"/>
+        <bm:query-field name="document_number" queryExpression="(v1.document_number like &apos;%&apos;||${@document_number}||&apos;%&apos;)"/>
+        <bm:query-field name="req_number_es" queryExpression="(v1.req_number_es like &apos;%&apos;||${@req_number_es}||&apos;%&apos;)"/>
+        <bm:query-field name="line_num" queryExpression="(v1.line_num like &apos;%&apos;||${@line_num}||&apos;%&apos;)"/>
+    </bm:query-fields>
+</bm:model>

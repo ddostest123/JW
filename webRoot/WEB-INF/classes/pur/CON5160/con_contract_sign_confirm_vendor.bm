@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Leah  
+    $Date: 2015-3-19 下午12:37:49  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" alias="t1" needAccessControl="false">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                select contract_header_id,
+				       company_id,
+				       contract_type_id,
+				       contract_number,
+				       status,
+				       document_number,
+				       document_desc,
+				       to_char(document_date,'YYYY-MM-DD') document_date,
+				       to_char(start_date,'YYYY-MM-DD') start_date,
+				       to_char(end_date,'YYYY-MM-DD') end_date,
+				       currency_code,
+				       amount,
+				       unit_id,
+				       employee_id,
+				       payment_method,
+				       payment_term_id,
+				       partner_category,
+				       partner_id,
+				       version_number,
+				       version_desc,
+				       note,
+				       project_id,
+				       created_by,
+				       creation_date,
+				       last_updated_by,
+				       last_update_date,
+				       pur_organization_id,
+				       vendor_id,
+				       archive_number,
+				       pur_buyer_id,
+				       is_manual,
+				       (select pv.BUYER_DESC
+				          from pur_buyers_vl pv
+				         where pv.BUYER_id = t1.pur_buyer_id) pur_buyer_desc,
+				       (select t.short_name
+				          from pur_vendors_vl t
+				         where t.VENDOR_ID = t1.vendor_id) vendor_desc,
+				       (select t.vendor_code
+				          from pur_vendors_vl t
+				         where t.VENDOR_ID = t1.vendor_id) vendor_code,
+				       (select t1.description_text
+				          from fnd_flex_values     t,
+				               fnd_descriptions    t1,
+				               FND_FLEX_VALUE_SETS t2
+				         where t1.description_id = t.description_id
+				           and t1.language = userenv('lang')
+				           and t.flex_value_set_id = t2.flex_value_set_id
+				           and t2.flex_value_set_code = 'CONTRACT_STATUS_NEW'
+				           and t.flex_value = t1.status) status_desc,
+				        (select sum(l.quantity * l.unit_price)
+				          from con_contract_lines_new l
+				         where l.contract_header_id = t1.contract_header_id) amount,
+				         (select t.description
+				          from pur_organizations_vl t
+				         where t.pur_organization_id = t1.pur_organization_id) pur_organization_name,
+				         (select t.type_desc
+				          from pur_con_types t
+				         where t.con_type_id = t1.contract_type_id) contract_type_desc,
+				       (select fv.COMPANY_CODE
+				          from fnd_companies_vl fv
+				         where fv.company_id = t1.company_id) company_code
+				  from con_contract_headers_new t1
+				 #WHERE_CLAUSE#
+				 order by t1.document_date desc
+        ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+            DECLARE
+            l_pur_req_operation_record pur_req_operation_records%ROWTYPE;
+            status varchar2(100);
+            begin 
+			  update con_contract_headers_new t
+			     set t.status = ${@status}
+			   where t.contract_header_id = ${@contract_header_id};
+			   
+			   update con_contract_partners_new t
+				   set t.signing_date = sysdate
+				 where t.contract_header_id =${@contract_header_id};
+			status := ${@status};
+              if status = 'BACKED' then
+			       l_pur_req_operation_record.status             := 'BACKED';
+                   l_pur_req_operation_record.status_desc        := '退回';
+              else
+                   l_pur_req_operation_record.status             := 'FINISHED';
+                   l_pur_req_operation_record.status_desc        := '完成';     
+			  end if;
+			
+			   SELECT
+                        pur_req_operation_records_s.nextval
+                    INTO
+                        l_pur_req_operation_record.record_id
+                    FROM
+                        dual;
+                        
+                    SELECT
+                        su.user_id,
+                        su.description
+                    INTO
+                        l_pur_req_operation_record.user_id,
+                        l_pur_req_operation_record.user_name
+                    FROM
+                        sys_user su
+                    WHERE
+                        su.user_id                             = ${/session/@user_id};
+                        
+                    l_pur_req_operation_record.operation_table    := 'con_contract_headers_new';
+                    l_pur_req_operation_record.operation_table_id := ${@contract_header_id};
+                    l_pur_req_operation_record.created_by         := ${/session/@user_id};
+                    l_pur_req_operation_record.creation_date      := SYSDATE;
+                    l_pur_req_operation_record.last_updated_by    := ${/session/@user_id};
+                    l_pur_req_operation_record.last_update_date   := SYSDATE;
+                    INSERT INTO pur_req_operation_records VALUES l_pur_req_operation_record;	 
+			end;
+        ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter name="status" expression="t1.status=&apos;APPROVED&apos;"/>
+        <bm:data-filter name="vendor_id" expression="t1.vendor_id in (select pv.vendor_id from pur_vendors_vl pv,fnd_companies_vl fc where pv.coop_company_id = fc.company_id and fc.business_group =${/session/@business_group})"/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field name="status" queryExpression="t1.status=${@status}"/>
+        <!-- <bm:query-field name="vendor_id" queryExpression="t1.vendor_id=${@vendor_id}"/> -->
+        <bm:query-field name="company_id" queryExpression="t1.company_id=${@company_id}"/>
+        <bm:query-field name="contract_number" queryExpression="t1.contract_number like &apos;%&apos;||${@contract_number}||&apos;%&apos;"/>
+        <bm:query-field name="document_desc" queryExpression="t1.document_desc like &apos;%&apos;||${@document_desc}||&apos;%&apos;"/>
+        <bm:query-field name="pur_organization_id" queryExpression="t1.pur_organization_id=${@pur_organization_id}"/>
+        <bm:query-field name="document_date_from" queryExpression="t1.document_date&gt;=to_date(${@document_date_from},&apos;YYYY-MM-DD&apos;)"/>
+        <bm:query-field name="document_date_to" queryExpression="t1.document_date&lt;=to_date(${@document_date_to},&apos;YYYY-MM-DD&apos;)"/>
+        <bm:query-field name="contract_type_id" queryExpression="t1.contract_type_id=${@contract_type_id}"/>
+        <bm:query-field name="pur_buyer_id" queryExpression="t1.pur_buyer_id=${@pur_buyer_id}"/>
+    </bm:query-fields>
+</bm:model>

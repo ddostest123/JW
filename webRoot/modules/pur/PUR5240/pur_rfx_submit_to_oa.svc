@@ -1,0 +1,233 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: zc  
+    $Date: 2018-8-30 下午7:49:14  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:service xmlns:t="aurora.application.action" xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <p:echo/>
+        <a:model-query defaultWhereClause="v.suggested_flag = &apos;Y&apos;" fetchAll="true" model="pur.PUR5240.pur_rfx_feedback_all" rootPath="detail"/>
+        <a:model-query fetchAll="true" model="pur.PUR5240.pur_rfx_geturl_to_oa" rootPath="url"/>
+        <a:model-query fetchAll="true" model="cux.KINWONG.public.pur_get_tcode_to_oa" rootPath="tcode"/>
+        <a:rest-invoker acceptLanguage="zh-CN,zh;q=0.8" cacheControl="no-cache" contentType="application/json;charset=UTF-8" raiseExceptionOnError="true" requestMethod="GET" returnPath="/soapResponse/USER" url="${/model/url/record/@get_user_url}"/>
+        <!-- <a:model-execute model="pur.PUR5240.pur_rfx_check_price_submit"/> -->
+        <p:set field="/parameter/@userName" sourceField="/soapResponse/USER/@userName"/>
+        <s:server-script><![CDATA[
+            var logger = $logger('server-script');
+            
+            function log(msg) {
+                logger.info(msg);
+            }
+            var para = $ctx.parameter;
+            var dataList = $ctx.model.getChild('detail').getChildren();
+            var data = {};
+            
+            for (var i = 0;i < dataList.length;i++) {
+                data[dataList[i].vendor_desc] = [];
+            }
+            for (var i = 0;i < dataList.length;i++) {
+                data[dataList[i].vendor_desc].push(dataList[i]);
+            }
+            //获取token
+            // var url = $ctx.model.getChild('url').getChild('record').get_token + para.userName;
+            log("para.userName:"+para.userName);
+            var url = $ctx.model.getChild('url').getChild('record').get_token + "liwang02";
+            log("token_url:"+url);
+            var token = Packages.com.jw.httpclient_request.jw_for_http.jw_getToken(url);
+            log("token:"+token);
+            log(dataList.length);
+            //是否降价报价
+            var is_down_price = '是';
+            var tableListAll = new CompositeMap('tableListAll');
+            for (var name in data) {
+                var record = new CompositeMap('record');
+                //第一层
+                var topList = new CompositeMap('TableList');
+                //增加appName参数
+                var appName = new CompositeMap('appName');
+                appName.setText('collaboration');
+                topList.addChild(appName);
+                //第二层，开始增加头参数
+                var tableList = new CompositeMap('data');
+                topList.addChild(tableList);
+                
+                var draft = new CompositeMap('draft');
+                draft.setText('0');
+                tableList.addChild(draft);
+                var tCode = new CompositeMap('templateCode');
+                var tcodeValue = $ctx.model.getChild('tcode').getChild('record').quote_code;
+                tCode.setText(tcodeValue);
+                var title = new CompositeMap('subject');
+                title.setText('采购报价申请单');
+                tableList.addChild(tCode);
+                tableList.addChild(title);
+                //第三层，增加数据参数
+                var dataMap = new CompositeMap('data');
+                tableList.addChild(dataMap);
+                //报价单头
+                var table1 = new CompositeMap('formmain_24235');
+                dataMap.addChild(table1);
+                var nameList = {
+                    "报价ID": data[name][0].feedback_header_id,
+                    "报价单号": data[name][0].feedback_header_id,
+                    "业务实体": data[name][0].business_unit_name,
+                    "发起者": para.userName,
+                    "报价单日期": data[name][0].creation_date_desc,
+                    "供应商名称": data[name][0].vendor_desc,
+                    "是否寄售": data[name][0].source_type_desc,
+                    "税码": data[name][0].tax_type_code_desc,
+                    "币种": data[name][0].currency_code,
+                    "是否集采": data[name][0].is_cen_pur,
+                    "供应商代码": data[name][0].display_vendor_code,
+                    "付款条件": data[name][0].terms_name,
+                    "预约报价日期": data[name][0].creation_date_desc,
+                    "供应商地点": data[name][0].vendor_site_code,
+                    "产品线": data[name][0].production_line,
+                    "审批意见": '-8662083026441190520',
+                    "上传附件": data[name][0].feedback_header_id
+                };
+                for (var tempName in nameList) {
+                    var field = new CompositeMap(tempName);
+                    field.setText(nameList[tempName]);
+                    table1.addChild(field);
+                }
+                //报价单行
+                var row = [];
+                var i;
+                for (i = 0;i < data[name].length;i++) {
+                    row.push(new CompositeMap('formson_24236'));
+                    dataMap.addChild(row[i]);
+                    var temp_i = i + 1;
+                    var is_min_amount = 'N';
+            
+                    if (data[name][i].min_amount >= data[name][i].untax_price) {
+                        is_min_amount = 'Y';
+                    }
+                    var ladder_quantity = data[name][i].ladder_quantity?data[name][i].ladder_quantity:' ';
+                    var untax_price =data[name][i].untax_price?data[name][i].untax_price:' ';
+                    var uom_desc =data[name][i].uom_desc?data[name][i].uom_desc:' ';
+                    var pur_uom_desc =data[name][i].pur_uom_desc?data[name][i].pur_uom_desc:' ';
+                    var item_code =data[name][i].item_code?data[name][i].item_code:' ';
+                    var i1_category_name =data[name][i].i1_category_name?data[name][i].i1_category_name:' ';
+                    var i2_category_name =data[name][i].i2_category_name?data[name][i].i2_category_name:' ';
+                    var min_tax_amount =data[name][i].min_tax_amount?data[name][i].min_tax_amount:' ';
+                    var blank_currency_code =data[name][i].blank_currency_code?data[name][i].blank_currency_code:' ';
+                    var blank_site_name =data[name][i].blank_site_name?data[name][i].blank_site_name:' ';
+                    var blank_range =data[name][i].blank_range?data[name][i].blank_range:' ';
+                    var vendor_min_tax_amount =data[name][i].vendor_min_tax_amount?data[name][i].vendor_min_tax_amount:' ';
+                    var vendor_range =data[name][i].vendor_range?data[name][i].vendor_range:' ';
+                    var month_quantity_avg =data[name][i].month_quantity_avg?data[name][i].month_quantity_avg:' ';
+                    
+                    var nameList1 = {
+                        "序号": '' + temp_i,
+                        "物料名称": data[name][i].item_desc,
+                        "数量": ladder_quantity,
+                        "含税单价": data[name][i].valid_fb_retail_price,
+                        "不含税单价": untax_price,
+                        "库存单位": uom_desc,
+                        "采购单位": pur_uom_desc,
+                        "物料编码": item_code,
+                        "一级物料": i1_category_name,
+                        "二级物料": i2_category_name,
+                        "最近采购单价": min_tax_amount,
+                        "最近采购币种": blank_currency_code,
+                        "历史采购供应商": blank_site_name,
+                        "变化幅度": blank_range,
+                        "同供应商历史单价": vendor_min_tax_amount,
+                        "同供应商变动幅度": vendor_range,
+                        "平均用量": month_quantity_avg,
+                        "是否产品目录": '7008599076679731176',
+                        "最低价": is_min_amount
+                    }
+                    if (data[name][i].blank_range >= 0) {
+                        is_down_price = '否';
+                    }else if(!data[name][i].blank_range){
+                        is_down_price = '';
+                    }
+                    for (var tempName in nameList1) {
+                        var field = new CompositeMap(tempName);
+	                    field.setText(nameList1[tempName]);
+	                    row[i].addChild(field);
+                    }
+                }
+                row.push(new CompositeMap('formson_24236'));
+                dataMap.addChild(row[i]);
+                var field = new CompositeMap("1");
+                field.setText("");
+                row[i].addChild(field);
+                //降价报价回写头
+                var field = new CompositeMap('是否降价报价');
+                if(is_down_price == '是'){
+                    field.setText(data[name][0].yse_value);
+                }else{
+                    field.setText(data[name][0].no_value);
+                }
+            	table1.addChild(field);
+            	  //上传附件
+            	if(data[name][0].file_path_list){
+            	    var url = $ctx.model.getChild('url').getChild('record').post_att + token;
+	                var file_ids = Packages.com.jw.httpclient_request.jw_for_http.jw_att_getResponce(url, data[name][0].file_path_list, data[name][0].file_name_list);
+	                // var file_ids = "6033944193582909490,637131218761107636,-7557587659177967415,-3419382142517031906,7545919837734716746";
+	                log("att_url:"+url);
+	                //处理附件信息
+	                var att_arr = [];
+	                att_arr = file_ids.split(',');
+	                var attrow = [];
+	                for (var x = 0;x < att_arr.length;x++) {
+	                    //写入json
+	                    attrow.push(new CompositeMap('thirdAttachments'));
+	                    dataMap.addChild(attrow[x]);
+	                    var field1 = new CompositeMap("subReference");
+	                    field1.setText(data[name][0].feedback_header_id);
+	                    attrow[x].addChild(field1);
+	                    var field2 = new CompositeMap("fileUrl");
+	                    field2.setText(att_arr[x]);
+	                    attrow[x].addChild(field2);
+	                    var field3 = new CompositeMap("sort");
+	                    field3.setText(x);
+	                    attrow[x].addChild(field3);
+		                log("att_arr[x]:"+att_arr[x]);
+		            }
+		            attrow.push(new CompositeMap('thirdAttachments'));
+		            dataMap.addChild(attrow[x]);
+		            var field_1 = new CompositeMap("1");
+                    field_1.setText("");
+                    attrow[x].addChild(field_1);
+            	}
+                record.setText(topList.toXML());
+                log(topList.toXML());
+                tableListAll.addChild(record);
+                // var url = $ctx.model.getChild('url').getChild('record').post_url + '&key=BD2B0CCCBC954FA6';
+                var url = $ctx.model.getChild('url').getChild('record').post_url + token;
+                try {
+                    // var is = Packages.com.hand.jw_webservice.HttpUtils.urlPost(url, topList.toXML(), 'text/xml;charset=utf8', "POST", "UTF-8", "", "");
+                    var is = Packages.com.jw.httpclient_request.jw_for_http.jw_json_getResponce(url,topList.toXML(),"TableList");
+                    var ret = Packages.com.hand.jw_webservice.IOUtilsEx.newString(is, "UTF-8");
+                    log(ret);
+                    ret = JSON.parse(ret);
+                    if (ret.code == 0) {
+                        $ctx.put('/soapResponse/RESPONSE/@status', 'S');
+                    }else{
+                        $ctx.put('/soapResponse/RESPONSE/@status', 'E');
+                        $ctx.put('/soapResponse/RESPONSE/@message', ret.message);
+                        break;
+                    }
+                     
+                     // else if (ret.status == 'E') {
+                        // $ctx.put('/soapResponse/RESPONSE/@status', ret.status);
+                        // $ctx.put('/soapResponse/RESPONSE/@message', ret.message);
+                        // break;
+                    // }
+                } catch (e) {
+                    log(e)
+                }
+                log('---------------end---------------');
+            }
+           
+        ]]></s:server-script>
+        <p:echo/>
+        <t:test field="/soapResponse/RESPONSE/@status" message="${/soapResponse/RESPONSE/@message}" operator="!=" value="S"/>
+    </a:init-procedure>
+</a:service>

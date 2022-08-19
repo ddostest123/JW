@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="false">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    t.*
+                FROM
+                    (SELECT
+                        a.application_id,
+                        (SELECT
+                            v.flex_desc
+                        FROM
+                            fnd_flex_values_vl v,
+                            fnd_flex_value_sets s
+                        WHERE
+                            v.flex_value_set_id   = s.flex_value_set_id AND
+                            s.flex_value_set_code = 'SITE_AUDIT_STATUS' AND
+                            v.FLEX_VALUE          = a.status
+                        ) status_desc,
+                        a.status,
+                        a.application_number,
+                        a.vendor_code,
+                        a.vendor_name,
+                        TO_CHAR(a.visit_date, 'yyyy-mm-dd') visit_date,
+                        a.visit_date date_from,
+                        a.created_by,
+                        (SELECT su.description FROM sys_user su WHERE su.user_id = a.created_by
+                        ) user_name,
+                        TO_CHAR(a.creation_date, 'yyyy-mm-dd hh:mm:ss') creation_date,
+                        (SELECT
+                            v.flex_desc
+                        FROM
+                            fnd_flex_values_vl v,
+                            fnd_flex_value_sets s
+                        WHERE
+                            v.flex_value_set_id   = s.flex_value_set_id AND
+                            s.flex_value_set_code = 'EXAMINE_TYPE' AND
+                            v.FLEX_VALUE          = a.examine_type
+                        ) examine_type,
+                        a.examine_type examine_type_code,
+                        a.application_reason,
+                        a.field_trip_flag,
+                        a.comments,
+                        a.service_items,
+                        a.auditor,
+                        a.audit_team_leader,
+                        a.accompanying_person,
+                        TO_CHAR(a.plan_review_time, 'yyyy-mm-dd') plan_review_time,
+                        TO_CHAR(a.actual_review_time, 'yyyy-mm-dd') actual_review_time,
+                        TO_CHAR(a.audit_time, 'yyyy-mm-dd') audit_time,
+                        a.delay_date_reason,
+                        a.qsa_scores,
+                        a.qpa_scores,
+                        a.last_review_conclusion,
+                        a.review_conclusion review_conclusion_code,
+                        a.review_conclusion,
+                        TO_CHAR(a.plan_visit_date, 'yyyy-mm-dd') plan_visit_date,
+                        TO_CHAR(a.vendor_reply_date, 'yyyy-mm-dd') vendor_reply_date,
+                        TO_CHAR(a.vendor_must_reply_date, 'yyyy-mm-dd') vendor_must_reply_date,
+                        a.total_scores,
+                        fc.company_id,
+                        fc.business_group
+                    FROM
+                        kw_fnd_scene_audit_header a,
+                        fnd_companies_vl fc
+                    WHERE
+                        fc.company_code = a.vendor_code
+                    ORDER BY
+                        a.application_number DESC
+                    ) t #WHERE_CLAUSE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+	    		begin
+				  kw_field_autid_pkg.modify_field_autid_approve(p_application_id           		   => ${@application_id},
+										  					   p_service_items        			   => ${@service_items},
+										                       p_auditor         				   => ${@auditor_id},
+										                       p_audit_team_leader          	   => ${@audit_team_leader_id},
+										                       p_accompanying_person           	   => ${@accompanying_person_id},
+										                       p_plan_review_time         		   => to_date(${@plan_review_time},'yyyy-mm-dd'),
+									                       	   p_actual_review_time                => to_date(${@actual_review_time},'yyyy-mm-dd'),
+										                       p_audit_time    			           => to_date(${@audit_time},'yyyy-mm-dd'), 
+										                       p_delay_date_reason                 => ${@delay_date_reason},
+										                       p_qsa_scores                        => ${@qsa_scores},
+										                       p_qpa_scores                        => ${@qpa_scores},
+										                       p_last_review_conclusion            => ${@last_review_conclusion},
+										                       p_user_id                 		   => ${/session/@user_id} );
+				end;
+	    	]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+	    		begin
+				  kw_field_autid_pkg.field_autid_vendor_reply(p_application_id           => ${@application_id}, 
+				                        					   p_user_id                  => ${/session/@user_id});
+				end;
+	    	]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="vendor_name" queryExpression="t.vendor_name = ${@vendor_name}"/>
+        <bm:query-field name="application_number" queryExpression="t.application_number like &apos;%&apos;||trim(${@application_number})||&apos;%&apos; "/>
+        <!-- <bm:query-field name="visit_date" queryExpression="trunc(t.date_from) &gt;= to_date(${@visit_date}, &apos;yyyy-mm-dd&apos;)"/> -->
+        <bm:query-field name="visit_date" queryExpression="trunc(t.date_from) = to_date(${@visit_date}, &apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="application_id" queryExpression="t.application_id = ${@application_id}"/>
+        <bm:query-field name="status_display" queryExpression="t.status_desc = ${@status_display}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter name="filter" expression="t.status &lt;&gt; &apos;10_NEW&apos;"/>
+        <bm:data-filter expression="(t.business_group = ${/session/@business_group} or ${/session/@business_group} = &apos;BG00000101&apos;)"/>
+    </bm:data-filters>
+    <bm:features>
+        <!--  <authority foundation_code="FIELD_AUTID_QUERY">
+        <authority-segment source_alias="v" source_name="company_id" type="VENDOR"/>
+    </authority>
+        <s:bm-script><![CDATA[
+            var cx = Packages.aurora.javascript.Context.getCurrentContext();
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script> --><![CDATA[
+        
+        
+        
+        
+   
+    ]]></bm:features>
+</bm:model>

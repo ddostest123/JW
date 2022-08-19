@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:service xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <!-- 更新当前供应商的在线状态 -->
+        <s:server-script><![CDATA[
+		    importClass(Packages.aurora.plugin.hollyhock.cache.HollyhockCacheProviderRegistry);
+		    var cm = new Packages.uncertain.composite.CompositeMap();
+		    cm.put('coop_company_id', new java.lang.String($ctx.parameter.coop_company_id));
+		    cm.put('rfx_header_id', new java.lang.String($ctx.parameter.rfx_header_id));
+		    HollyhockCacheProviderRegistry.cachePut('JinkoRfaOnlineCache', cm, new java.util.Date());
+		]]></s:server-script>
+        <!-- 获取报价排名明细数据 -->
+        <a:hollyhock-cache-get cacheName="JinkoRfaRankCache" keyPath="/parameter"/>
+        <!-- 更新所有供应商的在线状态 -->
+        <a:batch-apply sourcepath="/model">
+            <s:server-script><![CDATA[
+                //返回的数据，根据公司ID和单据ID获取每个供应商的在线状态
+                importClass(Packages.aurora.plugin.hollyhock.cache.HollyhockCacheProviderRegistry);
+                var cm = new Packages.uncertain.composite.CompositeMap();
+                cm.put('coop_company_id', new java.lang.String($ctx.current_parameter.coop_company_id));
+                cm.put('rfx_header_id', new java.lang.String($ctx.current_parameter.rfx_header_id));
+                var return_date = HollyhockCacheProviderRegistry.cacheGet('JinkoRfaOnlineCache', cm);
+                
+                //根据返回最新的时间，和当前时间对比，判断在在线状态
+                var current_date = new java.util.Date();
+                if (return_date) {
+                    var seconds = (current_date.getTime() - return_date.getTime()) / 1000;
+                    if (seconds <= 60) {
+                        $ctx.current_parameter.put('@is_online', 'Y');
+                    } else {
+                        $ctx.current_parameter.put('@is_online', 'N');
+                    }
+                } else {
+                    $ctx.current_parameter.put('@is_online', 'N');
+                }
+                
+                //根据查询的竞标截止时间，计算剩余时间
+                var left_time = ($ctx.current_parameter.end_date_milliseconds - current_date.getTime()) / 1000;
+                $ctx.current_parameter.put('@left_time', left_time);
+            ]]></s:server-script>
+        </a:batch-apply>
+        <s:server-script><![CDATA[
+            var business_group = $ctx.session.business_group;
+            var model = $ctx.model;
+            var arr = model.getChildren();
+            for (i = 0;i < arr.length;i++) {
+            
+                //当招竞标单据的公开规则和竞标排名规则为【隐藏身份隐藏报价】【隐藏数量隐藏排名】，前台只展示当前供应商的数据
+                if (business_group != arr[i].coop_business_group && arr[i].open_rule == 'HIDDEN_IDENTITY_HIDDEN_QUOTN' && arr[i].ranking_rule == 'HIDE_COUNT_HIDE_RANK') {
+                    model.removeChild(arr[i])
+                }
+            
+                //除了全公开，其他情况下，其他供应商的在线状态和报价时间都是***
+                if (business_group != arr[i].coop_business_group && arr[i].open_rule != 'OPEN_IDENTITY_OPEN_QUOTN' && arr[i].ranking_rule != 'OPEN_COUNT_OPEN_RANK') {
+                    arr[i].put('@is_online', '******');
+                    arr[i].put('@is_online_desc', '******');
+                    arr[i].put('@feedback_time', '******');
+                }
+            
+                //本供应商的最新报价行数据永远显示在最上方 
+                //getData()是将对象转换成java对象，replaceChild方法只接收java对象参数
+                if (business_group == arr[i].coop_business_group && arr[i].rk) {
+                    converted_model = model.getData();
+                    var temp_cm = arr[i];
+                    converted_model.replaceChild(arr[i].getData(), arr[0].getData());
+                    converted_model.replaceChild(arr[0].getData(), temp_cm.getData());
+                }
+            }
+        ]]></s:server-script>
+        <p:echo/>
+    </a:init-procedure>
+</a:service>

@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*,
+                    ROUND(DECODE(max_value - min_value, 0, 100, 100 / (max_value - min_value) * (v.vendor_price_all - min_value)),2) AS score,
+                    pvv.vendor_id,
+                    v.vendor_all_price,
+                    SUM(v.vendor_all_price) over (partition BY v.business_unit_id, v.category_code_3 ${:@colunmn_name}) AS all_price
+                FROM
+                    (SELECT
+                        v.business_unit_id,
+                        v.business_unit_name,
+                        v.es_vendor_id,
+                        v.category_code_3,
+                        SUM(vendor_price * cur_quantity) AS vendor_price_all,
+                        SUM(discount_price * cur_quantity) AS vendor_all_price,
+                        MAX(SUM(vendor_price * cur_quantity)) over(partition BY v.business_unit_id, v.category_code_3 ${:@colunmn_name}) max_value,
+                        MIN(SUM(vendor_price * cur_quantity)) over(partition BY v.business_unit_id, v.category_code_3 ${:@colunmn_name}) min_value,
+                        SUM(cur_quantity) AS cur_quantity ${:@colunmn_name}
+                    FROM
+                        (SELECT
+                            v.business_unit_id,
+                            v.business_unit_name,
+                            v.es_vendor_id,
+                            v.category_code_3,
+                            v.virtual_code,
+                            SUM(v.cur_quantity) over(partition BY v.business_unit_name, v.category_code_3 ${:@colunmn_name}, v.virtual_code) AS cur_quantity,
+                            v.discount_price,
+                            v.discount_price - SUM(discount_price) over(partition BY v.business_unit_name, v.category_code_3 ${:@colunmn_name}, v.virtual_code) / COUNT(1) over(partition BY v.business_unit_name, v.category_code_3 ${:@colunmn_name}, v.virtual_code) AS vendor_price,
+                            SUM(discount_price) over(partition BY v.business_unit_name, v.category_code_3 ${:@colunmn_name}, v.virtual_code) AS sum_discount_price,
+                            COUNT(1) over(partition BY v.business_unit_name, v.category_code_3 ${:@colunmn_name}, v.virtual_code) AS all_count ${:@colunmn_name}
+                        FROM
+                            (SELECT
+                                v.*
+                            FROM
+                                (SELECT
+                                    v.business_unit_id,
+                                    v.business_unit_name,
+                                    v.virtual_code,
+                                    v.es_vendor_id,
+                                    v.category_code_3,
+                                    v.discount_price,
+                                    v.cur_quantity,
+                                    SUM(v.cur_quantity) over(partition BY virtual_code, business_unit_id, category_code_3) AS all_quantity,
+                                    SUM(v.discount_price) over(partition BY business_unit_id, virtual_code, category_code_3) AS group_price ${:@colunmn_name}
+                                FROM
+                                    (SELECT
+                                        prtl.business_unit_id,
+                                        fu.business_unit_name,
+                                        NVL(mci.c_attribute4, mci.display_item_code) AS virtual_code,
+                                        SUBSTR(mud.category_code, 0, 6) AS category_code_3,
+                                        pes.es_vendor_id,
+                                        fes.es_business_unit_id,
+                                        NVL(apps.cux_srm_pub.get_quota_price@ebslink(p_vendor_id => pes.es_vendor_id, p_item_code => NVL(mci.c_attribute4, mci.display_item_code), p_org_id => fes.es_business_unit_id), 0) AS discount_price,
+                                        NVL(apps.cux_srm_pub.get_item_cal_qty@ebslink(p_vendor_id => pes.es_vendor_id, p_item_code => NVL(mci.c_attribute4, mci.display_item_code), p_org_id => fes.es_business_unit_id, p_type => 2), 0) AS cur_quantity ${:@text}
+                                    FROM
+                                        mtl_system_items mci,
+                                        mtl_system_items_es mes,
+                                        cux_inv_items_vl ci,
+                                        pur_vendor_es pes,
+                                        fnd_business_unit_es fes,
+                                        fnd_business_units_vl fu,
+                                        pur_rcv_trx_lines prtl,
+                                        inv_organizations_es ie,
+                                        mtl_categories_user_defined mud,
+                                        mtl_category_classify_items mcci,
+                                        pur_quota_vendor_lines l,
+                                        pur_quota_headers h
+                                    WHERE
+                                        h.header_id              = l.header_id AND
+                                        h.rating_classify_code   = mud.rating_classify_code AND
+                                        l.vendor_id              = pes.vendor_id AND
+                                        mci.item_id              = mes.item_id AND
+                                        mcci.item_id             = mci.item_id AND
+                                        prtl.item_id             = mci.item_id AND
+                                        ci.ITEM_CODE             = mci.display_item_code AND
+                                        ci.ORGANIZATION_ID       = ie.es_inv_org_id AND
+                                        ie.inv_organization_id   = prtl.inv_organization_id AND
+                                        mud.rating_classify_code = ${/parameter/@rating_classify_code} AND
+                                        mud.category_udf_id      = mcci.category_udf_id AND
+                                        fes.business_unit_id     = prtl.business_unit_id AND
+                                        fu.business_unit_id      = prtl.business_unit_id AND
+                                        prtl.trx_date BETWEEN TRUNC(add_months(sysdate, -3), 'mm') AND TRUNC(sysdate, 'mm') AND
+                                        prtl.rcv_trx_type = 'RECEIVE_STANDARD'
+                                    GROUP BY
+                                        NVL(mci.c_attribute4, mci.display_item_code),
+                                        prtl.business_unit_id,
+                                        fu.business_unit_name,
+                                        pes.es_vendor_id,
+                                        fes.es_business_unit_id,
+                                        SUBSTR(mud.category_code, 0, 6) ${:@text1}
+                                    ) v
+                                ) v
+                            WHERE
+                                discount_price <> 0 AND
+                                all_quantity   <> 0
+                            ) v
+                        )v
+                    GROUP BY
+                        v.business_unit_id,
+                        v.business_unit_name,
+                        category_code_3,
+                        v.es_vendor_id ${:@colunmn_name}
+                    ) v,
+                    pur_vendor_es pvv
+                WHERE
+                    v.es_vendor_id = pvv.es_vendor_id
+                ORDER BY
+                    v.business_unit_name,
+                    category_code_3 ${:@colunmn_name} ,
+                    ROUND(DECODE(max_value - min_value, 0, 100, 100 / (max_value - min_value) * (v.vendor_price_all - min_value)),2) desc
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+            	DELETE
+            	FROM
+            	    ves_quota_temp_tbl v
+            	WHERE
+            	    v.rating_code     = ${/parameter/record/@rating_code} AND
+            	    v.create_date_num = TO_CHAR(sysdate,'yyyy-mm')
+        	]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+            	BEGIN
+            	    ves_quota_temp_pkg.create_quora_temp_all(
+            	    										p_business_unit_id		=>	${../../@business_unit_id},
+															p_business_unit_name	=>	${../../@business_unit_name},
+															p_category_code_3   	=>	${../../@category_code_3},
+															p_score             	=>	${@score},
+															p_quota_num         	=>	${@quota_num},
+															p_rating_code       	=>	${../../@rating_code},
+															p_vendor_id				=>  ${@vendor_id},
+															p_price					=>  ${@price},
+															p_allprice				=>  ${@allprice},
+															p_rank					=>  ${@rank},
+															p_N_ATTRIBUTE1      	=>	${../../@N_ATTRIBUTE1},
+															p_N_ATTRIBUTE2      	=>	${../../@N_ATTRIBUTE2},
+															p_N_ATTRIBUTE3      	=>	${../../@N_ATTRIBUTE3},
+															p_N_ATTRIBUTE4      	=>	${../../@N_ATTRIBUTE4},
+															p_N_ATTRIBUTE5      	=>	${../../@N_ATTRIBUTE5},
+															p_N_ATTRIBUTE6      	=>	${../../@N_ATTRIBUTE6},
+															p_N_ATTRIBUTE7      	=>	${../../@N_ATTRIBUTE7},
+															p_N_ATTRIBUTE8      	=>	${../../@N_ATTRIBUTE8},
+															p_N_ATTRIBUTE9      	=>	${../../@N_ATTRIBUTE9},
+															p_N_ATTRIBUTE10     	=>	${../../@N_ATTRIBUTE10},
+															p_N_ATTRIBUTE11     	=>	${../../@N_ATTRIBUTE11},
+															p_N_ATTRIBUTE12     	=>	${../../@N_ATTRIBUTE12},
+															p_N_ATTRIBUTE13     	=>	${../../@N_ATTRIBUTE13},
+															p_N_ATTRIBUTE14     	=>	${../../@N_ATTRIBUTE14},
+															p_N_ATTRIBUTE15     	=>	${../../@N_ATTRIBUTE15},
+															p_N_ATTRIBUTE16     	=>	${../../@N_ATTRIBUTE16},
+															p_N_ATTRIBUTE17     	=>	${../../@N_ATTRIBUTE17},
+															p_N_ATTRIBUTE18     	=>	${../../@N_ATTRIBUTE18},
+															p_N_ATTRIBUTE19     	=>	${../../@N_ATTRIBUTE19},
+															p_N_ATTRIBUTE20     	=>	${../../@N_ATTRIBUTE20},
+															p_C_ATTRIBUTE1      	=>	${../../@C_ATTRIBUTE1},
+															p_C_ATTRIBUTE2      	=>	${../../@C_ATTRIBUTE2},
+															p_C_ATTRIBUTE3      	=>	${../../@C_ATTRIBUTE3},
+															p_C_ATTRIBUTE4      	=>	${../../@C_ATTRIBUTE4},
+															p_C_ATTRIBUTE5      	=>	${../../@C_ATTRIBUTE5},
+															p_C_ATTRIBUTE6      	=>	${../../@C_ATTRIBUTE6},
+															p_C_ATTRIBUTE7      	=>	${../../@C_ATTRIBUTE7},
+															p_C_ATTRIBUTE8      	=>	${../../@C_ATTRIBUTE8},
+															p_C_ATTRIBUTE9      	=>	${../../@C_ATTRIBUTE9},
+															p_C_ATTRIBUTE10     	=>	${../../@C_ATTRIBUTE10},
+															p_C_ATTRIBUTE11     	=>	${../../@C_ATTRIBUTE11},
+															p_C_ATTRIBUTE12     	=>	${../../@C_ATTRIBUTE12},
+															p_C_ATTRIBUTE13     	=>	${../../@C_ATTRIBUTE13},
+															p_C_ATTRIBUTE14     	=>	${../../@C_ATTRIBUTE14},
+															p_C_ATTRIBUTE15     	=>	${../../@C_ATTRIBUTE15},
+															p_C_ATTRIBUTE16     	=>	${../../@C_ATTRIBUTE16},
+															p_C_ATTRIBUTE17     	=>	${../../@C_ATTRIBUTE17},
+															p_C_ATTRIBUTE18     	=>	${../../@C_ATTRIBUTE18},
+															p_C_ATTRIBUTE19     	=>	${../../@C_ATTRIBUTE19},
+															p_C_ATTRIBUTE20     	=>	${../../@C_ATTRIBUTE20},
+															p_C_ATTRIBUTE21     	=>	${../../@C_ATTRIBUTE21},
+															p_C_ATTRIBUTE22     	=>	${../../@C_ATTRIBUTE22},
+															p_C_ATTRIBUTE23     	=>	${../../@C_ATTRIBUTE23},
+															p_C_ATTRIBUTE24     	=>	${../../@C_ATTRIBUTE24},
+															p_C_ATTRIBUTE25     	=>	${../../@C_ATTRIBUTE25},
+															p_C_ATTRIBUTE26     	=>	${../../@C_ATTRIBUTE26},
+															p_C_ATTRIBUTE27     	=>	${../../@C_ATTRIBUTE27},
+															p_C_ATTRIBUTE28     	=>	${../../@C_ATTRIBUTE28},
+															p_C_ATTRIBUTE29     	=>	${../../@C_ATTRIBUTE29},
+															p_C_ATTRIBUTE30     	=>	${../../@C_ATTRIBUTE30},
+															p_C_ATTRIBUTE31     	=>	${../../@C_ATTRIBUTE31},
+															p_C_ATTRIBUTE32     	=>	${../../@C_ATTRIBUTE32},
+															p_C_ATTRIBUTE33     	=>	${../../@C_ATTRIBUTE33},
+															p_C_ATTRIBUTE34     	=>	${../../@C_ATTRIBUTE34},
+															p_C_ATTRIBUTE35     	=>	${../../@C_ATTRIBUTE35},
+															p_C_ATTRIBUTE36     	=>	${../../@C_ATTRIBUTE36},
+															p_C_ATTRIBUTE37     	=>	${../../@C_ATTRIBUTE37},
+															p_C_ATTRIBUTE38     	=>	${../../@C_ATTRIBUTE38},
+															p_C_ATTRIBUTE39     	=>	${../../@C_ATTRIBUTE39},
+															p_C_ATTRIBUTE40     	=>	${../../@C_ATTRIBUTE40},
+															p_user_id  				=>	${/session/@user_id}                    
+            	    );
+            	END;
+            	]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+        		begin
+        			ves_quota_temp_pkg.count_quota_num(p_rating_code	=> ${/parameter/record/@rating_code},
+        											   p_user_id		=> ${/session/@user_id});
+        		end;
+        	]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

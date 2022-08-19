@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="false">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    h.req_number,
+                    l.catalog_item_id sku,
+                    -- (SELECT
+                    -- d.sku
+                    -- FROM
+                    -- xy_product_detail d
+                    -- WHERE
+                    -- d.xy_product_id = l.catalog_item_id
+                    -- ) sku,
+                    l.quantity,            --数量
+                    l.currency_unit_price, --单价
+                    a.province_id,
+                    a.city_id,
+                    ph.display_po_number,
+                    a.county_id,
+                    NVL(a.town_id, 0) town_id,
+                    a.contact_name,
+                    a.mobile_phone,
+                    a.address_detail,
+                    a.email,
+                    h.req_header_id,
+                    TO_CHAR(l.need_by_date, 'YYYY-MM-DD') need_by_date,
+                    h.own_company_id,
+                    (SELECT
+                        fnd.company_full_name
+                    FROM
+                        FND_COMPANIES_VL fnd
+                    WHERE
+                        fnd.company_id = fd.company_id
+                    ) company_full_name, --从EBS取值
+                    (SELECT
+                        B.CODE_VALUE_NAME
+                    FROM
+                        SYS_CODES_VL A,
+                        SYS_CODE_VALUES_VL B
+                    WHERE
+                        A.CODE_ID    = B.CODE_ID AND
+                        A.CODE       = 'PUR_TAX_NO' AND
+                        B.CODE_VALUE =
+                        (SELECT
+                            fnd.company_code
+                        FROM
+                            FND_COMPANIES_VL fnd
+                        WHERE
+                            fnd.company_id = fd.company_id
+                        )
+                    ) tax_no,
+                    h.invoice_type,
+                    h.header_comments
+                FROM
+                    pur_req_headers_tmp h,
+                    pur_headers_all ph,
+                    fnd_business_units_vl fd,
+                    pur_req_lines_tmp l,
+                    fnd_company_delivery_addr_vl a
+                WHERE
+                    h.req_header_id     = l.req_header_id AND
+                    l.delivery_id       = a.delivery_id AND
+                    fd.business_unit_id = ph.business_unit_id AND
+                    h.req_number        = ph.comments AND
+                    h.eb_order_id      IS NULL AND
+                    h.req_header_id     =
+                    (SELECT
+                        *
+                    FROM
+                        (SELECT
+                            h.req_header_id
+                        FROM
+                            pur_req_headers_tmp h,
+                            pur_headers_all ph
+                        WHERE
+                            h.data_source           = 'ZKH' AND
+                            h.req_number            = ph.comments AND
+                            h.eb_order_id          IS NULL AND
+                            NVL(ph.CANCEL_FLAG,'N') = 'N'
+                        ORDER BY
+                            dbms_random.value()
+                        )
+                    WHERE
+                        rownum < 2
+                    ) AND
+                    NVL(ph.CANCEL_FLAG,'N') = 'N'
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:update-sql><![CDATA[
+                BEGIN
+                zkh_api_procedure_pkg.update_eb_order_num(
+                        p_order_no => ${@order_num},
+                        p_req_header_id => ${@req_header_id});
+                END;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+                BEGIN
+                zkh_api_procedure_pkg.zkh_confirm_po_flag(
+                        p_req_header_id => ${@req_header_id});
+                END;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+                BEGIN
+                 zkh_api_procedure_pkg.cancel_zkh_order(p_eb_order_id =>  ${@orderid},
+                                       p_data_sourse =>  ${@data_sourse});
+                END;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

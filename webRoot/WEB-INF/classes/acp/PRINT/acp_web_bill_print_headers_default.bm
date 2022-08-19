@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" alias="t1">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        h.header_id,
+                        (select d.term_name from acp_bill_details d where header_id = h.header_id and rownum = 1) term_name,
+                        (select tax_rate from acp_bill_lines where header_id = h.header_id and rownum =1)||'%' AS tax_rate,
+                        h.header_id invoice_header_id, --打印发票id
+                        h.owner_business_group,
+                        h.owner_company_id,
+                        h.coop_business_group,
+                        h.coop_company_id,
+                        h.bill_number,
+                        h.tax_total_amount,
+                        h.bill_creator,
+                        (select phone from hrm_employees_v us where us.name  = h.bill_creator and rownum=1) phone,
+                        (SELECT
+                            io.business_unit_id
+                        FROM
+                            acp_bill_details d,
+                            inv_organizations io
+                        WHERE
+                            d.organization_id = io.inv_organization_id AND
+                            d.header_id       = h.header_id AND
+                            rownum            = 1
+                        ) AS business_unit_id,
+                        (SELECT
+                            buv.business_unit_name
+                        FROM
+                            acp_bill_details d,
+                            inv_organizations io,
+                            fnd_business_units_vl buv
+                        WHERE
+                            d.organization_id   = io.inv_organization_id AND
+                            io.business_unit_id = buv.business_unit_id AND
+                            d.header_id         = h.header_id AND
+                            rownum              = 1
+                        ) AS business_unit_name,
+                        (SELECT
+                            d.organization_id
+                        FROM
+                            acp_bill_details d
+                        WHERE
+                            d.header_id = h.header_id AND
+                            rownum      = 1
+                        ) AS inv_organization_id,
+                        h.company_id,
+                        (select (select company_full_name 
+          from fnd_companies_simplified_vl
+         where company_id = u.company_id ) company_name 
+from fnd_business_units u 
+where u.display_code = (select business_unit_name from acp_bill_details where header_id = h.header_id and rownum =1)) company_name,
+                        (SELECT
+     SUBSTR(ac.receipt_date,7,2)
+ FROM
+     acp_bill_details ac
+   WHERE
+ac.header_id = h.header_id AND
+    rownum       = 1
+) year,
+                        (SELECT
+     SUBSTR(ac.receipt_date,4,2)
+ FROM
+     acp_bill_details ac
+   WHERE
+ac.header_id = h.header_id AND
+    rownum       = 1
+) month,
+                        h.vendor_id,
+                        (SELECT
+                            NVL(pvv.coop_company_id, -1)
+                        FROM
+                            pur_vendors_v pvv
+                        WHERE
+                            pvv.vendor_id = h.vendor_id
+                        ) AS vendor_company_id,
+                        h.vendor_code,
+                        h.vendor_name,
+                        h.vendor_site_id,
+                        (SELECT
+                            NVL(pvs.display_site_code, pvs.vendor_site_code)
+                        FROM
+                            pur_vendor_sites_vl pvs
+                        WHERE
+                            pvs.vendor_site_id = h.vendor_site_id
+                        ) AS vendor_site_code,
+                        (SELECT
+                            pvs.site_name
+                        FROM
+                            pur_vendor_sites_vl pvs
+                        WHERE
+                            pvs.vendor_site_id = h.vendor_site_id
+                        ) AS vendor_site_name,
+                        h.currency_code,
+                        fnd_document_control_pkg.get_reality_value(p_rule_code => 'PRICE_SECRECY', p_role_id => ${/session/@role_id}, p_foundation_code => 'AP_BILL', p_document_id => h.header_id, p_control_area => 'INTERNAL', p_business_group => ${/session/@business_group}, p_value => h.amount) AS amount,
+                        fnd_document_control_pkg.get_reality_value(p_rule_code => 'PRICE_SECRECY', p_role_id => ${/session/@role_id}, p_foundation_code => 'AP_BILL', p_document_id => h.header_id, p_control_area => 'INTERNAL', p_business_group => ${/session/@business_group}, p_value =>
+                        (SELECT
+                            ROUND(SUM(l.tax_unit_price * l.quantity), 2)
+                        FROM
+                            acp_bill_lines l
+                        WHERE
+                            l.header_id = h.header_id
+                        )) AS tax_amount,
+                        h.status,
+                        (SELECT
+                            code_value_name
+                        FROM
+                            sys_code_values_v
+                        WHERE
+                            code       = 'BILL_STATUS' AND
+                            code_value = h.status
+                        ) AS status_display,
+                        h.creation_date,
+                        TO_CHAR(h.creation_date, 'yyyy-mm-dd hh24:mi:ss') AS creation_date_fmt,
+                        TO_CHAR(h.creation_date, 'yyyy-mm-dd') AS creation_date_fmt1,
+                        h.release_date,
+                        TO_CHAR(h.release_date, 'yyyy-mm-dd hh24:mi:ss') AS release_date_fmt,
+                        h.created_by created_by_id,
+                        (SELECT description FROM sys_user u WHERE u.user_id = h.created_by
+                        ) AS created_by_desc,
+                        h.vendor_desc,
+                        h.header_desc,
+                        (SELECT su.description FROM sys_user su WHERE su.user_id =${/session/@user_id}) user_description,
+                        to_char(sysdate,'YYYY-MM-DD') print_date,
+                        (select sum(l.quantity) from acp_bill_lines l where l.header_id=h.header_id) total_bill_quantity,
+                        h.pur_buyer_id,
+                        (SELECT
+                            pbv.buyer_desc
+                        FROM
+                            pur_buyers_vl pbv
+                        WHERE
+                            pbv.buyer_id = h.pur_buyer_id
+                        ) pur_buyer_name,
+                        h.pur_organization_id,
+                        (SELECT
+                            pov.description
+                        FROM
+                            pur_organizations_vl pov
+                        WHERE
+                            pov.pur_organization_id = h.pur_organization_id
+                        ) pur_organization_name,
+                        h.vendor_create_flag,
+                        NULL AS useless_id_1,
+                        NULL AS useless_id_2,
+                        NULL AS useless_id_3,
+                        NULL AS useless_id_4,
+                        NULL AS useless_id_5,
+                        NULL AS useless_id_6,
+                        NULL AS useless_id_7,
+                        NULL AS useless_id_8,
+                        NULL AS useless_id_9
+                    FROM
+                        acp_bill_headers h
+                    WHERE
+                        h.status != 'NEW' AND
+                        (
+                            EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                fnd_config_center_bg_item_dtl ccbid
+                            WHERE
+                                ccbid.config_classify_code    = 'PO' AND
+                                ccbid.config_item_code        = 'PO_02' AND
+                                ccbid.config_item_detail_code = 'PO_02_05' AND
+                                ccbid.business_group          = h.owner_business_group AND
+                                ccbid.bg_config_item_value    = 'Y'
+                            ) OR
+                            NOT EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                fnd_config_center_bg_item_dtl ccbid
+                            WHERE
+                                ccbid.config_classify_code    = 'PO' AND
+                                ccbid.config_item_code        = 'PO_02' AND
+                                ccbid.config_item_detail_code = 'PO_02_05' AND
+                                ccbid.business_group          = h.owner_business_group
+                             )
+                        )
+                    ) v
+                WHERE
+                    v.invoice_header_id in ((select regexp_substr(${@invoice_header_id}, '[^,]+', 1, level)
+          from dual
+        connect by regexp_substr(${@invoice_header_id},
+                                 '[^,]+',
+                                 1,
+                                 level) is not null))
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

@@ -1,0 +1,339 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Ace
+    $Date: 2014-4-25 下午03:52:50  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query model="pur.PUR5670.get_session_user_info" rootPath="pur5670_user_data"/>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;KW_CERTIFY_STATUS&apos; and flex_value in (&apos;30_CERTIFIED&apos;,&apos;40_INVALID&apos;) " fetchAll="true" model="public.fnd_flex_value_v_lov" rootPath="pur5670_certify_status"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="pur5670_supply_ability_lns_add_link" url="${/request/@context_path}/modules/pur/PUR5670/pur_vendor_category_tree_lov.screen"/>
+        <a:link id="pur5670_supply_ability_save_link" url="${/request/@context_path}/modules/pur/PUR5670/pur5670_supply_ability_save.svc"/>
+        <a:link id="pur5670_supply_ability_delete_link" model="pur.PUR5670.pur_supply_ability_hds_query" modelaction="delete"/>
+        <a:link id="pur5670_supply_ability_upload_link" url="${/request/@context_path}/attachment_file_upload.screen"/>
+        <a:link id="pur5670_attachment_file_download_link" url="${/request/@context_path}/atm_download.svc"/>
+        <script><![CDATA[
+            function pur5670_init() {
+                var ability_hds_id = '${/parameter/@ability_hds_id}';
+                if (ability_hds_id) {
+                    $('pur5670_supply_ability_hds_ds').setQueryParameter('ability_hds_id', ability_hds_id);
+                    $('pur5670_supply_ability_hds_ds').query();
+                    $('pur5670_supply_ability_lns_ds').setQueryParameter('ability_hds_id', ability_hds_id);
+                    $('pur5670_supply_ability_lns_ds').query();
+                    $('pur5670_attachment_info_ds').setQueryParameter('table_name', 'PUR_VENDOR_SUPPLY_ABILITY_FILE');
+                    $('pur5670_attachment_info_ds').setQueryParameter('pk_value', ability_hds_id);
+                    $('pur5670_attachment_info_ds').query();
+                } else {
+                    $('pur5670_supply_ability_hds_ds').create();
+                }
+            }
+            
+            
+            
+            function pur5670_supply_ability_return() {
+                $('pur5670_pur_supply_ability_modify_win').close();
+            }
+            
+            function pur5670_supply_ability_lns_add() {
+                debugger;
+                //是否选择了供应商
+                var display_vendor_code = $('pur5670_supply_ability_hds_ds').getCurrentRecord().get('display_vendor_code');
+                if (!display_vendor_code) {
+                    Aurora.showMessage('${l:PROMPT}', '请先选择供应商！');
+                    return;
+                }
+                var vendor_id = $('pur5670_supply_ability_hds_ds').getCurrentRecord().get('vendor_id');
+                new Aurora.Window({
+                    id: 'pur5670_supply_ability_lns_add_win',
+                    title: '',
+                    url: $('pur5670_supply_ability_lns_add_link').getUrl() + '?vendor_id=' + vendor_id,
+                    width: 900,
+                    height: 600
+                });
+            }
+            
+            function pur5670_supply_status_renderer(value, record, name) {
+                if (value) {
+                    if (value == 'G') {
+                        return '<div style="background-color:#33cc33;margin:0 0;">' + value + '</div>';
+                    } else if (value == 'Y') {
+                        return '<div style="background-color:yellow;margin:0 0;">' + value + '</div>';
+                    } else if (value == 'R') {
+                        return '<div style="background-color:red;margin:0 0;">' + value + '</div>';
+                    }
+                } else {
+                    return '';
+                }
+            }
+            
+            function pur5670_supply_ability_save() {
+                var ability_hds_id;
+                if ($('pur5670_supply_ability_hds_ds').validate() && $('pur5670_supply_ability_lns_ds').validate()) {
+                    var supply_ability_hds = $('pur5670_supply_ability_hds_ds').getCurrentRecord();
+                    var supply_ability_lns = $('pur5670_supply_ability_lns_ds').getJsonData(false);
+                    var para = {
+                        'ability_hds_id': supply_ability_hds.get('ability_hds_id'),
+                        'vendor_id': supply_ability_hds.get('vendor_id'),
+                        'comments': supply_ability_hds.get('comments'),
+                        'company_id': supply_ability_hds.get('company_id'),
+                        'business_unit_id': supply_ability_hds.get('business_unit_id'),
+                        'supply_ability_lns': supply_ability_lns,
+                        '_status': supply_ability_hds.isNew ? 'insert' : 'update'
+                    };
+                    Aurora.Masker.mask(Ext.getBody());
+                    Aurora.request({
+                        url: $('pur5670_supply_ability_save_link').getUrl(),
+                        para: para,
+                        scope: this,
+                        success: function(res) {
+                            Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SAVE_SUCCESS}', function() {
+                                if ('${/parameter/@ability_hds_id}') {
+                                    ability_hds_id = '${/parameter/@ability_hds_id}';
+                                } else {
+                                    ability_hds_id = res.result.ability_hds_id;
+                                }
+                                $('pur5670_supply_ability_hds_ds').setQueryParameter('ability_hds_id', ability_hds_id);
+                                $('pur5670_supply_ability_hds_ds').query();
+                                $('pur5670_supply_ability_lns_ds').setQueryParameter('ability_hds_id', ability_hds_id);
+                                $('pur5670_supply_ability_lns_ds').query();
+                            });
+                        },
+                        error: Aurora.Masker.unmask(Ext.getBody()),
+                        failure: Aurora.Masker.unmask(Ext.getBody())
+                    });
+                }
+            }
+            
+            function pur5670_supply_ability_hds_ds_load_handler(ds) {
+                var record = ds.getCurrentRecord();
+                if (record.get('ability_hds_id')) {
+                    $('pur5670_supply_ability_hds_ds').getCurrentRecord().getField('display_vendor_code').setReadOnly(true);
+            
+                    $('pur5670_vendor_class_assign_query').setQueryParameter('vendor_id', record.get('vendor_id'));
+                    $('pur5670_vendor_class_assign_query').query();
+                }
+            }
+            
+            function pur5670_supply_ability_hds_ds_updateFun(dataSet, record, name, value, oldvalue) {
+                if (name == 'vendor_id' && record.get('vendor_id')) {
+                    $('pur5670_vendor_class_assign_query').setQueryParameter('vendor_id', record.get('vendor_id'));
+                    $('pur5670_vendor_class_assign_query').query();
+                }
+            }
+            
+            function pur5670_supply_ability_delete() {
+                var ability_hds_id = $('pur5670_supply_ability_hds_ds').getCurrentRecord().get('ability_hds_id');
+                if (ability_hds_id) {
+                    Aurora.showConfirm('${l:PROMPT}', '${l:PUR5670.SUPPLY_ABILITY_DELETE_CONFIRM}', function() {
+                        Aurora.Masker.mask(Ext.getBody());
+                        Aurora.request({
+                            url: $('pur5670_supply_ability_delete_link').getUrl(),
+                            para: {
+                                'ability_hds_id': ability_hds_id
+                            },
+                            success: function() {
+                                Aurora.Masker.unmask(Ext.getBody());
+                                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                    pur5670_supply_ability_return();
+                                });
+                            },
+                            error: Aurora.Masker.unmask(Ext.getBody()),
+                            failure: Aurora.Masker.unmask(Ext.getBody()),
+                            scope: this
+                        });
+                    });
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.DATA_UNSAVED_FOR_NEXT}');
+                    return;
+                }
+            }
+            
+            function pur5670_supply_ability_upload() {
+                var ability_hds_id = $('pur5670_supply_ability_hds_ds').getCurrentRecord().get('ability_hds_id');
+                if (ability_hds_id) {
+                    new Aurora.Window({
+                        id: 'pur5670_upload_window',
+                        title: '${l:ATM.UPLOAD_ATTACHMENT}',
+                        url: $('pur5670_supply_ability_upload_link').getUrl() + '?pkvalue=' + ability_hds_id + '&table_name=PUR_VENDOR_SUPPLY_ABILITY_FILE',
+                        width: 850,
+                        height: 500
+                    }).on('close', function() {
+                        $('pur5670_attachment_info_ds').setQueryParameter('table_name', 'PUR_VENDOR_SUPPLY_ABILITY_FILE');
+                        $('pur5670_attachment_info_ds').setQueryParameter('pk_value', ability_hds_id);
+                        $('pur5670_attachment_info_ds').query();
+                    });
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PUR5720.SAVE_DATA_FIRST}');
+                    return;
+                }
+            }
+            
+            function pur5670_score_validate(record, name, value) {
+                if (value) {
+                    if (parseFloat(value) > 100) {
+                        return '${l:PUR5670.PSA_SPA_SCORE_MORE_THAN_100}';
+                    } else {
+                        return true;
+                    }
+                } else {
+                    return true;
+                }
+            }
+            
+            function pur5670_supply_ability_lns_updateFun(dataSet, record, name, value, oldvalue) {
+                debugger;
+                var special_flag = record.get('special_flag');
+                if (name == 'special_flag') {
+                    if (special_flag == 'Y') {
+                        record.set('certify_status', '30_CERTIFIED');
+                        record.set('certify_status_desc', '已认证');
+                        record.getField('certify_status_desc').setReadOnly(false);
+                    } else {
+                        record.set('certify_status', '10_UNCERTIFIED');
+                        record.set('certify_status_desc', '未认证');
+                        record.getField('certify_status_desc').setReadOnly(true);
+                    }
+                }
+                if (name = "") {
+            
+                   }
+            }
+            
+            function pur5670_supply_ability_atm_file_download_renderer(value, record, name) {
+                var attachment_id = record.get('attachment_id'); //附件ID
+                if (name == "file_name") {
+                    if (attachment_id) {
+                        return '<a href="' + $('pur5670_attachment_file_download_link').getUrl() + '?attachment_id=' + attachment_id + '">' + value + '</a>';
+                    }
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="pur5670_certify_status_ds">
+                <a:datas dataSource="pur5670_certify_status"/>
+            </a:dataSet>
+            <a:dataSet id="pur5670_supply_ability_hds_ds" model="pur.PUR5670.pur_supply_ability_hds_query">
+                <a:fields>
+                    <a:field name="display_vendor_code" autoComplete="true" autoCompleteField="vendor_code" lovHeight="500" lovService="pur.PUR5710.pur5710_vendor_lov?life_flag=Y" lovWidth="550" required="true" title="PUR5720.VENDOR_SELECT">
+                        <a:mapping>
+                            <a:map from="vendor_id" to="vendor_id"/>
+                            <a:map from="vendor_code" to="display_vendor_code"/>
+                            <a:map from="vendor_name" to="full_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="created_by_name" defaultValue="${/model/pur5670_user_data/record/@description}"/>
+                    <a:field name="creation_date" defaultValue="${/model/pur5670_user_data/record/@current_date}"/>
+                    <a:field name="last_updated_by_name" defaultValue="${/model/pur5670_user_data/record/@description}"/>
+                    <a:field name="last_update_date" defaultValue="${/model/pur5670_user_data/record/@current_date}"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="pur5670_supply_ability_hds_ds_load_handler"/>
+                    <a:event name="update" handler="pur5670_supply_ability_hds_ds_updateFun"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="pur5670_supply_ability_lns_ds" autoCount="true" autoPageSize="true" model="pur.PUR5670.pur_supply_ability_lns_query" selectable="true">
+                <a:fields>
+                    <a:field name="category_udf_id"/>
+                    <a:field name="category_code" autoComplete="true" autoCompleteField="purchase_category_name" lovHeight="500" lovService="public.mtl_category_user_defined_tree_query" lovWidth="530" prompt="PUR5720.PURCHASE_CAT" required="true" title="PUR5720.PURCHASE_CAT_SELECT">
+                        <a:mapping>
+                            <a:map from="category_udf_id" to="category_udf_id"/>
+                            <a:map from="category_code" to="category_code"/>
+                            <a:map from="category_name" to="category_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="supply_flag" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                    <a:field name="special_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="certify_status_desc" displayField="flex_desc" options="pur5670_certify_status_ds" readOnly="true" returnField="certify_status" valueField="flex_value"/>
+                    <a:field name="certify_status"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="pur5670_supply_ability_lns_updateFun"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="pur5670_attachment_info_ds" fetchAll="true" loadData="true" model="public.fnd_attachment_file_mgr"/>
+            <a:dataSet id="pur5670_vendor_class_assign_query" autoCount="true" autoPageSize="true" model="pur.PUR5670.pur_vendor_class_assign_query">
+                <a:fields>
+                    <a:field name="enabled_flag" checkedValue="Y" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="pur5670_supply_ability_save" text="HAP_SAVE" width="100"/>
+                <a:toolbarButton id="pur5670_supply_ability_upload_id" click="pur5670_supply_ability_upload" text="ATM.UPLOAD_ATTACHMENT" width="100"/>
+                <a:toolbarButton click="pur5670_supply_ability_return" text="HAP_BACK" width="100"/>
+            </a:screenTopToolbar>
+            <a:fieldSet column="1" title="PROMPT.BASIC_INFOMATION">
+                <a:hBox labelWidth="110">
+                    <a:lov name="display_vendor_code" bindTarget="pur5670_supply_ability_hds_ds" prompt="PUR_VENDORS.VENDOR_CODE" width="140"/>
+                    <a:textField name="full_name" bindTarget="pur5670_supply_ability_hds_ds" prompt="PUR_VENDORS.VENDOR_NAME" readOnly="true" width="140"/>
+                    <a:textField name="created_by_name" bindTarget="pur5670_supply_ability_hds_ds" prompt="PROMPT.CREATOR" readOnly="true" width="140"/>
+                </a:hBox>
+                <a:hBox labelWidth="110">
+                    <a:textField name="creation_date" bindTarget="pur5670_supply_ability_hds_ds" prompt="PROMPT.CREATION_DATE" readOnly="true" width="140"/>
+                    <a:textField name="last_updated_by_name" bindTarget="pur5670_supply_ability_hds_ds" prompt="PROMPT.LAST_UPDATED_BY" readOnly="true" width="140"/>
+                    <a:textField name="last_update_date" bindTarget="pur5670_supply_ability_hds_ds" prompt="PROMPT.LAST_UPDATE_DATE" readOnly="true" width="140"/>
+                </a:hBox>
+                <a:hBox labelWidth="110">
+                    <a:textArea name="comments" bindTarget="pur5670_supply_ability_hds_ds" prompt="PROMPT.COMMENTS" width="652"/>
+                </a:hBox>
+            </a:fieldSet>
+            <a:tabPanel marginHeight="300" marginWidth="100">
+                <a:tabs>
+                    <a:tab prompt="PUR5720.RECOMMEND_PURCHASE_CAT" width="100">
+                        <a:grid bindTarget="pur5670_supply_ability_lns_ds" marginHeight="337" marginWidth="103" navBar="true">
+                            <a:toolBar>
+                                <a:label width="10"/>
+                                <a:button click="pur5670_supply_ability_lns_add" text="PUR5720.ADD"/>
+                                <a:button type="clear"/>
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="category_code" align="center" prompt="PUR2520.PUR_CATEGORY_CODE" width="100"/>
+                                <a:column name="category_name" prompt="PUR2520.PUR_CATEGORY_NAME" width="120"/>
+                                <a:column name="certify_status_desc" align="center" editor="pur5670_supply_ability_lns_ds_cbb" prompt="状态" width="60"/>
+                                <a:column name="special_flag" align="center" editor="pur5670_supply_ability_lns_ds_cb" prompt="特殊" width="100"/>
+                                <!-- <a:column name="supply_flag" align="center" editor="pur5670_supply_ability_lns_ds_cb" prompt="PUR5670.SUPPLY_FLAG" width="100"/> 
+                                <a:column name="define_comment" editor="pur5670_supply_ability_lns_ds_tf" prompt="PUR5720.EVALUATION_INFO_1" width="180"/>-->
+                            </a:columns>
+                            <a:editors>
+                                <a:checkBox id="pur5670_supply_ability_lns_ds_cb"/>
+                                <a:textField id="pur5670_supply_ability_lns_ds_tf"/>
+                                <a:comboBox id="pur5670_supply_ability_lns_ds_cbb"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                    <!--  <a:tab prompt="PUR5720.VENDOR_CLASSIFICATION" width="100">
+                        <a:grid bindTarget="pur5670_vendor_class_assign_query" marginHeight="331" marginWidth="103" navBar="true">
+                            <a:columns>
+                                <a:column name="vendor_class_code" align="center" prompt="PUR_VENDOR_CLASSES.VENDOR_CLASS_CODE" width="100"/>
+                                <a:column name="vendor_class_desc" prompt="PUR_VENDOR_CLASSES.VENDOR_CLASS_DESC_ID" width="100"/>
+                                <a:column name="evaluation_level" align="center" prompt="PUR_VENDOR_CLASS_ASSIGNS.EVALUATION_LEVEL" width="80"/>
+                                <a:column name="evaluation_score" align="right" prompt="PUR_VENDOR_CLASS_ASSIGNS.EVALUATION_SCORE" width="80"/>
+                                <a:column name="enabled_flag" align="center" prompt="PUR_VENDOR_CLASS_ASSIGNS.ENABLED_FLAG" width="80"/>
+                                <a:column name="alter_reason" prompt="PUR5720.ALTER_REASON" width="130"/>
+                                <a:column name="alter_date_time" align="center" prompt="PUR5720.ALTER_DATE_TIME" width="150"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab> -->
+                    <a:tab prompt="PROMPT.ATTACHMENT_INFO" width="100">
+                        <a:grid bindTarget="pur5670_attachment_info_ds" marginHeight="331" marginWidth="103" navBar="true">
+                            <a:columns>
+                                <a:column name="file_name" align="left" renderer="pur5670_supply_ability_atm_file_download_renderer" sortable="true" width="230"/>
+                                <a:column name="file_size" align="center" sortable="true" width="100"/>
+                                <a:column name="upload_user" align="center" prompt="FND_ATM_LINES.UPLOAD_USER_NAME" sortable="true" width="70"/>
+                                <a:column name="upload_date" align="center" prompt="FND_ATM_LINES.UPLOAD_DATE" renderer="Aurora.formatDate" sortable="true" width="80"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+            <script><![CDATA[
+                pur5670_init();
+            ]]></script>
+        </a:screenBody>
+    </a:view>
+</a:screen>

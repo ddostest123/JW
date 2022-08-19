@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                 SELECT pv.full_name vendor_desc,
+                        a.vendor_id,
+                        vh.template_id,
+                        a.score_level,
+                        vt.evaluation_notice,
+                        vt.becareful,
+                        assess_event_maintain_pkg.get_second_node(p_archive_header_id =>vh.archive_header_id,p_total_line_id =>${/parameter/@total_line_id}) as total_line_id,
+				       (SELECT v.flex_desc
+                 FROM fnd_flex_values_vl  v,
+                      fnd_flex_value_sets s
+                WHERE v.flex_value_set_id = s.flex_value_set_id
+                      AND s.enabled_flag = 'Y'
+                      AND s.flex_value_set_code = 'RATING_GROUP'
+                      AND v.flex_value = a.rating_classify_code) AS rating_group,
+				        vh.archive_code,
+				        vh.evaluation_cycle,
+				        substr(to_char(vh.eval_start_date, 'yyyy-mm-dd'), 6, 2) month,
+				        substr(to_char(vh.eval_start_date, 'yyyy-mm-dd'), 1, 4) year,
+				        CASE
+				         WHEN to_number(substr(to_char(vh.eval_end_date, 'yyyy-mm-dd'), 6, 2)) - to_number(substr(to_char(vh.eval_start_date, 'yyyy-mm-dd'), 6, 2)) >=1 and to_number(substr(to_char(vh.eval_start_date, 'yyyy-mm-dd'), 6, 2)) in (1,2,3) then
+				            substr(to_char(vh.eval_start_date, 'yyyy-mm-dd'), 1, 5) ||'Q1'
+				            WHEN to_number(substr(to_char(vh.eval_end_date, 'yyyy-mm-dd'), 6, 2)) - to_number(substr(to_char(vh.eval_start_date, 'yyyy-mm-dd'), 6, 2)) >=1 and to_number(substr(to_char(vh.eval_start_date, 'yyyy-mm-dd'), 6, 2)) in (4,5,6) then
+				            substr(to_char(vh.eval_start_date, 'yyyy-mm-dd'), 1, 5) ||'Q2'
+				             WHEN to_number(substr(to_char(vh.eval_end_date, 'yyyy-mm-dd'), 6, 2)) - to_number(substr(to_char(vh.eval_start_date, 'yyyy-mm-dd'), 6, 2)) >=1 and to_number(substr(to_char(vh.eval_start_date, 'yyyy-mm-dd'), 6, 2)) in (7,8,9) then
+				            substr(to_char(vh.eval_start_date, 'yyyy-mm-dd'), 1, 5) ||'Q3'
+				             WHEN to_number(substr(to_char(vh.eval_end_date, 'yyyy-mm-dd'), 6, 2)) - to_number(substr(to_char(vh.eval_start_date, 'yyyy-mm-dd'), 6, 2)) >=1 and to_number(substr(to_char(vh.eval_start_date, 'yyyy-mm-dd'), 6, 2)) in (10,11,12) then
+				            substr(to_char(vh.eval_start_date, 'yyyy-mm-dd'), 1, 5) ||'Q4'
+				             WHEN to_number(substr(to_char(vh.eval_end_date, 'yyyy-mm-dd'), 6, 2)) - to_number(substr(to_char(vh.eval_start_date, 'yyyy-mm-dd'), 6, 2)) =0  then
+				             substr(to_char(vh.eval_end_date, 'yyyy-mm-dd'), 1, 7)
+                       end as eval_quarter
+				   FROM ves_archive_total_lines a,
+				        ves_archive_headers     vh,
+				        ves_template   vt,
+				        pur_vendors_vl          pv
+				  WHERE a.archive_id = vh.archive_header_id
+				        AND pv.vendor_id = a.vendor_id
+				        and vt.ve_template_id=vh.template_id
+				        AND a.total_line_id = ${/parameter/@total_line_id}
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+                BEGIN
+                    UPDATE
+                        ves_archive_total_lines l
+                    SET
+                        l.root_cause_analysis         = ${@root_cause_analysis},
+                        l.improvement_countermeasures = ${@improvement_countermeasures},
+                        l.last_update_date            = sysdate,
+                        l.last_updated_by             = ${/session/@user_id}
+                    WHERE
+                        l.total_line_id = ${@total_line_id};
+                END;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+                BEGIN
+                    assess_event_maintain_pkg.submit_archive_total_line(
+                    				p_total_line_id => ${@total_line_id},
+                    				p_user_id		=> ${/session/@user_id}
+                    );
+                END;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

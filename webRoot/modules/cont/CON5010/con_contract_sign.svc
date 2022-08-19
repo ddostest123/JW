@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author:	Jehu 15294			
+    $Date:		2018年1月30日 01:41:57
+    $Revision:	1.0  
+    $Purpose:	采购方在线签章
+-->
+<a:service xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" checkSessionLock="true" trace="true">
+    <a:init-procedure>
+        <!-- <a:model-query defaultWhereClause="h.contract_header_id = ${/parameter/@contract_header_id}" fetchAll="true" model="cont.CON5020.con_contract_atms_query" rootPath="atm_infos"/> -->
+        <s:server-script><![CDATA[
+            importPackage(com.fadada.sdk.util.crypt);
+            importPackage(com.fadada.sdk.util.http);
+            importPackage(com.fadada.sdk.client.common);
+            importPackage(com.fadada.sdk.client);
+            
+            var p = $ctx.parameter;
+            
+            // var atm_infos = $ctx.model.getChild("atm_infos").getChildren();
+            
+            //中文encode后传入参数
+            
+            function encode_str(value, encode_code) {
+                var encodeStr;
+                try {
+                    encodeStr = java.net.URLEncoder.encode(value, encode_code);
+                } catch (e) {
+                    encodeStr = '';
+                }
+                return encodeStr;
+                //return value;
+            }
+            
+            var app_id = '400429'; //app_id、app_secret、customer_id 由法大大提供
+            var app_secret = '6T6QXCv8aXFxThtGIagDVl5j';
+            var customer_id = '754A499A708F3F8084019307FF50A414'; //供应商申请了ca认证后，要把customer_id写入到供应商表,然后从供应商表里取出来
+            
+            // var transaction_id = atm_infos.contract_header_id_md5; //交易号对应头id
+            //交易号对应头id
+            var transaction_id = 'B'+p.contract_header_id; 
+            //合同号对应合同编号
+            var contract_id = p.contract_number;
+            var doc_title = encode_str(p.contract_desc, 'UTF-8');
+            
+            //获取上下文路径
+            var context = '${/request/@context_path}';
+            var url = context + '/modules/cont/CON5020/con_contract_sign_result.screen';
+            println('上下文URL：'+url);
+            
+            var return_url = 'http://test.going-link.com/modules/cont/CON5010/con_contract_sign_result.screen';
+            var notify_url = 'http://test.going-link.com/modules/cont/CON5010/con_contract_maintain_query.screen';
+            // var notify_url = 'http://test.going-link.com/modules/cont/CON5010/con_contract_maintain_query.screen';
+            // var return_url = 'http://localhost:8080/goinglinkcloud/modules/cont/CON5020/con_contract_sign_result.screen';
+            // var notify_url = 'http://localhost:8080/goinglinkcloud/modules/cont/CON5020/con_i_received_contract_maintain_query.screen';
+            //法大大api地址
+            var url = 'http://test.api.fabigbig.com:8888/api/'; 
+            
+            // println(p.contract_header_id + ',' + p.contract_number);
+            
+            var fb = new FddClientBase(app_id, app_secret, "2.0", url);
+            var fe = new FddClientExtra(app_id, app_secret, "2.0", url);
+            // println('错误标记');
+            
+            var atm_url = p.attribute12;
+            // var atm_url = 'http://test.going-link.com/atm_download_free.svc?attachment_id=' + atm_infos[0].attachment_id;;
+            
+            // println(atm_url);
+            
+            var rtn_msg = fb.invokeUploadDocs(contract_id, doc_title, null, atm_url, '.pdf');
+            // var rtn_msg = fce.invokeUploadDocs(contract_id, doc_title, null, atm_url, '.' + atm_infos[0].file_type_code);
+            
+            // println('rtn_msg:' + rtn_msg);
+            
+            rtn_msg = JSON.parse(rtn_msg);
+            
+            // println(rtn_msg.code + ':' + rtn_msg.msg); //{"code":"1000","msg":"操作成功","result":"success"}
+            
+            if (rtn_msg.code = '1000') {
+                
+                //发起签章
+                // var rtn_url = String(fe.invokeExtSignValidation(transaction_id, customer_id, contract_id, doc_title, '', 10080, 2, return_url, notify_url));
+                var rtn_url = String(fb.invokeExtSign(transaction_id, customer_id, contract_id, doc_title, '', return_url, notify_url));
+                //println(rtn_url);
+                //将签章地址存起来
+                p.attribute10 = rtn_url;
+            
+                // var fb_e = new FddClientExtra(app_id, app_secret, "2.0", url);
+                var rtn_url2 = String(fe.invokeViewPdfURL(contract_id));
+                //签章后合同VIEW
+                p.attribute11 = rtn_url2;
+            
+                var rtn_url3 = String(fe.invokeDownloadPdf(contract_id));
+                //签章后合同DOWNLOAD
+                p.attribute12 = rtn_url3;
+            
+                $bm('cont.CON5020.con_contract_sign').update();
+            }
+        ]]></s:server-script>
+    </a:init-procedure>
+    <a:service-output output="/parameter"/>
+</a:service>

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--srm接收到的批次主动推送到ebs -->
+<a:service xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <s:server-script import="itf_construct_node.js"><![CDATA[
+            $ctx.parameter.interface_code = 'BATCH_CONFIRM_EXP';
+            $ctx.parameter.interface_category_code = 'RTFC';
+            //request list
+            
+            var list = new ModelService('eitf.ws.public.eitf_interface_list_query').queryAsMap().getChildren();
+            
+            var soapResponse = new CompositeMap('soapResponse');
+            for (var i = 0;i < list.length;i++) {
+                //system info
+                $ctx.parameter.business_group = list[i].business_group;
+                $ctx.parameter.external_system_code = list[i].external_system_code;
+            
+                //init
+                $bm('eitf.ws.public.eitf_export_init').execute();
+                var record = createRecordNode('record', soapResponse, list[i].url);
+                var request = createNode('REQUEST', record);
+                //parameter：request、bg、es、itf_cate_code、itf_code、user_name、password、batch、seg、total_seg
+                var header = createHeaderNode(request,$ctx.parameter.interface_category_code, $ctx.parameter.interface_code, $ctx.parameter.batch_num, $ctx.parameter.seg_num, $ctx.parameter.total_seg_count);
+            
+                //context
+                var context = createNode('CONTEXT', request);
+                //batch info
+                var batch_info = createNode('BATCH_CONFIRM', context);
+            
+                createDataNode('eitf.ws.BATCH_CONFIRM.eitf_batch_confirm_query', batch_info);
+            
+                //packed
+                $bm('eitf.ws.public.eitf_instance_pack').execute();
+            
+            }
+            //put node to parameter
+            $ctx.addChild(soapResponse);
+        ]]></s:server-script>
+        <a:batch-apply sourcepath="/soapResponse">
+            <p:echo/>
+            <p:echo message="url = ${@current_parameter/@url}"/>
+            <a:ws-invoker inputPath="@current_parameter/REQUEST" raiseExceptionOnError="false" returnPath="/RESPONSE" url="${@current_parameter/@url}"/>
+            <a:model-execute model="eitf.ws.public.eitf_instance_send"/>
+        </a:batch-apply>
+    </a:init-procedure>
+</a:service>

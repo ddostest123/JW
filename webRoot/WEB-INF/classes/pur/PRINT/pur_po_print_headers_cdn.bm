@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" alias="t1">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                        t1.display_po_number,
+                        TO_CHAR(t1.creation_date, 'YYYY-MM-DD') creation_date,
+                        t1.company_name,
+                        (
+                        SELECT
+                            fcsc.contact_name
+                        FROM
+                            fnd_com_sup_contacts fcsc,
+                            pur_vendors_vl pvv
+                        WHERE
+                            fcsc.company_id           = pvv.coop_company_id AND
+                            fcsc.default_contact_flag = 'Y' AND
+                            pvv.vendor_id             = t1.vendor_id AND
+                            rownum                    =1
+                        ) contact_name,
+                        t1.company_id,
+                       	t1.vendor_site_name,
+                        t1.currency_code,
+                        (SELECT
+                            cpt.description
+                        FROM
+                            csh_payment_terms_vl cpt
+                        WHERE
+                            cpt.payment_term_id = t1.terms_id
+                        ) payment_terms,
+                        (SELECT
+                            tc.tax_type_rate
+                        FROM
+                            pur_lines_all pla,
+                            fnd_tax_type_codes tc
+                        WHERE
+                            pla.pur_header_id = t1.pur_header_id AND
+                            tc.tax_type_id    = pla.tax_code_id AND
+                            rownum            = 1
+                        ) tax_rate,
+                        (SELECT
+                            NVL(SUM(pll.quantity *pla.original_unit_price),0)
+                        FROM
+                            pur_line_locations_all pll,
+                            pur_lines_all pla
+                        WHERE
+                            pla.pur_line_id          = pll.pur_line_id AND
+                            NVL(pla.cancel_flag,'N') = 'N' AND
+                            NVL(pll.cancel_flag,'N') = 'N' AND
+                            NVL(pll.frozen_flag,'N') = 'N' AND
+                            pll.pur_header_id        = t1.pur_header_id
+                        ) amount_total,
+                        (SELECT
+                            COUNT(*)
+                        FROM
+                            pur_line_locations_all pll,
+                            pur_lines_all pla
+                        WHERE
+                            pla.pur_line_id          = pll.pur_line_id AND
+                            NVL(pla.cancel_flag,'N') = 'N' AND
+                            NVL(pll.cancel_flag,'N') = 'N' AND
+                            NVL(pll.frozen_flag,'N') = 'N' AND
+                            pll.pur_header_id        = t1.pur_header_id
+                        ) line_count,
+                        (SELECT
+                            bu.business_unit_name
+                        FROM
+                            fnd_business_units_vl bu
+                        WHERE
+                            bu.business_unit_id = t1.business_unit_id
+                        ) business_unit_name,
+                        (SELECT
+                            bu.business_unit_name
+                        FROM
+                            fnd_business_units_vl bu
+                        WHERE
+                            bu.business_unit_id = t1.business_unit_id
+                        ) etc_sign_name,
+                        NVL(t1.type_lookup_desc, t1.erp_po_type_desc) type_lookup_desc,
+                        t1.pur_header_id,
+                        t1.vendor_contact_name,
+                        (SELECT
+                            pvv.full_name
+                        FROM
+                            pur_vendors_v pvv
+                        WHERE
+                            pvv.vendor_id = t1.vendor_id
+                        ) AS full_name,
+                        t1.inv_organization_name ship_to_organization_name,
+                        TO_CHAR(NVL(t1.erp_creation_date,t1.creation_date), 'yyyy-mm-dd hh24:mi') AS creation_date_desc,
+                        (SELECT
+                            pov.description
+                        FROM
+                            pur_organizations_vl pov
+                        WHERE
+                            pov.pur_organization_id = t1.pur_organization_id
+                        ) pur_organization_name,
+                        t1.agent_name,
+                        fnd_document_control_pkg.get_reality_value(p_rule_code => 'PRICE_SECRECY', p_role_id => ${/session/@role_id}, p_foundation_code => 'PUR_PO', p_document_id => t1.pur_header_id, p_control_area => 'INTERNAL', p_business_group => ${/session/@business_group}, p_value =>
+                        (SELECT
+                            SUM(DECODE(t1.type_lookup_code,'BLANKET',(l.unit_price * pll.quantity), 
+                        decode(l.quantity,0,(l.unit_price * pll.quantity),null,(l.unit_price * pll.quantity),nvl(trunc((pll.quantity/l.quantity)*l.NO_TAX_AMOUNT,4),(l.unit_price * pll.quantity)))))
+                        FROM
+                            pur_lines_all l,
+                            pur_line_locations_all pll
+                        WHERE
+                            l.pur_line_id            = pll.pur_line_id AND
+                            l.pur_header_id          = t1.pur_header_id AND
+                            NVL(pll.cancel_flag,'N') = 'N'
+                        )) sum_amount,
+                        t1.vendor_code partner_code,
+                        t1.company_id,
+                        (select f.business_represent_name || ':' || f.business_represent_phone from fnd_companies_vl f where f.company_id = t1.coop_company_id)v_name,
+                        ((select f.official_telephone from fnd_companies_vl f where f.company_id = t1.coop_company_id) ||'/'|| nvl((select f.fax_no from fnd_companies_vl f where f.company_id = t1.coop_company_id),' '))telephone_fax_no,
+                        (select f.company_short_name from fnd_companies_vl f where f.company_id = t1.coop_company_id)short_name
+                    FROM
+                        pur_headers_all_v t1 #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter name="pur_header_id" expression="t1.pur_header_id=${@pur_header_id}"/>
+    </bm:data-filters>
+</bm:model>

@@ -1,0 +1,346 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: shenjun	  
+    $Date: 2018-4-16
+    $Revision: 1.0
+    $Purpose: 晶科招竞标
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="public.pur_rfx_types_list" rootPath="jkpur5230_rfx_types_source"/>
+        <a:model-query fetchAll="true" model="public.csh_payment_methods_list" rootPath="jkpur5230_payment_methods_source"/>
+        <a:model-query fetchAll="true" model="public.currency_list" rootPath="jkpur5230_currency_source"/>
+        <!-- <a:model-query defaultWhereClause="agreement_type = &apos;BCD&apos; and owner_business_group = ${/parameter/@bg}" fetchAll="true" model="wfl.WFL1001.fnd_config_vendor_agreement" rootPath="vendor_agreement_info"/> -->
+    </a:init-procedure>
+    <a:view>
+        <a:link id="jkpur5230_rfx_detail_link" url="${/request/@context_path}/modules/cux/JINKO/PUR/JKPUR5230/jk_pur_rfx_detail.screen"/>
+        <a:link id="jkpur5230_rfx_feedback_rfa_link" url="${/request/@context_path}/modules/cux/JINKO/PUR/JKPUR5230/jk_pur_rfx_feedback_rfa.screen"/>
+        <!-- <a:link id="jkpur5230_rfx_feedback_batch_participate_link" url="${/request/@context_path}/modules/pur/SACPUR5210/pur_rfx_feedback_participate.svc"/> -->
+        <!-- <a:link id="jkpur5230_rfx_feedback_batch_abandon_link" url="${/request/@context_path}/modules/pur/SACPUR5210/pur_rfx_feedback_abandon.svc"/> -->
+        <a:link id="jkpur5230_rfx_feedback_create_link" model="cux.JINKO.PUR.JKPUR5230.jk_pur_rfx_feedback_create" modelaction="execute"/>
+        <a:link id="jkpur5230_agreement_confirm_link" url="${/request/@context_path}/modules/cux/JINKO/PUR/JKPUR5230/jk_pur_rfx_agreement_confirm.screen"/>
+        <script><![CDATA[
+            
+            function sys_favorite_agreement_load(id, bg) {
+                new Aurora.Window({
+                    id: 'jkpur5230_agreement_confirm_window',
+                    url: $('jkpur5230_agreement_confirm_link').getUrl() + '?agreement_type=BCD&rfx_header_id=' + id + '&owner_business_group=' + bg,
+                    fullScreen: true
+                }).on('close', function() {
+                    Aurora.Masker.unmask(Ext.getBody());
+                });
+            }
+            
+            function jkpur5230_OpenDetail(id, bg){
+	                new Aurora.Window({
+	                    url: $('jkpur5230_rfx_detail_link').getUrl() + '?rfx_header_id=' + id + '&bg=' + bg,
+	                    title: '${l:JK_PUR_RFX_HEADERS.VENDOR_QUOTATION}',
+	                    id: 'jkpur5230_rfx_detail_window',
+	                    fullScreen: true
+	                }).on('beforeclose', jkpur5230_RfxFeedbackQuery);
+            }
+            
+            function jkpur5230_RfxDetail(id, rfx_line_vendor_id, bg) {
+                var record = $('jkpur5230_rfx_vendor_agreement_ds').getAt(0);
+                var enable_flag = record.get('enable_flag');
+                var confirm_flag = record.get('confirm_flag');
+                var sign_type = record.get('sign_type');
+            
+                if (enable_flag == 'Y') {
+                    if (sign_type == 'ONCE') {
+                        if (confirm_flag == 'N') {
+                            sys_favorite_agreement_load(id, bg);
+                        } else {
+                            //如果已确认过一次，无需再次确认
+			                jkpur5230_OpenDetail(id, bg);
+                        }
+                    }
+            
+                    if (sign_type == 'ALWAYS') {
+                        sys_favorite_agreement_load(id, bg);
+                    }
+                } else {
+                    //如果没启用投标协议，就按正常流程走
+                    jkpur5230_OpenDetail(id, bg);
+                }
+            }
+            
+            function jkpur5230_RfxFeedbackRFA(feedback_header_id, rfx_header_id, rfx_line_vendor_id) {
+                Aurora.Masker.mask(Ext.getBody(), '${l:LOADING}');
+            
+                var data = {
+                    'feedback_header_id': feedback_header_id,
+                    'rfx_header_id': rfx_header_id,
+                    'rfx_line_vendor_id': rfx_line_vendor_id
+                };
+                Aurora.request({
+                    url: $('jkpur5230_rfx_feedback_create_link').getUrl(),
+                    para: data,
+                    success: function(rec) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        var feedback_header_id = rec.result.feedback_header_id;
+                        new Aurora.Window({
+                            url: $('jkpur5230_rfx_feedback_rfa_link').getUrl() + '?feedback_header_id=' + feedback_header_id,
+                            title: '${l:JK_PUR_RFX_HEADERS.VENDOR_QUOTATION}',
+                            id: 'jkpur5230_rfx_feedback_rfa_window',
+                            fullScreen: true
+                        }).on('beforeclose', jkpur5230_RfxFeedbackQueryFB);
+                    },
+                    failure: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        return;
+                    },
+                    error: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        return;
+                    }
+                });
+            }
+            
+            function jkpur5230_RfxLinkRender(value, rec, name) {
+                var rfx_header_id = rec.get('rfx_header_id');
+                var rfx_line_vendor_id = rec.get('rfx_line_vendor_id');
+                var feedback_header_id = rec.get('feedback_header_id');
+                var feedback_status = rec.get('feedback_status');
+                var status = rec.get('status');
+                // var atm_show_flag = rec.get('atm_show_flag');
+                var atm_counts = rec.get('atm_counts');
+                var owner_business_group = rec.get('owner_business_group');
+            
+                if (name == 'feedback_header_id') {
+                    if (feedback_status == 'PARTICIPATED') {
+                        if(status == 'BIDDING' || status == 'PAUSED'){
+                        		return '<a href="javascript:jkpur5230_RfxFeedbackRFA(' + feedback_header_id + ',' + rfx_header_id + ',' + rfx_line_vendor_id + ')">竞标</a>';
+                        }else{
+                        		return '<a href="javascript:jkpur5230_RfxFeedbackRFA(' + feedback_header_id + ',' + rfx_header_id + ',' + rfx_line_vendor_id + ')">已完成</a>';
+                        }
+                    } else {
+                        return '${l:SACPUR5210.NOT_IN}';
+                    }
+                }
+                
+                if (name == 'rfx_number') {
+                    return '<a href="javascript:jkpur5230_RfxDetail(' + rfx_header_id + ',' + rfx_line_vendor_id + ',\'' + owner_business_group + '\')">' + value + '</a>';
+                }
+            
+                // if(name == "atm_flag"){
+                // if(atm_show_flag == 'Y'){
+                // return '<div style="margin-top:3px;margin-left:auto;margin-right:auto;vertical-align:middle;height:20px;line-height:20px;"><img src="${/request/@context_path}/images/paperclip.png"/></div>';
+                // }
+                // }
+            }
+            
+            function jkpur5230_RfxFeedbackQuery() {
+                $('jkpur5230_rfx_feedback_result_ds').query();
+            }
+            
+            function jkpur5230_RfxFeedbackQueryFB() {
+                $('jkpur5230_rfx_feedback_result_ds').query();
+                
+                //如果竞价页面有自动更新，关闭时要清除
+                if(!Aurora.isEmpty(window.autorefresh)){
+                		clearInterval(window.autorefresh);
+                }
+            }
+            
+            //Query Ds Update Function
+            
+            function jkpur5230_onRfxFeedbackQueryDs_updateFun(ds, record, name, value, oldvalue) {
+                if (name == 'company_id') {
+                    record.set('business_unit_id', '');
+                    record.set('business_unit_code', '');
+                    record.set('business_unit_name', '');
+                    if (Ext.isEmpty(value)) {
+                        record.getField('business_unit_name').setReadOnly(true);
+                        record.getField('business_unit_name').setLovPara('company_id', -1);
+                    } else {
+                        record.getField('business_unit_name').setReadOnly(false);
+                        record.getField('business_unit_name').setLovPara('company_id', value);
+                    }
+                }
+            }
+            
+            function jkpur5230_rfx_feedback_result_ds_load(ds){
+                if(ds.getAll().length != 0){
+	                var bg = ds.getAt(0).get('owner_business_group');
+	                var agreement_ds = $('jkpur5230_rfx_vendor_agreement_ds');
+	                agreement_ds.setQueryParameter('owner_business_group',bg);
+	                agreement_ds.setQueryParameter('agreement_type','BCD');
+	                agreement_ds.query();
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <!-- <a:dataSet id="jkpur5230_rfx_category_ds" lookupCode="PUR_RFX_CATEGORY"/> -->
+            <!-- <a:dataSet id="jkpur5230_rfx_method_ds" lookupCode="PUR_RFX_METHOD"/> -->
+            <a:dataSet id="jkpur5230_rfx_auction_direction_ds" lookupCode="PUR_RFX_AUCTION_DIRECTION"/>
+            <a:dataSet id="jkpur5230_rfx_auction_rule_ds" lookupCode="PUR_RFX_AUCTION_RULE"/>
+            <a:dataSet id="jkpur5230_rfx_open_rule_ds" lookupCode="PUR_RFX_OPEN_RULE"/>
+            <a:dataSet id="jkpur5230_rfx_ranking_rule_ds" lookupCode="PUR_RFX_RANKING_RULE"/>
+            <a:dataSet id="jkpur5230_rfx_auction_ranking_ds" lookupCode="PUR_RFX_AUCTION_RANKING"/>
+            <a:dataSet id="jkpur5230_rfx_status_ds" lookupCode="JK_ZJB_STATUS"/>
+            <a:dataSet id="jkpur5230_rfx_yesorno_ds" lookupCode="YES_OR_NO"/>
+            <a:dataSet id="jkpur5230_rfx_types_ds" autoCreate="true" loadData="true">
+                <a:datas dataSource="/model/jkpur5230_rfx_types_source"/>
+            </a:dataSet>
+            <a:dataSet id="jkpur5230_payment_method_ds" autoCreate="true" loadData="true">
+                <a:datas dataSource="/model/jkpur5230_payment_methods_source"/>
+            </a:dataSet>
+            <a:dataSet id="jkpur5230_currency_ds" autoCreate="true" loadData="true">
+                <a:datas dataSource="/model/jkpur5230_currency_source"/>
+            </a:dataSet>
+            <a:dataSet id="jkpur5230_rfx_feedback_query_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="company_id"/>
+                    <a:field name="rfx_number" defaultValue="${/parameter/@document_number}"/>
+                    <a:field name="company_desc" autoComplete="true" autoCompleteField="code_name" lovHeight="500" lovService="public.fnd_companies_whole_cloud_lov" lovWidth="510" title="FND_COMPANIES.CLIENT">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_full_name" to="company_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="business_unit_name" autoComplete="true" autoCompleteField="business_unit_name" lovHeight="480" lovService="pur.SACPUR5210.fnd_business_unit_lov?company_id=-1" lovWidth="510" readOnly="true" title="FND_BUSINESS_UNITS.BUSINESS_UNIT_QUERY">
+                        <a:mapping>
+                            <a:map from="business_unit_id" to="business_unit_id"/>
+                            <a:map from="business_unit_code" to="business_unit_code"/>
+                            <a:map from="business_unit_name" to="business_unit_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="rfx_type_id"/>
+                    <a:field name="rfx_type_desc" displayField="rfx_type_desc" options="jkpur5230_rfx_types_ds" returnField="rfx_type_id" valueField="rfx_type_id">
+                        <a:mapping>
+                            <a:map from="rfx_type_id" to="rfx_type_id"/>
+                            <a:map from="rfx_type_desc" to="rfx_type_desc"/>
+                            <a:map from="rfx_category" to="rfx_category"/>
+                            <a:map from="rfx_category_desc" to="rfx_category_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <!-- <a:field name="rfx_category_desc" displayField="code_value_name" options="jkpur5230_rfx_category_ds" returnField="rfx_category" valueField="code_value"/> -->
+                    <a:field name="status_desc" displayField="code_value_name" options="jkpur5230_rfx_status_ds" returnField="status" valueField="code_value"/>
+                    <a:field name="rfx_method"/>
+                    <!-- <a:field name="rfx_method_desc" displayField="code_value_name" options="jkpur5230_rfx_method_ds" returnField="rfx_method" valueField="code_value"/> -->
+                    <a:field name="auction_direction"/>
+                    <a:field name="auction_direction_desc" displayField="code_value_name" options="jkpur5230_rfx_auction_direction_ds" returnField="auction_direction" valueField="code_value"/>
+                    <a:field name="auction_rule"/>
+                    <a:field name="auction_rule_desc" displayField="code_value_name" options="jkpur5230_rfx_auction_rule_ds" returnField="auction_rule" valueField="code_value"/>
+                    <a:field name="open_rule"/>
+                    <a:field name="open_rule_desc" displayField="code_value_name" options="jkpur5230_rfx_open_rule_ds" returnField="open_rule" valueField="code_value"/>
+                    <a:field name="ranking_rule"/>
+                    <a:field name="ranking_rule_desc" displayField="code_value_name" options="jkpur5230_rfx_ranking_rule_ds" returnField="ranking_rule" valueField="code_value"/>
+                    <a:field name="auction_ranking"/>
+                    <a:field name="auction_ranking_desc" displayField="code_value_name" options="jkpur5230_rfx_auction_ranking_ds" returnField="auction_ranking" valueField="code_value"/>
+                    <a:field name="payment_method_id"/>
+                    <a:field name="payment_method_desc" displayField="payment_method_desc" options="jkpur5230_payment_method_ds" returnField="payment_method_id" valueField="payment_method_id"/>
+                    <a:field name="currency_code"/>
+                    <a:field name="currency_desc" displayField="currency_name" options="jkpur5230_currency_ds" returnField="currency_code" valueField="currency_code">
+                        <a:mapping>
+                            <a:map from="currency_name" to="currency_desc"/>
+                            <a:map from="currency_code" to="currency_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <!-- <a:field name="tax_included_flag_desc" displayField="code_value_name" options="jkpur5230_rfx_yesorno_ds" returnField="tax_included_flag" valueField="code_value"/> -->
+                    <!-- <a:field name="created_by_desc" autoComplete="true" autoCompleteField="user_desc" lovGridHeight="320" lovHeight="450" lovService="public.sys_user_lov" lovWidth="500" title="JK_PUR_RFX_HEADERS.CREATED_BY">
+                        <a:mapping>
+                            <a:map from="user_id" to="created_by"/>
+                            <a:map from="user_desc" to="created_by_desc"/>
+                        </a:mapping>
+                    </a:field> -->
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="jkpur5230_onRfxFeedbackQueryDs_updateFun"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="jkpur5230_rfx_feedback_result_ds" autoCount="true" autoPageSize="true" autoQuery="true" model="cux.JINKO.PUR.JKPUR5230.jk_pur_rfx_feedback_query" queryDataSet="jkpur5230_rfx_feedback_query_ds">
+                <a:fields>
+                    <a:field name="tax_included_flag" checkedValue="Y" uncheckedValue="N"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="jkpur5230_rfx_feedback_result_ds_load"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="jkpur5230_rfx_vendor_agreement_ds" autoCount="true" model="wfl.WFL1001.fnd_config_vendor_agreement"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:queryForm bindTarget="jkpur5230_rfx_feedback_query_ds" resultTarget="jkpur5230_rfx_feedback_result_ds" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:hBox labelWidth="120">
+                        <a:textField name="rfx_number" bindTarget="jkpur5230_rfx_feedback_query_ds" prompt="JK_PUR_RFX_HEADERS.RFX_NUMBER">
+                            <a:events>
+                                <a:event name="enterdown" handler="jkpur5230_RfxFeedbackQuery"/>
+                            </a:events>
+                        </a:textField>
+                        <a:lov name="company_desc" bindTarget="jkpur5230_rfx_feedback_query_ds" prompt="FND_COMPANIES.CLIENT">
+                            <a:events>
+                                <a:event name="enterdown" handler="jkpur5230_RfxFeedbackQuery"/>
+                            </a:events>
+                        </a:lov>
+                        <!-- <a:lov name="business_unit_name" bindTarget="jkpur5230_rfx_feedback_query_ds" prompt="FND_BUSINESS_UNITS.BUSINESS_UNIT">
+                            <a:events>
+                                <a:event name="enterdown" handler="jkpur5230_RfxFeedbackQuery"/>
+                            </a:events>
+                        </a:lov> -->
+                        <a:textField name="title" bindTarget="jkpur5230_rfx_feedback_query_ds" prompt="JK_PUR_RFX_HEADERS.TITLE">
+                            <a:events>
+                                <a:event name="enterdown" handler="jkpur5230_RfxFeedbackQuery"/>
+                            </a:events>
+                        </a:textField>
+                    </a:hBox>
+                </a:formToolBar>
+                <a:formBody>
+                    <a:hBox labelWidth="120">
+                        <a:datePicker name="feedback_start_time_from" bindTarget="jkpur5230_rfx_feedback_query_ds" prompt="SACPUR5210.FEEDBACK_START_TIME_FROM">
+                            <a:events>
+                                <a:event name="enterdown" handler="jkpur5230_RfxFeedbackQuery"/>
+                            </a:events>
+                        </a:datePicker>
+                        <a:datePicker name="feedback_start_time_to" bindTarget="jkpur5230_rfx_feedback_query_ds" prompt="SACPUR5210.FEEDBACK_START_TIME_TO">
+                            <a:events>
+                                <a:event name="enterdown" handler="jkpur5230_RfxFeedbackQuery"/>
+                            </a:events>
+                        </a:datePicker>
+                        <a:comboBox name="currency_desc" bindTarget="jkpur5230_rfx_feedback_query_ds" prompt="PUR_RFX_HEADERS.CURRENCY_CODE">
+                            <a:events>
+                                <a:event name="enterdown" handler="jkpur5230_RfxFeedbackQuery"/>
+                            </a:events>
+                        </a:comboBox>
+                    </a:hBox>
+                    <a:hBox labelWidth="120">
+                        <a:comboBox name="auction_direction_desc" bindTarget="jkpur5230_rfx_feedback_query_ds" prompt="JK_PUR_RFX_HEADERS.AUCTION_DIRECTION">
+                            <a:events>
+                                <a:event name="enterdown" handler="jkpur5230_RfxFeedbackQuery"/>
+                            </a:events>
+                        </a:comboBox>
+                    </a:hBox>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="jkpur5230_rfx_feedback_result_grid" autoAppend="false" bindTarget="jkpur5230_rfx_feedback_result_ds" marginHeight="200" marginWidth="50" navBar="true">
+                <a:columns>
+                    <a:column name="feedback_header_id" align="center" lock="true" prompt="JK_PUR_RFX_HEADERS.PARTICIPATION" renderer="jkpur5230_RfxLinkRender" width="50"/>
+                    <a:column name="feedback_start_time_desc" align="center" lock="true" prompt="JK_PUR_RFX_HEADERS.FEEDBACK_START_TIME" width="80"/>
+                    <a:column name="feedback_end_time_desc" align="center" lock="true" prompt="JK_PUR_RFX_HEADERS.FEEDBACK_END_TIME" width="80"/>
+                    <!-- <a:column name="atm_flag" align="center" lock="true" renderer="jkpur5230_RfxLinkRender" width="20"/> -->
+                    <a:column name="rfx_number" align="center" lock="true" prompt="JK_PUR_RFX_HEADERS.RFX_NUMBER" renderer="jkpur5230_RfxLinkRender" width="80"/>
+                    <a:column name="title" align="left" lock="true" prompt="JK_PUR_RFX_HEADERS.TITLE" width="100"/>
+                    <a:column name="company_desc" align="center" prompt="FND_COMPANIES.CLIENT" width="80"/>
+                    <a:column name="business_unit_name" align="center" prompt="FND_BUSINESS_UNITS.BUSINESS_UNIT" width="80"/>
+                    <!-- <a:column name="rfx_type_desc" align="center" prompt="JK_PUR_RFX_HEADERS.RFX_TYPE_ID" width="80"/> -->
+                    <!--   <a:column name="rfx_category_desc" align="center" prompt="JK_PUR_RFX_HEADERS.RFX_CATEGORY" width="60"/> -->
+                    <a:column name="auction_direction_desc" align="center" prompt="JK_PUR_RFX_HEADERS.AUCTION_DIRECTION" width="40"/>
+                    <!--  <a:column name="auction_rule_desc" align="center" prompt="JK_PUR_RFX_HEADERS.AUCTION_RULE" width="80"/> -->
+                    <a:column name="open_rule_desc" align="center" prompt="JK_PUR_RFX_HEADERS.OPEN_RULE" width="80"/>
+                    <a:column name="ranking_rule_desc" align="center" prompt="竞标排名规则" width="80"/>
+                    <!-- <a:column name="auction_ranking_desc" align="center" prompt="JK_PUR_RFX_HEADERS.AUCTION_RANKING" width="80"/> -->
+                    <a:column name="status_desc" align="center" prompt="JK_PUR_RFX_HEADERS.STATUS" width="40"/>
+                    <!-- <a:column name="round" align="center" prompt="JK_PUR_RFX_HEADERS.ROUND" width="30"/> -->
+                    <a:column name="currency_desc" align="center" prompt="JK_PUR_RFX_HEADERS.CURRENCY_CODE" width="40"/>
+                    <!-- <a:column name="tax_included_flag_desc" align="center" prompt="JK_PUR_RFX_HEADERS.TAX_INCLUDED_FLAG" width="40"/>
+                    <a:column name="tax_type_desc" align="center" prompt="JK_PUR_RFX_HEADERS.TAX_TYPE_RATE" width="40"/>
+                    <a:column name="created_by_desc" align="center" prompt="JK_PUR_RFX_HEADERS.CREATED_BY" width="60"/>
+                    <a:column name="creation_date_desc" align="center" prompt="JK_PUR_RFX_HEADERS.CREATION_DATE" width="60"/>
+                    <a:column name="issued_date_desc" align="center" prompt="JK_PUR_RFX_HEADERS.ISSUED_DATE" width="60"/>
+                    <a:column name="coop_company_desc" align="center" prompt="JK_PUR_RFX_HEADERS.QUOTATION_COMPANY" width="60"/> -->
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

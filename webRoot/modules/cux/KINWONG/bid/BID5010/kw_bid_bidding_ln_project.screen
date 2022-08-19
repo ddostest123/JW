@@ -1,0 +1,361 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:view>
+        <style><![CDATA[
+.contain {
+padding:3px;
+background:white;
+font-size:9pt;
+border-width:1px 2px 2px 1px;
+border-style:solid;
+left:20; 
+margin-left:-418px;
+margin-top:16px;
+position:absolute;
+display:none;
+z-index:9999;
+overflow:auto;
+max-width:450px;
+max-height:100px;
+}
+
+.tishi{
+        color:#f00;
+        font-size: 10px;
+    }
+ .tishi2{
+        color:#f00;
+        font-size: 10px;
+        padding-left:30px;
+    }   
+            
+
+]]></style>
+        <script><![CDATA[
+            var sum_quantity_stack = {};
+            var sum_subtotal = 0;
+            var sum_total = 0;
+
+            function declim2(sum) {
+                return Math.round(sum * 100) / 100;
+            }
+            
+            function callback1(record, name, value) {
+                if (name == 'management_cost') {
+                    var new_management_cost = record.get('management_cost') * (record.get('mechanical_cost') * 0.1 + record.get('artificial_cost'));
+                    record.set('management_cost', new_management_cost);
+                } else if (name == 'profits') {
+                    var new_profits = (record.get('mechanical_cost') + record.get('artificial_cost') + record.get('main_material_cost') + record.get('management_cost') + record.get('assist_material_cost')) * record.get('profits');
+                    record.set('profits', new_profits);
+                }
+            }
+            
+            function callback2(record, name, value) {
+                if (name == 'management_cost') {
+                    var new_management_cost = record.get('management_cost_temp');
+                    record.set('management_cost', new_management_cost);
+                } else if (name == 'profits') {
+                    var new_profits = record.get('artificial_cost') * record.get('profits');
+            
+                    record.set('profits', new_profits);
+                }
+            }
+            
+            function callback3(record, name, value) {
+                if (name == 'management_cost') {
+                    var new_management_cost = record.get('management_cost') * record.get('artificial_cost');
+                    record.set('management_cost', new_management_cost);
+                } else if (name == 'profits') {
+                  //  alert('record.get(artificial_cost)  ==='+ record.get('artificial_cost'));
+                    var new_profits = record.get('artificial_cost') * record.get('profits');
+                    record.set('profits', new_profits);
+                }
+            
+            
+            }
+            
+            function doCallback(fn, args) {
+                fn.apply(this, args);
+            }
+            
+            function calculate_fun() {
+                var place_list = {
+                    '深圳': 'callback1',
+                    '广东': 'callback2',
+                    '江西': 'callback3'
+                };
+                var head_record = $('bid5010_edit_bidding_project_ds').getCurrentRecord();
+                var place = head_record.get('area_desc');
+                console.log(place);
+                var line_ds = $('bid5010_edit_bidding_project_ds');
+                var records = line_ds.getAll();
+                console.log(records);
+                for (var i = 0;i < records.length;i++) {
+                    if (records[i].get('category_level') == '2') {
+                        calculating = true;
+                        if (records[i].get('calculate_flag') == 'N') {
+                            doCallback(eval(place_list[place]), [records[i], 'management_cost']);
+                            records[i].set('calculate_flag', 'Y');
+                        }
+                        if (records[i].get('calculate_flag_2') == 'N') {
+                            doCallback(eval(place_list[place]), [records[i], 'profits']);
+                            records[i].set('calculate_flag_2', 'Y');
+                        }
+                        calculating = false;
+            
+                    }
+                }
+            
+            }
+            
+            function getParentrecord(parent_data_id, records) {
+                for (i = 0;i < records.length;i++) {
+                    if (records[i].get('matching_code') + records[i].get('project_code') == parent_data_id) {
+                        return records[i];
+                    }
+                }
+                return null;
+            }
+            var calculating = false;
+            
+            function bid5010_kw_project_update_handler(ds, record, name, value, oldvalue) {
+                var level = record.get('category_level');
+            	var records = ds.getAll();
+                if (level == '2') {
+                    if (name == 'management_cost') {
+                        if (!calculating) {
+                            record.set('calculate_flag', 'N');
+                            if (value != oldvalue) {
+                                for (var i = 0;i < records.length;i++) {
+                                    if (records[i].get('category_level') == '2') {
+                                        records[i].set('management_cost', value);
+                                    }
+                                }
+                            }
+                        }
+                    } else if (name == 'profits') {
+                        if (!calculating) {
+                            record.set('calculate_flag_2', 'N');
+                            if (value != oldvalue) {
+                                for (var i = 0;i < records.length;i++) {
+                                    if (records[i].get('category_level') == '2') {
+                                        records[i].set('profits', value);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if (level == '主材' && name == 'main_material_unit_price') {
+                    var parent_record = getParentrecord(record.get('matching_code'), records);
+                    var res = getChildAll(record.get('matching_code'), records);
+                    var main_material_cost = 0;
+                    for (var i = 0;i < res.length;i++) {
+                        var main_material_unit_price = res[i].get('main_material_unit_price');
+                        var main_material_loss_rate = res[i].get('main_material_loss_rate');
+                        if (main_material_unit_price && main_material_loss_rate) {
+                            main_material_cost += main_material_unit_price * main_material_loss_rate;
+                        }
+                    }
+                    parent_record.set('main_material_cost', declim2(main_material_cost));
+                } else if (name == 'main_material_loss_rate') {
+                    if (value) {
+                        record.getField('main_material_unit_price').setReadOnly(false);
+                    } else {
+                        record.getField('main_material_unit_price').setReadOnly(true);
+                    }
+                }
+            }
+             function getChildAll(parent_data_id, records) {
+                var res = [];
+                for (i = 0;i < records.length;i++) {
+                    if (records[i].get('matching_code') == parent_data_id) {
+                        res.push(records[i]);
+                    }
+                }
+                return res;
+            }
+            
+            function getParentRec(parent_data_id, records) {
+                for (i = 0;i < records.length;i++) {
+                    if (records[i].get('data_id') == parent_data_id) {
+                        return records[i];
+                    }
+                }
+                return null;
+            }
+            
+            function bid5010_edit_bidding_project_fun(rec, name) {
+                if ('${/parameter/@edit_flag}' == 'N') {
+                    return '';
+                }
+                if (name == 'tax_rate') {
+                    return 'bid5010_edit_bidding_project_lov';
+                }
+                if (rec.get('category_level') == 2) {
+                    return 'bid5010_edit_bidding_project_nf3';
+                }
+            
+                return '';
+            }
+            
+            function bid5010_kw_project_load_handler(ds) {
+                var records = ds.getAll();
+                var read_only = '${/parameter/@read_only}';
+            //    var calculate_btn = $('#calculate_btn');
+               if (read_only == 'Y') {
+                  $('calculate_btn').hide();
+               }
+                
+                for (var i = 0;i < records.length;i++) {
+                    records[i].getField('tax_rate').setLovPara('business_group', records[i].get('owner_business_group'));
+                }
+            }
+            
+            function ps7010_PreschemeTreegridEditorFunction(record, name) {
+               var read_only = '${/parameter/@read_only}';
+               if (read_only == 'Y') {
+                   return '';
+               }
+               
+                var level = record.get('category_level');
+                if (level == '1') {
+                    if (name == 'project_code') {
+                        return 'bid5010_edit_bidding_project_lov';
+                    }
+                    if (name == 'quantity') {
+                        return 'bid5010_edit_bidding_project_nf2';
+                    }
+                } else if (level == '2') {
+                    if (name == 'project_code') {
+                        return 'bid5010_edit_bidding_project_lov';
+                    }
+                    if (name == 'quantity') {
+                        return 'bid5010_edit_bidding_project_nf2';
+                    }
+                    if (name == 'artificial_cost') {
+                        return 'bid5010_edit_bidding_project_nf2';
+                    }
+            
+                    if (name == 'mechanical_cost') {
+                        return 'bid5010_edit_bidding_project_nf2';
+                    }
+                    if (name == 'management_cost') {
+                        return 'bid5010_edit_bidding_project_nf2';
+                    }
+                    if (name == 'assist_material_cost') {
+                        return 'bid5010_edit_bidding_project_nf2';
+                    }
+                    if (name == 'profits') {
+                        return 'bid5010_edit_bidding_project_nf2';
+                    }
+                } else if (level == '主材') {
+                    if (name == 'main_material_name') {
+                        return 'bid5010_edit_bidding_project_lov';
+                    }
+            
+                    if (name == 'main_material_model_desc') {
+                        return 'bid5010_edit_bidding_project_txf';
+                    }
+            
+                    if (name == 'main_material_loss_rate') {
+                        return '';
+                    }
+                    if (name == 'main_material_unit_price') {
+                        return 'bid5010_edit_bidding_project_nf2';
+                    }
+                }
+            }
+            
+            function sum_all_render(data, name) {
+                var all_sum = 0;
+                for (var i = 0;i < data.length;i++) {
+                  if (data[i].get('category_level') == '1' && data[i].get(name) && data[i].get('quantity')) {
+                        if (name == 'total') {
+                            all_sum += data[i].get(name);
+                        } else {
+                            
+                            all_sum += data[i].get(name) * data[i].get('quantity');
+                        }
+                    }
+                }
+                
+                return declim2(all_sum);
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="bid5010_edit_bidding_project_ds" autoCount="true" autoCreate="true" autoPageSize="true" autoQuery="true" fetchAll="true" model="cux.KINWONG.bid.BID5010.kw_bid_bidding_ln_project_query" queryUrl="${/request/@context_path}/autocrud/cux.KINWONG.bid.BID5010.kw_bid_bidding_ln_project_query/query?entrustment_header_id=${/parameter/@entrustment_header_id}&amp;bid_header_id=${/parameter/@bid_header_id}" selectable="true">
+                <a:fields>
+                    <a:field name="header_id" defaultValue="${/parameter/@entrustment_header_id}"/>
+                    <a:field name="line_num"/>
+                    <a:field name="project_code" lovAutoQuery="true" lovGridHeight="300" lovHeight="450" lovLabelWidth="100" lovService="cux.KINWONG.ps.ps7010.ps7010_prescheme_project_lov" lovWidth="500" title="项目工程选择">
+                        <a:mapping>
+                            <a:map from="project_name" to="project_name"/>
+                            <a:map from="project_characteristi" to="project_characteristi"/>
+                            <a:map from="project_uom_name" to="uom_desc"/>
+                            <a:map from="project_uom_code" to="uom_code"/>
+                            <a:map from="data_id" to="data_id"/>
+                            <a:map from="category_level" to="category_level"/>
+                            <a:map from="parent_date_id" to="parent_data_id"/>
+                            <a:map from="expanded" to="expand"/>
+                            <a:map from="project_code" to="project_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="tax_rate" autoComplete="true" autoCompleteField="tax_type_code" lovGridHeight="350" lovHeight="500" lovService="public.fnd_tax_type_code_lov" lovWidth="500" title="BID_ENTRUSTMENT_LN_ITEMS.TAX_RATE">
+                        <a:mapping>
+                            <a:map from="tax_type_id" to="tax_type_id"/>
+                            <a:map from="tax_type_code" to="tax_code"/>
+                            <a:map from="tax_type_rate" to="tax_rate"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="calculate_flag" defaultValue="Y"/>
+                    <a:field name="calculate_flag_2" defaultValue="Y"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="bid5010_kw_project_update_handler"/>
+                    <a:event name="load" handler="bid5010_kw_project_load_handler"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:hBox>
+                <lable class="tishi"><![CDATA[注：1.请在“管理费”栏位填写管理费率，系统会自动计算出管理费。计算公式：江西:管理费=人工费*管理费率 深圳：管理费=（人工费+机械费*0.1）*费率 广东：定额固定值]]></lable>
+            </a:hBox>
+            <a:hBox>
+                <lable class="tishi2"><![CDATA[2.请在“利润”栏位填写利润率，系统会自动计算出利润。计算公式：利润=人工费*利润率 深圳：（分部分项+管理费）*费率 广东：人工费*费率]]></lable>
+            </a:hBox>
+            <a:button id="calculate_btn" click="calculate_fun" text="计算"/>
+            <a:treeGrid id="bid5010_edit_bidding_project_grid" bindTarget="bid5010_edit_bidding_project_ds" expandField="expand" idField="son_matching_code" marginHeight="215" marginWidth="100" navBar="true" parentField="matching_code" showCheckBox="false">
+                <a:columns>
+                    <a:column name="project_code" align="left" editorFunction="ps7010_PreschemeTreegridEditorFunction" prompt="项目编码" width="100"/>
+                    <a:column name="matching_code" align="center" prompt="匹配编码" width="100"/>
+                    <a:column name="project_name" align="left" prompt="项目名称" width="100"/>
+                    <a:column name="project_characteristi" align="left" prompt="项目特征" width="100"/>
+                    <a:column name="main_material_name" editorFunction="ps7010_PreschemeTreegridEditorFunction" prompt="主材料名称" width="70"/>
+                    <a:column name="main_material_model" editorFunction="ps7010_PreschemeTreegridEditorFunction" prompt="主材料规格" width="70"/>
+                    <a:column name="main_material_model_desc" editorFunction="ps7010_PreschemeTreegridEditorFunction" prompt="主材料规格描述" width="100"/>
+                    <a:column name="category_level" align="left" prompt="级别" width="40"/>
+                    <a:column name="uom_desc" align="center" prompt="计量单位" width="60"/>
+                    <a:column name="quantity" align="center" prompt="工程量" width="80"/>
+                    <a:column align="center" prompt="综合单价">
+                        <a:column name="artificial_cost" align="center" autoAdjust="true" editorFunction="ps7010_PreschemeTreegridEditorFunction" footerRenderer="sum_all_render" prompt="人工费" width="80"/>
+                        <a:column name="main_material_loss_rate" align="center" editorFunction="ps7010_PreschemeTreegridEditorFunction" prompt="主材损耗率" width="80"/>
+                        <a:column name="main_material_unit_price" align="center" editorFunction="ps7010_PreschemeTreegridEditorFunction" prompt="主材单价" width="80"/>
+                        <a:column name="main_material_cost" align="center" editorFunction="ps7010_PreschemeTreegridEditorFunction" footerRenderer="sum_all_render" prompt="主材费" width="80"/>
+                        <a:column name="mechanical_cost" align="center" autoAdjust="true" editorFunction="ps7010_PreschemeTreegridEditorFunction" footerRenderer="sum_all_render" prompt="机械费" width="80"/>
+                        <a:column name="management_cost" align="center" autoAdjust="true" editorFunction="ps7010_PreschemeTreegridEditorFunction" footerRenderer="sum_all_render" prompt="管理费" width="80"/>
+                        <a:column name="assist_material_cost" align="center" footerRenderer="sum_all_render" prompt="辅材费" width="80"/>
+                        <a:column name="profits" align="center" autoAdjust="true" editorFunction="ps7010_PreschemeTreegridEditorFunction" footerRenderer="sum_all_render" prompt="利润" width="80"/>
+                    </a:column>
+                    <a:column name="total" align="right" autoAdjust="true" footerRenderer="sum_all_render" prompt="合计" width="80"/>
+                </a:columns>
+                <a:editors>
+                    <a:numberField id="bid5010_edit_bidding_project_nf" allowDecimals="false" allowNegative="false"/>
+                    <a:lov id="bid5010_edit_bidding_project_lov"/>
+                    <a:numberField id="bid5010_edit_bidding_project_nf2" allowDecimals="true" allowNegative="false" decimalPrecision="2"/>
+                    <a:numberField id="bid5010_edit_bidding_project_nf3" allowDecimals="true" allowFormat="true" allowNegative="false" decimalPrecision="8"/>
+                    <a:textField id="bid5010_edit_bidding_project_txf"/>
+                </a:editors>
+            </a:treeGrid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

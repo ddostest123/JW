@@ -1,0 +1,336 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao $  
+    $Date: 2014-11-26 下午03:45:27 $  
+    $Revision: 1.0 $ 
+    $Purpose: 非寄销开票单维护，入口页面 $
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="acp.ACP5210.acp_bill_get_bg_item_value" rootPath="cc_bg_item_value"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="acp5210_bill_lines_link" url="${/request/@context_path}/modules/acp/ACP5210/acp_bill_lines.screen"/>
+        <a:link id="acp5210_header_operation_record_link" url="${/request/@context_path}/modules/acp/PUBLIC/acp_operation_record.screen"/>
+        <a:link id="acp5210_cancel_link" url="${/request/@context_path}/modules/acp/ACP5210/acp_bill_cancel.svc"/>
+        <a:link id="acp5210_release_link" url="${/request/@context_path}/modules/acp/ACP5210/acp_bill_release.svc"/>
+        <a:link id="acp5210_bill_base_to_select_link" url="${/request/@context_path}/modules/acp/ACP5210/acp_bill_base_to_select.screen"/>
+        <a:link id="acp5210_bill_create_base_to_trx_link" url="${/request/@context_path}/modules/acp/ACP5210/acp_bill_create.screen"/>
+        <script><![CDATA[
+            //日期比较
+            
+            function acp5210_compareDate(start, end) {
+                if (start > end) {
+                    return false;
+                }
+                return true;
+            }
+            
+            //日期校验
+            
+            function acp5210_creation_dateValidator(record, name, value) {
+                if (name == 'creation_date_from' || name == 'creation_date_to') {
+                    var start = record.get('creation_date_from');
+                    var end = record.get('creation_date_to');
+            
+                    if ( !! end) {
+                        if (!acp5210_compareDate(start, end)) {
+                            return '${l:START_GREATER_THAN_END}';
+                        }
+                    }
+                    return true;
+                }
+            }
+            
+            function acp5210_modify_query() {
+                $('acp5210_modify_result_ds').query();
+            }
+            
+            //未选择供应商时,供应商地点为灰色不可选
+            
+            function acp5210_modify_query_ds_update() {
+                var ds = $('acp5210_modify_query_ds');
+                var record = ds.getCurrentRecord();
+                var field = record.getField('vendor_site_name');
+                if (!Aurora.isEmpty(record.get('vendor_code_name'))) {
+                    field.setReadOnly(false);
+                } else {
+                    field.setReadOnly(true);
+                }
+            }
+            
+            function acp5210_resultDsRenderer(value, record, name) {
+                var billHeaderId = record.get('header_id');
+                if (name == 'bill_number') {
+                    if (record.get('header_id')) {
+                        return '<a href="javascript:openBillMaintainDetail(' + billHeaderId + ')">' + value + '</a>';
+                    }
+                }
+            
+                if (name == 'operation_record') {
+                    if (record.get('header_id')) {
+                        return '<a href="javascript:open_acp5210_resultDsRenderer(' + billHeaderId + ')">${l:ACP_BILL.OPERATION_RECORD}</a>';
+                    }
+                }
+            
+                if (name == 'amount' || name == 'tax_amount') {
+                    if (value == '***') {
+                        return value;
+                    } else {
+                        return Aurora.formatNumber(value);
+                    }
+                }
+            }
+            
+            function openBillMaintainDetail(billHeaderId) {
+                new Aurora.Window({
+                    id: 'acp5210_bill_maintain_detail_window',
+                    url: $('acp5210_bill_lines_link').getUrl() + '?bill_header_id=' + billHeaderId,
+                    title: '${l:ACP_BILL.BILL_MAINTAIN}',
+                    fullScreen: true
+                }).on('beforeclose', acp5210_modify_query);
+            }
+            
+            function open_acp5210_resultDsRenderer(headerId) {
+                new Aurora.Window({
+                    id: 'acp_operation_record_win',
+                    url: $('acp5210_header_operation_record_link').getUrl() + '?operation_table_id=' + headerId + '&operation_table=ACP_BILL_HEADERS',
+                    title: '${l:ACP_BILL.OPERATION_RECORD}',
+                    height: 450,
+                    width: 600
+                });
+            }
+            
+            // 开票单取消
+            
+            function acp5210_cancel() {
+                var ds = $('acp5210_modify_result_ds');
+                var records = ds.getSelected();
+                if (records.length < 1) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:ACP_BILL.PLEASE_SELECT_CANCEL}');
+                    return false;
+                } else {
+                    Aurora.showConfirm('${l:PROMPT}', '${l:ACP_BILL.CONFIRM_CANCEL}', function() {
+                        var datas = [];
+                        for (var i = 0;i < records.length;i++) {
+                            var data = {
+                                'header_id': records[i].get('header_id')
+                            };
+                            datas.push(data);
+                        }
+            
+                        Aurora.Masker.mask(Ext.getBody(), '${l:LOADING}');
+                        Aurora.request({
+                            url: $('acp5210_cancel_link').getUrl(),
+                            para: datas,
+                            success: function(res) {
+                                ds.query();
+                                Aurora.Masker.unmask(Ext.getBody());
+                            },
+                            failure: function(res) {
+                                Aurora.Masker.unmask(Ext.getBody());
+                            },
+                            error: function(res) {
+                                Aurora.Masker.unmask(Ext.getBody());
+                            },
+                            scope: this
+                        });
+                    });
+                }
+            }
+            
+            // 开票单发布
+            
+            function acp5210_release() {
+                var ds = $('acp5210_modify_result_ds');
+                var records = ds.getSelected();
+                if (records.length < 1) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:ACP_BILL.PLEASE_SELECT_POST}');
+                    return false;
+                } else {
+                    Aurora.showConfirm('${l:PROMPT}', '${l:ACP_BILL.CONFIRM_POST}', function() {
+                        var datas = [];
+                        for (var i = 0;i < records.length;i++) {
+                            var data = {
+                                'header_id': records[i].get('header_id'),
+                                'vendor_release_flag': 'N'
+                            };
+                            datas.push(data);
+                        }
+                        Aurora.Masker.mask(Ext.getBody(), '${l:LOADING}');
+                        Aurora.request({
+                            url: $('acp5210_release_link').getUrl(),
+                            para: datas,
+                            success: function(res) {
+                                ds.query();
+                                Aurora.Masker.unmask(Ext.getBody());
+                            },
+                            failure: function(res) {
+                                Aurora.Masker.unmask(Ext.getBody());
+                            },
+                            error: function(res) {
+                                Aurora.Masker.unmask(Ext.getBody());
+                            },
+                            scope: this
+                        });
+            
+                    });
+                }
+            }
+            
+            function acp5210_creaet() {
+                var exists_count = '${/model/cc_bg_item_value/record/@exists_count}';
+                if (exists_count > 0) {
+                    new Aurora.Window({
+                        id: 'acp5210_bill_base_to_select_link_window',
+                        url: $('acp5210_bill_base_to_select_link').getUrl(),
+                        title: '${l:ACP_BILL.BILL_CREATE}',
+                        height: 130,
+                        width: 340
+                    });
+                } else {
+                    new Aurora.Window({
+                        id: 'acp5210_bill_create_link_window',
+                        url: $('acp5210_bill_create_base_to_trx_link').getUrl(),
+                        title: '${l:ACP_BILL.BILL_CREATE}',
+                        fullScreen: true
+                    });
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="acp5210_status_list" autoQuery="true" model="acp.ACP5210.acp_status_list"/>
+            <a:dataSet id="acp5210_modify_query_ds">
+                <a:fields>
+                    <a:field name="creation_date_from" validator="acp5210_creation_dateValidator"/>
+                    <a:field name="creation_date_to" validator="acp5210_creation_dateValidator"/>
+                    <a:field name="bill_number"/>
+                    <a:field name="vendor_name" autoComplete="true" autoCompleteField="vendor_name" lovHeight="500" lovService="acp.PUBLIC.pur_vendors_by_require_lov" lovWidth="500" title="ACP_BILL_SOURCE.VENDOR_CODE_NAME">
+                        <a:mapping>
+                            <a:map from="vendor_id" to="vendor_id"/>
+                            <a:map from="vendor_code" to="vendor_code"/>
+                            <a:map from="vendor_name" to="vendor_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="status_display" displayField="code_value_name" options="acp5210_status_list" returnField="status" valueField="code_value"/>
+                    <a:field name="business_unit_name" autoComplete="true" autoCompleteField="business_unit_name" lovHeight="500" lovService="public.fnd_business_unit_lov" lovWidth="600" title="ACP_BILL_DETAILS.BUSINESS_UNIT_ID">
+                        <a:mapping>
+                            <a:map from="business_unit_id" to="business_unit_id"/>
+                            <a:map from="business_unit_name" to="business_unit_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="pur_organization_name" autoComplete="true" autoCompleteField="pur_organization_code_name" lovHeight="480" lovService="public.pur_organization_lov" lovWidth="500" title="PUR_ORGANIZATIONS.PUR_ORGANIZATION">
+                        <a:mapping>
+                            <a:map from="pur_organization_id" to="pur_organization_id"/>
+                            <a:map from="pur_organization_name" to="pur_organization_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="pur_buyer_name" autoComplete="true" autoCompleteField="code_name" lovGridHeight="320" lovHeight="480" lovService="public.pur_buyers_lov" lovWidth="500" title="PUR_HEADERS_ALL.PUR_BUYER">
+                        <a:mapping>
+                            <a:map from="buyer_id" to="pur_buyer_id"/>
+                            <a:map from="buyer_code" to="pur_buyer_code"/>
+                            <a:map from="description" to="pur_buyer_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="po_number"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="acp5210_modify_query_ds_update"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="acp5210_modify_result_ds" autoCount="true" autoPageSize="true" autoQuery="false" fetchAll="false" model="acp.ACP5210.acp_bill_headers" queryDataSet="acp5210_modify_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="header_id"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="acp5210_creaet" text="HAP_CREATE" width="100"/>
+                <a:toolbarButton click="acp5210_release" text="ACP_BILL.POST" width="100"/>
+                <a:toolbarButton click="acp5210_cancel" text="ACP_BILL.CANCEL" width="100"/>
+                <a:gridButton bind="acp5210_modify_grid" type="excel" width="100"/>
+            </a:screenTopToolbar>
+            <a:queryForm id="acp5210_modify_query_form" bindTarget="acp5210_modify_query_ds" resultTarget="acp5210_modify_result_ds" style="width:100%;">
+                <a:formToolBar>
+                    <a:hBox labelWidth="100">
+                        <a:textField name="bill_number" bindTarget="acp5210_modify_query_ds" prompt="ACP_BILL_HEADERS.BILL_NUMBER">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5210_modify_query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:lov name="vendor_name" bindTarget="acp5210_modify_query_ds" prompt="ACP_BILL_SOURCE.VENDOR_CODE_NAME">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5210_modify_query"/>
+                            </a:events>
+                        </a:lov>
+                        <a:textField name="po_number" bindTarget="acp5210_modify_query_ds" prompt="PUR_LINES_ALL.PO_NUMBER">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5210_modify_query"/>
+                            </a:events>
+                        </a:textField>
+                    </a:hBox>
+                </a:formToolBar>
+                <a:formBody style="margin-left:-3px">
+                    <a:hBox labelWidth="100">
+                        <a:textField name="receipt_num" bindTarget="acp5210_modify_query_ds" prompt="ACP_BILL_DETAILS.RECEIPT_NUM">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5210_modify_query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:lov name="business_unit_name" bindTarget="acp5210_modify_query_ds" prompt="ACP_BILL_DETAILS.BUSINESS_UNIT_ID">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5210_modify_query"/>
+                            </a:events>
+                        </a:lov>
+                        <a:lov name="pur_organization_name" bindTarget="acp5210_modify_query_ds" prompt="PUR_ORGANIZATIONS.PUR_ORGANIZATION">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5210_modify_query"/>
+                            </a:events>
+                        </a:lov>
+                    </a:hBox>
+                    <a:hBox labelWidth="100">
+                        <a:lov name="pur_buyer_name" bindTarget="acp5210_modify_query_ds" prompt="PUR_HEADERS_ALL.PUR_BUYER">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5210_modify_query"/>
+                            </a:events>
+                        </a:lov>
+                        <a:datePicker name="creation_date_from" bindTarget="acp5210_modify_query_ds" prompt="ACP_BILL_HEADERS.CREATION_DATE_FROM">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5210_modify_query"/>
+                            </a:events>
+                        </a:datePicker>
+                        <a:datePicker name="creation_date_to" bindTarget="acp5210_modify_query_ds" prompt="ACP_BILL_HEADERS.CREATION_DATE_TO">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5210_modify_query"/>
+                            </a:events>
+                        </a:datePicker>
+                    </a:hBox>
+                    <a:hBox labelWidth="100">
+                        <a:comboBox name="status_display" bindTarget="acp5210_modify_query_ds" prompt="ACP_BILL_HEADERS.STATUS">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5210_modify_query"/>
+                            </a:events>
+                        </a:comboBox>
+                    </a:hBox>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="acp5210_modify_grid" autoAppend="false" bindTarget="acp5210_modify_result_ds" marginHeight="250" marginWidth="50" navBar="true">
+                <a:columns>
+                    <a:column name="bill_number" align="center" prompt="ACP_BILL_HEADERS.BILL_NUMBER" renderer="acp5210_resultDsRenderer" sortable="true" width="70"/>
+                    <a:column name="company_name" align="left" prompt="ACP_BILL.COMPANY_NAME" sortable="true" width="80"/>
+                    <a:column name="business_unit_name" align="left" prompt="ACP_BILL_DETAILS.BUSINESS_UNIT_ID" sortable="true" width="50"/>
+                    <a:column name="vendor_code" align="center" prompt="ACP_BILL_SOURCE.VENDOR_CODE" sortable="true" width="80"/>
+                    <a:column name="vendor_name" align="left" prompt="ACP_BILL_SOURCE.VENDOR_NAME" sortable="true" width="100"/>
+                    <a:column name="vendor_site_name" align="left" prompt="ACP_BILL_SOURCE.VENDOR_SITE_CODE_NAME" width="100"/>
+                    <a:column name="amount" align="right" prompt="ACP_BILL.NET_AMOUNT" renderer="acp5210_resultDsRenderer" sortable="true" width="60"/>
+                    <a:column name="tax_amount" align="right" prompt="ACP_BILL.TAX_AMOUNT" renderer="acp5210_resultDsRenderer" sortable="true" width="60"/>
+                    <a:column name="currency_code" align="center" prompt="ACP_BILL_SOURCE.CURRENCY_CODE" width="40"/>
+                    <a:column name="status_display" align="center" prompt="ACP_BILL_HEADERS.STATUS" width="50"/>
+                    <a:column name="creation_date_fmt" align="center" prompt="ACP_BILL_SOURCE.CREATION_DATE" renderer="Aurora.formatDate" sortable="true" width="90"/>
+                    <a:column name="operation_record" align="center" prompt="ACP_BILL.OPERATION_RECORD" renderer="acp5210_resultDsRenderer" width="50"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

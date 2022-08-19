@@ -1,0 +1,688 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: 7211
+    $Date: 2018-3-05 下午13:46:29  
+    $Revision: 1.0  
+    $Purpose: 珀莱雅产品认证创建
+-->
+<a:screen xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="cux.PROYA.get_proya_bg_info" rootPath="proyamtl5010_product_proya_data"/>
+        <a:model-query defaultWhereClause="t.flex_value_set_code = &apos;PROYA_MTL_ATM_TYPE&apos;" fetchAll="true" model="cux.PROYA.fnd_flex_value_sets_query" rootPath="proyamtl5010_product_atm_data"/>
+        <a:model-query model="cux.PROYA.PROYAMTL5010.proyamtl5010_product_image_lns" rootPath="proyamtl5010_product_picture_list"/>
+        <!-- 循环判断是否已设置主图  Add by Jehu 15294 2018年5月8日 10:53:14 -->
+        <a:batch-apply sourcepath="/model/proyamtl5010_product_picture_list">
+            <s:server-script><![CDATA[
+                var primary_flag = $ctx.current_parameter.primary_flag;
+                if (primary_flag == 'Y') {
+                    $ctx.parameter.already_primary = 'Y';
+                }
+            ]]></s:server-script>
+        </a:batch-apply>
+        <p:echo/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="proyamtl5010_product_maintain_save_link" url="${/request/@context_path}/modules/cux/PROYA/PROYAMTL5010/proyamtl5010_products_save.svc"/>
+        <a:link id="proyamtl5010_product_delete_image_link" url="${/request/@context_path}/modules/cux/PROYA/PROYAMTL5010/proyamtl5010_product_image_delete.svc"/>
+        <a:link id="proyamtl5010_product_maintain_release_link" model="cux.PROYA.PROYAMTL5010.proyamtl5010_products_query" modelaction="execute"/>
+        <a:link id="proyamtl5010_product_maintain_delete_link" model="cux.PROYA.PROYAMTL5010.proyamtl5010_products_query" modelaction="delete"/>
+        <a:link id="proyamtl5010_product_maintain_cancel_link" model="cux.PROYA.PROYAMTL5010.proyamtl5010_product_tech_lns" modelaction="execute"/>
+        <a:link id="proyamtl5010_product_set_primary_image_link" model="cux.PROYA.PROYAMTL5010.proyamtl5010_product_image_lns" modelaction="execute"/>
+        <script><![CDATA[
+            function init() {
+                var product_id = '${/parameter/@product_id}',
+                    create_flag = 'N';
+                if (product_id) {
+                    $('proyamtl5010_product_maintain_ds').setQueryParameter('product_id', product_id);
+                    $('proyamtl5010_product_maintain_ds').query();
+                    $('proyamtl5010_product_tech_line_ds').setQueryParameter('product_id', product_id);
+                    $('proyamtl5010_product_tech_line_ds').query();
+                    $('proyamtl5010_product_atm_line_ds').setQueryParameter('product_id', product_id);
+                    $('proyamtl5010_product_atm_line_ds').query();
+                } else {
+                    create_flag = 'Y';
+                }
+            }
+            
+            //返回
+            
+            function proyamtl5010_product_maintain_return() {
+                $('proyamtl5010_products_maintain_win').close();
+            }
+            
+            //保存
+            
+            function proyamtl5010_product_save() {
+                var ds = $('proyamtl5010_product_maintain_ds'),
+                    tech_lines_ds = $('proyamtl5010_product_tech_line_ds'),
+                    atm_lines_ds = $('proyamtl5010_product_atm_line_ds'),
+                    record = ds.getCurrentRecord();
+                if (ds.validate() && tech_lines_ds.validate() && atm_lines_ds.validate()) {
+            
+                    //设置状态
+                    if (record.get('product_id')) {
+                        record.set('_status', 'update');
+                    } else {
+                        record.set('_status', 'insert');
+                    }
+            
+                    var para = record.data;
+                    para_submit = [];
+            
+            
+                    para['tech_lines'] = tech_lines_ds.getJsonData(false);
+                    para['atm_lines'] = atm_lines_ds.getJsonData(false);
+                    para_submit.push(para);
+            
+                    Aurora.Masker.mask($('proyamtl5010_products_maintain_win').wrap, '${l:QMS5050.BEING_SUBMITTED}');
+                    Aurora.request({
+                        url: $('proyamtl5010_product_maintain_save_link').getUrl(),
+                        para: para_submit,
+                        success: function(res) {
+                            var product_id = res.result.record.product_id ? res.result.record.product_id : '${/parameter/@product_id}';
+                            Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SAVE_SUCCESS}', function() {
+                                ds.setQueryParameter('product_id', product_id);
+                                ds.query();
+                                tech_lines_ds.setQueryParameter('product_id', product_id);
+                                tech_lines_ds.query();
+                                atm_lines_ds.setQueryParameter('product_id', product_id);
+                                atm_lines_ds.query();
+                                Aurora.Masker.unmask($('proyamtl5010_products_maintain_win').wrap);
+                            });
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask($('proyamtl5010_products_maintain_win').wrap);
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask($('proyamtl5010_products_maintain_win').wrap);
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            //发布
+            
+            function proyamtl5010_product_release() {
+                var record = $('proyamtl5010_product_maintain_ds').getCurrentRecord(),
+                    tech_lines_ds = $('proyamtl5010_product_tech_line_ds'),
+                    atm_lines_ds = $('proyamtl5010_product_atm_line_ds');
+                if (record.get('product_id')) {
+                    //判断头数据是否发生更改
+                    if (record.dirty) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:QMS5050.DATA_IS_NOT_SAVED}');
+                        return;
+                    }
+                    //判断行数据是否发生更改
+                    var tech_line_records = tech_lines_ds.getAll(),
+                        atm_line_records = atm_lines_ds.getAll();
+                    if (tech_line_records.length > 0) {
+                        //判断数据是否已经保存
+                        for (var i = 0;i < tech_line_records.length;i++) {
+                            if (tech_line_records[i].dirty || !tech_line_records[i].get('tech_line_id')) {
+                                Aurora.showMessage('${l:PROMPT}', '${l:QMS5050.DATA_IS_NOT_SAVED}');
+                                return;
+                            }
+                        }
+                    }
+                    if (atm_line_records.length > 0) {
+                        //判断数据是否已经保存
+                        for (var i = 0;i < atm_line_records.length;i++) {
+                            if (atm_line_records[i].dirty || !atm_line_records[i].get('atm_line_id')) {
+                                Aurora.showMessage('${l:PROMPT}', '${l:QMS5050.DATA_IS_NOT_SAVED}');
+                                return;
+                            }
+                        }
+                    }
+                    Aurora.showConfirm('${l:PROMPT}', '${l:PROMPT.CONFIRM_RELEASE}', function() {
+                        Aurora.Masker.mask($('proyamtl5010_products_maintain_win').wrap, '${l:QMS5050.BEING_SUBMITTED}');
+                        //Add by Jehu 15294 2018年5月7日 15:02:32
+                        //发布前校验是否已传产品图片
+                        Aurora.request({
+                            url: $('proyamtl5010_product_image_validate_link').getUrl(),
+                            para: {
+                                'table_pk_value': record.get('product_id'),
+                                'table_name': 'PROYA_MTL_PRODUCT_IMAGES'
+                            },
+                            success: function(args) {
+                                if (args.result.record.atm == 0) {
+                                    Aurora.Masker.unmask($('proyamtl5010_products_maintain_win').wrap);
+                                    Aurora.showMessage('${l:PROMPT}', '${l:PROYAPUR5010.PRODUCT_IMAGE_IS_NULL}');
+                                    return;
+                                }
+                                Aurora.request({
+                                    url: $('proyamtl5010_product_maintain_release_link').getUrl(),
+                                    para: record.data,
+                                    success: function() {
+                                        Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                            Aurora.Masker.unmask($('proyamtl5010_products_maintain_win').wrap);
+                                            proyamtl5010_product_maintain_return();
+                                        });
+                                    },
+                                    error: function() {
+                                        Aurora.Masker.unmask($('proyamtl5010_products_maintain_win').wrap);
+                                    },
+                                    failure: function() {
+                                        Aurora.Masker.unmask($('proyamtl5010_products_maintain_win').wrap);
+                                    },
+                                    scope: this
+                                });
+            
+                            },
+                            error: function() {
+                                Aurora.Masker.unmask($('proyamtl5010_products_maintain_win').wrap);
+                            },
+                            failure: function() {
+                                Aurora.Masker.unmask($('proyamtl5010_products_maintain_win').wrap);
+                            },
+                            scope: this
+                        });
+                    }, function() {}, 300, 100);
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '${l:QMS5050.DATA_IS_NOT_SAVED}');
+                    return;
+                }
+            }
+            
+            //产品下架
+            
+            function proyamtl5010_product_cancel() {
+                var record = $('proyamtl5010_product_maintain_ds').getCurrentRecord();
+                if (record.get('product_id')) {
+                    Aurora.showConfirm('${l:PROMPT}', '${l:PROYAMTL5010.COMFIRN_CANCEL}', function() {
+                        Aurora.Masker.mask($('proyamtl5010_products_maintain_win').wrap, '${l:QMS5050.BEING_SUBMITTED}');
+                        Aurora.request({
+                            url: $('proyamtl5010_product_maintain_cancel_link').getUrl(),
+                            para: record.data,
+                            success: function() {
+                                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                    Aurora.Masker.unmask($('proyamtl5010_products_maintain_win').wrap);
+                                    proyamtl5010_product_maintain_return();
+                                });
+                            },
+                            error: function() {
+                                Aurora.Masker.unmask($('proyamtl5010_products_maintain_win').wrap);
+                            },
+                            failure: function() {
+                                Aurora.Masker.unmask($('proyamtl5010_products_maintain_win').wrap);
+                            },
+                            scope: this
+                        });
+                    }, function() {}, 300, 100);
+                }
+            }
+            
+            //删除
+            
+            function proyamtl5010_product_delete() {
+                var record = $('proyamtl5010_product_maintain_ds').getCurrentRecord();
+                if (record.get('product_id')) {
+                    Aurora.showConfirm('${l:PROMPT}', '${l:PROMPT.CONFIRM_DELETE}', function() {
+                        Aurora.Masker.mask($('proyamtl5010_products_maintain_win').wrap, '${l:QMS5050.BEING_SUBMITTED}');
+                        Aurora.request({
+                            url: $('proyamtl5010_product_maintain_delete_link').getUrl(),
+                            para: record.data,
+                            success: function() {
+                                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                    Aurora.Masker.unmask($('proyamtl5010_products_maintain_win').wrap);
+                                    proyamtl5010_product_maintain_return();
+                                });
+                            },
+                            error: function() {
+                                Aurora.Masker.unmask($('proyamtl5010_products_maintain_win').wrap);
+                            },
+                            failure: function() {
+                                Aurora.Masker.unmask($('proyamtl5010_products_maintain_win').wrap);
+                            },
+                            scope: this
+                        });
+                    }, function() {}, 300, 100);
+                }
+            }
+            
+            //头更新事件
+            
+            function proyamtl5010_product_maintain_ds_update_handler(ds, record, name, value, oldvalue) {
+                if (name == 'tax_included_flag') {
+                    if (value == 'Y') {
+                        record.getField('tax_code_desc').setReadOnly(false);
+                        record.getField('tax_code_desc').setRequired(true);
+                    } else {
+                        //清空税率
+                        record.set('tax_code_id', '');
+                        record.set('tax_code_desc', '');
+                        record.getField('tax_code_desc').setReadOnly(true);
+                        record.getField('tax_code_desc').setRequired(false);
+                    }
+                }
+            }
+            
+            //头信息加载成功
+            
+            function proyamtl5010_product_maintain_ds_load_handler(ds) {
+                var record = ds.getCurrentRecord();
+                if (record.get('tax_included_flag') == 'Y') {
+                    record.getField('tax_code_desc').setReadOnly(false);
+                    record.getField('tax_code_desc').setRequired(true);
+                } else {
+                    record.getField('tax_code_desc').setReadOnly(true);
+                    record.getField('tax_code_desc').setRequired(false);
+                }
+                //如果是认证中或者认证通过，不允许进行修改
+                if (record.get('product_status') == 'APPROVING' || record.get('product_status') == 'APPROVED') {
+                    record.getField('product_name').setReadOnly(true);
+                    record.getField('category_desc').setReadOnly(true);
+                    record.getField('tax_code_desc').setReadOnly(true);
+                    record.getField('product_desc').setReadOnly(true);
+                    record.getField('tax_included_flag').setReadOnly(true);
+                    record.getField('key_words').setReadOnly(true);
+                    record.getField('base_price').setReadOnly(true);
+            
+                    //行新增和删除按钮
+                    $('proyamtl5010_product_tech_line_grid_add').hide(true);
+                    $('proyamtl5010_product_tech_line_grid_delete').hide(true);
+                    $('proyamtl5010_product_atm_line_grid_add').hide(true);
+                    $('proyamtl5010_product_atm_line_grid_delete').hide(true);
+                }
+            }
+            
+            //附件上传
+            
+            function proyamtl5010_product_atm_line_upload(atm_line_id) {
+                new Aurora.Window({
+                    url: "${/request/@context_path}/attachment_file_upload.screen?table_name=PROYA_MTL_PRODUCT_ATM_LINES&pkvalue=" + atm_line_id,
+                    title: '${l:ATM.UPLOAD_ATTACHMENT}',
+                    id: 'proyamtl5010_product_atm_line_upload_win',
+                    width: 610,
+                    height: 500
+                });
+                $('proyamtl5010_product_atm_line_upload_win').on('close', function() {
+                    $('proyamtl5010_product_atm_line_ds').query();
+                });
+            }
+            
+            //附件查看
+            
+            function proyamtl5010_product_atm_line_atm(atm_line_id) {
+                new Aurora.Window({
+                    url: "${/request/@context_path}/attachment_file_download.screen?table_name=PROYA_MTL_PRODUCT_ATM_LINES&pkvalue=" + atm_line_id,
+                    title: '${l:PROMPT.VIEW_ATTACHMENT}',
+                    id: 'proyamtl5010_product_atm_line_upload_win',
+                    width: 610,
+                    height: 500
+                });
+            }
+            
+            //附件上传渲染
+            
+            function proyamtl5010_product_atm_line_upload_renderer(value, record, name) {
+                var product_status = record.get('product_status');
+                if (record.get('atm_line_id')) {
+                    if (product_status == 'APPROVING' || product_status == 'APPROVED') {
+                        return '<a href="javascript:proyamtl5010_product_atm_line_atm(' + record.get('atm_line_id') + ');">${l:PROYA_MTL_PRODUCTS_ATM.UPLOAD_DOWN}</a>';
+                    } else {
+                        return '<a href="javascript:proyamtl5010_product_atm_line_upload(' + record.get('atm_line_id') + ');">${l:PROYA_MTL_PRODUCTS_ATM.UPLOAD_DOWN}</a>';
+                    }
+                } else {
+                    return '';
+                }
+            }
+            
+            //根据pattern截取对象ID
+            
+            function getObjId(str, pattern) {
+                return str.substring(0, str.indexOf(pattern));
+            }
+            
+            function set_default_primary_image(){
+                //Add by Jehu 15294 2018年5月8日 11:00:02
+                //是否已设置主图标记
+                var already_primary_flag = '${/parameter/@already_primary}';
+                //只取查询出的排序后的第一条attachment_id，即最早的attachment_id
+                var attachment_id = '${/model/proyamtl5010_product_picture_list/record/@attachment_id}';
+                //若是否已设置主图标记为N，即还未设置主图
+                if ('Y' != already_primary_flag) {
+                    //最早的图片设置主图按钮点击
+                    var button_id = attachment_id + '_proyamtl5010_set_primary_image';
+                    $(button_id).click();
+                }
+            }
+            
+            function proyamtl5010_product_maitain_reload(product_id) {
+                $('proyamtl5010_products_maintain_win').load('${/request/@context_path}/modules/cux/PROYA/PROYAMTL5010/proyamtl5010_products_maintain.screen?product_id=' + product_id);
+            }
+            
+            //设置主图
+            //原理：为button添加flag属性，
+            //若flag='Y'则说明是主图，将执行取消主图操作
+            //若flag='N'则说明不是主图，将执行设置主图操作
+            
+            function proyamtl5010_setorcancel_primary_image(button, e) {
+                //判断状态如果是认证中或者认证通过，不允许操作
+                var product_status = $('proyamtl5010_product_maintain_ds').getCurrentRecord().get('product_status');
+                if (product_status == 'APPROVING' || product_status == 'APPROVED') {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROYAMTL5010.STATUS_ERROR}');
+                    return;
+                }
+                var id = getObjId(button.id, '_proyamtl5010_set_primary_image');
+                var product_id = '${/parameter/@product_id}';
+                var flag = button.flag;
+                Aurora.request({
+                    url: $('proyamtl5010_product_set_primary_image_link').getUrl(),
+                    para: {
+                        'product_id': product_id,
+                        'attachment_id': id,
+                        'flag': flag
+                    },
+                    success: function(rst) {
+                        var result = rst.result;
+                        var btn = $(result['attachment_id'] + '_proyamtl5010_set_primary_image');
+                        var flag = result['flag'];
+                        //flag='Y'表示取消主图，变成取消后的状态
+                        if (flag == 'Y') {
+                            btn.flag = 'N';
+                            btn.setText('${l:PROYAMTL5010.SET_PRIMARY_IMAGE}');
+                        }
+                        //flag='N'表示设置主图，变成设置后的状态
+                        else if (flag == 'N') {
+                            //注意：这时需要将原来的主图的button状态改掉
+                            var old_attachment_id = result['old_attachment_id'];
+                            if (old_attachment_id != null) {
+                                var old_btn = $(old_attachment_id + '_proyamtl5010_set_primary_image');
+                                old_btn.flag = 'N';
+                                old_btn.setText('${l:PROYAMTL5010.SET_PRIMARY_IMAGE}');
+                            }
+                            btn.flag = 'Y';
+                            btn.setText('${l:PROYAMTL5010.CANCEL_PRIMARY_IMAGE}');
+                        }
+                        Aurora.showMessage('${l:PROMPT_MESSAGE}', '${l:PROMPT.OPERATION_SUCCESS}');
+                    },
+                    scope: this,
+                    sync: false
+                });
+            }
+            
+            //图片上传
+            
+            function proyamtl5010_product_upload_images() {
+                var record = $('proyamtl5010_product_maintain_ds').getCurrentRecord(),
+                    product_id = record.get('product_id'),
+                    //判断状态如果是认证中或者认证通过，不允许操作
+                    product_status = record.get('product_status');
+                if (product_status == 'APPROVING' || product_status == 'APPROVED') {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROYAMTL5010.STATUS_ERROR}');
+                    return;
+                }
+                if (product_id) {
+                    new Aurora.Window({
+                        title: '${l:ATM.UPLOAD_ATTACHMENT}',
+                        id: 'proyamtl5010_product_image_upload_window',
+                        url: '${/request/@context_path}/modules/cux/PROYA/PROYAMTL5010/proyamtl5010_product_image_upload.screen?pkvalue=' + product_id + '&table_name=PROYA_MTL_PRODUCT_IMAGES',
+                        fullScreen: false,
+                        heigh: 600,
+                        width: 700
+                    }).on('beforeclose', function() {
+                        proyamtl5010_product_maitain_reload(product_id);
+                    });
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '${l:QMS5050.DATA_IS_NOT_SAVED}');
+                }
+            }
+            
+            //删除这张图片
+            
+            function proyamtl5010_product_delete_image(button, e) {
+                var record = $('proyamtl5010_product_maintain_ds').getCurrentRecord(),
+                    product_id = record.get('product_id'),
+                    product_status = record.get('product_status');
+                if (product_status == 'APPROVING' || product_status == 'APPROVED') {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROYAMTL5010.STATUS_ERROR}');
+                    return;
+                }
+                Aurora.showConfirm('${l:PROMPT}', '${l:PROMPT.CONFIRM_DELETE}', function() {
+                    var id = getObjId(button.id, '_delete_this_img');
+                    var imgs = [];
+                    imgs[0] = {
+                        attachment_id: id,
+                        _status: 'delete'
+                    };
+                    Aurora.request({
+                        url: $('proyamtl5010_product_delete_image_link').getUrl(),
+                        para: imgs,
+                        success: function() {
+                            proyamtl5010_product_maitain_reload(product_id);
+                        },
+                        scope: this,
+                        sync: false
+                    });
+                });
+            }
+            
+            //编辑
+            
+            function proyamtl5010_product_tech_line_edit(record, name) {
+                if (record.get('product_status') == 'APPROVING' || record.get('product_status') == 'APPROVED') {
+                    return '';
+                } else {
+                    if (name == 'is_pentu_flag' || name == 'is_diandu_flag' || name == 'is_siyin_flag' || name == 'is_yiyin_flag' || name == 'is_tangjin_flag' || name == 'is_shuizhuanyin_flag' || name == 'is_leishe_flag' || name == 'is_tiebao_flag') {
+                        return 'proyamtl5010_product_tech_line_grid_cb';
+                    } else {
+                        return 'proyamtl5010_product_tech_line_grid_tf';
+                    }
+                }
+            }
+            
+            function proyamtl5010_product_atm_line_grid_edit(record, name) {
+                if (record.get('product_status') == 'APPROVING' || record.get('product_status') == 'APPROVED') {
+                    return '';
+                } else {
+                    return 'proyamtl5010_product_atm_line_grid_tf';
+                }
+            }
+            
+            
+            function proyamtl5010_product_atm_line_ds_load(ds) {
+                var atm_records = $('proyamtl5010_product_atm_ds').getAll(),
+                    atm_line_records = ds.getAll();
+                if (atm_line_records.length < 1 && atm_records.length > 0) {
+                    for (var i = 0;i < atm_records.length;i++) {
+                        var atm_line_record = ds.create();
+                        atm_line_record.set('atm_desc', atm_records[i].get('flex_desc'));
+                    }
+                }
+            }
+            
+            //采购方附件查看
+            
+            function proyamtl5010_product_attachments() {
+                var product_id = $('proyamtl5010_product_maintain_ds').getCurrentRecord().get('product_id');
+                if (product_id) {
+                    new Aurora.Window({
+                        url: "${/request/@context_path}/attachment_file_download.screen?table_name=PROYA_MTL_PRODUCTS&pkvalue=" + product_id,
+                        title: '${l:PROMPT.VIEW_ATTACHMENT}',
+                        id: 'proyamtl5010_product_attachments_win',
+                        width: 610,
+                        height: 500
+                    });
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="proyamtl5010_product_atm_ds">
+                <a:datas dataSource="proyamtl5010_product_atm_data"/>
+            </a:dataSet>
+            <a:dataSet id="proyamtl5010_product_tech_line_ds" autoCount="true" autoPageSize="true" autoQuery="true" model="cux.PROYA.PROYAMTL5010.proyamtl5010_product_tech_lns" selectable="true">
+                <a:fields>
+                    <a:field name="is_pentu_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="is_diandu_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="is_siyin_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="is_yiyin_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="is_tangjin_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="is_shuizhuanyin_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="is_leishe_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="is_tiebao_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="proyamtl5010_product_atm_line_ds" autoCount="true" autoPageSize="true" autoQuery="true" model="cux.PROYA.PROYAMTL5010.proyamtl5010_product_atm_lns" selectable="true">
+                <a:fields>
+                    <a:field name="atm_desc" required="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="proyamtl5010_product_atm_line_ds_load"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="proyamtl5010_product_maintain_ds" autoCreate="true" model="cux.PROYA.PROYAMTL5010.proyamtl5010_products_query">
+                <a:fields>
+                    <a:field name="product_name" required="true"/>
+                    <a:field name="product_desc" required="true"/>
+                    <a:field name="proya_business_group" defaultValue="${/model/proyamtl5010_product_proya_data/record/@proya_business_group}"/>
+                    <a:field name="tax_included_flag" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                    <a:field name="key_words" required="true"/>
+                    <a:field name="category_desc" autoComplete="true" autoCompleteField="category_code_name" lovHeight="490" lovService="cux.PROYA.mtl_categories_lov?business_group=${/model/proyamtl5010_product_proya_data/record/@proya_business_group}" lovWidth="500" required="true" title="PROYA_MTL_PRODUCTS.CATEGORY_ID">
+                        <a:mapping>
+                            <a:map from="category_udf_id" to="category_id"/>
+                            <a:map from="category_name" to="category_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="tax_code_id" defaultValue="${/model/proyamtl5010_product_proya_data/record/@tax_code_id}"/>
+                    <a:field name="tax_code_desc" defaultValue="${/model/proyamtl5010_product_proya_data/record/@tax_code_desc}" lovHeight="490" lovService="public.fnd_tax_type_code_lov?business_group=${/model/proyamtl5010_product_proya_data/record/@proya_business_group}" lovWidth="500" required="true" title="PROYA_MTL_PRODUCTS.CATEGORY_ID">
+                        <a:mapping>
+                            <a:map from="tax_type_id" to="tax_code_id"/>
+                            <a:map from="description" to="tax_code_desc"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="proyamtl5010_product_maintain_ds_update_handler"/>
+                    <a:event name="load" handler="proyamtl5010_product_maintain_ds_load_handler"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="proyamtl5010_product_save" text="PROMPT.SAVE" width="100"/>
+                <a:toolbarButton click="proyamtl5010_product_release" text="PROMPT.RELEASE" width="100"/>
+                <a:toolbarButton click="proyamtl5010_product_cancel" text="PROYAMTL5010.CANCEL" width="100"/>
+                <a:toolbarButton click="proyamtl5010_product_delete" text="PROMPT.DELETE" width="100"/>
+                <a:toolbarButton click="proyamtl5010_product_attachments" text="PROMPT.VIEW_ATTACHMENT" width="100"/>
+                <a:toolbarButton click="proyamtl5010_product_maintain_return" text="HAP_BACK" width="100"/>
+            </a:screenTopToolbar>
+            <a:fieldSet column="1" title="PROYA_MTL_PRODUCTS.PRODUCT_INFO">
+                <a:hBox labelWidth="100">
+                    <a:textField name="product_code" bindTarget="proyamtl5010_product_maintain_ds" prompt="PROYA_MTL_PRODUCTS.PRODUCT_CODE" readOnly="true" width="150"/>
+                    <a:textField name="vendor_product_code" bindTarget="proyamtl5010_product_maintain_ds" prompt="PROYA_MTL_PRODUCTS.VENDOR_PRODUCT_CODE" width="150"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textField name="product_name" bindTarget="proyamtl5010_product_maintain_ds" emptyText="PROYAACP5010.PRODUCT_NAME_DESCRIPTION" prompt="PROYA_MTL_PRODUCTS.PRODUCT_NAME" width="600"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textField name="product_status_desc" bindTarget="proyamtl5010_product_maintain_ds" prompt="PROYA_MTL_PRODUCTS.PRODUCT_STATUS" readOnly="true" width="150"/>
+                    <a:lov name="category_desc" bindTarget="proyamtl5010_product_maintain_ds" prompt="PROYA_MTL_PRODUCTS.CATEGORY_ID" width="150"/>
+                    <a:textField name="key_words" bindTarget="proyamtl5010_product_maintain_ds" prompt="PROYA_MTL_PRODUCTS.KEY_WORDS" width="150"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:numberField name="base_price" bindTarget="proyamtl5010_product_maintain_ds" prompt="PROYA_MTL_PRODUCTS.BASE_PRICE" width="150"/>
+                    <a:checkBox name="tax_included_flag" bindTarget="proyamtl5010_product_maintain_ds" prompt="PROYA_MTL_PRODUCTS.TAX_INCLUDED_FLAG" width="20"/>
+                    <a:label width="130"/>
+                    <a:lov name="tax_code_desc" bindTarget="proyamtl5010_product_maintain_ds" prompt="PROYA_MTL_PRODUCTS.TAX_RATE" width="150"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textArea name="product_desc" bindTarget="proyamtl5010_product_maintain_ds" height="40" prompt="PROYA_MTL_PRODUCTS.PRODUCT_DESC" width="665"/>
+                </a:hBox>
+            </a:fieldSet>
+            <a:tabPanel marginHeight="130" marginWidth="30">
+                <a:tabs>
+                    <a:tab prompt="PROYA_MTL_PRODUCTS.PRODUCT_IMAGE" width="130">
+                        <a:hBox>
+                            <a:gridButton click="proyamtl5010_product_upload_images" text="上传图片"/>
+                            <!-- 
+                            <span style="font-family:微软雅黑; color:red; "><![CDATA[温馨提示：为提高商品图片显示效果，请上传图片分辨率为  200*200 / 400*400 / 800*800]]></span> -->
+                        </a:hBox>
+                        <div style="overflow:auto;height:auto;width:1200px;border:1px solid;border-color:blue;">
+                            <a:repeater datamodel="/model/proyamtl5010_product_picture_list">
+                                <div id="${@product_id}_div" style="float:left;margin:5px;">
+                                    <img height="250" src="${/request/@context_path}/atm_download.svc?attachment_id=${@attachment_id}" style="float:left" type="absolute" width="250"/>
+                                    <div style="float:left;clear:both;"><![CDATA[${@file_name}]]></div>
+                                    <div style="float:left;width:100%;clear:both;">
+                                        <a:button id="${@attachment_id}_proyamtl5010_set_primary_image" click="proyamtl5010_setorcancel_primary_image" style="float:left" text="PROYAMTL5010.CANCEL_PRIMARY_IMAGE"/>
+                                        <a:switch test="@primary_flag">
+                                            <a:case value="N">
+                                                <script><![CDATA[
+                                                    $('${@attachment_id}_proyamtl5010_set_primary_image').flag = 'N';
+                                                    $('${@attachment_id}_proyamtl5010_set_primary_image').setText('${l:PROYAMTL5010.SET_PRIMARY_IMAGE}');
+                                                ]]></script>
+                                            </a:case>
+                                            <a:case value="Y">
+                                                <script><![CDATA[
+                                                    $('${@attachment_id}_proyamtl5010_set_primary_image').flag = 'Y';
+                                                    $('${@attachment_id}_proyamtl5010_set_primary_image').setText('${l:PROYAMTL5010.CANCEL_PRIMARY_IMAGE}');
+                                                ]]></script>
+                                            </a:case>
+                                        </a:switch>
+                                        <a:button id="${@attachment_id}_delete_this_img" click="proyamtl5010_product_delete_image" style="float:right;" text="HAP_DELETE"/>
+                                    </div>
+                                </div>
+                            </a:repeater>
+                        </div>
+                    </a:tab>
+                    <a:tab prompt="PROYA_MTL_PRODUCTS.PRODUCT_TECH_INFO" width="130">
+                        <a:grid id="proyamtl5010_product_tech_line_grid" bindTarget="proyamtl5010_product_tech_line_ds" marginHeight="180" marginWidth="55" navBar="true">
+                            <a:toolBar>
+                                <a:button id="proyamtl5010_product_tech_line_grid_add" type="add"/>
+                                <a:button id="proyamtl5010_product_tech_line_grid_delete" type="delete"/>
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="component" editorFunction="proyamtl5010_product_tech_line_edit" prompt="PROYA_MTL_PRODUCTS_TECH.COMPONENT" width="50"/>
+                                <a:column name="material" editorFunction="proyamtl5010_product_tech_line_edit" prompt="PROYA_MTL_PRODUCTS_TECH.MATERIAL" width="50"/>
+                                <a:column name="weight" editorFunction="proyamtl5010_product_tech_line_edit" prompt="PROYA_MTL_PRODUCTS_TECH.WEIGHT" width="50"/>
+                                <a:column name="modular_number" editorFunction="proyamtl5010_product_tech_line_edit" prompt="PROYA_MTL_PRODUCTS_TECH.MODULAR_NUMBER" width="50"/>
+                                <a:column name="modular_per_second" editorFunction="proyamtl5010_product_tech_line_edit" prompt="PROYA_MTL_PRODUCTS_TECH.MODULAR_PER_SECOND" width="50"/>
+                                <a:column name="daily_capacity" editorFunction="proyamtl5010_product_tech_line_edit" prompt="PROYA_MTL_PRODUCTS_TECH.DAILY_CAPACITY" width="50"/>
+                                <a:column name="monthly_capacity" editorFunction="proyamtl5010_product_tech_line_edit" prompt="PROYA_MTL_PRODUCTS_TECH.MONTHLY_CAPACITY" width="50"/>
+                                <a:column name="is_pentu_flag" editorFunction="proyamtl5010_product_tech_line_edit" prompt="PROYA_MTL_PRODUCTS_TECH.IS_PENTU_FLAG" width="30"/>
+                                <a:column name="is_diandu_flag" editorFunction="proyamtl5010_product_tech_line_edit" prompt="PROYA_MTL_PRODUCTS_TECH.IS_DIANDU_FLAG" width="30"/>
+                                <a:column name="is_siyin_flag" editorFunction="proyamtl5010_product_tech_line_edit" prompt="PROYA_MTL_PRODUCTS_TECH.IS_SIYIN_FLAG" width="30"/>
+                                <a:column name="is_yiyin_flag" editorFunction="proyamtl5010_product_tech_line_edit" prompt="PROYA_MTL_PRODUCTS_TECH.IS_YIYIN_FLAG" width="30"/>
+                                <a:column name="is_tangjin_flag" editorFunction="proyamtl5010_product_tech_line_edit" prompt="PROYA_MTL_PRODUCTS_TECH.IS_TANGJIN_FLAG" width="30"/>
+                                <a:column name="is_shuizhuanyin_flag" editorFunction="proyamtl5010_product_tech_line_edit" prompt="PROYA_MTL_PRODUCTS_TECH.IS_SHUIZHUANYIN_FLAG" width="30"/>
+                                <a:column name="is_leishe_flag" editorFunction="proyamtl5010_product_tech_line_edit" prompt="PROYA_MTL_PRODUCTS_TECH.IS_LEISHE_FLAG" width="30"/>
+                                <a:column name="is_tiebao_flag" editorFunction="proyamtl5010_product_tech_line_edit" prompt="PROYA_MTL_PRODUCTS_TECH.IS_TIEBIAO_FLAG" width="30"/>
+                                <a:column name="other_info_01" editorFunction="proyamtl5010_product_tech_line_edit" prompt="PROYA_MTL_PRODUCTS_TECH.OTHER_INFO_01" width="50"/>
+                                <a:column name="other_info_02" editorFunction="proyamtl5010_product_tech_line_edit" prompt="PROYA_MTL_PRODUCTS_TECH.OTHER_INFO_02" width="50"/>
+                                <a:column name="other_info_03" editorFunction="proyamtl5010_product_tech_line_edit" prompt="PROYA_MTL_PRODUCTS_TECH.OTHER_INFO_03" width="50"/>
+                                <a:column name="other_info_04" editorFunction="proyamtl5010_product_tech_line_edit" prompt="PROYA_MTL_PRODUCTS_TECH.OTHER_INFO_04" width="50"/>
+                                <a:column name="other_info_05" editorFunction="proyamtl5010_product_tech_line_edit" prompt="PROYA_MTL_PRODUCTS_TECH.OTHER_INFO_05" width="50"/>
+                                <a:column name="comments" editorFunction="proyamtl5010_product_tech_line_edit" prompt="PROYA_MTL_PRODUCTS_TECH.COMMENTS" width="100"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:textField id="proyamtl5010_product_tech_line_grid_tf"/>
+                                <a:checkBox id="proyamtl5010_product_tech_line_grid_cb"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab prompt="PROYA_MTL_PRODUCTS.ATTACHMENT_INFO" width="130">
+                        <a:grid id="proyamtl5010_product_atm_line_grid" bindTarget="proyamtl5010_product_atm_line_ds" marginHeight="180" marginWidth="55" navBar="true">
+                            <a:toolBar>
+                                <a:button id="proyamtl5010_product_atm_line_grid_add" type="add"/>
+                                <a:button id="proyamtl5010_product_atm_line_grid_delete" type="delete"/>
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="atm_desc" editorFunction="proyamtl5010_product_atm_line_grid_edit" prompt="PROYA_MTL_PRODUCTS_ATM.ATM_DESC" width="150"/>
+                                <a:column name="atm_line_id" align="center" prompt="PROYA_MTL_PRODUCTS_ATM.UPLOAD_DOWN" renderer="proyamtl5010_product_atm_line_upload_renderer" width="80"/>
+                                <a:column name="created_by_desc" align="center" prompt="PROYA_MTL_PRODUCTS_ATM.UPLOADED_BY" width="80"/>
+                                <a:column name="creation_date_fmt" prompt="PROYA_MTL_PRODUCTS_ATM.UPLOAD_DATE" sortable="true" width="80"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:textField id="proyamtl5010_product_atm_line_grid_tf"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+        <script><![CDATA[
+        	init();
+        	set_default_primary_image();
+        ]]></script>
+    </a:view>
+</a:screen>

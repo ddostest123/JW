@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+				SELECT *
+				  FROM (SELECT ir.info_record_id,
+				               ir.document_number,
+				               ir.item_code,
+				               ir.item_name,
+				               ir.vendor_id,
+				               (SELECT pv.display_vendor_code FROM pur_vendors pv WHERE pv.vendor_id = ir.vendor_id) display_vendor_code,
+				               (SELECT pv.descriptions FROM pur_vendors pv WHERE pv.vendor_id = ir.vendor_id) descriptions,
+				               ir.unit_price,
+				               ir.tax_type_rate,
+				               ir.creation_date,
+				               ${@demand_pool_id} demand_pool_id,
+				               (SELECT decode(COUNT(1),
+								              0,
+								              '否',
+								              '是') relevance_flag
+								  FROM pur_demand_pool_pur_info dppi
+								 WHERE dppi.demand_pool_id = ${@demand_pool_id}) relevance_flag
+				          FROM pur_purchase_info_records ir,
+				               (SELECT MAX(ir.creation_date) max_creation_date
+				                  FROM pur_purchase_info_records ir
+				                 WHERE (item_name =
+				                       (SELECT nvl((SELECT siv.item_name FROM mtl_system_items_vl siv WHERE siv.item_id = dp.item_id),
+				                                    dp.item_description)
+				                           FROM pur_demand_pool dp
+				                          WHERE dp.demand_pool_id = ${@demand_pool_id}))
+				                          AND ir.vendor_id is not null
+				                          AND ir.owner_business_group = ${/session/@business_group}) ird
+				         WHERE (item_name = (SELECT nvl((SELECT siv.item_name FROM mtl_system_items_vl siv WHERE siv.item_id = dp.item_id),
+				                                        dp.item_description)
+				                               FROM pur_demand_pool dp
+				                              WHERE dp.demand_pool_id = ${@demand_pool_id}))
+				               AND ir.creation_date = ird.max_creation_date
+				               AND ir.vendor_id is not null
+				               AND ir.owner_business_group = ${/session/@business_group}) v
+       ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+                BEGIN
+                	cux_fdm_pur_pkg.save_demand_pur_info(p_demand_pool_id		=> ${@demand_pool_id},
+														 p_info_record_id       => ${@info_record_id},
+														 p_document_number		=> ${@document_number},
+														 p_session_user_id		=> ${/session/@user_id});
+                END;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+                BEGIN
+                	cux_fdm_pur_pkg.delete_demand_pur_info(p_demand_pool_id		=> ${@demand_pool_id},
+														 p_info_record_id       => ${@info_record_id},
+														 p_session_user_id		=> ${/session/@user_id});
+                END;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

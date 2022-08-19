@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-execute model="db.erpgld_periods_pkg.get_lastest_open_inv_period" rootPath="erpinv5610_period"/>
+        <a:model-query defaultWhereClause="g.period_name = to_char(sysdate,&apos;yyyy-mm&apos;) AND g.business_group  = ${/session/@business_group}" model="erpinv.ERPINV5610.inv_get_start_end_date" rootPath="erpinv5610_start_end_date"/>
+        <!-- <a:model-query defaultWhereClause="t1.business_type_code not in (&apos;ADJ-AMT&apos;, &apos;ADJ-PAC&apos;,&apos;OB&apos;) and t1.source_transaction_type_code is null" model="erpinv.ERPINV5610.inv_get_transaction_type" rootPath="erpinv5610_transaction_list"/> -->
+    </a:init-procedure>
+    <a:view>
+        <a:link id="erpinv5610_transcation_recoil_submit_link" url="${/request/@context_path}/modules/erpinv/ERPINV5610/inv_recoil_submit.svc"/>
+        <a:link id="erpinv5610_document_date_check" model="db.erpgld_periods_pkg.get_open_inv_period" modelaction="query"/>
+        <script><![CDATA[
+            function erpinv_5610_submit() {
+                var record = $('erpinv5610_document_transcation_query_ds').getAt(0);
+                var records = $('erpinv5610_document_transcation_result_ds').getSelected();
+                var recoil_date;
+                if (!$('erpinv_recoil_date_ds').validate()) {
+                    return;
+                } else {
+                    recoil_date = $('erpinv_recoil_date_ds').getAt(0).get('recoil_date');
+                    if (records.length == 0) {
+                        Aurora.showMessage('提示', '请选择行！');
+                    } else {
+                        Aurora.showConfirm('提示', '是否确认反冲？', function() {
+                            var para = {};
+                            var datas = [];
+                            for (var i = 0;i < records.length;i++) {
+                                var recoil_data = {};
+                                recoil_data['reversed_date'] = recoil_date;
+                                recoil_data['inv_transaction_id'] = records[i].get('transaction_id');
+                                recoil_data['transaction_type'] = records[i].get('transaction_type_code');
+                                recoil_data['transaction_source_type'] = records[i].get('transaction_source_type');
+                                recoil_data['company_id'] = records[i].get('company_id');
+                                datas.push(recoil_data);
+                            }
+                            //debugger;
+                            para['datas'] = datas;
+                            para['reversed_date'] = recoil_date;
+                            para['company_id'] = record.get('company_id');
+                            var url = $('erpinv5610_transcation_recoil_submit_link').getUrl();
+                            Aurora.Masker.mask(Ext.getBody(), '正在反冲...');
+                            Aurora.request({
+                                url: url,
+                                para: para,
+                                success: function(res) {
+                                    Aurora.Masker.unmask(Ext.getBody());
+                                    $('erpinv_5610_submit_btn').enable();
+                                    $('erpinv5610_document_transcation_result_ds').query();
+                                    var message = '反冲成功!';
+                                    Aurora.SideBar.enable = true;
+                                    Aurora.SideBar.show({
+                                        msg: message,
+                                        duration: 6000
+                                    });
+                                },
+                                error: function() {
+                                    Aurora.Masker.unmask(Ext.getBody());
+                                },
+                                failure: function() {
+                                    Aurora.Masker.unmask(Ext.getBody());
+                                }
+                            });
+                        });
+                    }
+                }
+            }
+            
+            function erpinv5610_query() {
+                $('erpinv5610_document_transcation_result_ds').query();
+                $('erpinv5610_query_form').close();
+            }
+            
+            function erpinv5610_amount_footRd(records, name) {
+                var sum = 0;
+                if (name == 'transaction_num') {
+                    return '<font>合计:</font>';
+                } else {
+                    for (var i = 0;i < records.length;i++) {
+                        var r = records[i].get(name);
+                        var n = parseFloat(r);
+                        if (!isNaN(n)) {
+                            sum += n;
+                        }
+                    }
+                    //return '<font>' + Aurora.formatNumber(sum, '${/model/erpinv5610_amount_precision_t/record/@value}') + '</font>';
+                    return '<font>' + Aurora.formatNumber(sum, 2) + '</font>';
+                }
+            }
+            
+            function erpinv5610_quantity_rend(value, record, name) {
+                //return Aurora.formatNumber(value, '${/model/erpinv5610_quantity_percision/record/@value}');
+                return Aurora.formatNumber(value, 2);
+            }
+            
+            function erpinv5610_reversed_flag_rd(value, record, name) {
+                if (value == 'R') {
+                    return '反冲';
+                } else if (value == 'W') {
+                    return '被反冲';
+                } else {
+                    return '未反冲';
+                }
+            }
+            
+            function erpinv5610_amount_rend(value, record, name) {
+                //return Aurora.formatNumber(value, '${/model/erpinv5610_amount_precision_t/record/@value}');
+                return Aurora.formatNumber(value, 2);
+            }
+            
+            function erpinv5610_document_doc_date_validator(record, name, value) {
+                var url = $('erpinv5610_document_date_check').getUrl();
+                var flag = true;
+                var company_id = $('erpinv5610_document_transcation_query_ds').getCurrentRecord().get('company_id');
+                Aurora.request({
+                    url: url,
+                    para: {
+                       	company_id:company_id,
+                        date: value
+                    },
+                    success: function(res) {
+                        var period_name = res.result.record.period_name;
+                        if (Aurora.isEmpty(period_name)) {
+                            flag = '反冲日期所在库存期间必须处于打开状态!';
+                        } else {
+                            record.set('period_name', period_name);
+                        }
+                    },
+                    scope: this,
+                    sync: true
+                });
+                return flag;
+            }
+            
+            function erpinv5610_head_update(dataset, record, name, value, oldValue) {
+                if (name == 'company_id') {
+                    erpinv5610_document_doc_date_validator();
+                    record.set('transaction_type_code', '');
+                    record.set('transaction_type_desc', '');
+                    $('erpinv5610_document_transcation_type_ds').setQueryParameter('company_id', value);
+                    //(&apos;ADJ-AMT&apos;, &apos;ADJ-PAC&apos;,&apos;OB&apos;)
+                    $('erpinv5610_document_transcation_type_ds').query();
+                    
+                    
+                    record.set('warehouse_id', '');
+                    record.set('warehouse_desc', '');
+                    $('erpinv5610_warehouse_ds').setQueryParameter('company_id', value);
+                    $('erpinv5610_warehouse_ds').setQueryParameter('enabled_flag', 'Y');
+                    $('erpinv5610_warehouse_ds').query();
+                    
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="erpinv5610_document_transcation_type_ds" fetchAll="true" model="erpinv.ERPINV5610.inv_get_trans_type"/>
+            <a:dataSet id="erpinv5610_warehouse_ds" fetchAll="true" loadData="true" model="erpinv.public.inv_warehouses_lov"/>
+            <a:dataSet id="erpinv_recoil_date_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="recoil_date" required="true" validator="erpinv5610_document_doc_date_validator"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="erpinv5610_assign_company_ds" loadData="true" model="public.fnd_company_list"/>
+            <a:dataSet id="erpinv5610_document_transcation_query_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="company_id" defaultValue="${/session/@default_company_id}"/>
+                    <a:field name="company_name" defaultValue="${/session/@default_company_name}" displayField="company_full_name" options="erpinv5610_assign_company_ds" required="true" returnField="company_id" valueField="company_id"/>
+                    <a:field name="transaction_date_from" defaultValue="${/model/erpinv5610_start_end_date/record/@start_date}" required="true"/>
+                    <a:field name="transaction_date_to" defaultValue="${/model/erpinv5610_start_end_date/record/@end_date}" required="true"/>
+                    <a:field name="warehouse_desc" displayField="warehouse_desc" options="erpinv5610_warehouse_ds" valueField="warehouse_code">
+                        <a:mapping>
+                            <a:map from="warehouse_id" to="warehouse_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="transaction_type_desc" displayField="transaction_type_desc" options="erpinv5610_document_transcation_type_ds" required="true" returnField="transaction_type_code" valueField="transaction_type_code"/>
+                    <a:field name="user_description" autoComplete="true" autoCompleteField="code_name" autoCompleteSize="1" lovHeight="500" lovService="erpinv.ERPINV3010.fnd_users" lovWidth="500" title="用户">
+                        <a:mapping>
+                            <a:map from="user_id" to="user_id"/>
+                            <a:map from="code_name" to="user_description"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="erpinv5610_head_update"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="erpinv5610_document_transcation_result_ds" autoCount="true" autoPageSize="true" autoQuery="false" model="erpinv.ERPINV5610.inv_document_transcation_query" queryDataSet="erpinv5610_document_transcation_query_ds" selectable="true"/>
+        </a:dataSets>
+        <a:defaultScreen>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton id="erpinv_5610_submit_btn" className="item-rbtn-blue reverse" click="erpinv_5610_submit" style="margin-left:20px;" text="反冲" width="100"/>
+            </a:screenTopToolbar>
+            <a:hBox labelWidth="106" padding="0">
+                <a:comboBox name="company_name" bindTarget="erpinv5610_document_transcation_query_ds" prompt="公司"/>
+                <a:datePicker name="recoil_date" bindTarget="erpinv_recoil_date_ds" prompt="反冲日期"/>
+            </a:hBox>
+            <a:queryForm id="erpinv5610_query_form" bindTarget="erpinv5610_document_transcation_query_ds" resultTarget="erpinv5610_document_transcation_result_ds" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:hBox labelWidth="100">
+                        <a:datePicker name="transaction_date_from" bindTarget="erpinv5610_document_transcation_query_ds" prompt="事务日期从">
+                            <a:events>
+                                <a:event name="enterdown" handler="erpinv5610_query"/>
+                            </a:events>
+                        </a:datePicker>
+                        <a:datePicker name="transaction_date_to" bindTarget="erpinv5610_document_transcation_query_ds" prompt="事务日期到">
+                            <a:events>
+                                <a:event name="enterdown" handler="erpinv5610_query"/>
+                            </a:events>
+                        </a:datePicker>
+                        <a:comboBox name="transaction_type_desc" bindTarget="erpinv5610_document_transcation_query_ds" prompt="事务类型">
+                            <a:events>
+                                <a:event name="enterdown" handler="erpinv5610_query"/>
+                            </a:events>
+                        </a:comboBox>
+                    </a:hBox>
+                </a:formToolBar>
+                <a:formBody>
+                    <a:box column="4" labelWidth="80">
+                        <a:textField name="transaction_num" bindTarget="erpinv5610_document_transcation_query_ds" prompt="事务编号">
+                            <a:events>
+                                <a:event name="enterdown" handler="erpinv5610_query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:textField name="item_code" bindTarget="erpinv5610_document_transcation_query_ds" prompt="物品代码" typeCase="upper">
+                            <a:events>
+                                <a:event name="enterdown" handler="erpinv5610_query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:textField name="item_name" bindTarget="erpinv5610_document_transcation_query_ds" prompt="物品名称">
+                            <a:events>
+                                <a:event name="enterdown" handler="erpinv5610_query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:comboBox name="warehouse_desc" bindTarget="erpinv5610_document_transcation_query_ds" prompt="库房">
+                            <a:events>
+                                <a:event name="enterdown" handler="erpinv5610_query"/>
+                            </a:events>
+                        </a:comboBox>
+                        <a:datePicker name="create_date_from" bindTarget="erpinv5610_document_transcation_query_ds" prompt="创建日期从">
+                            <a:events>
+                                <a:event name="enterdown" handler="erpinv5610_query"/>
+                            </a:events>
+                        </a:datePicker>
+                        <a:datePicker name="create_date_to" bindTarget="erpinv5610_document_transcation_query_ds" prompt="创建日期到">
+                            <a:events>
+                                <a:event name="enterdown" handler="erpinv5610_query"/>
+                            </a:events>
+                        </a:datePicker>
+                        <a:lov name="user_description" bindTarget="erpinv5610_document_transcation_query_ds" prompt="创建人">
+                            <a:events>
+                                <a:event name="enterdown" handler="erpinv5610_query"/>
+                            </a:events>
+                        </a:lov>
+                    </a:box>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="erpinv5610_document_transcation_grid" bindTarget="erpinv5610_document_transcation_result_ds" marginHeight="160" marginWidth="50" navBar="true" style="border:none" submask="false" width="870">
+                <a:columns>
+                    <a:column name="transaction_num" footerRenderer="erpinv5610_amount_footRd" lock="true" prompt="事务编号" width="120"/>
+                    <a:column name="srm_trx_number" lock="true" prompt="SRM事务编号" width="120"/>
+                    <a:column name="item_desc" lock="true" prompt="物品" width="140"/>
+                    <a:column name="transaction_date" prompt="事务日期" width="70"/>
+                    <a:column name="transaction_type_desc" prompt="事务类型" width="80"/>
+                    <a:column name="primary_quantity" align="right" prompt="主数量" width="50"/>
+                    <a:column name="primary_uom_desc" prompt="主单位" width="40"/>
+                    <a:column name="warehouse_desc" prompt="库房" width="140"/>
+                    <a:column name="partner_desc" prompt="供应商/客户" width="140"/>
+                    <a:column name="transaction_price" align="right" prompt="事务单价" renderer="erpinv5610_amount_rend" width="50"/>
+                    <!-- <a:column name="transaction_amount" align="right" footerRenderer="erpinv5610_amount_footRd" prompt="事务金额" renderer="erpinv5610_amount_rend" width="80"/>
+                    <a:column name="real_cost" align="right" footerRenderer="erpinv5610_amount_footRd" prompt="事务成本" renderer="erpinv5610_amount_rend" width="80"/> -->
+                    <a:column name="creation_date" prompt="创建日期" width="70"/>
+                    <a:column name="user_description" prompt="创建人" width="60"/>
+                    <a:column name="description" prompt="备注" width="180"/>
+                </a:columns>
+            </a:grid>
+        </a:defaultScreen>
+    </a:view>
+</a:screen>

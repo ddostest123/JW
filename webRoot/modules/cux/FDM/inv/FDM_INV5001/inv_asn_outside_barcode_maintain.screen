@@ -1,0 +1,397 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao
+    $Date: 2017年6月6日 下午3:40:33  
+    $Revision: 1.0  
+    $Purpose: 方正电机，外箱条码管理
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure/>
+    <a:view>
+        <a:link id="fdm_inv5001_asn_outside_barcode_batch_add_link" url="${/request/@context_path}/modules/cux/FDM/inv/FDM_INV5001/inv_asn_outside_barcode_batch_create.screen"/>
+        <a:link id="fdm_inv5001_asn_outside_barcode_maintain_save_link" url="${/request/@context_path}/modules/cux/FDM/inv/FDM_INV5001/inv_asn_outside_barcode_maintain_save.svc"/>
+        <a:link id="fdm_inv5001_asn_outside_barcode_maintain_delete_link" model="cux.FDM.inv.FDM_INV5001.inv_asn_outside_barcode_maintain" modelaction="batch_update"/>
+        <a:link id="fdm_inv5001_asn_outside_barcode_maintain_submit_link" url="${/request/@context_path}/modules/cux/FDM/inv/FDM_INV5001/inv_asn_outside_barcode_maintain_submit.svc"/>
+        <div/>
+        <script><![CDATA[
+            function fdm_inv5001_asnOutsideBarcodeMaintainAccAdd(arg1, arg2) {
+                var r1, r2, m, c;
+                try {
+                    r1 = arg1.toString().split(".")[1].length;
+                } catch (e) {
+                    r1 = 0;
+                }
+                try {
+                    r2 = arg2.toString().split(".")[1].length;
+                } catch (e) {
+                    r2 = 0;
+                }
+                c = Math.abs(r1 - r2);
+                m = Math.pow(10, Math.max(r1, r2));
+                if (c > 0) {
+                    var cm = Math.pow(10, c);
+                    if (r1 > r2) {
+                        arg1 = Number(arg1.toString().replace(".", ""));
+                        arg2 = Number(arg2.toString().replace(".", "")) * cm;
+                    } else {
+                        arg1 = Number(arg1.toString().replace(".", "")) * cm;
+                        arg2 = Number(arg2.toString().replace(".", ""));
+                    }
+                } else {
+                    arg1 = Number(arg1.toString().replace(".", ""));
+                    arg2 = Number(arg2.toString().replace(".", ""));
+                }
+                return (arg1 + arg2) / m;
+            }
+            
+            function fdm_inv5001_asnOutsideBarcodeMaintainAccDiv(arg1, arg2) {
+                var t1 = 0,
+                    t2 = 0,
+                    r1, r2;
+                try {
+                    t1 = arg1.toString().split(".")[1].length;
+                } catch (e) {}
+                try {
+                    t2 = arg2.toString().split(".")[1].length;
+                } catch (e) {}
+            
+                r1 = Number(arg1.toString().replace(".", ""));
+                r2 = Number(arg2.toString().replace(".", ""));
+                return (r1 / r2) * Math.pow(10, t2 - t1);
+            
+            }
+            
+            
+            
+            function fdm_inv5001_asnOutsideBarcodeMaintainBack() {
+                $('fdm_inv5001_asn_outside_barcode_maintain_link_window').close();
+            }
+            
+            function fdm_inv5001_asnOutsideBarcodeSaveSubmitCheck(record) {
+                var barcode_type = record.get('barcode_type');
+                var ship_quantity = record.get('ship_quantity');
+                if (!Aurora.isEmpty(barcode_type) && (barcode_type == '03' || barcode_type == '04')) {
+                    var barcode_records = $('fdm_inv5001_asn_outside_barcode_result_ds').getAll();
+                    if (barcode_records.length == 0) {
+                        Aurora.showMessage('${l:PROMPT}', '条码类型为[单包重量条码],[单包数量条码]，需维护条码行信息！');
+                        return false;
+                    }
+                    if (Aurora.isEmpty(ship_quantity) || ship_quantity == '') {
+                        ship_quantity = 0;
+                    }
+                    var sum_packet_weight = 0;
+                    for (var i = 0;i < barcode_records.length;i++) {
+                        var barcode_record = barcode_records[i];
+                        var packet_weight = barcode_record.get('packet_weight');
+                        var packet_quantity = barcode_record.get('packet_quantity');
+                        if (Aurora.isEmpty(packet_weight) || packet_weight == '') {
+                            packet_weight = 0;
+                        }
+                        sum_packet_weight = fdm_inv5001_asnOutsideBarcodeMaintainAccAdd(sum_packet_weight, packet_weight);
+                    }
+            
+                    if (barcode_type == '03') {
+                        if (sum_packet_weight != ship_quantity) {
+                            Aurora.showMessage('${l:PROMPT}', '条码数量与送货单行数量不一致!');
+                            return false;
+                        }
+            
+                    } else if (barcode_type == '04') {
+                        //防止错误操作
+                        if (fdm_inv5001_asnOutsideBarcodeMaintainAccDiv(ship_quantity, packet_quantity) > 200) {
+                            Aurora.showMessage('${l:PROMPT}', '单包数量有误!');
+                            return false;
+                        }
+                    }
+                }
+            
+                return true;
+            }
+            
+            function fdm_inv5001_asnOutsideBarcodeMaintainSubmit() {
+                if ($('fdm_inv5001_asn_outside_barcode_result_ds').validate()) {
+                    var asn_header_line_record = $('fdm_inv5001_asn_outside_header_line_barcode_result_ds').getCurrentRecord();
+                    if (!fdm_inv5001_asnOutsideBarcodeSaveSubmitCheck(asn_header_line_record)) {
+                        return false;
+                    }
+                    Aurora.showConfirm('${l:PROMPT}', '是否确认？', function() {
+                        var datas = {
+                            'asn_line_id': asn_header_line_record.get('asn_line_id'),
+                            'outside_box_status': asn_header_line_record.get('outside_box_status'),
+                            'level_2_barcode': asn_header_line_record.get('level_2_barcode'),
+                            'level_3_barcode': asn_header_line_record.get('level_3_barcode'),
+                            'level_4_barcode': asn_header_line_record.get('level_4_barcode')
+                        };
+                        var line_datas = [];
+                        var barcode_records = $('fdm_inv5001_asn_outside_barcode_result_ds').getAll();
+                        for (var i = 0;i < barcode_records.length;i++) {
+                            var barcode_record = barcode_records[i];
+                            line_datas.push(barcode_record.data);
+                        }
+                        datas['line_datas'] = line_datas;
+                        Aurora.Masker.mask($('fdm_inv5001_asn_outside_barcode_maintain_link_window').wrap, '${l:LOADING}');
+                        Aurora.request({
+                            url: $('fdm_inv5001_asn_outside_barcode_maintain_submit_link').getUrl(),
+                            para: datas,
+                            success: function() {
+                                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                    Aurora.Masker.unmask($('fdm_inv5001_asn_outside_barcode_maintain_link_window').wrap);
+                                    $('fdm_inv5001_asn_outside_barcode_maintain_link_window').close();
+                                    fdm_inv5001_headerLineBbarcodeQuery();
+                                });
+                            },
+                            failure: function() {
+                                Aurora.Masker.unmask($('fdm_inv5001_asn_outside_barcode_maintain_link_window').wrap);
+                            },
+                            error: function() {
+                                Aurora.Masker.unmask($('fdm_inv5001_asn_outside_barcode_maintain_link_window').wrap);
+                            },
+                            scope: this
+                        });
+                    }, function() {}, 300, 100);
+                }
+            }
+            
+            function fdm_inv5001_asnOutsideBarcodeMaintainSave() {
+                if ($('fdm_inv5001_asn_outside_barcode_result_ds').validate()) {
+                    var asn_header_line_record = $('fdm_inv5001_asn_outside_header_line_barcode_result_ds').getCurrentRecord();
+                    if (!fdm_inv5001_asnOutsideBarcodeSaveSubmitCheck(asn_header_line_record)) {
+                        return false;
+                    }
+                    var datas = {
+                        'asn_line_id': asn_header_line_record.get('asn_line_id'),
+                        'outside_box_status': asn_header_line_record.get('outside_box_status'),
+                        'level_2_barcode': asn_header_line_record.get('level_2_barcode'),
+                        'level_3_barcode': asn_header_line_record.get('level_3_barcode'),
+                        'level_4_barcode': asn_header_line_record.get('level_4_barcode')
+                    };
+                    var barcode_records = $('fdm_inv5001_asn_outside_barcode_result_ds').getAll();
+                    var line_datas = [];
+                    for (var i = 0;i < barcode_records.length;i++) {
+                        var barcode_record = barcode_records[i];
+                        line_datas.push(barcode_record.data);
+                    }
+                    datas['line_datas'] = line_datas;
+                    Aurora.Masker.mask($('fdm_inv5001_asn_outside_barcode_maintain_link_window').wrap, '${l:LOADING}');
+                    Aurora.request({
+                        url: $('fdm_inv5001_asn_outside_barcode_maintain_save_link').getUrl(),
+                        para: datas,
+                        success: function() {
+                            Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                Aurora.Masker.unmask($('fdm_inv5001_asn_outside_barcode_maintain_link_window').wrap);
+                                fdm_inv5001_asnOutsideBarcodeQuery();
+                            });
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask($('fdm_inv5001_asn_outside_barcode_maintain_link_window').wrap);
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask($('fdm_inv5001_asn_outside_barcode_maintain_link_window').wrap);
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            function fdm_inv5001_asnOutsideBarcodeMaintainBatchAdd() {
+                new Aurora.Window({
+                    id: 'fdm_inv5001_asn_outside_barcode_batch_add_link_window',
+                    url: $('fdm_inv5001_asn_outside_barcode_batch_add_link').getUrl() + '?asn_line_id=${/parameter/@asn_line_id}',
+                    title: '批量新增',
+                    height: '200',
+                    width: '560'
+                });
+            }
+            
+            function fdm_inv5001_asnOutsideBarcodeQuery() {
+                $('fdm_inv5001_asn_outside_header_line_barcode_result_ds').query();
+                var header_line_record = $('fdm_inv5001_asn_outside_header_line_barcode_result_ds').getCurrentRecord();
+                $('fdm_inv5001_asn_outside_barcode_result_ds').setQueryParameter('line_num_from', header_line_record.get('line_num_from'));
+                $('fdm_inv5001_asn_outside_barcode_result_ds').setQueryParameter('line_num_to', header_line_record.get('line_num_to'));
+                $('fdm_inv5001_asn_outside_barcode_result_ds').query();
+            }
+            
+            function fdm_inv5001_asnOutsideBarcodeMaintainBatchDelete() {
+                var datas = [];
+                var barcode_records = $('fdm_inv5001_asn_outside_barcode_result_ds').getSelected();
+                if (barcode_records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '至少勾选一条数据，请重试！');
+                    return false;
+                }
+                Aurora.showConfirm('${l:PROMPT}', '确认删除选中的记录？', function() {
+                    for (var i = 0;i < barcode_records.length;i++) {
+                        var barcode_record = barcode_records[i];
+                        if (barcode_record.isNew) {
+                            $('fdm_inv5001_asn_outside_barcode_result_ds').remove(barcode_record);
+                        } else {
+                            barcode_record.set('_status', 'delete');
+                            datas.push(barcode_record.data);
+                        }
+                    }
+                    if (datas.length == 0) {
+                        Aurora.showMessage('${l:PROMPT}', '操作成功');
+                        return false;
+                    } else {
+                        Aurora.Masker.mask($('fdm_inv5001_asn_outside_barcode_maintain_link_window').wrap, '${l:LOADING}');
+                        Aurora.request({
+                            url: $('fdm_inv5001_asn_outside_barcode_maintain_delete_link').getUrl(),
+                            para: datas,
+                            success: function() {
+                                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                    Aurora.Masker.unmask($('fdm_inv5001_asn_outside_barcode_maintain_link_window').wrap);
+                                    fdm_inv5001_asnOutsideBarcodeQuery();
+                                });
+                            },
+                            failure: function() {
+                                Aurora.Masker.unmask($('fdm_inv5001_asn_outside_barcode_maintain_link_window').wrap);
+                            },
+                            error: function() {
+                                Aurora.Masker.unmask($('fdm_inv5001_asn_outside_barcode_maintain_link_window').wrap);
+                            },
+                            scope: this
+                        });
+                    }
+                }, function() {}, 300, 100);
+            }
+            
+            function fdm_inv5001_asnOutsideBarcodeResultDsAdd(dataset, record, index) {
+                var asn_header_line_record = $('fdm_inv5001_asn_outside_header_line_barcode_result_ds').getCurrentRecord();
+                var barcode_type = asn_header_line_record.get('barcode_type');
+                //04-单包数量条码时，行上单包数量字段必输
+                if (barcode_type == "04") {
+                    record.getField('packet_quantity').setRequired(true);
+                    record.getField('packet_weight').setRequired(false);
+            
+                    //03-单包重量条码时，行上单包重量字段必输
+                } else if (barcode_type == "03") {
+                    record.getField('packet_quantity').setRequired(false);
+                    record.getField('packet_weight').setRequired(true);
+            
+                } else {
+                    record.getField('packet_quantity').setRequired(false);
+                    record.getField('packet_weight').setRequired(false);
+                }
+            }
+            
+            function fdm_inv5001_asnOutsideBarcodeResultDsLoad(dataset) {
+                var asn_header_line_record = $('fdm_inv5001_asn_outside_header_line_barcode_result_ds').getCurrentRecord();
+                var barcode_type = asn_header_line_record.get('barcode_type');
+                var records = dataset.getAll();
+                for (var i = 0;i < records.length;i++) {
+                    var record = records[i];
+                    //04-单包数量条码时，行上单包数量字段必输
+                    if (barcode_type == "04") {
+                        record.getField('packet_quantity').setRequired(true);
+                        record.getField('packet_weight').setRequired(false);
+            
+                        //03-单包重量条码时，行上单包重量字段必输
+                    } else if (barcode_type == "03") {
+                        record.getField('packet_quantity').setRequired(false);
+                        record.getField('packet_weight').setRequired(true);
+            
+                    } else {
+                        record.getField('packet_quantity').setRequired(false);
+                        record.getField('packet_weight').setRequired(false);
+                    }
+                }
+            }
+            
+            function fdm_inv5001_asnOutsideHeaderLineBarcodeResultDsLoad(ds) {
+                var record = ds.getCurrentRecord();
+                var barcode_type = record.get('barcode_type');
+                if (!Aurora.isEmpty(barcode_type)) {
+                    if (barcode_type == '03' || barcode_type == '04') {
+                        $('fdm_inv5001_asn_outside_barcode_result_ds_grid_btn').enable();
+                        $('fdm_inv5001_asnOutsideBarcodeMaintainBatchAdd_btn').enable();
+                        $('fdm_inv5001_asnOutsideBarcodeMaintainBatchDelete_btn').enable();
+                        $('fdm_inv5001_asnOutsideBarcodeQuery_btn').enable();
+                        record.getField('line_num_from').setReadOnly(false);
+                        record.getField('line_num_to').setReadOnly(false);
+                    }
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="fdm_inv5001_asn_outside_header_line_barcode_result_ds" autoCount="true" autoPageSize="true" autoQuery="true" model="cux.FDM.inv.FDM_INV5001.inv_asn_header_line_barcode_query" queryUrl="${/request/@context_path}/autocrud/cux.FDM.inv.FDM_INV5001.inv_asn_header_line_barcode_query/query?asn_line_id=${/parameter/@asn_line_id}">
+                <a:events>
+                    <a:event name="load" handler="fdm_inv5001_asnOutsideHeaderLineBarcodeResultDsLoad"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="fdm_inv5001_asn_outside_barcode_result_ds" autoCount="true" autoPageSize="true" autoQuery="true" model="cux.FDM.inv.FDM_INV5001.inv_asn_outside_barcode_query" queryUrl="${/request/@context_path}/autocrud/cux.FDM.inv.FDM_INV5001.inv_asn_outside_barcode_query/query?asn_line_id=${/parameter/@asn_line_id}" selectable="true">
+                <a:fields>
+                    <a:field name="packet_quantity" defaultValue="1" requiredMessage="单包数量不能为空"/>
+                    <a:field name="packet_weight" requiredMessage="单包重量不能为空"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="fdm_inv5001_asnOutsideBarcodeResultDsAdd"/>
+                    <a:event name="load" handler="fdm_inv5001_asnOutsideBarcodeResultDsLoad"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:gridButton id="fdm_inv5001_asn_outside_barcode_result_ds_grid_btn" bind="fdm_inv5001_asn_outside_barcode_result_ds_grid" disabled="true" text="新增" type="add" width="100"/>
+                <a:toolbarButton id="fdm_inv5001_asnOutsideBarcodeMaintainBatchAdd_btn" click="fdm_inv5001_asnOutsideBarcodeMaintainBatchAdd" disabled="true" text="批量新增" width="100"/>
+                <a:toolbarButton id="fdm_inv5001_asnOutsideBarcodeMaintainBatchDelete_btn" click="fdm_inv5001_asnOutsideBarcodeMaintainBatchDelete" disabled="true" text="删除" width="100"/>
+                <a:toolbarButton id="fdm_inv5001_asnOutsideBarcodeMaintainSave_btn" click="fdm_inv5001_asnOutsideBarcodeMaintainSave" text="PROMPT.SAVE" width="100"/>
+                <a:toolbarButton id="fdm_inv5001_asnOutsideBarcodeMaintainSubmit_btn" click="fdm_inv5001_asnOutsideBarcodeMaintainSubmit" text="PROMPT.SUBMIT" width="100"/>
+                <a:toolbarButton id="fdm_inv5001_asnOutsideBarcodeMaintainBack_btn" click="fdm_inv5001_asnOutsideBarcodeMaintainBack" text="返回" width="100"/>
+            </a:screenTopToolbar>
+            <a:fieldSet marginWidth="250" title="送货单行信息">
+                <a:hBox labelWidth="120">
+                    <a:textField name="outside_box_status_display" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="条码状态" readOnly="true"/>
+                    <a:textField name="asn_number" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="送货单号" readOnly="true"/>
+                    <a:textField name="asn_line_num" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="送货单行号" readOnly="true"/>
+                    <a:textField name="item_code" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="客户物品编码" readOnly="true"/>
+                    <a:textField name="item_name" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="客户物品名称" readOnly="true"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:textField name="barcode_type_display" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="条码类型" readOnly="true"/>
+                    <a:textField name="lots_num" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="批次" readOnly="true"/>
+                    <a:textField name="comments" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="送货单行备注" readOnly="true"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:textField name="outside_box_quantity" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="一级条码数量" readOnly="true"/>
+                    <a:textField name="level_2_barcode" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="二级条码" readOnly="true"/>
+                    <a:textField name="level_3_barcode" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="三级条码" readOnly="true"/>
+                    <a:textField name="level_4_barcode" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="四级条码" readOnly="true"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:textField name="line_num_from" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="行号从" readOnly="true"/>
+                    <a:textField name="line_num_to" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="行号至" readOnly="true"/>
+                    <a:button id="fdm_inv5001_asnOutsideBarcodeQuery_btn" click="fdm_inv5001_asnOutsideBarcodeQuery" disabled="true" style="margin-left:20px;" text="查询" width="100"/>
+                </a:hBox>
+            </a:fieldSet>
+            <a:fieldSet marginWidth="250" title="其他信息">
+                <a:hBox labelWidth="120">
+                    <a:textField name="ship_to_organization_name" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="收货工厂" readOnly="true"/>
+                    <a:textField name="need_by_date" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="订单需求日期" readOnly="true"/>
+                    <a:textField name="promised_date" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="订单承诺日期" readOnly="true"/>
+                    <a:textField name="expected_date" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="预计到货日期" readOnly="true"/>
+                    <a:textField name="creation_date" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="送货单创建日期" readOnly="true"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:textField name="po_number" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="订单号" readOnly="true"/>
+                    <a:textField name="po_line_num" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="订单行号" readOnly="true"/>
+                    <a:textField name="my_item_code" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="我的物品编码" readOnly="true"/>
+                    <a:textField name="my_item_name" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="我的物品描述" readOnly="true"/>
+                    <a:textField name="client_business_unit_name" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="客户名称" readOnly="true"/>
+                </a:hBox>
+            </a:fieldSet>
+            <a:grid id="fdm_inv5001_asn_outside_barcode_result_ds_grid" autoAppend="false" bindTarget="fdm_inv5001_asn_outside_barcode_result_ds" height="400" marginWidth="250" navBar="true" style="margin-top:10px;">
+                <a:columns>
+                    <a:column name="line_num" align="center" prompt="行号" sortable="true" width="30"/>
+                    <a:column name="barcode" align="left" prompt="条码编号" sortable="true" width="100"/>
+                    <a:column name="packet_quantity" align="right" editor="fdm_inv5001_asn_outside_barcode_result_ds_grid_numberField" prompt="单包数量" sortable="true" width="60"/>
+                    <a:column name="packet_weight" align="right" editor="fdm_inv5001_asn_outside_barcode_result_ds_grid_numberField" prompt="单包重量" sortable="true" width="60"/>
+                    <a:column name="packet_level" align="center" prompt="包装级别" sortable="true" width="60"/>
+                    <a:column name="comments" align="left" editor="fdm_inv5001_asn_outside_barcode_result_ds_grid_textField" prompt="条码备注" sortable="true" width="120"/>
+                </a:columns>
+                <a:editors>
+                    <a:numberField id="fdm_inv5001_asn_outside_barcode_result_ds_grid_numberField" allowDecimals="true" allowFormat="false" allowNegative="false" decimalPrecision="2"/>
+                    <a:textField id="fdm_inv5001_asn_outside_barcode_result_ds_grid_textField"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

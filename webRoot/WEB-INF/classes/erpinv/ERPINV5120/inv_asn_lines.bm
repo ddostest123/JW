@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lgp  
+    $Date: 2017-5-15 下午2:07:44  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:f="aurora.database.features" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        t1.asn_header_id,
+                        t1.asn_line_id,
+                        t1.company_id,
+                        t1.company_name,
+                        t1.asn_number,
+                        t1.segment1,
+                        t1.asn_line_num,
+                        t1.not_receive,
+                        t1.asn_trade_quantity,
+                        t1.trade_quantity,
+                        t1.receive_quantity,
+                        t1.trade_uom,
+                        t1.trade_uom_name,
+                        t1.primary_uom,
+                        t1.primary_uom_name,
+                        t1.primary_quantity,
+                        t1.order_date_desc,
+                        t1.ship_date,
+                        eib.item_id,
+                        eib.item_code
+                        || '-'
+                        || eib.item_name item_code_name,
+                        ebp.partner_id vender_id,
+                        ebp.partner_code
+                        || '-'
+                        || ebp.partner_name vender_code_name,
+                        ebp.partner_name,
+                        ebp.partner_id,
+                        t1.outsourcing_flag,
+                        'N' return_order_flag,
+                        t1.pur_line_id,
+                        t1.line_num,
+                        t1.receive_status,
+                        t1.srm_status,
+                        NVL(t1.warehouse_id,eib.default_inv_warehouse_id) warehouse_id,
+                        (SELECT
+                            a.warehouse_code
+                            ||'-'
+                            ||a.warehouse_name
+                        FROM
+                            erpinv_warehouses a
+                        WHERE
+                            a.warehouse_id = NVL(t1.warehouse_id,eib.default_inv_warehouse_id)
+                        ) warehouse_code_name
+                    FROM
+                        (SELECT
+                            h.coop_company_id company_id,
+                            h.asn_header_id,
+                            l.asn_line_id,
+                            (SELECT
+                                f.company_full_name
+                            FROM
+                                fnd_companies_vl f
+                            WHERE
+                                f.company_id = h.coop_company_id
+                            ) AS company_name,
+                            h.vendor_id,
+                            h.asn_number,
+                            l.asn_line_num,
+                            purh.segment1,
+                            purl.pur_line_id,
+                            purl.line_num,
+                            l.item_id,
+                            l.ship_quantity asn_trade_quantity,
+                            l.ship_quantity - l.receive_quantity not_receive,
+                            l.receive_quantity,
+                            l.uom_code trade_uom,
+                            (SELECT
+                                d.uom_description
+                            FROM
+                                erpinv_uom_codes d
+                            WHERE
+                                d.uom_code   = l.uom_code AND
+                                d.company_id = h.coop_company_id
+                            ) trade_uom_name,
+                            purl.quantity trade_quantity,
+                            purl.secondary_unit_of_measure primary_uom,
+                            purl.secondary_quantity primary_quantity,
+                            (SELECT
+                                d.uom_description
+                            FROM
+                                erpinv_uom_codes d
+                            WHERE
+                                d.uom_code   = purl.secondary_unit_of_measure AND
+                                d.company_id = h.coop_company_id
+                            ) primary_uom_name,
+                            h.ship_date,
+                            TO_CHAR(h.ship_date,'yyyy-mm-dd') order_date_desc,
+                            NVL(
+                            (SELECT
+                                'Y'
+                            FROM
+                                dual
+                            WHERE
+                                EXISTS
+                                (SELECT
+                                    1
+                                FROM
+                                    pur_purchase_order_types ppo
+                                WHERE
+                                    ppo.order_type_code  = purh.type_lookup_code AND
+                                    ppo.outsourcing_flag = 'Y'
+                                )
+                            ), 'N') AS outsourcing_flag,
+                            l.receive_status,
+                            purh.srm_status,
+                            purh.request_id warehouse_id
+                        FROM
+                            inv_asn_headers h,
+                            inv_asn_lines l,
+                            pur_headers_all purh,
+                            pur_lines_all purl,
+                            pur_line_locations_all pll
+                        WHERE
+                            h.asn_header_id       = l.asn_header_id AND
+                            purh.pur_header_id    = purl.pur_header_id AND
+                            purl.pur_line_id      = pll.pur_line_id AND
+                            l.line_location_id    = pll.pur_line_location_id AND
+                            h.coop_business_group = ${/session/@business_group}
+                        ) t1,
+                        erpinv_items_basics eib,
+                        erpfnd_business_partners ebp
+                    WHERE
+                        ebp.srm_vender_id = t1.vendor_id AND
+                        eib.srm_item_id   = t1.item_id
+                    ) tt #WHERE_CLAUSE#
+                ORDER BY
+                    tt.asn_number DESC,
+                    tt.asn_line_num
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="company_id" queryExpression="tt.company_id = ${@company_id}"/>
+        <bm:query-field name="company_name" queryExpression="tt.company_name = ${@company_name}"/>
+        <bm:query-field name="asn_number" queryExpression="tt.asn_number = ${@asn_number}"/>
+        <bm:query-field name="segment1" queryExpression="tt.segment1 = ${@segment1}"/>
+        <bm:query-field name="vender_code_name" queryExpression="tt.vender_code_name = ${@vender_code_name}"/>
+        <bm:query-field name="item_code_name" queryExpression="tt.item_code_name=${@item_code_name}"/>
+        <bm:query-field name="item_code" queryExpression="tt.item_code like ${@item_code}||&apos;%&apos;"/>
+        <bm:query-field name="item_name" queryExpression="tt.item_name like &apos;%&apos;||${@item_name}||&apos;%&apos;"/>
+        <bm:query-field name="ship_date_from" queryExpression="tt.ship_date &gt;= to_date(${@ship_date_from},&apos;yyyy-MM-dd&apos;)"/>
+        <bm:query-field name="ship_date_to" queryExpression="tt.ship_date &lt;= to_date(${@ship_date_to},&apos;yyyy-MM-dd&apos;)"/>
+        <bm:query-field name="outsourcing_flag" queryExpression="tt.outsourcing_flag = ${@outsourcing_flag}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter enforceOperations="query" expression="nvl(tt.receive_status, &apos;NULL&apos;) != &apos;ALL_RECEIVE&apos;    and tt.not_receive &gt; 0 and tt.srm_status in (&apos;APPROVED&apos;,&apos;CONFIRMED&apos;,&apos;RELEASED&apos;,&apos;SUBMITTED&apos;)"/>
+    </bm:data-filters>
+</bm:model>

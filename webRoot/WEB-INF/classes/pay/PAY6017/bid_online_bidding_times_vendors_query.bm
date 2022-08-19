@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: WangQiaosen  
+    $Date: 2013-3-27 下午4:49:14  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+						SELECT 
+						   t.bid_line_id,
+					       t.bid_ranking,
+					       t.vendor_id,
+					       t.vendor_name,
+					       t.first_quote,
+					       t.new_quote,
+					       to_char(t.decline,'FM990.0999')|| '%' decline,
+					       t.score,
+					       t.quote_count,
+					       t.last_quote_time,
+					       t.bid_header_id,
+					       t.creation_date,
+					       t.created_by,
+					       t.last_update_date,
+					       t.last_updated_by,
+					       t.round,
+					       (SELECT listagg(user_desc, ',') within GROUP(ORDER BY v.user_desc) AS employees
+					                          FROM (SELECT (SELECT su.description
+					                                          FROM sys_user su
+					                                         WHERE su.user_id = u.user_id) user_desc,
+					                                       u.bid_header_id
+					                                  FROM bid_online_bidding_users_t u
+					                                 WHERE u.bid_header_id = t.bid_header_id) v
+					                         GROUP BY v.bid_header_id) user_list,
+					       (SELECT listagg(v.quote, '元;') within GROUP(ORDER BY v.bid_detail_id) AS employees
+					          FROM (SELECT u.quote, u.bid_detail_id, u.bid_header_id
+					                  FROM bid_online_bidding_vendors_t u
+					                 WHERE u.bid_header_id = t.bid_header_id
+					                   and u.vendor_id = t.vendor_id) v
+					         GROUP BY v.bid_header_id)||'元;' quote_history,
+		                   (select rate
+		                      from (select u.rate
+		                              from bid_online_bidding_vendors_t u
+		                             where u.bid_header_id = t.bid_header_id
+		                               and u.vendor_id = t.vendor_id
+		                             order by u.last_update_date desc)
+		                     where rownum = 1) rate,
+		                   (select currency_name
+		                      from (select (select gv.currency_name
+				                          from gld_currency_vl gv
+				                         where gv.currency_code = t.currency_code
+				                           and gv.ENABLED_FLAG = 'Y') currency_name
+		                              from bid_online_bidding_vendors_t t
+		                             where t.bid_header_id = t.bid_header_id
+		                               and t.vendor_id = t.vendor_id
+		                             order by t.last_update_date desc)
+		                     where rownum = 1) currency_name,
+		                   (select exchange_rate
+		                      from (select (select c.exchange_rate
+				                          from bid_online_bidding_currency c
+				                         where c.currency_code = u.currency_code
+				                           and c.bid_header_id =  u.bid_header_id) exchange_rate
+		                              from bid_online_bidding_vendors_t u
+		                             where u.bid_header_id = t.bid_header_id
+		                               and u.vendor_id = t.vendor_id
+		                             order by u.last_update_date desc)
+		                     where rownum = 1) exchange_rate,
+		                   (select f_c_quote
+		                      from (select u.f_c_quote
+		                              from bid_online_bidding_vendors_t u
+		                             where u.bid_header_id = t.bid_header_id
+		                               and u.vendor_id = t.vendor_id
+		                             order by u.last_update_date desc)
+		                     where rownum = 1) f_c_quote
+				  FROM bid_online_bidding_lines_t t
+				 WHERE t.bid_header_id = ${@bid_header_id}
+				 ORDER BY t.round DESC, t.bid_ranking
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+                begin
+                 bid_online_bidding_t_pkg.submit_bid_online_headers
+	                (
+	                  p_bid_header_id=>${@bid_header_id},
+	                  p_user_id=>${/session/@user_id}
+	                );
+                end;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

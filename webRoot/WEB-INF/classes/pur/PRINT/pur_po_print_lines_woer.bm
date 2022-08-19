@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" alias="t1" defaultOrderBy="t1.line_num,t1.shipment_num">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+				SELECT t1.*,
+				       rownum rn
+				  FROM (SELECT pla.pur_header_id,
+				               pla.pur_line_id,
+				               pll.pur_line_location_id,
+				               pla.line_num,
+				               pll.shipment_num,
+				               pla.item_id,
+				               pla.item_code,
+				               pla.item_description,
+				               (SELECT tc.tax_type_code FROM fnd_tax_type_codes tc WHERE tc.tax_type_id = pla.tax_code_id) tax_type_code,
+				               round(nvl(fnd_document_control_pkg.get_reality_value(p_rule_code       => 'PRICE_SECRECY',
+				                                                                    p_role_id         => 527,
+				                                                                    p_foundation_code => 'PUR_PO',
+				                                                                    p_document_id     => pha.pur_header_id,
+				                                                                    p_control_area    => 'EXTERNAL',
+				                                                                    p_business_group  => 'BG2774881',
+				                                                                    p_value           => pla.original_unit_price),
+				                         
+				                         rtrim(to_char(decode(pha.type_lookup_code,
+				                                              'BLANKET',
+				                                              pll.price_override,
+				                                              pla.unit_price),
+				                                       'FM99999999990.99999999'),
+				                               '.')) * ((SELECT bg_tax_type_rate
+				                                           FROM fnd_tax_type_codes_bg
+				                                          WHERE bg_tax_type_code = nvl((SELECT DISTINCT vat_code
+				                                                                         FROM pur_vendor_sites vs
+				                                                                        WHERE vs.vendor_id = pha.vendor_id
+				                                                                              AND rownum = 1),
+				                                                                       (SELECT DISTINCT vat_code
+				                                                                          FROM pur_vendors v
+				                                                                         WHERE v.vendor_id = pha.vendor_id
+				                                                                               AND rownum = 1))
+				                                                AND rownum = 1) + 100) * 0.01,
+				                     2) unit_price,
+				               round(nvl(fnd_document_control_pkg.get_reality_value(p_rule_code       => 'PRICE_SECRECY',
+				                                                                    p_role_id         => 527,
+				                                                                    p_foundation_code => 'PUR_PO',
+				                                                                    p_document_id     => pha.pur_header_id,
+				                                                                    p_control_area    => 'EXTERNAL',
+				                                                                    p_business_group  => 'BG2774881',
+				                                                                    p_value           => pll.quantity *
+				                                                                                         pla.original_unit_price),
+				                         rtrim(to_char(pll.quantity * decode(pha.type_lookup_code,
+				                                                             'BLANKET',
+				                                                             pll.price_override,
+				                                                             pla.unit_price),
+				                                       'FM99999999990.99999999'),
+				                               '.')) * ((SELECT bg_tax_type_rate
+				                                           FROM fnd_tax_type_codes_bg
+				                                          WHERE bg_tax_type_code = nvl((SELECT DISTINCT vat_code
+				                                                                         FROM pur_vendor_sites vs
+				                                                                        WHERE vs.vendor_id = pha.vendor_id
+				                                                                              AND rownum = 1),
+				                                                                       (SELECT DISTINCT vat_code
+				                                                                          FROM pur_vendors v
+				                                                                         WHERE v.vendor_id = pha.vendor_id
+				                                                                               AND rownum = 1))
+				                                                AND rownum = 1) + 100) * 0.01,
+				                     2) line_amount,
+				               pll.quantity,
+				               pla.comments,
+				               pla.note_to_vendor,
+				               pll.confirm_by,
+				               (SELECT fcsc.contact_name
+				                  FROM fnd_com_sup_contacts fcsc,
+				                       pur_vendors_vl       pvv
+				                 WHERE fcsc.company_id = pvv.coop_company_id
+				                       AND fcsc.default_contact_flag = 'Y'
+				                       AND pvv.vendor_id = pha.vendor_id
+				                       AND rownum = 1) contact_name,
+				               to_char(nvl(pla.committed_delivery_date,
+				                           pll.promised_date),
+				                       'YYYY-MM-DD') committed_delivery_date,
+				               nvl((SELECT vl.uom_desc
+				                     FROM fnd_uom_codes_vl vl
+				                    WHERE pla.unit_meas_lookup_code = vl.uom_code
+				                          AND vl.business_group = pha.owner_business_group),
+				                   pla.unit_meas_lookup_code) unit_meas_lookup_code,
+				               (SELECT concat(substr(el.buyer_desc,
+				                                     (instr(el.buyer_desc,
+				                                            ',')) + 1),
+				                              substr(el.buyer_desc,
+				                                     1,
+				                                     (instr(el.buyer_desc,
+				                                            ',') - 1)))
+				                  FROM pur_buyers_vl el
+				                 WHERE el.buyer_id = (SELECT MAX(e.buyer_id)
+				                                        FROM pur_distribution_all pda,
+				                                             pur_buyers_es        e
+				                                       WHERE pll.pur_line_id = pda.pur_line_id
+				                                             AND e.es_buyer_id = pda.deliver_to_person_id)) AS consignee_name
+				        
+				          FROM pur_headers_all        pha,
+				               pur_lines_all          pla,
+				               pur_line_locations_all pll
+				         WHERE pla.pur_line_id = pll.pur_line_id
+				               AND pha.pur_header_id = pla.pur_header_id
+				               AND pha.cancel_flag = 'N'
+				               AND pla.cancel_flag = 'N'
+				               AND pll.cancel_flag = 'N'
+				               AND pll.frozen_flag = 'N'
+				         ORDER BY pla.line_num ASC) t1
+                     #WHERE_CLAUSE#
+                     ORDER BY to_number(t1.line_num)
+        ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter name="pur_header_id" expression="t1.pur_header_id=${@pur_header_id}"/>
+    </bm:data-filters>
+</bm:model>

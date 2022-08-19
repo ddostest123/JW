@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: hansen  
+    $Date: 2014-10-28 上午11:11:51  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" xmlns:f="aurora.database.features" alias="t1" baseTable="PUR_PO_RP_DETAILS">
+    <bm:fields>
+        <bm:field name="vendor_name"/>
+        <bm:field name="total_amount"/>
+        <bm:field name="period_name"/>
+    </bm:fields>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    rpt_default_setting_app_pkg.rpt_substr_name(d.vendor_name,0,NULL) vendor_name,
+                    d.period_name,
+                    NVL(
+                    (SELECT
+                        TO_CHAR(t.total_amount / 10000, '9999999990.0000')
+                    FROM
+                        PUR_PO_RP_DETAILS t
+                    WHERE
+                        t.coop_company_id = d.vendor_id AND
+                        t.period_name     = d.period_name AND
+                        t.rp_header_id    = d.rp_header_id
+                    ),0) total_amount
+                FROM
+                    (SELECT
+                        v2.vendor_name,
+                        t1.period_name,
+                        v2.vendor_id,
+                        t1.rp_header_id
+                    FROM
+                        PUR_PO_RP_DETAILS t1,
+                        rpt_setting_frequency sf,
+                        (SELECT
+                            name vendor_name,
+                            vendor_id
+                        FROM
+                            (SELECT
+                                SUM(total_amount) SUM,
+                                v2.vendor_id,
+                                NVL(v2.short_name, rpt_default_setting_app_pkg.rpt_substr_name(v2.full_name, 0, NULL)) name,
+                                pr.rp_header_id
+                            FROM
+                                PUR_PO_RP_DETAILS pr,
+                                pur_vendors_vl v2,
+                                rpt_setting_frequency sf
+                            WHERE
+                                pr.rp_header_id   = sf.rp_header_id AND
+                                sf.rpt_code       = 'RPT5020' AND
+                                sf.business_group = ${/session/@business_group} AND
+                                v2.vendor_id      = pr.coop_company_id AND
+                                (
+                                    ${/parameter/@vendor_id}     IS NULL OR
+                                    pr.coop_company_id = ${/parameter/@vendor_id}
+                                )
+                            GROUP BY
+                                NVL(v2.short_name, rpt_default_setting_app_pkg.rpt_substr_name(v2.full_name, 0, NULL)),
+                                pr.rp_header_id,
+                                v2.vendor_id
+                            ORDER BY
+                                SUM DESC
+                            ),
+                            rpt_setting_headers sh,
+                            rpt_setting_lines sl,
+                            rpt_setting_details sd
+                        WHERE
+                            sh.rpt_code            = 'RPT5020' AND
+                            sh.business_group      = ${/session/@business_group} AND
+                            sh.rpt_header_id       = sl.rpt_header_id AND
+                            sl.enable_flag         = 'Y' AND
+                            sl.rpt_line_id         = sd.rpt_line_id AND
+                            sd.flex_value_set_code = '1_SHOW_NUMBER' AND
+                            rownum                 < to_number(sd.flex_value_code) + 1
+                        ) v2
+                    WHERE
+                        t1.rp_header_id   = sf.rp_header_id AND
+                        sf.rpt_code       = 'RPT5020' AND
+                        sf.business_group = ${/session/@business_group}
+                    GROUP BY
+                        v2.vendor_name,
+                        t1.period_name,
+                        v2.vendor_id,
+                        t1.rp_header_id
+                    ORDER BY
+                        to_date(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(period_name, '年', '-1'), '上半-1', '1'), '下半-1', '2'), '季度'), '月'), 'YYYY-MM') DESC
+                    ) d
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

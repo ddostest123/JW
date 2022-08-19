@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Lin.Chen
+    $Date: 2017-04-12  
+    $Revision: 1.0  
+    $Purpose: 生成申请单
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+				select h.req_header_id,
+				       h.req_number,
+				       h.business_group,
+				       h.data_source,
+				       to_char(sysdate, 'yyyy-mm-dd') apply_date,
+				       h.creation_date,
+				       h.created_by,
+				       (select s.description from sys_user s where s.user_id = h.created_by) applicant_name,
+				       h.own_company_id,
+				       h.business_unit_id,
+				       h.pur_organization_id,
+				       (select p.description
+				          from pur_organizations_vl p
+				         where p.pur_organization_id = h.pur_organization_id) pur_organization_name,
+				       (select u.business_unit_name
+				          from fnd_business_units_vl u
+				         where u.business_unit_id = h.business_unit_id) business_unit_name,
+				       h.pur_buyer_id,
+				       (select pb.display_code
+				          from pur_buyers pb
+				         where pb.buyer_id = h.pur_buyer_id) pur_buyer_code,
+				       (select pb.buyer_desc
+				          from pur_buyers_vl pb
+				         where pb.buyer_id = h.pur_buyer_id) pur_buyer_name,
+				       h.header_comments,
+				       h.title,
+				       (select sum(l.currency_unit_price * l.quantity)
+				          from pur_req_lines_tmp l
+				         where l.req_header_id = h.req_header_id) total_amount,
+				       h.import_oa_flag,
+				       h.import_sap_flag,
+				       h.pur_po_type,
+				       decode(h.pur_po_type, 'ZI01', '内贸', 'ZI10', '设备') pur_po_type_desc,
+				       h.release_num,
+				       h.invoice_type,
+				       (select v.code_value_name from sys_code_values_v v where v.code = 'AP_INVOICE_TYPE' and v.code_value = h.invoice_type) invoice_type_desc,
+				       h.bill_delivery_id,
+				       (select dav.province_name || ' ' || dav.city_name || ' ' || dav.county_name || ' ' || dav.address_detail location_address from fnd_company_delivery_addr_vl dav where dav.delivery_id = h.bill_delivery_id) acquire_location_desc,
+				       (select m.approve_method
+				          from pur_catelogs_user_defined m
+				         where rownum < 2
+				           and exists
+				         (select 1
+				                  from pur_req_lines_tmp l
+				                 where l.req_header_id = h.req_header_id
+				                   and m.catelog_udf_id = l.item_category_id)) approve_method
+				  from pur_req_headers_tmp h
+				 where h.req_header_id = ${@req_header_id}
+				   and h.data_source = 'SRM'
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+				begin
+	            	update pur_req_headers_tmp h
+	            	   set h.business_unit_id    = ${@business_unit_id},
+                           h.own_company_id      = (select u.company_id from fnd_business_units u where u.business_unit_id = ${@business_unit_id}),
+                           h.header_comments     = ${@header_comments},
+                           h.title               = ${@title},
+                           h.pur_po_type         = ${@pur_po_type},
+                           h.pur_organization_id = ${@pur_organization_id},
+                           h.pur_buyer_id        = ${@pur_buyer_id},
+                           h.release_num         = ${@release_num},
+                           h.invoice_type        = ${@invoice_type},
+                           h.bill_delivery_id    = ${@bill_delivery_id},
+                           h.last_update_date    = sysdate,
+                           h.last_updated_by     = ${/session/@user_id}
+					 where h.req_header_id = ${/parameter/@req_header_id};
+                end;
+    		]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+				begin
+	            	pur_catelog_shopping_cart_pkg.check_req_atm(p_req_header_id => ${/parameter/@req_header_id},
+	            	                                            p_user_id       => ${/session/@user_id});
+                end;
+    		]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

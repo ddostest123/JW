@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Weiqinglong  
+    $Date: 2017-01-12 15:19
+    $Revision: 1.0  
+    $Purpose: 我要开票
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query model="pay.PAY5010.pay_payment_invoice_hds_init" rootPath="pay_payment_invoice_hds_init"/>
+        <a:model-query defaultWhereClause="message_code = &apos;INCOICE_MARKED&apos; and enabled_flag= &apos;Y&apos;" fetchAll="true" model="pay.PAY5010.get_pay_invoice_msg" rootPath="pay_msg"/>
+        <a:model-query defaultWhereClause="message_code = &apos;INCOICE_SUBMIT&apos; and enabled_flag= &apos;Y&apos;" fetchAll="true" model="pay.PAY5010.get_pay_invoice_msg" rootPath="pay_msg_sub"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="pay_payment_invoice_save_link" url="${/request/@context_path}/modules/pay/PAY5010/pay_payment_invoice_save.svc"/>
+        <style><![CDATA[
+        	html,body{
+        		position:fixed;
+        	}
+        	.win-wrap {
+				position:fixed;
+				top:0px !important;
+			}
+        ]]></style>
+        <script><![CDATA[
+            var lines = [];
+            
+            function PAY5010_invoice_edit_submit_firm() {
+                Aurora.showConfirm('${l:PROMPT}', '发票开出后信息无法修改,确定提交信息吗？', function() {
+                    PAY5010_invoice_edit_submit();
+                }, function() {
+                    return null;
+                }, 250, 100);
+            }
+            
+            function PAY5010_invoice_edit_submit() {
+                var sub_msg = $('pay_invoice_sub_ds').getAt(0).data.message_content;
+                //debugger;
+                var header_ds = $('PAY5010_invoice_header_ds');
+                var header_record = header_ds.getAt(0);
+                if (header_ds.validate()) {
+                    var param = header_record.data;
+                    param['lines'] = lines;
+                    Aurora.Masker.mask($('pay_payment_invoice_edit_window').wrap, '正在提交数据……');
+                    Aurora.request({
+                        url: $('pay_payment_invoice_save_link').getUrl(),
+                        para: param,
+                        success: function(res) {
+                            Aurora.Masker.unmask($('pay_payment_invoice_edit_window').wrap);
+                            var invoice_code = res.result.invoice_code;
+                            var message = '开票申请[' + invoice_code + ']'+sub_msg;
+                            Aurora.showMessage('${l:PROMPT}', message);
+                            PAY5010_invoice_edit_return();
+                            PAY5010_invoice_query();
+                            PAY5010_invoice_record_query();
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask($('pay_payment_invoice_edit_window').wrap);
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask($('pay_payment_invoice_edit_window').wrap);
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            function PAY5010_invoice_edit_return() {
+                $('pay_payment_invoice_edit_window').close();
+            }
+        ]]></script>
+        <style><![CDATA[
+        	.ext-webkit,.ext-chrome{
+        		width:100%;
+        	}
+        	.ext-gecko,.ext-gecko3{
+        	    width:100%;
+        	}
+        ]]></style>
+        <a:dataSets>
+            <a:dataSet id="pay_invoice_sub_ds">
+                <a:datas dataSource="pay_msg_sub"/>
+            </a:dataSet>
+            <a:dataSet id="PAY5010_invoice_header_ds">
+                <a:datas dataSource="pay_payment_invoice_hds_init"/>
+                <a:fields>
+                    <a:field name="invoice_code"/>
+                    <a:field name="status_desc"/>
+                    <a:field name="applicant_desc"/>
+                    <a:field name="application_time"/>
+                    <a:field name="company_letterhead" required="true"/>
+                    <a:field name="invoice_content"/>
+                    <a:field name="invoice_amount"/>
+                    <a:field name="taxpayer_id" required="true"/>
+                    <!-- <a:field name="registered_address_phone" required="true"/>
+                    <a:field name="bank_account_number" required="true"/> -->
+                    <a:field name="registered_address" required="true"/>
+                    <a:field name="registered_phone" required="true"/>
+                    <a:field name="bank_account" required="true"/>
+                    <a:field name="bank_number" required="true"/>
+                    <a:field name="note"/>
+                    <a:field name="recipienter" required="true"/>
+                    <a:field name="contact_number" required="true"/>
+                    <a:field name="mailing_address" required="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="PAY5010_invoice_line_ds"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar marginWidth="50">
+                <a:toolbarButton click="PAY5010_invoice_edit_return" text="HAP_BACK" width="100"/>
+                <a:toolbarButton click="PAY5010_invoice_edit_submit" text="HAP_SUBMIT" width="100"/>
+                <div style="padding-top:13px;padding-left: 5px;"><![CDATA[${/model/pay_msg/record/@message_content}]]></div>
+            </a:screenTopToolbar>
+            <a:form>
+                <a:fieldSet title="申请信息">
+                    <a:hBox labelWidth="100">
+                        <a:textField name="invoice_code" bindTarget="PAY5010_invoice_header_ds" emptyText="待生成" prompt="申请编号" readOnly="true"/>
+                        <a:textField name="status_desc" bindTarget="PAY5010_invoice_header_ds" prompt="状态" readOnly="true"/>
+                        <a:textField name="applicant_desc" bindTarget="PAY5010_invoice_header_ds" prompt="申请人" readOnly="true"/>
+                        <a:datePicker name="application_time" bindTarget="PAY5010_invoice_header_ds" prompt="申请日期" readOnly="true"/>
+                    </a:hBox>
+                </a:fieldSet>
+                <a:fieldSet title="发票信息">
+                    <a:hBox labelWidth="100">
+                        <a:textField name="company_letterhead" bindTarget="PAY5010_invoice_header_ds" prompt="发票抬头" width="407"/>
+                        <a:textField name="invoice_content" bindTarget="PAY5010_invoice_header_ds" prompt="发票内容" readOnly="true"/>
+                        <a:textField name="invoice_amount" bindTarget="PAY5010_invoice_header_ds" prompt="发票金额" readOnly="true"/>
+                    </a:hBox>
+                </a:fieldSet>
+                <a:fieldSet title="专票信息">
+                    <a:hBox labelWidth="100">
+                        <a:textField name="taxpayer_id" bindTarget="PAY5010_invoice_header_ds" prompt="纳税人识别号" width="407"/>
+                        <a:textField name="registered_address" bindTarget="PAY5010_invoice_header_ds" prompt="经营地址" width="407"/>
+                    </a:hBox>
+                    <a:hBox labelWidth="100">
+                        <a:textField name="registered_phone" bindTarget="PAY5010_invoice_header_ds" prompt="企业电话" width="407"/>
+                        <a:textField name="bank_account" bindTarget="PAY5010_invoice_header_ds" prompt="企业银行开户行" width="407"/>
+                    </a:hBox>
+                    <a:hBox labelWidth="100">
+                        <a:textField name="bank_number" bindTarget="PAY5010_invoice_header_ds" prompt="企业银行账户" width="407"/>
+                        <a:textField name="note" bindTarget="PAY5010_invoice_header_ds" prompt="备注" width="407"/>
+                    </a:hBox>
+                </a:fieldSet>
+                <a:fieldSet title="邮寄信息">
+                    <a:hBox labelWidth="100">
+                        <a:textField name="recipienter" bindTarget="PAY5010_invoice_header_ds" prompt="收件人"/>
+                        <a:textField name="contact_number" bindTarget="PAY5010_invoice_header_ds" prompt="联系电话"/>
+                        <a:textField name="mailing_address" bindTarget="PAY5010_invoice_header_ds" prompt="邮寄地址" width="407"/>
+                    </a:hBox>
+                </a:fieldSet>
+            </a:form>
+            <a:grid id="PAY5010_invoice_line_grid" bindTarget="PAY5010_invoice_line_ds" height="260" marginWidth="30" width="1000">
+                <a:columns>
+                    <a:column name="order_number" align="center" prompt="订单编号" width="100"/>
+                    <a:column name="payment_number" align="center" prompt="订单交易编号" width="150"/>
+                    <a:column name="payment_amount" align="right" prompt="交易金额" width="90"/>
+                    <a:column name="payment_type_desc" align="center" prompt="支付方式" width="80"/>
+                    <a:column name="payment_date_desc" align="center" prompt="支付时间" width="130"/>
+                    <a:column name="payment_user_name" align="center" prompt="订单提交人" width="80"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+        <script><![CDATA[
+            function PAY5010_invoice_init() {
+                var header_record = $("PAY5010_invoice_header_ds").getAt(0);
+                var PAY5010_invoice_line_ds = $("PAY5010_invoice_line_ds");
+                var records = $("PAY5010_invoice_result_ds").getSelected();
+                var amount = 0;
+                for (var i = 0;i < records.length;i++) {
+                    var line = {
+                        'detail_id': records[i].get('detail_id'),
+                        '_status': 'insert'
+                    };
+            
+                    lines.push(line);
+                    var newRecord = new Aurora.Record(records[i].data);
+                    PAY5010_invoice_line_ds.add(newRecord);
+                    newRecord.set('detail_id', records[i].get('detail_id'));
+                    newRecord.set('order_number', records[i].get('order_number'));
+                    newRecord.set('payment_number', records[i].get('payment_number'));
+                    newRecord.set('payment_amount', records[i].get('payment_amount'));
+                    newRecord.set('payment_type_desc', records[i].get('payment_type_desc'));
+                    newRecord.set('payment_date_desc', records[i].get('payment_date_desc'));
+                    newRecord.set('payment_user_name', records[i].get('payment_user_name'));
+                    amount += records[i].get('payment_amount');
+                    newRecord.isNew = true;
+                }
+                header_record.set('invoice_amount', amount);
+            }
+            
+            Aurora.onReady(function() {
+                PAY5010_invoice_init();
+            });
+        ]]></script>
+    </a:view>
+</a:screen>

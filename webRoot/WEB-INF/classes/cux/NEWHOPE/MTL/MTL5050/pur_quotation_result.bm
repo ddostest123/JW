@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: weiqinglong
+    $Date: 2017-10-12 下午10:28:26
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    r.quotation_result_id,
+                    r.quotation_result_number,
+                    r.owner_business_group,
+                    r.owner_company_id,
+                    (SELECT
+                        f.company_full_name
+                    FROM
+                        fnd_companies_vl f
+                    WHERE
+                        f.company_id = r.owner_company_id
+                    ) owner_company_desc,
+                    r.owner_business_unit_id,
+                    r.inv_organization_id,
+                    (SELECT
+                        v.description
+                    FROM
+                        inv_organizations_vl v
+                    WHERE
+                        v.inv_organization_id = r.inv_organization_id
+                    ) inv_organization_desc,
+                    r.coop_business_group,
+                    r.coop_company_id,
+                    (SELECT
+                        f.company_full_name
+                    FROM
+                        fnd_companies_vl f
+                    WHERE
+                        f.company_id = r.coop_company_id
+                    ) coop_company_name,
+                    r.item_id,
+                    r.item_code,
+                    (SELECT
+                        ucv.uom_desc
+                    FROM
+                        fnd_uom_codes_vl ucv
+                    WHERE
+                        ucv.uom_code       = r.uom_code AND
+                        ucv.business_group = ${/session/@business_group}
+                    ) AS uom_desc,
+                    r.item_desc,
+                    r.item_category_id,
+                    r.item_category_code,
+                    r.item_category_desc,
+                    TO_CHAR(r.quotation_date, 'yyyy-mm-dd') quotation_date,
+                    TO_CHAR(r.date_from, 'yyyy-mm-dd') date_from,
+                    TO_CHAR(r.date_to, 'yyyy-mm-dd') date_to,
+                    r.longterm_flag,
+                    r.quantity,
+                    r.uom_code,
+                    r.currency_code,
+                    (SELECT
+                        curr.currency_name
+                    FROM
+                        gld_currency_bg_v curr
+                    WHERE
+                        curr.currency_code  = r.currency_code AND
+                        curr.business_group = ${/session/@business_group}
+                    ) AS currency_name,
+                    r.exchange_rate,
+                    r.tax_flag,
+                    DECODE(r.tax_flag, 'Y', '是', '否') taxable_flag_desc,
+                    r.tax_type_id,
+                    (SELECT
+                        t.bg_tax_type_code
+                    FROM
+                        fnd_tax_type_codes_bg t
+                    WHERE
+                        t.tax_type_id = r.tax_type_id
+                    ) bg_tax_type_code,
+                    r.tax_type_rate,
+                    r.net_price,
+                    r.tax_price,
+                    r.price,
+                    r.net_amount,
+                    r.tax_amount,
+                    r.total_amount,
+                    r.source_type,
+                    (SELECT
+                        v.code_value_name
+                    FROM
+                        sys_code_values_v v
+                    WHERE
+                        v.code       = 'PUR_QUOTATION_RESULT_SOURCE_TYPE' AND
+                        v.code_value = r.source_type
+                    ) source_type_desc,
+                    r.source_header_id,
+                    r.demand_pool_id,
+                    r.brand,
+                    r.item_specs,
+                    r.item_model,
+                    r.shelf_life,
+                    DECODE(r.source_type, 'BID',
+                    (SELECT
+                        h.entrustment_header_number
+                    FROM
+                        bid_entrustment_headers h
+                    WHERE
+                        h.entrustment_header_id = r.source_header_id
+                    ), 'RFX',
+                    (SELECT
+                        h.rfx_number
+                    FROM
+                        pur_rfx_headers h
+                    WHERE
+                        h.rfx_header_id = r.source_header_id
+                    )) source_document_number
+                FROM
+                    pur_quotation_result r #WHERE_CLAUSE#
+                ORDER BY
+                    r.quotation_result_number DESC
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+        		BEGIN
+        		      pur_quotation_result_pkg.create_result_by_req(p_requestion_header_id => ${@header_id},
+                                                p_requestion_line_id => ${@line_id},
+                                                p_current_quantity => ${@current_quantity},
+                                                p_current_uom_code => ${@current_uom_code},
+                                                p_history_quotation_result_id => ${@quotation_result_id},
+        		    							p_user_id =>${/session/@user_id});
+        		END;
+    		]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter expression="r.owner_business_group = ${/session/@business_group}"/>
+        <bm:data-filter expression="not exists (select 1 from mtl_system_items m where m.data_source = &apos;DEMAND_POOL&apos; and m.data_source_id = r.quotation_result_id)"/>
+        <bm:data-filter expression="exists (select 1 from fnd_user_authority a where a.authority_type = &apos;COMPANY&apos; and a.assign_id = r.owner_company_id and a.user_id = ${/session/@user_id})"/>
+        <bm:data-filter expression="not exists (select 1 from fnd_companies f, sys_code_values_v v where f.company_id = r.coop_company_id and v.code = &apos;PUR_EB_VENDOR&apos; and f.company_code = v.code_value)"/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field name="item_code" queryExpression="r.item_code like &apos;%&apos;|| ${@item_code} || &apos;%&apos;"/>
+        <bm:query-field name="item_desc" queryExpression="r.item_desc like &apos;%&apos;|| ${@item_desc} || &apos;%&apos;"/>
+        <bm:query-field name="item_category_id" queryExpression="r.item_category_id = ${@item_category_id}"/>
+        <bm:query-field name="date_from" queryExpression="r.date_from &gt;= to_date(${@date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="date_to" queryExpression="r.date_to &lt;= to_date(${@date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="vendor_company_name" queryExpression="exists(SELECT 1 FROM fnd_companies_vl f WHERE f.company_id = r.coop_company_id and f.company_full_name like &apos;%&apos; || ${@vendor_company_name}|| &apos;%&apos;)"/>
+        <bm:query-field name="price_from" queryExpression="r.price &gt;= ${@price_from}"/>
+        <bm:query-field name="price_to" queryExpression="r.price &lt;= ${@price_to}"/>
+        <bm:query-field name="brand" queryExpression="r.brand like &apos;%&apos;|| ${@brand} || &apos;%&apos;"/>
+        <bm:query-field name="item_specs" queryExpression="r.item_specs like &apos;%&apos;|| ${@item_specs} || &apos;%&apos;"/>
+        <bm:query-field name="item_model" queryExpression="r.item_model like &apos;%&apos;|| ${@item_model} || &apos;%&apos;"/>
+        <bm:query-field name="expiry_date" queryExpression="(trunc(r.end_date) - trunc(SYSDATE)) &lt;= ${@expiry_date}"/>
+        <bm:query-field name="source_document_number" queryExpression="(decode(source_type,                   &apos;BID&apos;,                   (select h.evaluation_header_number                      from bid_evaluation_headers h                     where h.evaluation_header_id = source_header_id),                   &apos;RFX&apos;,                   (select h.rfx_number                      from pur_rfx_headers h                     where h.rfx_header_id = source_header_id))) = ${@source_document_number}"/>
+    </bm:query-fields>
+</bm:model>

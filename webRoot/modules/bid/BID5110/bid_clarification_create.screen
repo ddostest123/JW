@@ -1,0 +1,283 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: WangQiaosen  
+    $Date: 2013-3-27 上午10:25:29  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:view>
+        <a:link id="bid5110_delete_clarification_link" model="bid.BID5110.bid_clarification_create" modelaction="delete"/>
+        <a:link id="bid5110_release_clarification_link" model="bid.BID5110.bid_clarification_release" modelaction="execute"/>
+        <script><![CDATA[
+            var bid5110_create_clarification_id = '';
+            
+            //比较两个日期的大小
+            
+            function bid5110ClarificationCreateCompareDate(start, end) {
+            
+                if (typeof(start) == 'string') {
+                    start = new Date(start.replace(/-/g, '/'));
+                }
+            
+                if (typeof(end) == 'string') {
+                    end = new Date(end.replace(/-/g, '/'));
+                }
+            
+                if (start > end) {
+                    return false;
+                }
+                return true;
+            }
+            
+            function bid5110ClarificationCreateOnValidatorFun(record, name, value) {
+                var start_date = record.get('bid_opening_start_date');
+                var bid_closing_date = record.get('bid_closing_date');
+                var prequal_closing_date = record.get('prequal_closing_date');
+                var sysdate = new Date();
+            
+                if (name == 'bid_opening_start_date') {
+                    if (!Ext.isEmpty(start_date)) {
+                        if (!bid5110ClarificationCreateCompareDate(sysdate, start_date)) {
+                            return '开标时间不可早于当前时间';
+                        }
+            
+                        if (!Ext.isEmpty(bid_closing_date)) {
+                            if (!bid5110ClarificationCreateCompareDate(bid_closing_date, start_date)) {
+                                return '${l:BID_OPEN_EARLIER_THAN_BID_END}';
+                            }
+                        }
+            
+                    }
+                } else if (name == 'bid_closing_date') {
+                    if (!Ext.isEmpty(bid_closing_date)) {
+                        if (!bid5110ClarificationCreateCompareDate(sysdate, bid_closing_date)) {
+                            return '${l:BID_END_EARLIER_THAN_NOW}';
+                        }
+            
+                        if (!Ext.isEmpty(start_date)) {
+                            if (!bid5110ClarificationCreateCompareDate(bid_closing_date, start_date)) {
+                                return '${l:BID_OPEN_EARLIER_THAN_BID_END}';
+                            }
+                        }
+                    }
+                } else if (name == 'prequal_closing_date') {
+                    if (!Ext.isEmpty(prequal_closing_date)) {
+                        if (!bid5110ClarificationCreateCompareDate(sysdate, prequal_closing_date)) {
+                            return '${l:PREQUAL_CLOSING_EARLIER_THAN_SYSDATE}';
+                        }
+            
+                        if (!Ext.isEmpty(bid_closing_date)) {
+                            if (!bid5110ClarificationCreateCompareDate(prequal_closing_date, bid_closing_date)) {
+                                return '${l:BID_CLOSING_EARLIER_THAN_PREQUAL_CLOSING}';
+                            }
+                        }
+            
+                        if (!Ext.isEmpty(start_date)) {
+                            if (!bid5110ClarificationCreateCompareDate(prequal_closing_date, start_date)) {
+                                return '资格预审截止日期不能早于开标时间';
+                            }
+                        }
+                    }
+                }
+                return true;
+            }
+            
+            //Load Funcation
+            
+            
+            function bid5110ClarificationCreateOnLoad(ds) {
+                var record = ds.getAt(0);
+                var original_closing_date = record.get('original_closing_date');
+                var sysdate = new Date();
+            
+                if (!bid5110ClarificationCreateCompareDate(sysdate, original_closing_date)) {
+                    record.getField('bid_closing_date').setReadOnly(true);
+                }
+            
+                var prequal_flag = record.get('prequal_flag');
+                if (prequal_flag != 'Y') {
+                    record.getField('prequal_closing_date').setReadOnly(true);
+                }
+            
+                if (!bid5110ClarificationCreateCompareDate(sysdate, record.get('original_prequal_closing_date'))) {
+                    record.getField('prequal_closing_date').setReadOnly(true);
+                }
+            }
+            
+            function bid5110ClarificationCreateOnSubmitsuccess(ds, res) {
+                Aurora.Masker.unmask($('bid5110_clarification_create_window').wrap);
+                var create_ds = $('bid5110_clarification_create_ds');
+                var create_rec = create_ds.getCurrentRecord();
+                create_rec.set('clarification_number', res.result.clarification_number);
+            
+                bid5110_create_clarification_id = res.result.clarification_id;
+            
+            
+                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SAVED}', function() {
+                    new Aurora.Window({
+                        id: 'bid5110_clarification_edit_window',
+                        title: '${l:BID_CLARIFICATIONS.CLARIFICATION_MAINTAIN}',
+                        url: $('bid5110_clarification_edit_link').getUrl() + '?clarification_id=' + bid5110_create_clarification_id,
+                        fullScreen: true
+                    });
+                    $('bid5110_clarification_create_window').close();
+                });
+            }
+            
+            function bid5110ClarificationCreateOnSubmitfailed() {
+                Aurora.Masker.unmask($('bid5110_clarification_create_window').wrap);
+            }
+            
+            function bid5110CreateSave() {
+                var create_ds = $('bid5110_clarification_create_ds');
+                var create_rec = create_ds.getCurrentRecord();
+                create_rec.set('entrustment_header_id', '${/parameter/@entrustment_header_id}');
+                create_rec.set('round', '${/parameter/@round}');
+                create_rec.set('version', '${/parameter/@version}');
+                create_rec.dirty = true;
+                create_rec.isNew = true;
+                create_rec.data._status = 'insert';
+                if(!create_ds.validate()){
+                    return;
+                }
+                Aurora.Masker.mask($('bid5110_clarification_create_window').wrap, '${l:LOADING}');
+                create_ds.submit();
+            }
+            
+            function bid5110CreateDelete() {
+                if (!Aurora.isEmpty(bid5110_create_clarification_id)) {
+                    Aurora.showConfirm('${l:PROMPT}', '${l:PROMPT.CONFIRM_DELETE}？', function() {
+                        Aurora.Masker.mask($('bid5110_clarification_create_window').wrap, '${l:LOADING}');
+            
+                        Aurora.request({
+                            url: $('bid5110_delete_clarification_link').getUrl(),
+                            para: {
+                                'clarification_id': bid5110_create_clarification_id
+                            },
+                            success: function() {
+                                Aurora.Masker.unmask($('bid5110_clarification_create_window').wrap);
+                                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.DELETED}', function() {
+                                    $('bid5110_clarification_create_window').close();
+                                });
+                            },
+                            failure: function() {
+                                Aurora.Masker.unmask($('bid5110_clarification_create_window').wrap);
+                                return;
+                            },
+                            error: function() {
+                                Aurora.Masker.unmask($('bid5110_clarification_create_window').wrap);
+                                return;
+                            }
+                        });
+                    });
+                } else {
+                    $('bid5110_clarification_create_window').close();
+                }
+            }
+            
+            function bid5110CreateRelease() {
+                if (!Aurora.isEmpty(bid5110_create_clarification_id)) {
+                    Aurora.showConfirm('${l:PROMPT}', '${l:PROMPT.CONFIRM_RELEASE}？', function() {
+                        Aurora.Masker.mask($('bid5110_clarification_create_window').wrap, '${l:LOADING}');
+            
+                        Aurora.request({
+                            url: $('bid5110_release_clarification_link').getUrl(),
+                            para: {
+                                'clarification_id': bid5110_create_clarification_id
+                            },
+                            success: function() {
+                                Aurora.Masker.unmask($('bid5110_clarification_create_window').wrap);
+                                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.RELEASED}', function() {
+                                    $('bid5110_clarification_create_window').close();
+                                });
+                            },
+                            failure: function() {
+                                Aurora.Masker.unmask($('bid5110_clarification_create_window').wrap);
+                                return;
+                            },
+                            error: function() {
+                                Aurora.Masker.unmask($('bid5110_clarification_create_window').wrap);
+                                return;
+                            }
+                        });
+                    });
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.PLEASE_SAVE}!');
+                }
+            }
+            
+            function bid5110CreateReturn() {
+                $('bid5110_clarification_create_window').close();
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="bid5110_clarification_create_ds" autoQuery="true" model="bid.BID5110.bid_clarification_create" queryUrl="${/request/@context_path}/autocrud/bid.BID5110.bid_clarification_create/query?entrustment_header_id=${/parameter/@entrustment_header_id}&amp;round=${/parameter/@round}&amp;version=${/parameter/@version}">
+                <a:fields>
+                    <a:field name="publisher_name" autoComplete="true" autoCompleteField="user_desc" lovHeight="480" lovService="public.sys_user_lov_by_business_group" lovWidth="500" required="true" title="BID_CLARIFICATIONS.PUBLISHER_NAME">
+                        <a:mapping>
+                            <a:map from="user_id" to="publisher_id"/>
+                            <a:map from="user_desc" to="publisher_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="opening_place_desc" lovHeight="480" lovService="bid.public.bid_opening_places_vl" lovWidth="500" title="BID_ENTRUSTMENT_HEADERS.OPENING_PLACE_DESC">
+                        <a:mapping>
+                            <a:map from="place_id" to="opening_place_id"/>
+                            <a:map from="place_desc" to="opening_place_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="bid_opening_start_date" validator="bid5110ClarificationCreateOnValidatorFun"/>
+                    <a:field name="bid_closing_date" validator="bid5110ClarificationCreateOnValidatorFun"/>
+                    <a:field name="prequal_closing_date" validator="bid5110ClarificationCreateOnValidatorFun"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="bid5110ClarificationCreateOnLoad"/>
+                    <a:event name="submitsuccess" handler="bid5110ClarificationCreateOnSubmitsuccess"/>
+                    <a:event name="submitfailed" handler="bid5110ClarificationCreateOnSubmitfailed"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="bid5110CreateSave" text="PROMPT.SAVE" width="100"/>
+                <a:toolbarButton click="bid5110CreateRelease" text="BID_CLARIFICATIONS.RELEASE" width="100"/>
+                <a:toolbarButton click="bid5110CreateDelete" text="PROMPT.DELETE" width="100"/>
+                <a:toolbarButton click="bid5110CreateReturn" text="PROMPT.RETURN" width="100"/>
+            </a:screenTopToolbar>
+            <a:vBox>
+                <a:hBox>
+                    <a:fieldSet column="3" row="1">
+                        <a:textField name="clarification_number" bindTarget="bid5110_clarification_create_ds" emptyText="${l:BID_ENTRUSTMENT_LN_ITEMS.TO_BE_GENERATED}" prompt="BID_CLARIFICATIONS.CLARIFICATION_NUMBER" readOnly="true"/>
+                        <a:textField name="entrustment_header_number" bindTarget="bid5110_clarification_create_ds" prompt="BID_ENTRUSTMENT_HEADERS.ENTRUSTMENT_HEADER_NUMBER" readOnly="true"/>
+                        <a:lov name="publisher_name" bindTarget="bid5110_clarification_create_ds" prompt="BID_CLARIFICATIONS.PUBLISHER_NAME"/>
+                    </a:fieldSet>
+                </a:hBox>
+                <a:hBox>
+                    <a:fieldSet title="BID_CLARIFICATIONS.ORIGINAL_DOC_INFO">
+                        <a:vBox labelWidth="120" style="margin-right:30px">
+                            <a:textField name="original_prequal_closing_date" bindTarget="bid5110_clarification_create_ds" prompt="BID_CLARIFICATIONS.PREQUAL_CLOSING_DATE" readOnly="true"/>
+                            <a:textField name="original_closing_date" bindTarget="bid5110_clarification_create_ds" prompt="BID_ENTRUSTMENT_HEADERS.BID_CLOSING_DATE" readOnly="true" renderer="Aurora.formatDateTime"/>
+                            <a:textField name="original_opening_place_desc" bindTarget="bid5110_clarification_create_ds" prompt="BID_ENTRUSTMENT_HEADERS.OPENING_PLACE_DESC" readOnly="true"/>
+                            <a:textField name="original_opening_start_date" bindTarget="bid5110_clarification_create_ds" prompt="BID_OPENING_PLACE_SCHEDULES.DATE_FROM" readOnly="true" renderer="Aurora.formatDateTime"/>
+                            <a:textField name="original_complete_date" bindTarget="bid5110_clarification_create_ds" prompt="BID_ENTRUSTMENT_HEADERS.COMPLETE_DATE" readOnly="true" renderer="Aurora.formatDateTime"/>
+                            <a:textField name="original_necessary_lead_time" bindTarget="bid5110_clarification_create_ds" prompt="BID_ENTRUSTMENT_HEADERS.NECESSARY_LEAD_TIME" readOnly="true"/>
+                        </a:vBox>
+                    </a:fieldSet>
+                    <a:fieldSet style="margin-left:40px" title="BID_CLARIFICATIONS.UPDATED">
+                        <a:vBox labelWidth="120" style="margin-right:30px">
+                            <a:dateTimePicker name="prequal_closing_date" bindTarget="bid5110_clarification_create_ds" prompt="BID_CLARIFICATIONS.PREQUAL_CLOSING_DATE" renderer="Aurora.formatDateTime"/>
+                            <a:dateTimePicker name="bid_closing_date" bindTarget="bid5110_clarification_create_ds" prompt="BID_ENTRUSTMENT_HEADERS.BID_CLOSING_DATE" renderer="Aurora.formatDateTime"/>
+                            <a:lov name="opening_place_desc" bindTarget="bid5110_clarification_create_ds" prompt="BID_ENTRUSTMENT_HEADERS.OPENING_PLACE_DESC"/>
+                            <a:dateTimePicker name="bid_opening_start_date" bindTarget="bid5110_clarification_create_ds" prompt="BID_OPENING_PLACE_SCHEDULES.DATE_FROM" renderer="Aurora.formatDateTime"/>
+                            <a:dateTimePicker name="complete_date" bindTarget="bid5110_clarification_create_ds" prompt="BID_ENTRUSTMENT_HEADERS.COMPLETE_DATE" renderer="Aurora.formatDateTime"/>
+                            <a:numberField name="necessary_lead_time" allowDecimals="false" allowNegative="false" bindTarget="bid5110_clarification_create_ds" prompt="BID_ENTRUSTMENT_HEADERS.NECESSARY_LEAD_TIME"/>
+                        </a:vBox>
+                    </a:fieldSet>
+                </a:hBox>
+                <a:hBox labelWidth="80">
+                    <a:textArea name="comments" bindTarget="bid5110_clarification_create_ds" height="60" prompt="BID_CLARIFICATIONS.COMMENTS" width="600"/>
+                </a:hBox>
+            </a:vBox>
+        </a:screenBody>
+    </a:view>
+</a:screen>

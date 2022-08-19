@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lily  
+    $Date: 2015-8-13 14:32:56  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="false">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    (SELECT
+                        COUNT(1)
+                    FROM
+                        wfl_workflow_instance t1
+                    INNER JOIN wfl_instance_node_recipient r
+                    ON
+                        t1.instance_id = r.instance_id
+                    INNER JOIN wfl_workflow ww
+                    ON
+                        t1.workflow_id = ww.workflow_id
+                    WHERE
+                        (
+                            r.user_id                                                            = ${/session/@user_id} OR
+                            wfl_core_pkg.check_auto_commission(r.record_id,${/session/@user_id}) = 'Y'
+                        )
+                    ) for_todo_num,
+                    (SELECT
+                        COUNT(1)
+                    FROM
+                        wfl_workflow_instance a,
+                        Wfl_Workflow_Vl b
+                    WHERE
+                        a.workflow_id = b.workflow_id AND
+                        NOT EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            wfl_instance_node_recipient r
+                        WHERE
+                            (
+                                r.user_id                                                                    = ${/session/@user_id} OR
+                                wfl_core_pkg.check_auto_commission_ignore(r.record_id, ${/session/@user_id}) = 'Y'
+                            )
+                            AND
+                            r.instance_id = a.instance_id
+                        ) AND
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            wfl_approve_record
+                        WHERE
+                            instance_id = a.instance_id AND
+                            (
+                                created_by                                                                     = ${/session/@user_id} OR
+                                wfl_core_pkg.check_auto_commission_ignore(rcpt_record_id,${/session/@user_id}) = 'Y'
+                            )
+                        )
+                    ) involved_num,
+                    (SELECT
+                        COUNT(1)
+                    FROM
+                        wfl_workflow_instance a,
+                        Wfl_Workflow_Vl b
+                    WHERE
+                        a.workflow_id = b.workflow_id AND
+                        a.created_by  = ${/session/@user_id} AND
+                        a.status      =10
+                    ) finish_num,
+                    (SELECT
+                        COUNT(1)
+                    FROM
+                        (SELECT
+                            i.*,
+                            i.document_number order_no,
+                            '拒绝' AS type,
+                            (SELECT
+                                l.employee_name
+                            FROM
+                                wfl_users_employee_v l
+                            WHERE
+                                l.user_id = i.last_updated_by
+                            ) name,
+                            wf.name AS workflow_name,
+                            wf.description AS workflow_desc,
+                            wf.UPDATE_FORM
+                        FROM
+                            (SELECT
+                                MAX(i.instance_id) instance_id
+                            FROM
+                                wfl_workflow_instance i,
+                                wfl_workflow w1
+                            WHERE
+                                i.status      = -1 AND
+                                i.created_by  = ${/session/@user_id} AND
+                                i.workflow_id = w1.workflow_id AND
+                                NOT EXISTS
+                                (SELECT
+                                    1
+                                FROM
+                                    wfl_workflow_instance a,
+                                    wfl_workflow w2
+                                WHERE
+                                    a.instance_id        > i.instance_id AND
+                                    a.workflow_id        = w2.workflow_id AND
+                                    w1.workflow_category = w2.workflow_category AND
+                                    a.instance_param     = i.instance_param
+                                )
+                            GROUP BY
+                                w1.workflow_category,
+                                i.instance_param
+                            ) t,
+                            wfl_workflow_instance i,
+                            wfl_workflow_vl wf
+                        WHERE
+                            i.instance_id = t.instance_id AND
+                            i.workflow_id = wf.workflow_id
+                        )
+                    ) untread_num,
+                    (SELECT
+                        COUNT(1)
+                    FROM
+                        wfl_workflow_instance a,
+                        Wfl_Workflow_Vl b
+                    WHERE
+                        a.workflow_id = b.workflow_id AND
+                        a.created_by  = ${/session/@user_id}
+                    ) my_instance_num,
+                    (SELECT
+                        COUNT(1)
+                    FROM
+                        wfl_function_approve_list fal,
+                        sys_approve_document_vl adv
+                    WHERE
+                        fal.approve_document_code = adv.approve_document_code AND
+                        fal.approval_status = 'APPROVING' AND
+                        fal.approval_person = ${/session/@user_id} AND
+                        fal.business_group        = ${/session/@business_group} AND
+                        (
+                            fal.approval_person = ${/session/@user_id} OR
+                            EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                wfl_function_approve_record wfar
+                            WHERE
+                                wfar.list_id    = fal.list_id AND
+                                wfar.operate_by = ${/session/@user_id}
+                            )
+                        )
+                    ) approve_num
+                FROM
+                    dual
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

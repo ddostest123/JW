@@ -1,0 +1,1131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Leah  
+    $Date: 2015-3-17 下午04:43:35  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="pur.CON5110.con_contract_upload_get_init_info" rootPath="con5110_contract_attm_init"/>
+        <a:model-query defaultWhereClause="t1.tax_type_code=&apos;J1&apos;" fetchAll="true" model="pur.CON5110.con_contract_get_tax_type_list_lov" rootPath="con5110_default_tax"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="con_contract_item_save_link" url="${/request/@context_path}/modules/pur/CON5110/con_contract_item_save.svc"/>
+        <a:link id="con_contract_item_delete_link" url="${/request/@context_path}/modules/pur/CON5110/con_contract_item_delete.svc"/>
+        <a:link id="con5110_contract_save_link" url="${/request/@context_path}/modules/pur/CON5110/con_contract_header_manual_save.svc"/>
+        <style><![CDATA[ 
+    
+    #con5110_contract_item_detail_area{
+      width:910px;
+      height:500px;
+      border:1px dashed green; padding-left:11px; padding-top:11px; line-height:25px;overflow:hidden;
+    }
+    #con5110_contract_item_detail_area input{border-left:0px;
+									        border-right:0px;
+									        border-top:0px;
+									        border-bottom:1px solid #000;
+									        
+									        text-align:center;}
+	#con5110_contract_item_detail_area textarea{
+	    
+	    vertical-align:middle;
+	    width:640px;
+	    
+	}								        
+    ]]></style>
+        <script><![CDATA[
+            var g_con_item_id;
+            var g_contract_type_id;
+            var g_submit_flag = 'N';
+            var g_doc_change_flag = 'N';
+            
+            function con5110_check_item_code_desc() {
+                //校验物料编码和描述至少输入一项
+                var v_validate_flag = 'Y';
+                var con_line_ds = $('con5110_contract_line_ds');
+                for (var u = 0;u < con_line_ds.getAll().length;u++) {
+                    var c_record = con_line_ds.getAt(u);
+                    if (!c_record.get('item_code')) {
+                        if (!c_record.get('item_desc')) {
+                            v_validate_flag = 'N';
+                            break;
+                        }
+                    }
+                }
+            
+            
+                if (v_validate_flag == 'N') {
+            
+                    return false;
+                } else {
+                    return true;
+                }
+            }
+            
+            function con5110_contract_create_fn() {
+                g_submit_flag = 'N';
+            
+                var con_header_ds = $('con5110_contract_header_ds');
+                var con_line_ds = $('con5110_contract_line_ds');
+                if (con_header_ds.validate()) {
+                    //校验物料编码和描述至少输入一项
+                    if (!con5110_check_item_code_desc()) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:PUR_CON5110.MATERIAL_CODE_AND_DESCRIPTION_AT_LEAST_INPUT_ONE}');
+                        return;
+                    }
+                    var con_attm_ds = $('con5110_contract_attm_ds');
+                    var con_partner_ds = $('con5110_contract_partner_ds');
+                    var con_header_record = con_header_ds.getCurrentRecord();
+                    var data = con_header_record.data;
+                    data._status = 'update';
+                    data['con_line'] = con_line_ds.getJsonData();
+                    data['con_attm'] = con_attm_ds.getJsonData();
+                    data['con_partner'] = con_partner_ds.getJsonData();
+                    Aurora.request({
+                        url: $('con5110_contract_save_link').getUrl(),
+                        para: data,
+                        success: function() {
+                            Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SAVE_SUCCESS}', function() {
+                                con5110_contract_header_submitSuccess_fn(con_header_ds);
+                                con_header_ds.query();
+                                con_line_ds.query();
+                                con_attm_ds.query();
+                                con_partner_ds.query();
+                            });
+                        },
+                        failure: function() {
+            
+                            return;
+                        },
+                        error: function() {
+            
+                            return;
+            
+                        }
+                    });
+                    con5110_contract_item_info_save_fn();
+            
+                }
+            }
+            
+            function con5110_contract_header_submitSuccess_fn(ds) {
+                var rec = ds.getCurrentRecord();
+                Aurora.request({
+                    url: '${/request/@context_path}/autocrud/pur.CON5110.con_get_contract_number/execute',
+                    para: {
+                        'contract_header_id': rec.get('contract_header_id'),
+                        'company_id': rec.get('company_id'),
+                        'contract_number': rec.get('contract_number')
+                    },
+                    success: function() {
+                        g_doc_change_flag = 'N';
+                        ds.query();
+                    },
+                    scope: this
+            
+                });
+            }
+            
+            /*  function con5110_contract_line_submitSuccess_fn(ds) {
+             ds.query();
+             $('con5110_contract_header_ds').query();
+             if (g_submit_flag == 'Y') {
+             if ($('con5110_contract_header_ds').validate() && $('con5110_contract_line_ds').validate() && $('con5110_contract_partner_ds').validate()) {
+             Aurora.showConfirm('${l:PROMPT}', '${l:PUR_CON5110.CONFIRM_TO_SUBMIT}', function() {
+             Aurora.showConfirm('${l:PROMPT}', '${l:PUR_CON5110.CONFIRM_TO_SUBMIT}', function() {
+             Aurora.request({
+             url: '${/request/@context_path}/autocrud/pur.CON5110.con_contract_headers_mantaince/execute',
+             para: {
+             'contract_header_id': '${/parameter/@contract_header_id}'
+             },
+             success: function(args) {
+             $('${/parameter/@winid}').close();
+             },
+             scope: this
+             });
+             });
+             });
+             }
+             }
+             } */
+            
+            function con5110_contract_delete_fn() {
+            
+                Aurora.showConfirm('${l:PROMPT}', '${l:PUR_CON5110.DECIDED_TO_DELETE_THE_WHOLE_ORDER}', function() {
+                    Aurora.request({
+                        url: '${/request/@context_path}/autocrud/pur.CON5110.con_contract_headers_mantaince/delete',
+                        para: {
+                            'contract_header_id': '${/parameter/@contract_header_id}'
+                        },
+                        success: function(args) {
+                            $('${/parameter/@winid}').close();
+                        },
+                        scope: this
+                    });
+                });
+            }
+            
+            
+            function con5110_contract_partner_init_fn(partner_type, partner_id, buyer_id) {
+            
+                Aurora.request({
+                    url: '${/request/@context_path}/autocrud/pur.CON5110.con_contract_partners_mantaince/execute',
+                    para: {
+                        'contract_header_id': '${/parameter/@contract_header_id}',
+                        'partner_type': partner_type,
+                        'partner_id': partner_id,
+                        'buyer_id': buyer_id
+                    },
+                    success: function(args) {
+                        $('con5110_contract_partner_ds').query();
+                    },
+                    scope: this
+                });
+            
+            }
+            
+            //比较两个日期的大小
+            
+            function con5110_compareDate(start, end) {
+            
+                if (typeof(start) == 'string') {
+                    start = new Date(start.replace(/-/g, '/'));
+                }
+            
+                if (typeof(end) == 'string') {
+                    end = new Date(end.replace(/-/g, '/'));
+                }
+            
+                if (start > end) {
+                    return false;
+                }
+                return true;
+            }
+            
+            function con5110_contract_header_update_fn(ds, record, name, value, oldvalue) {
+            
+                if (name == 'contract_type_id') {
+                    $('con5110_contract_item_ds').setQueryParameter('contract_type_id', value);
+                    $('con5110_contract_item_ds').setQueryParameter('contract_id', record.get('contract_header_id'));
+                    $('con5110_contract_item_ds').query();
+            
+                    g_contract_type_id = value;
+                    document.getElementById('con5110_contract_item_detail_area').innerHTML = '';
+                }
+                if (name == 'company_id') {
+                    con5110_contract_partner_init_fn('COMPANY', value, '');
+            
+                    if (value != oldvalue) {
+                        g_doc_change_flag = 'Y';
+                    }
+                    record.set('primary_document_desc', '');
+            
+            
+                }
+                if (name == 'vendor_id') {
+                    con5110_contract_partner_init_fn('VENDOR', value, '');
+                    record.set('primary_document_desc', '');
+            
+                }
+            
+                if (name == 'pur_buyer_id') {
+                    con5110_contract_partner_init_fn('COMPANY', record.get('company_id'), value);
+                }
+                //检查有效日期
+                if (name == 'start_date') {
+                    if (value != oldvalue) {
+                        if (record.get('end_date')) {
+                            //var v_start_date = record.get('start_date').getFullYear() + '-' + (record.get('start_date').getMonth() + 1) + '-' + record.get('start_date').getDay();
+                            //var v_end_date = record.get('end_date').getFullYear() + '-' + (record.get('end_date').getMonth() + 1) + '-' + record.get('end_date').getDay();
+                            var v_start_date = record.get('start_date');
+                            var v_end_date = record.get('end_date');
+            
+                            if (!con5110_compareDate(v_start_date, v_end_date)) {
+                                Aurora.showErrorMessage('${l:PROMPT}', '${l:PUR_CON5110.VALIDITY_TO_CANNOT_BE_EARLIER_THAN_VALIDITY_FROM}');
+                                record.set('start_date', '');
+                            }
+                        }
+                    }
+                }
+                if (name == 'end_date') {
+                    if (value != oldvalue) {
+                        if (record.get('start_date')) {
+                            //var v_start_date1 = record.get('start_date').getFullYear() + '-' + (record.get('start_date').getMonth() + 1) + '-' + record.get('start_date').getDay();
+                            //var v_end_date1 = record.get('end_date').getFullYear() + '-' + (record.get('end_date').getMonth() + 1) + '-' + record.get('end_date').getDay();
+                            var v_start_date1 = record.get('start_date');
+                            var v_end_date1 = record.get('end_date');
+            
+                            if (!con5110_compareDate(v_start_date1, v_end_date1)) {
+                                Aurora.showErrorMessage('${l:PROMPT}', '${l:PUR_CON5110.VALIDITY_TO_CANNOT_BE_EARLIER_THAN_VALIDITY_FROM}');
+                                record.set('end_date', '');
+                            }
+                        }
+                    }
+                }
+            
+            }
+            
+            
+            //auto textarea
+            var autoTextarea = function(elem, extra, maxHeight) {
+                    extra = extra || 0;
+                    var isFirefox = !! document.getBoxObjectFor || 'mozInnerScreenX' in window,
+                        isOpera = !! window.opera && !! window.opera.toString().indexOf('Opera'),
+                        addEvent = function(type, callback) {
+                            elem.addEventListener ? elem.addEventListener(type, callback, false) : elem.attachEvent('on' + type, callback);
+                        },
+                        getStyle = elem.currentStyle ?
+                    function(name) {
+                        var val = elem.currentStyle[name];
+            
+                        if (name === 'height' && val.search(/px/i) !== 1) {
+                            var rect = elem.getBoundingClientRect();
+                            return rect.bottom - rect.top - parseFloat(getStyle('paddingTop')) - parseFloat(getStyle('paddingBottom')) + 'px';
+                        };
+            
+                        return val;
+                    } : function(name) {
+                        return getComputedStyle(elem, null)[name];
+                    }, minHeight = parseFloat(getStyle('height'));
+            
+                    elem.style.resize = 'none';
+            
+                    var change = function() {
+                            var scrollTop, height, padding = 0,
+                                style = elem.style;
+            
+                            if (elem._length === elem.value.length) return;
+                            elem._length = elem.value.length;
+            
+                            if (!isFirefox && !isOpera) {
+                                padding = parseInt(getStyle('paddingTop')) + parseInt(getStyle('paddingBottom'));
+                            };
+                            scrollTop = document.body.scrollTop || document.documentElement.scrollTop;
+            
+                            elem.style.height = minHeight + 'px';
+                            if (elem.scrollHeight > minHeight) {
+                                if (maxHeight && elem.scrollHeight > maxHeight) {
+                                    height = maxHeight - padding;
+                                    style.overflowY = 'auto';
+                                } else {
+                                    height = elem.scrollHeight - padding;
+                                    style.overflowY = 'hidden';
+                                };
+                                style.height = height + extra + 'px';
+                                scrollTop += parseInt(style.height) - elem.currHeight;
+                                document.body.scrollTop = scrollTop;
+                                document.documentElement.scrollTop = scrollTop;
+                                elem.currHeight = parseInt(style.height);
+                            };
+                        };
+            
+                    addEvent('propertychange', change);
+                    addEvent('input', change);
+                    addEvent('focus', change);
+                    change();
+                };
+            
+            function con5110_contract_item_grid_click(grid, row, record) {
+            
+                g_con_item_id = $('con5110_contract_item_ds').getAt(row).get('item_id');
+                if (g_con_item_id && g_contract_type_id) {
+                    Aurora.request({
+                        url: '${/request/@context_path}/autocrud/pur.CON5110.con_contract_items_mantaince/query',
+                        para: {
+                            'con_item_id': g_con_item_id,
+                            'contract_type_id': g_contract_type_id,
+                            'contract_id': $('con5110_contract_header_ds').getAt(0).get('contract_header_id')
+                        },
+                        success: function(args) {
+                            var oTarget = document.getElementById('con5110_contract_item_detail_area');
+                            oTarget.innerHTML = args.result.record.item_text;
+                            var oInput = oTarget.getElementsByTagName('input');
+                            var oTextarea = oTarget.getElementsByTagName('textarea');
+                            for (var u = 0;u < oInput.length;u++) {
+                                oInput[u].onchange = function() {
+                                    this.setAttribute('value', this.value);
+                                    if (!this.value) {
+                                        this.setAttribute('size', 20);
+                                    }
+                                };
+                                oInput[u].onkeydown = oInput[u].onkeyup = function() {
+                                    if (this.size > 141) {
+            
+                                        this.setAttribute('size', 141);
+            
+                                    } else {
+                                        this.setAttribute('size', this.value.length * 2);
+                                    }
+                                };
+            
+                            }
+                            for (var u1 = 0;u1 < oTextarea.length;u1++) {
+                                oTextarea[u1].onchange = function() {
+                                    /* if(window.navigator.userAgent.toLowerCase().indexOf("firefox")!=-1){
+                                     //FireFox
+                                     this.innerContent=this.value;
+                                     }else{
+                                     //IE、Chrome
+                                     this.innerText=this.value;
+                                     } */
+                                    this.innerHTML = this.value;
+                                };
+                                autoTextarea(oTextarea[u1]);
+                            }
+                        },
+                        scope: this,
+                        sync: true
+                    });
+                }
+                con5110_contract_item_info_save_fn();
+            
+            }
+            
+            function con5110_contract_item_info_save_fn() {
+                v_item_text = document.getElementById('con5110_contract_item_detail_area').innerHTML;
+                if (g_con_item_id && v_item_text) {
+                    Aurora.request({
+                        url: '${/request/@context_path}/autocrud/pur.CON5110.con_contract_items_mantaince/execute',
+                        para: {
+                            'con_item_id': g_con_item_id,
+                            'item_text': v_item_text
+                        },
+                        success: function(args) {
+                            //Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SAVE_SUCCESSFULLY}');
+                        },
+                        scope: this,
+                        sync: true
+                    });
+                }
+            
+            }
+            
+            function con5110_contract_attm_submitSuccess_fn(ds) {
+                ds.query();
+            }
+            
+            function con5110_contract_edit_uploadFile(con_attchment_id) {
+                if (!Ext.isEmpty(con_attchment_id)) {
+                    var url = "${/request/@context_path}/uploadFile.screen?table_name=CON_CONTRACT_ATTACHMENTS&header_id=" + con_attchment_id;
+                    new Aurora.Window({
+                        url: url,
+                        title: '${l:ATM.UPLOAD_ATTACHMENT}',
+                        id: 'con5110_contract_edit_uploadFile_win',
+                        width: 830,
+                        height: 300
+                    }).on('beforeclose', function() {
+                        $('con5110_contract_attm_ds').query();
+                    });
+                }
+            }
+            
+            function con5110_contract_view_uploadFile(con_attchment_id) {
+                if (!Ext.isEmpty(con_attchment_id)) {
+                    var url = "${/request/@context_path}/uploadFileView.screen?table_name=CON_CONTRACT_ATTACHMENTS&header_id=" + con_attchment_id;
+                    new Aurora.Window({
+                        url: url,
+                        title: '${l:PUR_VENDORS.ATTACHMENT_DOWNLOAD}',
+                        id: 'con5110_contract_view_uploadFile_win',
+                        width: 830,
+                        height: 300
+                    });
+                }
+            }
+            
+            function con5110_contract_edit_uploadFile_render(value, record, name) {
+            
+                if (record.isNew) {
+                    return '';
+                } else {
+                    //附件编辑
+                    return '<a href="javascript:con5110_contract_edit_uploadFile(' + value + ');">${l:PROMPT.UPLOAD}</a>';
+                }
+            
+            }
+            
+            
+            function con5110_contract_attm_create_fn() {
+                var record = $('con5110_contract_attm_ds').create();
+                record.set('contract_header_id', '${/parameter/@contract_header_id}');
+            }
+            
+            function con5110_contract_partner_submitSuccess_fn(ds) {
+                ds.query();
+            }
+            
+            function con5110_contract_partner_load_fn(ds) {
+                for (var u = 0;u < ds.getAll().length;u++) {
+                    var record = ds.getAt(u);
+                    var lovField = record.getMeta().getField('partner_desc');
+                    if (record.get('partner_type') == 'COMPANY') {
+                        lovField.setLovService('public.fnd_companies_lov');
+                        lovField.setMapping([{
+                            'from': 'company_short_name',
+                            'to': 'partner_desc'
+                        }, {
+                            'from': 'company_id',
+                            'to': 'partner_id'
+                        }]);
+                        lovField.setLovWidth('600');
+                        lovField.setLovHeight('500');
+                        lovField.setTitle('${l:PUR_CON5110.SELECT_COMPANY}');
+                    } else if (record.get('partner_type') == 'VENDOR') {
+                        lovField.setLovService('pur.CON5110.pur_vendors_list_lov');
+                        lovField.setMapping([{
+                            'from': 'short_name',
+                            'to': 'partner_desc'
+                        }, {
+                            'from': 'vendor_id',
+                            'to': 'partner_id'
+                        }]);
+                        lovField.setLovWidth('600');
+                        lovField.setLovHeight('500');
+                        lovField.setTitle('${l:PUR_CON5110.SELECT_VENDOR}');
+                    }
+            
+            
+                    if (record.get('partner_type') == 'COMPANY') {
+                        record.getField('telphone').setRequired(false);
+                        record.getField('fax').setRequired(false);
+                    }
+                }
+            }
+            
+            function con5110_contract_submit_fn() {
+                g_submit_flag = 'Y';
+                if ($('con5110_contract_header_ds').validate() && $('con5110_contract_line_ds').validate() && $('con5110_contract_partner_ds').validate()) {
+                    var con_header_ds = $('con5110_contract_header_ds');
+                    var con_line_ds = $('con5110_contract_line_ds');
+            
+                    if (!con_line_ds.getAll().length) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:PUR_CON5110.PLEASE_MAINTAIN_AT_LEAST_ONE_CONTRACT_RECORD}', function() {
+                            return;
+                        });
+                        return;
+                    }
+                    //校验物料编码和描述至少输入一项
+                    if (!con5110_check_item_code_desc()) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:PUR_CON5110.MATERIAL_CODE_AND_DESCRIPTION_AT_LEAST_INPUT_ONE}');
+                        return;
+                    }
+            
+                    var con_attm_ds = $('con5110_contract_attm_ds');
+                    var con_partner_ds = $('con5110_contract_partner_ds');
+                    var con_header_record = con_header_ds.getCurrentRecord();
+                    var data = con_header_record.data;
+                    data._status = 'update';
+                    data['con_line'] = con_line_ds.getJsonData();
+                    data['con_attm'] = con_attm_ds.getJsonData();
+                    data['con_partner'] = con_partner_ds.getJsonData();
+                    Aurora.request({
+                        url: $('con5110_contract_save_link').getUrl(),
+                        para: data,
+                        success: function() {
+                            Aurora.showConfirm('${l:PROMPT}', '${l:PUR_CON5110.CONFIRM_TO_SUBMIT}', function() {
+                                Aurora.request({
+                                    url: '${/request/@context_path}/autocrud/pur.CON5110.con_contract_headers_mantaince/execute',
+                                    para: {
+                                        'contract_header_id': '${/parameter/@contract_header_id}'
+                                    },
+                                    success: function(args) {
+                                        Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SUBMIT_SUCCESS}', function() {
+                                            $('${/parameter/@winid}').close();
+            
+                                        });
+            
+                                    },
+                                    scope: this
+                                });
+                            });
+                        },
+                        failure: function() {
+                            Aurora.showMessage('${l:PROMPT}', '保存失败', function() {
+            
+                               });
+                            return;
+                        },
+                        error: function() {
+                            Aurora.showMessage('${l:PROMPT}', '保存出错', function() {
+            
+                               });
+                            return;
+            
+                        }
+                    });
+                    con5110_contract_item_info_save_fn();
+                }
+            }
+            
+            function con5110_contract_line_update_fn(ds, record, name, value, oldvalue) {
+                /* if(name=='quantity'){
+                 Aurora.request({
+                 url:'${/request/@context_path}/autocrud/pur.CON5110.con_contract_line_quantity_validate/query',
+                 para:record.data,
+                 success:function(args){
+                 var v_flag=args.result.record.valid_flag;
+                 if(v_flag=='N'){
+                 record.set('quantity','');
+                 Aurora.showErrorMessage('${l:PROMPT}','${l:PUR_CON5110.QUANTITY_CANNOT_BE_GREATER_THAN_DEMAND_QUANTITY}',function(){
+                 record.set('quantity','');
+                 });
+                 }
+                 },
+                 scope:this
+                 });
+                 } */
+                if (name == 'unit_price') {
+                    if (record.get('unit_price') && record.get('quantity')) {
+                        record.set('line_amount', (record.get('unit_price') * record.get('quantity')).toFixed(4));
+                    }
+                }
+                if (name == 'quantity') {
+                    if (record.get('unit_price') && record.get('quantity')) {
+                        record.set('line_amount', (record.get('unit_price') * record.get('quantity')).toFixed(4));
+                    }
+                }
+            }
+            
+            
+            function con5110_contract_header_load_fn(ds) {
+            
+                $('con5110_contract_item_ds').setQueryParameter('contract_type_id', ds.getAt(0).get('contract_type_id'));
+                $('con5110_contract_item_ds').setQueryParameter('contract_id', ds.getAt(0).get('contract_header_id'));
+                $('con5110_contract_item_ds').query();
+                g_contract_type_id = ds.getAt(0).get('contract_type_id');
+            }
+            
+            function con5110_contract_line_create_fn() {
+            
+                var record = $('con5110_contract_line_ds').create();
+                record.set('contract_header_id', '${/parameter/@contract_header_id}');
+                var v_length;
+                if (!$('con5110_contract_line_ds').getAll().length) {
+                    v_length = 0;
+                } else {
+                    v_length = $('con5110_contract_line_ds').getAll().length;
+            
+                }
+            
+                record.set('line_num', v_length);
+            
+            }
+            
+            function con5110_partner_edt_fn(record, name) {
+                if (name == 'partner_desc') {
+                    //if (record.get('partner_type') == 'COMPANY') {
+                    //    return '';
+            
+                    //} else {
+                        return 'con5110_partner_lov_edt';
+                    //}
+                } else {
+                    //if (record.get('partner_type') == 'COMPANY') {
+                    //    return '';
+            
+                    //} else {
+                        return 'con5110_partner_txf_edt';
+                    //}
+                }
+            
+            
+            }
+            
+            
+            
+            function con5110_contract_line_load_fn(ds) {
+                for (var u = 0;u < ds.getAll().length;u++) {
+                    var record = ds.getAt(u);
+            
+                    if (record.get('line_amount')) {
+                        record.set('line_amount', record.get('line_amount').toFixed(4));
+                    }
+                }
+            
+            }
+            
+            function contract_item_save() {
+                var datas = [];
+                var records = $('con5110_contract_item_ds').getAll();
+            
+                for (var i = 0;i < records.length;i++) {
+                    var data = {
+                        'contract_id': records[i].data.contract_id,
+                        'con_tplt_id': records[i].data.con_tplt_id,
+                        'parent_item_id': records[i].data.parent_item_id,
+                        'item_id': records[i].data.item_id,
+                        'item_title': records[i].data.item_title,
+                        'item_text': records[i].data.item_text,
+                        'sequence': records[i].data.sequence
+                    }
+                    datas.push(data);
+                }
+                Aurora.request({
+                    url: $('con_contract_item_save_link').getUrl(),
+                    para: datas,
+                    success: function(res) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:PUR_CON5110.CONTRACT_TERMS_ARE_SAVED_SUCCESSFULLY}');
+                        $('con5110_contract_item_ds').query();
+                        // Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    failure: function(res) {
+                        // Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    error: function(res) {
+                        // Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    scope: this
+                });
+            }
+            
+            function contract_item_add() {
+                var con_header_ds = $('con5110_contract_header_ds');
+                var record = con_header_ds.getCurrentRecord();
+                var con_tplt_id = record.data.con_tplt_id;
+                var contract_id = record.data.contract_header_id;
+                var record = $('con5110_contract_item_ds').create({
+                    'contract_id': contract_id,
+                    'sequence': '',
+                    'item_id': '',
+                    'item_title': '',
+                    'item_text': '',
+                    'enabled_flag': 'Y',
+                    'con_tplt_id': con_tplt_id,
+                    'parent_item_id': g_con_item_id
+                });
+            
+            }
+            
+            function contract_item_delete() {
+                Aurora.showConfirm('${l:PROMPT}', '${l:PUR_CON5110.CONFIRM_TO_SUBMIT}', function() {
+                    var datas = [];
+                    var records = $('con5110_contract_item_ds').getSelected();
+            
+                    for (var i = 0;i < records.length;i++) {
+                        var data = {
+                            // 'contract_id': records[i].data.contract_id,
+                            // 'con_tplt_id': records[i].data.con_tplt_id,
+                            // 'parent_item_id': records[i].data.parent_item_id,
+                            'item_id': records[i].data.item_id
+                            // 'item_title': records[i].data.item_title,
+                            // 'item_text': records[i].data.item_text,
+                            // 'sequence': records[i].data.sequence
+                        }
+                        datas.push(data);
+                    }
+                    Aurora.request({
+                        url: $('con_contract_item_delete_link').getUrl(),
+                        para: datas,
+                        success: function(res) {
+                            $('con5110_contract_item_ds').query();
+                            // Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        failure: function(res) {
+                            // Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        error: function(res) {
+                            // Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        scope: this
+                    });
+                });
+            }
+            
+            function contract_item_edit() {
+                if (g_item_edit_flag == 'N') {
+                    document.getElementById('con5110_contract_item_show').style.display = 'none';
+                    document.getElementById('con5110_contract_item_detail_area').style.display = 'none';
+                    document.getElementById('contract_item_edit_btn').style.display = 'none';
+                    document.getElementById('con5110_contract_item_edit').style.display = 'block';
+                    document.getElementById('contract_item_detail_btn').style.display = 'block';
+                    document.getElementById('contract_item_add_btn').style.display = 'block';
+                    document.getElementById('contract_item_delete_btn').style.display = 'block';
+                    document.getElementById('contract_item_save_btn').style.display = 'block';
+                    g_item_edit_flag = 'Y';
+                } else {
+                    document.getElementById('contract_item_edit_btn').style.display = 'none';
+                    document.getElementById('con5110_contract_item_show').style.display = 'block';
+                    document.getElementById('con5110_contract_item_detail_area').style.display = 'block';
+                    document.getElementById('con5110_contract_item_edit').style.display = 'none';
+                    document.getElementById('contract_item_detail_btn').style.display = 'none';
+                    document.getElementById('contract_item_edit_btn').style.display = 'block';
+                    document.getElementById('contract_item_add_btn').style.display = 'none';
+                    document.getElementById('contract_item_delete_btn').style.display = 'none';
+                    document.getElementById('contract_item_save_btn').style.display = 'none';
+                    g_item_edit_flag = 'N';
+                }
+            }
+            
+            function con5110_contract_back_fn() {
+                if ($('con5110_contract_manual_creation_win')) {
+                    $('con5110_contract_manual_creation_win').close();
+                } else {
+                    $('con5130_contract_edit_win').close();
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="con5110_contract_status_list_ds" loadData="true" model="pur.CON5110.con_contract_status_list"/>
+            <a:dataSet id="con5110_contract_item_ds" fetchAll="true" model="pur.CON5110.con_contract_items_mantaince"/>
+            <a:dataSet id="con5110_contract_header_ds" autoQuery="true" model="pur.CON5110.con_contract_headers_mantaince" queryUrl="${/request/@context_path}/autocrud/pur.CON5110.con_contract_headers_mantaince/query?contract_header_id=${/parameter/@contract_header_id}" submitUrl="con_contract_header_manual_save.svc">
+                <a:fields>
+                    <a:field name="document_desc" required="true"/>
+                    <a:field name="vendor_id"/>
+                    <a:field name="vendor_code"/>
+                    <a:field name="vendor_desc" autoComplete="true" autoCompleteField="vendor_code" lovHeight="520" lovService="pur.CON5110.pur_vendors_list_lov" lovWidth="600" required="true" title="PUR_CON5110.SELECT_VENDOR">
+                        <a:mapping>
+                            <a:map from="display_vendor_code" to="vendor_code"/>
+                            <a:map from="full_name" to="vendor_desc"/>
+                            <a:map from="vendor_id" to="vendor_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="pur_organization_id"/>
+                    <a:field name="pur_organization_name" autoComplete="true" autoCompleteField="pur_organization_code_name" lovGridHeight="350" lovHeight="500" lovService="public.pur_organization_lov" lovWidth="500" required="false" title="PUR_ORGANIZATIONS.PUR_ORGANIZATION">
+                        <a:mapping>
+                            <a:map from="pur_organization_name" to="pur_organization_name"/>
+                            <a:map from="pur_organization_id" to="pur_organization_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="company_id" defaultValue="CNY"/>
+                    <a:field name="company_desc" autoComplete="true" autoCompleteField="company_code" lovGridHeight="350" lovHeight="500" lovService="public.fnd_companies_lov" lovWidth="500" required="true" title="PUR_VENDORS.COMPANY_NAME">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_full_name" to="company_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="primary_contract_header_id"/>
+                    <a:field name="primary_document_desc" autoComplete="true" autoCompleteField="document_desc" lovGridHeight="350" lovHeight="500" lovService="public.con_contract_number_lov" lovWidth="500" title="CON_CONTRACT_HEADERS.MASTER_CONTRACT_NUMBER">
+                        <a:mapping>
+                            <a:map from="document_desc" to="primary_document_desc"/>
+                            <a:map from="contract_header_id" to="primary_contract_header_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="currency_code"/>
+                    <a:field name="currency_name" autoComplete="true" autoCompleteField="code_name" lovHeight="530" lovService="public.gld_currency_lov" lovWidth="600" required="true" title="PUR_HEADERS_ALL.CURRENCY_CODE">
+                        <a:mapping>
+                            <a:map from="currency_name" to="currency_name"/>
+                            <a:map from="currency_code" to="currency_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="pur_buyer_id"/>
+                    <a:field name="pur_buyer_desc" autoComplete="true" autoCompleteField="buyer_code" lovHeight="510" lovService="pur.CON5110.con_get_pur_buyer_list_lov" lovWidth="600" required="true" title="PUR_HEADERS_ALL.PUR_BUYER">
+                        <a:mapping>
+                            <a:map from="buyer_code" to="buyer_code"/>
+                            <a:map from="buyer_name" to="pur_buyer_desc"/>
+                            <a:map from="buyer_id" to="pur_buyer_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="contract_type_desc" lovHeight="500" lovService="pur.CON5110.con_get_contract_type_list_lov" lovWidth="600" required="true" title="CON_CONTRACT_HEADERS.CONTRACT_TYPE_NAME">
+                        <a:mapping>
+                            <a:map from="type_desc" to="contract_type_desc"/>
+                            <a:map from="con_type_id" to="contract_type_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="status_desc" displayField="status_desc" options="con5110_contract_status_list_ds" returnField="status" valueField="status"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="submitSuccess" handler="con5110_contract_header_submitSuccess_fn"/>
+                    <a:event name="update" handler="con5110_contract_header_update_fn"/>
+                    <a:event name="load" handler="con5110_contract_header_load_fn"/>
+                </a:events>
+            </a:dataSet>
+            <!-- <a:dataSet id="con5110_contract_header2_ds" autoQuery="true" model="pur.CON5110.con_contract_headers_mantaince" queryUrl="${/request/@context_path}/autocrud/pur.CON5110.con_contract_headers_mantaince/query?contract_header_id=${/parameter/@contract_header_id}">
+                <a:fields>
+                    <a:field name="document_desc"/>
+                    <a:field name="vendor_id"/>
+                    <a:field name="vendor_code"/>
+                    <a:field name="vendor_desc" autoComplete="true" autoCompleteField="vendor_code" lovHeight="520" lovService="pur.CON5110.pur_vendors_list_lov" lovWidth="600" required="true" title="选择供应商">
+                        <a:mapping>
+                            <a:map from="vendor_code" to="vendor_code"/>
+                            <a:map from="short_name" to="vendor_desc"/>
+                            <a:map from="vendor_id" to="vendor_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="pur_organization_id"/>
+                    <a:field name="pur_organization_name" autoComplete="true" autoCompleteField="pur_organization_code_name" lovGridHeight="350" lovHeight="500" lovService="public.pur_organization_lov" lovWidth="500" required="true" title="PUR_HEADERS_ALL.PUR_BUYER织">
+                        <a:mapping>
+                            <a:map from="pur_organization_name" to="pur_organization_name"/>
+                            <a:map from="pur_organization_id" to="pur_organization_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="company_id" defaultValue="CNY"/>
+                    <a:field name="company_desc" autoComplete="true" autoCompleteField="company_code" lovGridHeight="350" lovHeight="500" lovService="public.fnd_companies_lov" lovWidth="500" required="true" title="公司">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_short_name" to="company_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="currency_code"/>
+                    <a:field name="currency_name" autoComplete="true" autoCompleteField="code_name" lovHeight="530" lovService="public.gld_currency_lov" lovWidth="600" required="true" title="PUR_HEADERS_ALL.CURRENCY_CODE">
+                        <a:mapping>
+                            <a:map from="currency_name" to="currency_name"/>
+                            <a:map from="currency_code" to="currency_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="pur_buyer_id"/>
+                    <a:field name="pur_buyer_desc" autoComplete="true" autoCompleteField="buyer_code" lovHeight="510" lovService="pur.CON5110.con_get_pur_buyer_list_lov" lovWidth="600" required="true" title="PUR_HEADERS_ALL.PUR_BUYER">
+                        <a:mapping>
+                            <a:map from="buyer_code" to="buyer_code"/>
+                            <a:map from="buyer_name" to="pur_buyer_desc"/>
+                            <a:map from="buyer_id" to="pur_buyer_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="contract_type_desc" lovHeight="500" lovService="pur.CON5110.con_get_contract_type_list_lov" lovWidth="600" required="true" title="CON_CONTRACT_HEADERS.CONTRACT_TYPE_NAME">
+                        <a:mapping>
+                            <a:map from="type_desc" to="contract_type_desc"/>
+                            <a:map from="con_type_id" to="contract_type_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="status_desc" displayField="status_desc" options="con5110_contract_status_list_ds" returnField="status" valueField="status"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="submitSuccess" handler="con5110_contract_header_submitSuccess_fn"/>
+                    <a:event name="update" handler="con5110_contract_header_update_fn"/>
+                    <a:event name="load" handler="con5110_contract_header_load_fn"/>
+                </a:events>
+            </a:dataSet> -->
+            <a:dataSet id="con5110_contract_line_ds" autoQuery="true" fetchAll="true" model="pur.CON5110.con_contract_lines_mantaince" queryUrl="${/request/@context_path}/autocrud/pur.CON5110.con_contract_lines_mantaince/query?contract_header_id=${/parameter/@contract_header_id}" selectable="true">
+                <a:fields>
+                    <a:field name="quantity" required="true"/>
+                    <a:field name="service_include" defaultValue="${l:SYS_PARAMETER.YES}" required="true"/>
+                    <a:field name="fare_include" defaultValue="${l:SYS_PARAMETER.YES}" required="true"/>
+                    <a:field name="warranty" defaultValue="${l:PUR_CON5110.THREE_YEARS}" required="true"/>
+                    <a:field name="item_desc"/>
+                    <a:field name="item_id"/>
+                    <a:field name="item_code" lovAutoQuery="false" lovGridHeight="350" lovHeight="500" lovService="pur.PUR2200.inv_system_item_lov?business_group=${/session/@business_group}" lovWidth="500" title="PUR_ITEM_PRICE_HEADERS.ITEM_ID">
+                        <a:mapping>
+                            <a:map from="item_desc" to="item_desc"/>
+                            <a:map from="item_code" to="item_code"/>
+                            <a:map from="item_id" to="item_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="unit_meas_lookup_code" autoComplete="true" autoCompleteField="uom_code" lovHeight="530" lovService="pur.PUR2200.pur_req_get_uom_list" lovWidth="600" title="PUR_REQ_LINES.UNIT_MEAS_LOOKUP_CODE">
+                        <a:mapping>
+                            <a:map from="uom_code" to="unit_meas_lookup_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="unit_price" required="true"/>
+                    <a:field name="tax_rate" defaultValue="${/model/con5110_default_tax/record/@tax_type_id}"/>
+                    <a:field name="tax_rate_desc" defaultValue="${/model/con5110_default_tax/record/@tax_type_rate_desc}" lovHeight="500" lovService="pur.CON5110.con_contract_get_tax_type_list_lov" lovWidth="600" required="true" title="PUR_REQ_LINES.TAX_TYPE_RATE">
+                        <a:mapping>
+                            <a:map from="tax_type_id" to="tax_rate"/>
+                            <a:map from="tax_type_rate_desc" to="tax_rate_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="deliver_date" required="true"/>
+                </a:fields>
+                <!--  <a:events>
+                    <a:event name="submitSuccess" handler="con5110_contract_line_submitSuccess_fn"/>
+                </a:events> -->
+            </a:dataSet>
+            <a:dataSet id="con5110_contract_attm_ds" model="pur.CON5110.con_contract_attachments_mantaince" queryUrl="${/request/@context_path}/autocrud/pur.CON5110.con_contract_attachments_mantaince/query?contract_header_id=${/parameter/@contract_header_id}" selectable="true">
+                <a:fields>
+                    <a:field name="file_name" required="true"/>
+                    <a:field name="upload_party" defaultValue="${/model/con5110_contract_attm_init/record/@upload_party}"/>
+                    <a:field name="upload_party_desc" defaultValue="${/model/con5110_contract_attm_init/record/@upload_party_desc}"/>
+                    <a:field name="upload_date" defaultValue="${/model/con5110_contract_attm_init/record/@upload_date}"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="submitSuccess" handler="con5110_contract_attm_submitSuccess_fn"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="con5110_contract_partner_ds" autoQuery="true" model="pur.CON5110.con_contract_partners_mantaince" queryUrl="${/request/@context_path}/autocrud/pur.CON5110.con_contract_partners_mantaince/query?contract_header_id=${/parameter/@contract_header_id}">
+                <a:fields>
+                    <a:field name="partner_desc" required="false"/>
+                    <a:field name="representative" required="false"/>
+                    <a:field name="telphone" required="false"/>
+                    <a:field name="fax" required="false"/>
+                    <a:field name="address" required="false"/>
+                    <a:field name="bank_name" required="false"/>
+                    <a:field name="bank_account" required="false"/>
+                    <a:field name="tax_number" required="false"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="submitSuccess" handler="con5110_contract_partner_submitSuccess_fn"/>
+                    <a:event name="load" handler="con5110_contract_partner_load_fn"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="con5110_contract_create_fn" text="PROMPT.SAVE" width="100"/>
+                <a:toolbarButton click="con5110_contract_delete_fn" text="PROMPT.DELETE_DOCUMENT" width="100"/>
+                <a:toolbarButton click="con5110_contract_submit_fn" text="PROMPT.SUBMIT" width="100"/>
+                <a:toolbarButton click="con5110_contract_back_fn" text="PROMPT.RETURN" width="100"/>
+            </a:screenTopToolbar>
+            <a:tabPanel marginWidth="50">
+                <a:tabs>
+                    <a:tab prompt="PROMPT.BASIC_INFOMATION" width="100">
+                        <a:form marginWidth="75" title="PUR_CON5110.PURCHASING_CONTRACT_DETAILS">
+                            <a:box column="3" labelWidth="110">
+                                <a:textField name="contract_number" bindTarget="con5110_contract_header_ds" prompt="PUR_RCV_TRX_DETAILS.SERIAL_NUM" readOnly="true"/>
+                                <a:textField name="document_desc" bindTarget="con5110_contract_header_ds" prompt="CON_CONTRACT_HEADERS.CONTRACT_NUMBER"/>
+                                <a:lov name="contract_type_desc" bindTarget="con5110_contract_header_ds" prompt="CON_CONTRACT_HEADERS.CONTRACT_TYPE_NAME"/>
+                                <a:lov name="vendor_desc" bindTarget="con5110_contract_header_ds" prompt="PUR_HEADERS_ALL.VENDOR_ID"/>
+                                <a:lov name="pur_organization_name" bindTarget="con5110_contract_header_ds" prompt="PUR_ORGANIZATIONS.PUR_ORGANIZATION"/>
+                                <a:lov name="company_desc" bindTarget="con5110_contract_header_ds" prompt="PUR_VENDORS.COMPANY_NAME"/>
+                                <a:lov name="primary_document_desc" bindTarget="con5110_contract_header_ds" prompt="CON_CONTRACT_HEADERS.MASTER_CONTRACT_NUMBER"/>
+                                <a:datePicker name="start_date" bindTarget="con5110_contract_header_ds" prompt="PUR_CON5110.CONTRACT_VALIDITY_FROM" renderer="Aurora.formatDate"/>
+                                <a:datePicker name="end_date" bindTarget="con5110_contract_header_ds" prompt="PUR_CON5110.CONTRACT_VALIDITY_TO" renderer="Aurora.formatDate"/>
+                                <a:numberField name="amount" bindTarget="con5110_contract_header_ds" prompt="PUR_ORDER_HEADERS.AMOUNT" readOnly="true"/>
+                                <a:lov name="currency_name" bindTarget="con5110_contract_header_ds" prompt="PUR_HEADERS_ALL.CURRENCY_CODE"/>
+                                <a:lov name="pur_buyer_desc" bindTarget="con5110_contract_header_ds" prompt="PUR_HEADERS_ALL.PUR_BUYER"/>
+                                <a:textField name="status_desc" bindTarget="con5110_contract_header_ds" prompt="CON_CONTRACT_HEADERS.STATUS" readOnly="true"/>
+                                <a:textField name="archive_number" bindTarget="con5110_contract_header_ds" prompt="PUR_CON5110.ARCHIVE_NO"/>
+                                <a:textField name="contract_place" bindTarget="con5110_contract_header_ds" prompt="PUR_CON5110.PLACE_OF_SIGN"/>
+                                <a:datePicker name="document_date" bindTarget="con5110_contract_header_ds" prompt="PUR_HEADERS_ALL.CREATION_DATE" renderer="Aurora.formatDate"/>
+                            </a:box>
+                            <a:hBox labelWidth="101">
+                                <a:textArea name="note" bindTarget="con5110_contract_header_ds" height="30" prompt="CON_CONTRACT_HEADERS.NOTE" width="660"/>
+                            </a:hBox>
+                        </a:form>
+                        <a:tabPanel height="350" marginWidth="70">
+                            <a:tabs>
+                                <a:tab prompt="CON5010.CONTRACT_OBJECTS" width="100">
+                                    <a:grid bindTarget="con5110_contract_line_ds" height="300" marginWidth="75" navBar="true" showRowNumber="true" width="1000">
+                                        <a:toolBar>
+                                            <a:button click="con5110_contract_line_create_fn" icon="${/request/@context_path}/images/add.gif" text="HAP_NEW"/>
+                                            <!-- <a:button type="save"/> -->
+                                            <a:button type="delete"/>
+                                        </a:toolBar>
+                                        <a:columns>
+                                            <!-- <a:column name="line_num" align="center" lock="true" prompt="PUR_CON5110.CONTRACT_LINE_NUMBER" sortable="true" width="50"/>
+                                             -->
+                                            <a:column name="ref_doc_num" align="center" editor="con5110_line_txf_edt" lock="true" prompt="PUR_CON5110.PURCHASE_ORDER_REQUISITION" width="90"/>
+                                            <a:column name="item_code" align="center" editor="con5110_line_lov_edt" lock="true" prompt="PUR_ITEM_PRICE_HEADERS.ITEM_CODE" width="60"/>
+                                            <a:column name="item_desc" align="center" editor="con5110_line_txf_edt" lock="true" prompt="PUR_ITEM_PRICE_HEADERS.ITEM_NAME"/>
+                                            <a:column name="quantity" align="center" editor="con5110_line_nf_edt" prompt="PUR_REQ_LINES.QUANTITY" width="60"/>
+                                            <a:column name="unit_price" align="center" editor="con5110_line_nf1_edt" prompt="PUR_REQ_LINES.UNIT_PRICE" width="60"/>
+                                            <a:column name="line_amount" align="center" prompt="PUR_ORDER_LINES.AMOUNT" width="60"/>
+                                            <a:column name="tax_rate_desc" align="center" editor="con5110_line_lov_edt" prompt="PUR_REQ_LINES.TAX_TYPE_RATE" width="60"/>
+                                            <a:column name="unit_meas_lookup_code" align="center" editor="con5110_line_lov_edt" prompt="PUR_LINE_LOCATIONS_ALL.UNIT_MEAS_LOOKUP_CODE" width="60"/>
+                                            <a:column name="model" align="center" editor="con5110_line_textArea" prompt="PUR_CON5110.SPECIFICATIONS_MODEL"/>
+                                            <a:column name="deliver_date" editor="con5110_line_date_edt" prompt="PUR_CON5110.DELIVERY_DATES" renderer="Aurora.formatDate" width="70"/>
+                                            <a:column name="fare_include" align="center" editor="con5110_line_txf_edt" prompt="SACPUR5210.WHETHER_SHIPPING_IS_INCLUDED" width="60"/>
+                                            <a:column name="service_include" align="center" editor="con5110_line_txf_edt" prompt="PUR_CON5110.WHETHER_INCLUDING_INSTALLATION_AND_COMMISSIONING_SERVICES"/>
+                                            <a:column name="warranty" align="center" editor="con5110_line_txf_edt" prompt="PUR2510.BASIC_C_ATTRIBUTE10" width="60"/>
+                                            <!-- <a:column name="sales_order_num" align="center" prompt="销售订单号|行号" width="70"/> -->
+                                            <a:column name="production_place" align="center" editor="con5110_line_txf_edt" prompt="PUR_CON5110.ORIGIN" width="70"/>
+                                            <a:column name="line_comment" align="center" editor="con5110_line_txf_edt" prompt="PUR_REQ_LINES.LINE_COMMENTS"/>
+                                        </a:columns>
+                                        <a:editors>
+                                            <a:textField id="con5110_line_txf_edt"/>
+                                            <a:numberField id="con5110_line_nf_edt"/>
+                                            <a:numberField id="con5110_line_nf1_edt" allowDecimals="true" decimalPrecision="4"/>
+                                            <a:lov id="con5110_line_lov_edt"/>
+                                            <a:datePicker id="con5110_line_date_edt"/>
+                                            <a:textArea id="con5110_line_textArea" height="110"/>
+                                        </a:editors>
+                                    </a:grid>
+                                </a:tab>
+                                <a:tab prompt="PUR_VENDOR_SITE_COMPANY.ASSIGN_CLIENT_QUERY" width="100">
+                                    <a:grid autoAppend="false" bindTarget="con5110_contract_partner_ds" height="310" marginWidth="75" showRowNumber="true">
+                                        <a:toolBar>
+                                            <a:button type="save"/>
+                                        </a:toolBar>
+                                        <a:columns>
+                                            <a:column name="partner_type_name" prompt="CON_CONTRACT_PARTNER_LINES.PARTNER_TYPE_NAME" width="60"/>
+                                            <a:column name="partner_desc" editorFunction="con5110_partner_edt_fn" prompt="CON_CONTRACT_PARTNER_LINES.PARTNER"/>
+                                            <a:column name="signing_date" prompt="CONTRACT_DATE" width="60"/>
+                                            <a:column name="representative" editorFunction="con5110_partner_edt_fn" prompt="CON_CONTRACT_PARTNER_LINES.REPRESENTATIVE" width="60"/>
+                                            <a:column name="telphone" editorFunction="con5110_partner_edt_fn" prompt="PUR_RFX_LN_VENDORS.CONTACT_MOBILE"/>
+                                            <a:column name="fax" editorFunction="con5110_partner_edt_fn" prompt="PUR_VENDORS.FAX_NO"/>
+                                            <a:column name="address" editorFunction="con5110_partner_edt_fn" prompt="PUR_REGISTER_VENDOR_REJECT_DETAIL.ADDRESS_INFORMATION"/>
+                                            <a:column name="bank_name" editorFunction="con5110_partner_edt_fn" prompt="CON_CONTRACT_PARTNER_LINES.BANK_BRANCH_CODE"/>
+                                            <a:column name="bank_account" editorFunction="con5110_partner_edt_fn" prompt="CON_CONTRACT_PARTNER_LINES.BANK_ACCOUNT_CODE"/>
+                                            <a:column name="tax_number" editorFunction="con5110_partner_edt_fn" prompt="CON_CONTRACT_PARTNER_LINES.TAX_ID_NUMBER"/>
+                                        </a:columns>
+                                        <a:editors>
+                                            <a:textField id="con5110_partner_txf_edt"/>
+                                            <a:lov id="con5110_partner_lov_edt"/>
+                                            <a:numberField id="con5110_partner_nf_edt"/>
+                                        </a:editors>
+                                    </a:grid>
+                                </a:tab>
+                            </a:tabs>
+                        </a:tabPanel>
+                    </a:tab>
+                    <a:tab prompt="PUR_CON5110.TERMS_INFORMATION" width="100">
+                        <a:hBox>
+                            <a:toolbarButton id="contract_item_save_btn" click="contract_item_save" text="PUR_CON5110.SAVE_THE_TERMS_OF_INFORMATION" width="100"/>
+                            <a:toolbarButton id="contract_item_add_btn" click="contract_item_add" text="PUR_CON5110.NEW_TERMS_INFORMATION" width="100"/>
+                            <a:toolbarButton id="contract_item_edit_btn" click="contract_item_edit" text="PUR_CON5110.EDIT_INFORMATION_TERMS" width="100"/>
+                            <a:toolbarButton id="contract_item_detail_btn" click="contract_item_edit" text="PUR_CON5110.INFORMATION_TERMS" width="100"/>
+                            <a:toolbarButton id="contract_item_delete_btn" click="contract_item_delete" text="PUR_CON5110.REMOVE_THE_TERMS_AND_CONDITIONS" width="100"/>
+                        </a:hBox>
+                        <a:hBox>
+                            <a:treeGrid id="con5110_contract_item_show" bindTarget="con5110_contract_item_ds" idField="item_id" marginHeight="50" parentField="parent_item_id" style="display:block;" width="250">
+                                <a:columns>
+                                    <a:column name="item_title" prompt="PUR_CON5110.CLAUSE_OF_TITLE" width="201"/>
+                                </a:columns>
+                                <a:events>
+                                    <a:event name="cellclick" handler="con5110_contract_item_grid_click"/>
+                                </a:events>
+                            </a:treeGrid>
+                            <a:treeGrid id="con5110_contract_item_edit" bindTarget="con5110_contract_item_ds" idField="item_id" marginHeight="50" marginWidth="100" parentField="parent_item_id" style="display:block;">
+                                <a:columns>
+                                    <a:column name="sequence" editor="nf_edt" prompt="CON_CONTRACT_OBJECT_LINES.LINE_NUM" width="70"/>
+                                    <a:column name="item_title" editor="txf_edt" prompt="PUR_CON5110.CLAUSE_OF_TITLE" width="201"/>
+                                    <a:column name="item_text" editor="txf_edt" prompt="PUR_CON5110.TERMS_OF_CONTENTS" width="500"/>
+                                </a:columns>
+                                <a:editors>
+                                    <a:textField id="txf_edt"/>
+                                    <a:numberField id="nf_edt"/>
+                                </a:editors>
+                                <a:events>
+                                    <a:event name="cellclick" handler="con5110_contract_item_grid_click"/>
+                                </a:events>
+                            </a:treeGrid>
+                            <a:vBox>
+                                <!-- <a:toolbarButton click="con5110_contract_item_info_save_fn" text="保存条款信息" width="100"/> -->
+                                <div id="con5110_contract_item_detail_area"/>
+                            </a:vBox>
+                        </a:hBox>
+                    </a:tab>
+                    <a:tab prompt="PROMPT.ATTACHMENT_INFORMATION" width="100">
+                        <a:grid bindTarget="con5110_contract_attm_ds" height="410" marginWidth="75" navBar="true" showRowNumber="true">
+                            <a:toolBar>
+                                <a:button click="con5110_contract_attm_create_fn" icon="${/request/@context_path}/images/add.gif" text="HAP_NEW"/>
+                                <!-- <a:button type="add"/> -->
+                                <a:button type="save"/>
+                                <a:button type="clear"/>
+                                <a:button type="delete"/>
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="file_name" align="center" editor="con5110_atm_txf_edt" prompt="PUR_CON5110.DOCUMENT_NAME" width="150"/>
+                                <a:column name="upload_party_desc" align="center" prompt="PUR_CON5110.UPLOAD_PARTIES" width="130"/>
+                                <a:column name="upload_date" align="center" prompt="PUR_CON5110.UPLOAD_TIME" renderer="Aurora.formatDate" width="130"/>
+                                <a:column name="con_attchment_id" align="center" prompt="PROMPT.ATTACHMENT" renderer="con5110_contract_edit_uploadFile_render" width="150"/>
+                                <a:column name="comments" align="center" editor="con5110_atm_txf_edt" prompt="PROMPT.COMMENTS" width="200"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:textField id="con5110_atm_txf_edt"/>
+                                <a:datePicker id="con5110_atm_date_edt"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+            <script><![CDATA[
+                (function() {
+                    $('con5110_contract_attm_ds').submit();
+                })();
+                document.getElementById('con5110_contract_item_show').style.display = 'block';
+                document.getElementById('con5110_contract_item_edit').style.display = 'none';
+                document.getElementById('contract_item_detail_btn').style.display = 'none';
+                document.getElementById('contract_item_add_btn').style.display = 'none';
+                document.getElementById('contract_item_delete_btn').style.display = 'none';
+                document.getElementById('contract_item_save_btn').style.display = 'none';
+                if($('con5130_contract_edit_win'))
+                {
+                    document.getElementById('contract_item_edit_btn').style.display = 'block';
+                }
+                else
+                {
+                    document.getElementById('contract_item_edit_btn').style.display = 'none';
+                }
+                // contract_item_edit();
+            ]]></script>
+        </a:screenBody>
+    </a:view>
+</a:screen>

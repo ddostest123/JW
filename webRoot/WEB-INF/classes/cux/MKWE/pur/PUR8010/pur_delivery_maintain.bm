@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+          --      select * from (SELECT
+          --          h.header_id,
+          --          h.del_plan_number,
+          --          h.vendor_id,
+          --          decode(ws_pur_ebsmrp_srm_instance_pkg.get_vendor_online_flag(h.po_number),'N','否','是') online_vender_flg ,
+          --          h.vendor_code,
+          --          h.vendor_name,
+         --               (SELECT
+         --                  pha.vendor_site_name 
+         --                 FROM pur_headers_all pha 
+         --                 WHERE pha.display_po_number = h.po_number
+        --                   and rownum =1    
+         --               ) vendor_site_name,                    
+        --            h.inv_organization_id,
+        --            h.inv_organization_name,
+        --           h.owner_business_group,
+        --            h.del_plan_status,
+        --            h.coop_company_id,
+        --            h.owner_company_id,
+        --            h.coop_business_group,
+        --            (SELECT
+        --                scv.code_value_name
+        --            FROM
+        --                sys_codes sc,
+        --                sys_code_values_vl scv
+        --            WHERE
+       --                sc.code          = 'PUR_DEL_PLAN_STATUS' AND
+       --                 sc.code_id       = scv.code_id AND
+      --                  scv.code_value   = h.del_plan_status AND
+       --                 sc.enabled_flag  = 'Y' AND
+       --                 scv.enabled_flag = 'Y'
+       --             ) del_plan_status_desc,
+       --             h.user_id,
+      --              (SELECT su.description FROM sys_user su WHERE h.created_by = su.user_id) user_name,
+      --              h.created_by,
+      --              h.creation_date creation_date,
+      --              h.last_updated_by,
+     --               TO_CHAR(h.last_update_date,'YYYY-MM-DD HH24:MI:SS') last_update_date,
+     --               h.po_number,
+     --               h.creation_date first_creation_date,
+     --               h.business_unit_id,
+     --               h.business_unit_name,
+     --               h.suplier_desc,
+     --               (select s.user_id from sys_user s where s.description = h.suplier_desc and rownum = 1) as suplier_id
+     --           FROM
+     --               pur_del_plan_headers h  
+     --               order by h.del_plan_status desc, h.creation_date desc
+     --               ) h
+         SELECT 
+              header_id
+             , del_plan_status_desc
+             ,online_vender_flg
+             ,del_plan_number
+             ,po_number
+             ,vendor_code
+             ,vendor_name
+             ,vendor_site_name
+             ,business_unit_name
+             ,suplier_desc
+             ,first_creation_date
+         FROM  --pur_del_plan_maintain_v 
+          (SELECT /*+first_rows(50) */ 
+                 h.header_id
+                ,h.del_plan_number
+                ,h.vendor_id
+                , (SELECT decode(COUNT(1), 0, '是', '否')
+                     FROM cux_pur_vendor_online cpv
+                         ,pur_vendor_site_es    pve
+                   WHERE cpv.vendor_site_id = pve.vendor_site_id
+                     AND cpv.vendor_online_flag = 'OFFLINE'
+                     AND cpv.vendor_id = pha.vendor_id
+                    AND (pve.es_vendor_code NOT IN ('2003', '4363') OR
+                       (pve.es_vendor_code IN ('2003', '4363') AND
+                       pve.es_site_code = pha.vendor_site_name))) online_vender_flg  
+               ,h.vendor_code
+               ,h.vendor_name
+               ,pha.vendor_site_name vendor_site_name
+               ,h.inv_organization_id
+               ,h.inv_organization_name
+               ,h.owner_business_group
+               ,h.del_plan_status
+               ,h.coop_company_id
+               ,h.owner_company_id
+               ,h.coop_business_group
+               ,decode(pha.closed_code,
+                  'OPEN',
+                   scv.code_value_name,
+                  '已关闭') del_plan_status_desc
+               ,h.user_id
+               ,(SELECT su.description
+                  FROM sys_user su
+                  WHERE h.created_by = su.user_id) user_name
+               ,h.created_by
+               ,h.creation_date creation_date
+               ,h.last_updated_by
+               ,to_char(h.last_update_date, 'YYYY-MM-DD HH24:MI:SS') last_update_date
+               ,h.po_number
+               ,h.creation_date first_creation_date
+               ,h.business_unit_id
+               ,h.business_unit_name
+               ,h.suplier_desc
+          FROM pur_del_plan_headers h
+              ,pur_headers_all      pha
+              ,sys_code_values_v2   scv
+        WHERE pha.pur_header_id = h.source_header_id
+         AND pha.cancel_flag = 'N'
+         AND scv.code_id = 987390
+         AND scv.code_value = h.del_plan_status
+         AND (h.del_plan_status IN ('WAIT_CONFIRMED', 'WAIT_FINAL_CONFIRMED', 'CONFIRMED', 'NEW')))
+         h
+         #AUTHORIY_FROM#  #WHERE_CLAUSE#  #AUTHORIY_WHERE#
+          ORDER BY 
+                h.del_plan_status DESC
+               ,h.creation_date   DESC
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="del_plan_number" queryExpression="h.del_plan_number like &apos;%&apos;||${@del_plan_number}||&apos;%&apos;"/>
+        <bm:query-field name="vendor_id" queryExpression="h.vendor_id = ${@vendor_id}"/>
+        <bm:query-field name="inv_organization_id" queryExpression="h.inv_organization_id = ${@inv_organization_id}"/>
+        <bm:query-field name="segment1" queryExpression="EXISTS (SELECT * from pur_del_plan_lines l WHERE l.header_id = h.header_id AND l.segment1 like &apos;%&apos;||${@segment1}||&apos;%&apos;)"/>
+        <!-- <bm:query-field name="create_by" queryExpression="h.user_id = ${@create_by}"/> -->
+        <bm:query-field name="create_date_from" queryExpression="(h.creation_date &gt;= to_date(${@create_date_from},&apos;YYYY-MM-DD&apos;) or ${@create_date_from} is null)"/>
+        <bm:query-field name="create_date_from" queryExpression="(h.creation_date &lt;= to_date(${@create_date_to},&apos;YYYY-MM-DD&apos;) or ${@create_date_to} is null)"/>
+        <bm:query-field name="del_plan_status" queryExpression="h.del_plan_status = ${@del_plan_status}"/>
+        <bm:query-field name="suplier_desc" queryExpression="h.suplier_desc like &apos;%&apos; || ${@suplier_desc} || &apos;%&apos;"/>
+        <bm:query-field name="item_category_desc_2" queryExpression="EXISTS  (SELECT 1           FROM pur_del_plan_lines pdl               ,mtl_system_items   msi          WHERE pdl.header_id = h.header_id            AND pdl.item_code = msi.display_item_code            AND EXISTS          (SELECT 1                   FROM mtl_category_classify_items    mi                       ,mtl_categories_user_defined_vl mv                       ,mtl_categories_user_defined_vl mv2                  WHERE 1 = 1                    AND mi.item_id = msi.item_id                    AND mi.category_udf_id = mv.category_udf_id                    AND mv2.category_code = substr(mv.category_code, 0, 4)                    AND mv2.category_name LIKE ${@item_category_desc_2}))"/>
+        <bm:query-field name="online_vender_flg" queryExpression=" (h.online_vender_flg = ${@online_vender_flg}   or ${@online_vender_flg} is null  )"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter name="business_group" expression="h.owner_business_group = ${/session/@business_group}"/>
+        <bm:data-filter expression="h.del_plan_status_desc != &apos;已关闭&apos;"/>
+        <!-- <bm:data-filter name="del_plan_status" expression="(h.del_plan_status in( &apos;WAIT_CONFIRMED&apos; , &apos;WAIT_FINAL_CONFIRMED&apos;, &apos;CONFIRMED&apos;, &apos;NEW&apos;) )"/> -->
+        <!-- <bm:data-filter expression="exists (select 1 from pur_headers_all ha where ha.display_po_number = h.po_number and ha.cancel_flag = &apos;N&apos; and ha.closed_code = &apos;OPEN&apos;)"/> -->
+        <!-- <bm:data-filter expression="exists (select 1 from pur_headers_all ha where ha.display_po_number = h.po_number and ha.cancel_flag = &apos;N&apos; and ha.closed_code = &apos;OPEN&apos;) and EXISTS (SELECT 1 FROM fnd_user_authority fua WHERE fua.authority_type = &apos;BUSINESS_UNIT&apos; AND fua.user_id = user_auth_0.user_id AND fua.assign_id = h.business_unit_id)"/> -->
+        <!-- <bm:data-filter expression="1 = decode((select rv.role_code from sys_role_vl rv where rv.role_id = ${/session/@role_id}),&apos;YINGYUN_PMC&apos;,(select 1 from mtl_categories_user_defined_vl mv,mtl_category_classify_items mi,pur_del_plan_lines pl,mtl_system_items msi where mv.user_code = &apos;YINGYUN_PMC&apos; and mi.category_udf_id = mv.category_udf_id and msi.item_id = mi.item_id and msi.display_item_code = pl.item_code and pl.header_id = h.header_id and rownum = 1),1)"/> -->
+    </bm:data-filters>
+    <authority foundation_code="INV_ASN">
+        <authority-segment source_alias="h" source_name="owner_company_id" type="COMPANY"/>
+        <authority-segment source_alias="h" source_name="inv_organization_id" type="INV_ORGANIZATION"/>
+        <authority-segment source_alias="h" source_name="coop_company_id" type="VENDOR"/>
+        <authority-segment source_alias="h" source_name="business_unit_id" type="BUSINESS_UNIT"/>
+        <authority-segment source_alias="h" source_name="suplier_id" type="CREATER"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+            var cx = Packages.aurora.javascript.Context.getCurrentContext();
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

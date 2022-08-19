@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;VES_ARCHIVE_STATUS&apos;" fetchAll="true" model="public.fnd_flex_value_v_lov" rootPath="ves5040_archive_status_data"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="ves5040_archive_maintain_link" url="${/request/@context_path}/modules/ves/VES5040/ves5040_archive_maintain.screen"/>
+        <a:link id="ves5040_archive_year_maintain_link" url="${/request/@context_path}/modules/ves/VES5040/ves5040_archive_year_maintain.screen"/>
+        <script><![CDATA[
+        	//创建日期校检
+			function ves5040_creation_date_validator(record,name,value){
+			 	if(name == "creation_date_from" || name == "creation_date_to"){
+			 	 	var start_date = record.get("creation_date_from");  
+			 	 	var end_date = record.get("creation_date_to");
+			 	 	if(typeof(end_date) != 'undefined' && !Ext.isEmpty(end_date) && typeof(start_date) != 'undefined' && !Ext.isEmpty(start_date)){
+			 	 	 	if(start_date > end_date){
+			 	 	 	 	return '建档日期从不能大于建档日期至！';   
+			 	 	 	}   
+			 	 	}
+			 	 	return true;
+			 	}   
+			}
+			
+			//校验所选数据都一致(公司+模板+考评)
+            function ves5040_check_header_exists(record) {
+                var header_record = $('ves5040_archive_year_headers_ds').getCurrentRecord();
+                if (header_record.get('company_id') == record.get('company_id') && header_record.get('template_id') == record.get('template_id') &&  header_record.get('eval_year') == record.get('eval_year')) {
+                    return true;
+                }
+                return false;
+            }
+			
+			//组织年度付款申请的dataSet
+			function ves5040_archive_year_maintain_ds_create(records) {
+			    var header_ds  = $('ves5040_archive_year_headers_ds');
+			    	//line_ds 	= $('ves5040_archive_year_lines_ds');
+                header_ds.removeAll();
+                //line_ds.removeAll();
+                //创建头
+                header_ds.create();
+                var header_record = header_ds.getAt(0);
+                //eval_year= records[0].get('eval_quarter').split('-')[0];
+                header_record.set('template_id', records[0].get('template_id'));
+                header_record.set('company_id', records[0].get('company_id'));
+                header_record.set('template_desc', records[0].get('template_desc'));
+                header_record.set('eval_year', records[0].get('eval_year'));
+            
+                for (var i = 0;i < records.length;i++) {
+                    if (!ves5040_check_header_exists(records[i])) {
+                        Aurora.showMessage('${l:PROMPT}', '勾选的数据中公司+模板+考评年度不一致!',function(){},300,120);
+                        return false;
+                    } else {
+                     	//设置行信息
+                     	//line_ds.create(records[i].data);
+                    }
+                }
+                return true;
+            }
+			
+			//生成年度汇总成绩
+			function ves5040_archive_year_create(){
+			 	var result_ds = $('ves5040_archive_result_ds');
+                var records = result_ds.getSelected();
+            
+                if (records.length > 0) {
+                    if (ves5040_archive_year_maintain_ds_create(records)) {
+                        new Aurora.Window({
+                            id: 'ves5040_archive_year_maintain_win',
+                            title: '年度考评档案维护',
+                            url: $('ves5040_archive_year_maintain_link').getUrl(),
+                            fullScreen: true
+                        }).on('beforeclose', function() {
+                            ves5040_archive_query();
+                        });
+                    }
+            
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '至少勾选一条数据生成年度汇总成绩！');
+                }     
+			}
+
+			
+			//考评档案code渲染
+			function ves5040_archive_code_renderer(value, record, name){
+			 	return '<a href="javascript:ves5040_archive_maintain('+record.get('archive_header_id')+');">'+value+'</a>';   
+			}
+			
+			//考评档案维护
+			function ves5040_archive_maintain(archive_header_id){
+			 	new Aurora.Window({
+        	        id:'ves5040_archive_maintain_win',
+        	        title:'考评档案维护',
+        	        url:$('ves5040_archive_maintain_link').getUrl()+'?archive_header_id='+archive_header_id,
+        	        fullScreen:true
+        	    });
+			}
+        
+        	//考评档案查询
+        	function ves5040_archive_query(){
+        	 	$('ves5040_archive_result_ds').query();   
+        	}
+			
+		]]></script>
+        <a:dataSets>
+            <a:dataSet id="ves5040_archive_year_headers_ds" model="ves.VES5040.ves_archive_year_headers"/>
+            <a:dataSet id="ves5040_yes_no_ds" lookupCode="YES_NO"/>
+            <a:dataSet id="ves5040_archive_status_ds">
+                <a:datas dataSource="ves5040_archive_status_data"/>
+            </a:dataSet>
+            <a:dataSet id="ves5040_archive_query_ds">
+                <a:fields>
+                    <a:field name="creation_date_from" validator="ves5040_creation_date_validator"/>
+                    <a:field name="creation_date_to" validator="ves5040_creation_date_validator"/>
+                    <a:field name="eval_quarter" lovHeight="530" lovService="ves.ves_quarters_lov" lovWidth="530" title="考评季度选择">
+                        <a:mapping>
+                            <a:map from="flex_value" to="eval_quarter"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="archive_status_display" displayField="flex_desc" options="ves5040_archive_status_ds" returnField="archive_status" valueField="flex_value"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="ves5040_archive_result_ds" autoCount="true" autoPageSize="true" model="ves.VES5040.ves_archive_headers" queryDataSet="ves5040_archive_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="enabled_flag" checkedValue="Y" uncheckedValue="N"/>
+                    <a:field name="archive_status_display" displayField="flex_desc" options="ves5040_archive_status_ds" returnField="archive_status" valueField="flex_value"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="ves5040_archive_year_create" text="生成年度成绩" width="120"/>
+            </a:screenTopToolbar>
+            <a:queryForm id="ves5040_archive_query_form" bindTarget="ves5040_archive_query_ds" resultTarget="ves5040_archive_result_ds">
+                <a:formToolBar>
+                    <a:hBox labelWidth="110">
+                        <a:textField name="archive_code" bindTarget="ves5040_archive_query_ds" prompt="档案编号">
+                            <a:events>
+                                <a:event name="enterdown" handler="ves5040_archive_query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:textField name="archive_desc" bindTarget="ves5040_archive_query_ds" prompt="档案描述">
+                            <a:events>
+                                <a:event name="enterdown" handler="ves5040_archive_query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:lov name="eval_quarter" bindTarget="ves5040_archive_query_ds" prompt="考评季度">
+                            <a:events>
+                                <a:event name="enterdown" handler="ves5040_archive_query"/>
+                            </a:events>
+                        </a:lov>
+                    </a:hBox>
+                </a:formToolBar>
+                <a:formBody>
+                    <a:hBox labelWidth="110">
+                        <a:datePicker name="creation_date_from" bindTarget="ves5040_archive_query_ds" prompt="建档日期从">
+                            <a:events>
+                                <a:event name="enterdown" handler="ves5040_archive_query"/>
+                            </a:events>
+                        </a:datePicker>
+                        <a:datePicker name="creation_date_to" bindTarget="ves5040_archive_query_ds" prompt="建档日期至">
+                            <a:events>
+                                <a:event name="enterdown" handler="ves5040_archive_query"/>
+                            </a:events>
+                        </a:datePicker>
+                    </a:hBox>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="ves5040_archive_result_grid" bindTarget="ves5040_archive_result_ds" marginHeight="180" marginWidth="80" navBar="true" width="900">
+                <a:columns>
+                    <a:column name="archive_status_display" align="center" prompt="档案状态" width="60"/>
+                    <a:column name="archive_code" align="center" renderer="ves5040_archive_code_renderer" sortable="true" width="90"/>
+                    <a:column name="archive_desc"/>
+                    <a:column name="template_desc"/>
+                    <a:column name="eval_quarter" align="center" sortable="true" width="70"/>
+                    <a:column name="eval_start_date" align="center" renderer="Aurora.formatDate" sortable="true" width="80"/>
+                    <a:column name="eval_end_date" align="center" renderer="Aurora.formatDate" sortable="true" width="80"/>
+                    <a:column name="company_desc"/>
+                    <a:column name="created_by_display" align="center" width="80"/>
+                    <a:column name="creation_date" align="center" renderer="Aurora.formatDateTime" sortable="true" width="120"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

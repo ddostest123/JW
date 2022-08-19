@@ -1,0 +1,231 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*,
+                     decode(v.line_location_status,'CLOSED','关闭','OPEN','打开','FINALLY CLOSED','最终关闭','CLOSED FOR INVOICE','发票关闭','CLOSED FOR RECEIVING','打开')  line_location_status_desc
+                    ,(v.need_del_quantity - v.trx_amount ) un_trx_amount --未交货数量
+                FROM
+                    (SELECT
+                        h.header_id,
+                        h.del_plan_number,
+                        h.owner_business_group,
+                        h.coop_company_id,
+                        h.owner_company_id,
+                        h.inv_organization_id,
+                        h.inv_organization_name,
+                        h.vendor_id,
+                        h.vendor_code,
+                        h.vendor_name,
+                        decode(ws_pur_ebsmrp_srm_instance_pkg.get_vendor_online_flag(h.po_number),'N','否','是') online_vender_flg ,
+                        (SELECT
+                            pha.vendor_site_name FROM pur_headers_all pha WHERE pha.display_po_number = h.po_number
+                        ) vendor_site_name,                        
+                        DECODE(
+                        (SELECT
+                            pha.closed_code FROM pur_headers_all pha WHERE pha.display_po_number = h.po_number
+                        ),'OPEN',
+                        (SELECT
+                            scv.code_value_name
+                        FROM
+                            sys_codes sc,
+                            sys_code_values_vl scv
+                        WHERE
+                            sc.code          = 'PUR_DEL_PLAN_STATUS' AND
+                            sc.code_id       = scv.code_id AND
+                            scv.code_value   = h.del_plan_status AND
+                            sc.enabled_flag  = 'Y' AND
+                            scv.enabled_flag = 'Y'
+                        ),'已关闭') del_plan_status_desc,
+                        DECODE(l.cancel_flag,'Y','CANCELLED','N',h.del_plan_status,'') del_plan_status,
+                        h.user_id,
+                        l.line_id,
+                        l.del_plan_line_num,
+                        l.source_header_id,
+                        l.source_line_id,
+                        l.segment1,
+                        l.line_num,
+                        l.source_po_header_id,
+                        l.source_po_line_id,
+                        l.deliver_status,
+                        DECODE(l.deliver_status,'DELIVERED','已发货','UNDELIVERED','未发货','') deliver_status_desc,
+                        TO_CHAR(l.deliver_date,'YYYY-MM-DD HH24:MI:SS') deliver_date,
+                        l.deliver_num,
+                        -- (
+                        -- (SELECT
+                            -- NVL(SUM(rtl.trx_quantity), 0)
+                        -- FROM
+                            -- pur_rcv_trx_lines rtl
+                        -- WHERE
+                            -- rtl.from_po_display_number = l.segment1 AND
+                            -- rtl.from_po_line_num       = l.line_num AND
+                            -- rtl.erp_rcv_trx_type      IN ('101','103')
+                        -- ) -
+                        -- (SELECT
+                            -- NVL(SUM(rtl.trx_quantity), 0)
+                        -- FROM
+                            -- pur_rcv_trx_lines rtl
+                        -- WHERE
+                            -- rtl.from_po_display_number = l.segment1 AND
+                            -- rtl.from_po_line_num       = l.line_num AND
+                            -- rtl.erp_rcv_trx_type      IN ('102','104','124','122')
+                        -- )) storage_quantity,
+                        l.item_code,
+                        l.item_name,
+                        (SELECT
+                            mcudd.category_code
+                        FROM
+                            mtl_system_items msi,
+                            mtl_categories_user_defined mcud,
+                            mtl_categories_user_defined mcudd
+                        WHERE
+                            msi.display_item_code = l.item_code AND
+                            mcud.category_udf_id  = msi.item_category_id AND
+                            mcudd.category_udf_id = mcud.parent_category_udf_id
+                        ) category_code,
+                        (SELECT
+                            mcudd.category_name
+                        FROM
+                            mtl_system_items msi,
+                            mtl_categories_user_defined mcud,
+                            mtl_categories_user_defined_vl mcudd
+                        WHERE
+                            msi.display_item_code = l.item_code AND
+                            mcud.category_udf_id  = msi.item_category_id AND
+                            mcudd.category_udf_id = mcud.parent_category_udf_id
+                        ) category_name,
+                        l.unit_meas_lookup_code,
+                        l.quantity,
+                        l.can_split_quantity,
+                        l.need_del_quantity,
+                        
+                       (SELECT TO_CHAR(pha.erp_creation_date,'YYYY-MM-DD HH24:MI:SS')
+                          FROM pur_headers_all pha
+                         WHERE pha.display_po_number = l.segment1) po_create_date,
+                       --TO_CHAR(l.po_create_date,'YYYY-MM-DD HH24:MI:SS') po_create_date,
+                        TO_CHAR(l.po_need_date,'YYYY-MM-DD') po_need_date,
+                        nvl(TO_CHAR(l.need_arrive_date,'YYYY-MM-DD'),'待通知') need_arrive_date,
+                        TO_CHAR(l.supplier_reply_date,'YYYY-MM-DD') supplier_reply_date,
+                        l.supplier_comment,
+                        l.agent_comment,
+                        l.packing_standard,
+                        l.job_number,
+                        l.created_by,
+                        (SELECT su.description FROM sys_user su WHERE su.user_id = l.created_by
+                        ) create_name,
+                        l.creation_date,
+                        TO_CHAR(l.creation_date,'YYYY-MM-DD HH24:MI:SS') creation_date_desc,
+                        l.last_updated_by,
+                        TO_CHAR(l.last_update_date,'YYYY-MM-DD HH24:MI:SS') last_update_date,
+                        l.is_split_line,
+                        l.asn_header_id,
+                        l.asn_line_id,
+                        l.item_specs,
+                        h.business_unit_id,
+                        h.business_unit_name,
+                        h.po_number,
+                        l.send_address,
+                        
+                        
+                        (SELECT
+                            NVL(SUM(DECODE(rcv_trx_type, 'RETURN_DIRECT', prtl.trx_quantity * -1, prtl.trx_quantity)),0) trx_amount
+                        FROM
+                            pur_rcv_trx_lines prtl,
+                            pur_rcv_trx_headers prth
+                        WHERE
+                            prtl.rcv_trx_header_id        = prth.rcv_trx_header_id AND
+                            prth.processed_flag           = 'Y' AND
+                            prtl.from_po_line_id          = l.source_po_line_id AND
+                            prtl.business_group           = ${/session/@business_group} AND
+                            prth.owner_business_group     = ${/session/@business_group} AND
+                            prtl.rcv_trx_type            IN ('RECEIVE_STANDARD','RETURN_DIRECT') AND
+                            prtl.from_po_line_location_id = l.source_po_line_location_id
+                        ) trx_amount,
+                        (
+                        (SELECT
+                            NVL(la.quantity,0)
+                        FROM
+                            pur_headers_all h,
+                            pur_lines_all la
+                        WHERE
+                            h.pur_header_id     = la.pur_header_id AND
+                            h.display_po_number = l.segment1 AND
+                            la.line_num         = l.line_num
+                        ) -
+                        (SELECT
+                            NVL(SUM(pl.need_del_quantity), 0)
+                        FROM
+                            pur_del_plan_lines pl
+                        WHERE
+                            pl.segment1             = l.segment1 AND
+                            pl.line_num             = l.line_num AND
+                            NVL(PL.CANCEL_FLAG,'N') = 'N'
+                        )) remain_split_quantity, --剩余可拆数量,
+                        l.source_po_line_loc_new_num,
+                        decode(mrp_locked_flag, 'Y', '是', '否') mrp_locked_flag,
+                        (SELECT iol.description
+                  FROM inv_organizations_vl iol
+                 WHERE ((l.received_inv_org IS NULL AND
+                       iol.business_unit_id = h.business_unit_id) OR
+                       (l.received_inv_org IS NOT NULL AND
+                       iol.es_inv_org_id = l.received_inv_org))
+                   AND rownum = 1) received_inv_org
+                   , (
+             SELECT pll.closed_code 
+               FROM pur_line_locations_all pll 
+              WHERE pll.pur_line_location_id = l.source_po_line_location_id
+            ) line_location_status
+                    FROM
+                        pur_del_plan_headers h,
+                        pur_del_plan_lines l
+                    WHERE
+                        h.header_id = l.header_id
+                    ORDER BY
+                        need_arrive_date DESC,
+                        l.del_plan_line_num
+                    ) v #AUTHORIY_FROM# #WHERE_CLAUSE# #AUTHORIY_WHERE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="del_plan_number" queryExpression="v.del_plan_number like &apos;%&apos;||${@del_plan_number}||&apos;%&apos;"/>
+        <bm:query-field name="vendor_id" queryExpression="v.vendor_id = ${@vendor_id}"/>
+        <bm:query-field name="inv_organization_id" queryExpression="v.inv_organization_id = ${@inv_organization_id}"/>
+        <bm:query-field name="segment1" queryExpression="EXISTS (SELECT * from pur_del_plan_lines l WHERE l.header_id = v.header_id AND l.segment1 like &apos;%&apos;||${@segment1}||&apos;%&apos;)"/>
+        <bm:query-field name="del_plan_status" queryExpression="v.del_plan_status = ${@del_plan_status}"/>
+        <bm:query-field name="deliver_status" queryExpression="v.deliver_status = ${@deliver_status}"/>
+        <bm:query-field name="line_num" queryExpression="v.line_num = ${@line_num}"/>
+        <bm:query-field name="item_code" queryExpression="v.item_code = ${@item_code}"/>
+        <bm:query-field name="job_number" queryExpression="v.job_number like &apos;%&apos;||${@job_number}||&apos;%&apos;"/>
+        <!-- <bm:query-field name="create_by" queryExpression="v.user_id = ${@create_by}"/> -->
+        <bm:query-field name="create_date_from" queryExpression="((TRUNC(v.creation_date) &gt;= to_date(${@create_date_from},&apos;YYYY-MM-DD&apos;)) or ${@create_date_from} is null)"/>
+        <bm:query-field name="create_date_to" queryExpression="((TRUNC(v.creation_date) &lt;= to_date(${@create_date_to},&apos;YYYY-MM-DD&apos;)) or ${@create_date_to} is null)"/>
+        <bm:query-field name="category_code" queryExpression="v.category_code = ${@category_code}"/>
+        <bm:query-field name="packing_standard" queryExpression="v.packing_standard like &apos;%&apos;||${@packing_standard}||&apos;%&apos;"/>
+        <bm:query-field name="need_arrive_date_from" queryExpression="((v.need_arrive_date &gt;= ${@need_arrive_date_from}) or ${@need_arrive_date_from} is null)"/>
+        <bm:query-field name="need_arrive_date_to" queryExpression="((v.need_arrive_date &lt;= ${@need_arrive_date_to}) or ${@need_arrive_date_to} is null)"/>
+        <bm:query-field name="alread_shipped_flag" queryExpression="(((v.need_del_quantity - v.trx_amount ) != 0 and ${@alread_shipped_flag} = &apos;Y&apos;)  or ${@alread_shipped_flag} = &apos;N&apos;)"/>
+        <bm:query-field name="alread_shipped_flag_as" queryExpression="( exists (select 1 from pur_lines_all la where la.pur_line_id = v.source_po_line_id and la.cancel_flag = &apos;N&apos; and la.closed_flag = &apos;N&apos; and ${@alread_shipped_flag_as} = &apos;Y&apos;) or  (${@alread_shipped_flag_as} = &apos;N&apos;))"/>
+        <bm:query-field name="item_category_desc_2" queryExpression=" EXISTS    (SELECT 1             FROM mtl_category_classify_items    mi                 ,mtl_categories_user_defined_vl mv                 ,mtl_categories_user_defined_vl mv2                 ,mtl_system_items               msi            WHERE 1 = 1              AND v.item_code = msi.display_item_code              AND mi.item_id = msi.item_id              AND mi.category_udf_id = mv.category_udf_id              AND mv2.category_code = substr(mv.category_code, 0, 4)              AND mv2.category_name LIKE ${@item_category_desc_2})"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="1=1"/>
+        <bm:data-filter name="business_group" expression="v.owner_business_group = ${/session/@business_group}"/>
+        <bm:data-filter expression="EXISTS (SELECT 1 FROM fnd_user_authority fua WHERE fua.authority_type = &apos;BUSINESS_UNIT&apos; AND fua.user_id = user_auth_0.user_id AND fua.assign_id = v.business_unit_id)"/>
+    </bm:data-filters>
+    <authority foundation_code="INV_ASN">
+        <authority-segment source_alias="v" source_name="owner_company_id" type="COMPANY"/>
+        <authority-segment source_alias="v" source_name="inv_organization_id" type="INV_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="coop_company_id" type="VENDOR"/>
+        <authority-segment source_alias="v" source_name="business_unit_id" type="BUSINESS_UNIT"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+            var cx = Packages.aurora.javascript.Context.getCurrentContext();
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

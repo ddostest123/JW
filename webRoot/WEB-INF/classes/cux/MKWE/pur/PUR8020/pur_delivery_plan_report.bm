@@ -1,0 +1,316 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        t2.business_unit_name,
+                        t2.vendor_id,
+                        t2.vendor_name,
+                        t2.vendor_site_name,
+                        t2.l1_category,
+                        t2.l2_category,
+                        t2.l3_category,
+                        t2.item_code,
+                        t2.item_name,
+                        t1.type,
+                        to_char(t1.unit_date,'YYYY-MM-DD') as unit_date,
+                        t1.unit_total,
+                        decode(pur_delivery_plan_pkg.get_vendor_online_flag(t2.vendor_id,t2.vendor_site_id),
+                      'N',
+                      '否',
+                      '是') online_vender_flg
+                    FROM
+                        (SELECT
+                            invh.vendor_id,
+                            ph.business_unit_name,
+                            invl.item_code,
+                            invh.ship_date unit_date,
+                            SUM(invl.ship_quantity) unit_total,
+                            'C' type
+                        FROM
+                            inv_asn_headers invh,
+                            pur_del_plan_headers ph,
+                            inv_asn_lines invl
+                        WHERE
+                            invl.del_plan_number = ph.del_plan_number AND
+                            invl.asn_header_id   = invh.asn_header_id AND
+                            invh.ship_date between to_date(${/parameter/@base_time}, 'yyyy-mm-dd')-7 and to_date(${/parameter/@base_time}, 'yyyy-mm-dd') + 21
+                        GROUP BY
+                            invh.vendor_id,
+                            ph.business_unit_name,
+                            invl.item_code,
+                            invh.ship_date
+                        UNION ALL
+                        SELECT
+                            vendor_id,
+                            business_unit_name,
+                            item_code,
+                            need_arrive_date unit_date,
+                            SUM(un_trx_amount) unit_total,
+                            'P' type
+                        FROM
+                            (SELECT
+                                lt.item_code,
+                                ht.business_unit_name,
+                                ht.vendor_id,
+                                lt.need_arrive_date,
+                                (lt.need_del_quantity -
+                                (SELECT
+                                    NVL(SUM(DECODE(rcv_trx_type, 'RETRUN_TO_VENDOR', prtl.trx_quantity * -1, prtl.trx_quantity)), 0) trx_amount
+                                FROM
+                                    pur_rcv_trx_lines prtl,
+                                    pur_rcv_trx_headers prth
+                                WHERE
+                                    prtl.rcv_trx_header_id        = prth.rcv_trx_header_id AND
+                                    prth.processed_flag           = 'Y' AND
+                                    prtl.from_po_line_id          = lt.source_po_line_id AND
+                                    prtl.business_group           = 'BG00000101' AND
+                                    prth.owner_business_group     = 'BG00000101' AND
+                                    prtl.rcv_trx_type            IN ('RECEIVE_STANDARD', 'RETRUN_TO_VENDOR') AND
+                                    prtl.from_po_line_location_id = lt.source_po_line_location_id
+                                )) un_trx_amount
+                            FROM
+                                pur_del_plan_lines lt,
+                                pur_del_plan_headers ht
+                            WHERE
+                                lt.header_id = ht.header_id
+                             and   lt.need_arrive_date between to_date(${/parameter/@base_time}, 'yyyy-mm-dd')-7 and to_date(${/parameter/@base_time}, 'yyyy-mm-dd') + 21
+                            )
+                        GROUP BY
+                            vendor_id,
+                            business_unit_name,
+                            item_code,
+                            need_arrive_date
+                       union all
+                       SELECT
+                            vendor_id,
+                            business_unit_name,
+                            item_code,
+                            need_arrive_date unit_date,
+                            SUM(trx_amount) unit_total,
+                            'R' type
+                        FROM
+                            (SELECT
+                                lt.item_code,
+                                ht.business_unit_name,
+                                ht.vendor_id,
+                                lt.need_arrive_date,
+                                (SELECT
+                                    NVL(SUM(DECODE(rcv_trx_type, 'RETRUN_TO_VENDOR', prtl.trx_quantity * -1, prtl.trx_quantity)), 0) trx_amount
+                                FROM
+                                    pur_rcv_trx_lines prtl,
+                                    pur_rcv_trx_headers prth
+                                WHERE
+                                    prtl.rcv_trx_header_id        = prth.rcv_trx_header_id AND
+                                    prth.processed_flag           = 'Y' AND
+                                    prtl.from_po_line_id          = lt.source_po_line_id AND
+                                    prtl.business_group           = 'BG00000101' AND
+                                    prth.owner_business_group     = 'BG00000101' AND
+                                    prtl.rcv_trx_type            IN ('RECEIVE_STANDARD', 'RETRUN_TO_VENDOR') AND
+                                    prtl.from_po_line_location_id = lt.source_po_line_location_id
+                                ) trx_amount
+                            FROM
+                                pur_del_plan_lines lt,
+                                pur_del_plan_headers ht
+                            WHERE
+                                lt.header_id = ht.header_id
+                             and   lt.need_arrive_date between to_date(${/parameter/@base_time}, 'yyyy-mm-dd')-7 and to_date(${/parameter/@base_time}, 'yyyy-mm-dd') + 21
+                            )
+                        GROUP BY
+                            vendor_id,
+                            business_unit_name,
+                            item_code,
+                            need_arrive_date
+                        ) t1,
+                        (SELECT
+                            t.*
+                        FROM
+                            (SELECT
+                                t.*,
+                                ceil(rownum/NVL(${/parameter/@pagesize}/2,5)) AS page_num
+                            FROM
+                                (SELECT
+                                    business_unit_name,
+                                    vendor_id,
+                                    MAX(vendor_name) vendor_name,
+                                    MAX(l1_category) l1_category,
+                                    MAX(l2_category) l2_category,
+                                    MAX(l3_category) l3_category,
+                                    vendor_site_name,
+                                    vendor_site_id ,
+                                    item_code,
+                                    MAX(item_name) item_name
+                                FROM
+                                    (SELECT
+                                        v.*,
+                                        (SELECT
+                                            m.category_name
+                                        FROM
+                                            mtl_categories_user_defined_vl m
+                                        WHERE
+                                            m.category_level   = 1 START
+                                        WITH m.category_udf_id = v.category_udf_id CONNECT BY PRIOR m.parent_category_udf_id = m.category_udf_id
+                                        ) l1_category,
+                                        (SELECT
+                                            m.category_name
+                                        FROM
+                                            mtl_categories_user_defined_vl m
+                                        WHERE
+                                            m.category_level   = 2 START
+                                        WITH m.category_udf_id = v.category_udf_id CONNECT BY PRIOR m.parent_category_udf_id = m.category_udf_id
+                                        ) l2_category,
+                                        (SELECT
+                                            m.category_name
+                                        FROM
+                                            mtl_categories_user_defined_vl m
+                                        WHERE
+                                            m.category_level   = 3 START
+                                        WITH m.category_udf_id = v.category_udf_id CONNECT BY PRIOR m.parent_category_udf_id = m.category_udf_id
+                                        ) l3_category
+                                    FROM
+                                        (SELECT
+                                            t1.business_unit_name,
+                                            t1.vendor_name,
+                                            t1.vendor_id,
+                                            (SELECT pha.vendor_site_name
+                                              FROM pur_headers_all pha
+                                             WHERE pha.display_po_number = t1.po_number) vendor_site_name,
+                                           (SELECT pha.vendor_site_id
+                                             FROM pur_headers_all pha
+                                            WHERE pha.display_po_number = t1.po_number) vendor_site_id,
+                                            (SELECT
+                                                mi.category_udf_id
+                                            FROM
+                                                mtl_category_classify_items mi,
+                                                mtl_system_items_vl mv
+                                            WHERE
+                                                mi.item_id           = mv.item_id AND
+                                                mv.display_item_code = t2.item_code AND
+                                                rownum               = 1
+                                            ) AS category_udf_id,
+                                            t2.item_code,
+                                            t2.item_name
+                                        FROM
+                                            pur_del_plan_headers t1,
+                                            pur_del_plan_lines t2
+                                        WHERE
+                                            t2.header_id = t1.header_id and
+                                            t2.need_arrive_date between to_date(${/parameter/@base_time}, 'yyyy-mm-dd')-7 and to_date(${/parameter/@base_time}, 'yyyy-mm-dd') + 21
+                                        ) v
+
+                                    )
+                                GROUP BY
+                                    business_unit_name,
+                                    vendor_id,
+                                    item_code,
+                                    vendor_site_name,
+                                    vendor_site_id
+                                ) t
+                                #WHERE_CLAUSE#
+                            ) t
+                        WHERE
+                            (
+                                (
+                                    ${/parameter/@pagenum}  = page_num
+                                )
+                                
+                            )
+                        )t2
+                    WHERE
+                        t1.business_unit_name = t2.business_unit_name AND
+                        t1.vendor_id          = t2.vendor_id AND
+                        t1.item_code          = t2.item_code
+                    ORDER BY
+                        t2.business_unit_name,
+                        t2.vendor_id,
+                        t2.item_code
+                    )
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:count-sql><![CDATA[
+          SELECT
+              COUNT(*)
+          FROM
+              (SELECT
+                  business_unit_name,
+                  vendor_id,
+                  MAX(vendor_name) vendor_name,
+                  MAX(l1_category) l1_category,
+                  MAX(l2_category) l2_category,
+                  MAX(l3_category) l3_category,
+                  item_code,
+                  MAX(item_name) item_name
+              FROM
+                  (SELECT
+                      v.*,
+                      (SELECT
+                          m.category_name
+                      FROM
+                          mtl_categories_user_defined_vl m
+                      WHERE
+                          m.category_level   = 1 START
+                      WITH m.category_udf_id = v.category_udf_id CONNECT BY PRIOR m.parent_category_udf_id = m.category_udf_id
+                      ) l1_category,
+                      (SELECT
+                          m.category_name
+                      FROM
+                          mtl_categories_user_defined_vl m
+                      WHERE
+                          m.category_level   = 2 START
+                      WITH m.category_udf_id = v.category_udf_id CONNECT BY PRIOR m.parent_category_udf_id = m.category_udf_id
+                      ) l2_category,
+                      (SELECT
+                          m.category_name
+                      FROM
+                          mtl_categories_user_defined_vl m
+                      WHERE
+                          m.category_level   = 3 START
+                      WITH m.category_udf_id = v.category_udf_id CONNECT BY PRIOR m.parent_category_udf_id = m.category_udf_id
+                      ) l3_category
+                  FROM
+                      (SELECT
+                          t1.business_unit_name,
+                          t1.vendor_name,
+                          t1.vendor_id,
+                          (SELECT
+                              mi.category_udf_id
+                          FROM
+                              mtl_category_classify_items mi,
+                              mtl_system_items_vl mv
+                          WHERE
+                              mi.item_id           = mv.item_id AND
+                              mv.display_item_code = t2.item_code AND
+                              rownum               = 1
+                          ) AS category_udf_id,
+                          t2.item_code,
+                          t2.item_name
+                      FROM
+                          pur_del_plan_headers t1,
+                          pur_del_plan_lines t2
+                      WHERE
+                          t2.header_id = t1.header_id and
+                           t2.need_arrive_date between to_date(${/parameter/@base_time}, 'yyyy-mm-dd')-7 and to_date(${/parameter/@base_time}, 'yyyy-mm-dd') + 21
+                      ) v
+                  )
+              GROUP BY
+                  business_unit_name,
+                  vendor_id,
+                  item_code
+              )
+              #WHERE_CLAUSE#
+      ]]></bm:count-sql>
+    <bm:query-fields>
+        <bm:query-field name="business_unit_name" queryExpression="business_unit_name = ${@business_unit_name}"/>
+        <bm:query-field name="vendor_id" queryExpression="vendor_id = ${@vendor_id}"/>
+        <bm:query-field name="l1_category" queryExpression="l1_category like &apos;%&apos;||${@l1_category}||&apos;%&apos;"/>
+        <bm:query-field name="l2_category" queryExpression="l2_category like &apos;%&apos;||${@l2_category}||&apos;%&apos;"/>
+        <bm:query-field name="l3_category" queryExpression="l3_category like &apos;%&apos;||${@l3_category}||&apos;%&apos;"/>
+        <bm:query-field name="item_code" queryExpression="item_code like &apos;%&apos;||${@item_code}||&apos;%&apos;"/>
+        <bm:query-field name="item_name" queryExpression="item_name like &apos;%&apos;||${@item_name}||&apos;%&apos;"/>
+    </bm:query-fields>
+</bm:model>

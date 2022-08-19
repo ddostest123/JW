@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    (SELECT
+                        e.es_business_unit_id
+                    FROM
+                        fnd_business_unit_es e
+                    WHERE
+                        e.business_unit_id = ph.business_unit_id
+                    ) org_id,
+                    (SELECT
+                        fu.display_code
+                    FROM
+                        fnd_business_units fu
+                    WHERE
+                        fu.business_unit_id = ph.business_unit_id
+                    ) AS ou_code,
+                    (SELECT
+                        es.es_vendor_id
+                    FROM
+                        pur_vendor_es es
+                    WHERE
+                        es.vendor_id = ph.vendor_id
+                    ) es_vendor_id,
+                    ph.vendor_name company_name,
+                    (SELECT
+                        pes.es_site_id
+                    FROM
+                        pur_vendor_site_es pes
+                    WHERE
+                        pes.vendor_site_id = ph.vendor_site_id
+                    ) es_site_id,
+                    ph.vendor_site_name display_site_code,
+                    pal.currency_code,
+                    pal.tax_type_code,
+                    pal.is_collected is_cen_pur_desc,
+                    (SELECT
+                        ies.es_item_id
+                    FROM
+                        mtl_system_items_es ies
+                    WHERE
+                        ies.item_id = pal.item_id
+                    ) es_item_id,
+                    (SELECT
+                        mtl.display_item_code
+                    FROM
+                        mtl_system_items_vl mtl
+                    WHERE
+                        mtl.item_id = pal.item_id
+                    ) item_code,
+                    pal.item_desc,
+                    pal.no_tax_amount unit_price,
+                    pal.uom_code,
+                    pal.tax_amount line_attribute1,
+                    pal.pur_buyer_code buyer_desc,
+                    pal.expiration_date,
+                    pal.eitf_line_id,
+                    ph.eitf_header_id,
+                    (SELECT
+                        ROUND(SUM(prtl.trx_quantity) / 3)
+                    FROM
+                        pur_rcv_trx_lines prtl,
+                        pur_rcv_trx_headers prth,
+                        pur_lines_all pla
+                    WHERE
+                        prtl.rcv_trx_header_id    = prth.rcv_trx_header_id AND
+                        prth.processed_flag       = 'Y' AND
+                        prtl.business_group       = 'BG00000101' AND
+                        prth.owner_business_group = 'BG00000101' AND
+                        prtl.rcv_trx_type        IN ('DELIVER_STANDARD') AND
+                        pla.pur_line_id           = prtl.from_po_line_id AND
+                        pla.item_code             =
+                        (SELECT
+                            mtl.display_item_code
+                        FROM
+                            mtl_system_items_vl mtl
+                        WHERE
+                            mtl.item_id = pal.item_id
+                        ) AND
+                        (
+                            to_date(pal.EXPIRATION_DATE,'YYYY-MM-DD') - prtl.trx_date
+                        )
+                        <= 90
+                    ) shipment_quantity
+                FROM
+                    pack_agreement_headers ph,
+                    pack_agreement_lines pal
+                WHERE
+                    ph.eitf_header_id = pal.eitf_header_id AND
+                    pal.eitf_line_id IN
+                    (SELECT
+                        yal.req_line_id
+                    FROM
+                        ylz_delay_apply_headers yah,
+                        ylz_delay_apply_lines yal,
+                        pur_demand_pool pd
+                    WHERE
+                        yah.header_id            = yal.header_id AND
+                        yah.status               = '30_APPROVED' AND
+                        pd.req_line_id           = yal.req_line_id AND
+                        pd.data_source           = 'YLZ' AND
+                        NVL(pd.delete_flag, 'N') = 'N'
+                    )
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:query-sql><![CDATA[
+                BEGIN
+                     ylz_delay_apply_pkg.delete_agreement_demand_pool(p_eitf_header_id      => ${@eitf_header_id},
+                                                                        p_eitf_line_id   => ${@eitf_line_id},
+                                                                        p_user_id        => ${/session/@user_id});                         
+                END;
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

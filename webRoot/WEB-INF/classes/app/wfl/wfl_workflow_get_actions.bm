@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[SELECT action_id,
+       action_code,
+       action_type,
+       action_title,
+       select_user_flag,
+       decode(select_user_flag,
+              'Y',
+              decode(action_code,
+                     'NOTIFICATION',
+                     'MULTIPLE',
+                     'ADD_APPROVER_BEFORE',
+                     'MULTIPLE',
+                     'ADD_APPROVER_AFTER',
+                     'MULTIPLE',
+                     'DELIVER',
+                     'SINGLE',
+                     decode(one_approver_flag,
+                            'Y',
+                            'SINGLE',
+                            'MULTIPLE')),
+              '') select_user_mode,
+      '选择' form_title
+  FROM (SELECT na.order_num,
+               a.action_id,
+               '' action_code,
+               a.action_type,
+               a.action_title,
+               decode(wwn.appoint_mannul_flag,
+                      'Y',
+                      decode(a.action_type,
+                             3,
+                             'Y',
+                             1,
+                             decode(wfl_common_pkg.check_rcpt_adder_order(p_rcpt_record_id => r.record_id),
+                                    'N',
+                                    'Y',
+                                    'N'),
+                             'N'),
+                      'N') select_user_flag,
+               wwn.one_approver_flag
+          FROM wfl_workflow_action_vl      a,
+               wfl_workflow_node_action    na,
+               wfl_instance_node_recipient r,
+               wfl_workflow_node           wwn
+         WHERE na.action_id = a.action_id
+               AND na.node_id = r.node_id
+               AND wwn.node_id = r.node_id
+               AND r.record_id = ${/parameter/@record_id}
+               AND
+               ((a.action_type = 4 AND wfl_common_pkg.check_rcpt_adder_order(r.record_id) = 'N') OR a.action_type != 4)
+        UNION ALL
+        SELECT NULL order_num,
+               NULL action_id,
+               'DELIVER' action_code,
+               NULL action_type,
+               '转交' action_title,
+               'Y' select_user_flag,
+               ''
+          FROM wfl_instance_node_recipient r,
+               wfl_workflow_node           wwn
+         WHERE r.record_id = ${/parameter/@record_id}
+               AND wwn.node_id = r.node_id
+               AND wwn.can_deliver_to = 1
+      UNION ALL
+        SELECT NULL order_num,
+               NULL action_id,
+               'ADD_APPROVER_BEFORE' action_code,
+               NULL action_type,
+               '会办' action_title,
+               'Y' select_user_flag,
+               ''
+          FROM wfl_instance_node_recipient r,
+               wfl_workflow_node           wwn
+         WHERE r.record_id = ${/parameter/@record_id}
+               AND wwn.node_id = r.node_id
+               AND wwn.CAN_ADD_APPROVER = 1
+      UNION ALL
+        SELECT NULL order_num,
+               NULL action_id,
+               'NOTIFICATION' action_code,
+               NULL action_type,
+               '通知' action_title,
+               'Y' select_user_flag,
+               ''
+          FROM wfl_instance_node_recipient r,
+               wfl_workflow_node           wwn
+         WHERE r.record_id = ${/parameter/@record_id}
+               AND wwn.node_id = r.node_id
+               AND wwn.CAN_ADD_NOTIFICATION = 1) v
+ ORDER BY order_num
+]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

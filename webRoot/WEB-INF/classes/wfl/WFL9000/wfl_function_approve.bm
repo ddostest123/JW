@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wangcheng
+    $Date: 2015-09-28
+    $Revision: 1.0  
+    $Purpose: 我参与的审批
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            		SELECT * FROM (
+            		SELECT fal.list_id,
+					       fal.document_id,
+					       fal.document_code,
+					       fal.document_title,
+					       fal.ref_table,
+					       fal.approve_document_code,
+					       adv.approve_document_name,
+					       adv.module_code,
+					       (SELECT mv.module_name FROM sys_modules_vl mv WHERE mv.module_code = adv.module_code) AS module_name,
+					       nvl(fal.company_id,-1) as company_id,
+					       (SELECT a.company_full_name FROM fnd_companies_vl a WHERE a.company_id = fal.company_id) AS company_name,
+					       fal.version,
+					       fal.round,
+					       fal.submit_by,
+					       (SELECT su.user_name FROM sys_user su WHERE su.user_id = fal.submit_by) submit_user_name,
+					       (SELECT su.description FROM sys_user su WHERE su.user_id = fal.submit_by) submit_user_desc,
+					       (SELECT su.description || '(' || su.user_name || ')' FROM sys_user su WHERE su.user_id = fal.submit_by) submit_by_name,
+					       fal.submit_date,
+					       to_char(fal.submit_date,
+					               'yyyy-mm-dd hh24:mi:ss') AS submit_date_desc,
+					       fal.previous_approve_by,
+					       (SELECT su.description || '(' || su.user_name || ')' FROM sys_user su WHERE su.user_id = fal.previous_approve_by) previous_approver_name,
+					       fal.approval_person,
+					       (SELECT su.user_name FROM sys_user su WHERE su.user_id = fal.approval_person) approval_person_name,
+					       (SELECT su.description FROM sys_user su WHERE su.user_id = fal.approval_person) approval_person_desc,
+					       (SELECT su.description || '(' || su.user_name || ')' FROM sys_user su WHERE su.user_id = fal.approval_person) current_approver_name,
+					       fal.approval_status,
+					       (SELECT scv.code_value_name
+					          FROM sys_code_values_vl scv,
+					               sys_codes_vl       sc
+					         WHERE sc.code_id = scv.code_id
+					               AND scv.code_value = fal.approval_status
+					               AND sc.code = 'WFL_FUNCTION_APPROVAL_STATUS') approval_status_desc,
+					       fal.business_group,
+					       fal.approved_procedure,
+					       fal.rejected_procedure,
+					       adv.approve_document_id,
+					       adv.service_name,
+					       sys_approve_document_pkg.check_withdraw_auth(fal.list_id,${/session/@user_id}) as withdraw_flag
+					  FROM wfl_function_approve_list fal,
+					       sys_approve_document_vl   adv
+					 WHERE fal.approve_document_code = adv.approve_document_code
+					   and fal.business_group=${/session/@business_group}
+					   AND (fal.approval_person = ${/session/@user_id} OR EXISTS (SELECT 1 FROM wfl_function_approve_record wfar WHERE wfar.list_id = fal.list_id AND wfar.operate_by = ${/session/@user_id})) )v
+					   #WHERE_CLAUSE#
+					  order by v.submit_date desc
+                 ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+				BEGIN
+					sys_approve_document_pkg.action_withdraw(p_list_id     => ${/parameter/@list_id},
+					                                     	 p_operate_comments    => null,
+					                                         p_user_id           => ${/session/@user_id});
+				END;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter expression="1=1"/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field name="document_code" queryExpression="v.document_code like &apos;%&apos;||trim(UPPER(${@document_code}))||&apos;%&apos;"/>
+        <bm:query-field name="company_id" queryExpression="v.company_id = ${@company_id}"/>
+        <bm:query-field name="current_approver_name" queryExpression="(v.approval_person_name like &apos;%&apos;||${@current_approver_name}||&apos;%&apos; or v.approval_person_desc like &apos;%&apos;||${@current_approver_name}||&apos;%&apos;)"/>
+        <bm:query-field name="submit_by_name" queryExpression="(v.submit_user_name like &apos;%&apos;||${@submit_by_name}||&apos;%&apos; or v.submit_user_desc like &apos;%&apos;||${@submit_by_name}||&apos;%&apos;)"/>
+        <bm:query-field name="approval_status" queryExpression="v.approval_status = ${@approval_status}"/>
+        <bm:query-field name="module_code" queryExpression="v.module_code = ${@module_code}"/>
+        <bm:query-field name="submit_date_from" queryExpression="v.submit_date &gt;= to_date(${@submit_date_from},&apos;YYYY-MM-DD&apos;)"/>
+        <bm:query-field name="submit_date_to" queryExpression="v.submit_date &lt;= to_date(${@submit_date_to},&apos;YYYY-MM-DD&apos;)+1"/>
+        <bm:query-field name="document_title" queryExpression="v.document_title like &apos;%&apos;||trim(UPPER(${@document_title}))||&apos;%&apos;"/>
+        <bm:query-field name="approve_document_code" queryExpression="v.approve_document_code=${@approve_document_code}"/>
+    </bm:query-fields>
+</bm:model>

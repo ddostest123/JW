@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao  
+    $Date: 2014-10-29 下午04:38:31  
+    $Revision: 1.0  
+    $Purpose: APP，登录
+-->
+<a:service xmlns:s="aurora.plugin.script" xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+    <a:init-procedure>
+        <s:server-script><![CDATA[
+            /**
+             *read me
+             *1.bm部分需改为相应系统的逻辑，此处逻辑为hr系统，仅供参考
+             *2.session、cookie部分不用修改，如果出现session、cookie方面的问题，可检查此处的session、cookie(如'/session/@session_id'是否有值)
+             *3.调试函数:println(Object);会将Object打印在控制台（如应用服务器tomcat的控制台）。例如：println($session.toXML());会将session对象以xml格式打印出来。
+             */
+            try {
+                var result;
+                var parameter = $ctx.parameter;
+            
+                //测试用户名密码
+                //parameter.user_name = '11598060';
+                //parameter.user_password = '111111';
+            
+                if (!parameter.user_name || !parameter.user_password) {
+                    result = {
+                        head: {
+                            message: '登录失败',
+                            code: 'failure'
+                        },
+                        body: {
+                            'message': '用户名或密码为空！',
+                            'user_name': parameter.user_name,
+                            'user_password': parameter.user_password
+                        }
+                    };
+                    
+                } else {
+                    
+	                var param = {
+	                    user_name: parameter.user_name,
+	                    user_password: parameter.user_password,
+	                    user_language: 'ZHS',
+	                    device_type: parameter.device_type
+	                };
+                    
+                    var bm_login = new ModelService('app.login.app_sys_user_login_with_userid');
+                    bm_login.execute(param);
+            
+                    var error_number = parameter.error_number;
+                    if (error_number == 0) {
+            
+                        var sid = parameter.sid;
+                        var encryted_session_id = parameter.encryted_session_id;
+            
+                        //写入session
+                        $session.write('session_id', '/session/@session_id');
+                        $session.write('lang', '/parameter/@user_language');
+                        $session.write('user_id', '/session/@user_id');
+                        $session.write('role_id', '/session/@role_id');
+                        $session.write('business_group', '/session/@business_group');
+                        $session.write('device_type', '/session/@device_type');
+                        $session.write('description', '/session/@description');
+                        $session.write('role_description', '/session/@role_description');
+                        $session.copy();
+            
+                        //写入cookie
+                        $cookie.put('SID', sid);
+                        $cookie.put('JSID', encryted_session_id);
+                        $cookie.put('IS_NTLM', 'N');
+            
+                        result = {
+                            head: {
+                                message: '登录成功',
+                                code: 'ok'
+                            },
+                            body: {
+                                'session_id': $session.session_id,
+                                'user_id': $session.user_id,
+                                'role_id': $session.role_id,
+                                'business_group': $session.business_group,
+                                'device_type': $session.device_type,
+                                'description':$session.description,
+                                'role_description':$session.role_description,
+                            }
+                        };
+            
+                    } else if (error_number != 0) {
+                        result = {
+                            head: {
+                                message: '登录失败',
+                                code: 'failure'
+                            },
+                            body: {
+                                'error_number': parameter.error_number,
+                                'error_message': parameter.message
+                            }
+                        };
+                    }
+                }
+            } catch (e) {
+                var serviceContext = Packages.aurora.service.ServiceContext.createServiceContext($ctx.getData());
+                var ed = $instance('aurora.service.exception.IExceptionDescriptor');
+                var map = new CompositeMap(ed.process(serviceContext, e.javaException));
+                result = {
+                    head: {
+                        message: map.message,
+                        code: 'failure'
+                    },
+                    body: {}
+                };
+            } finally {
+                //执行finally代码，将result对象回写
+                $ctx.parameter.json = JSON.stringify(result);
+            }
+        ]]></s:server-script>
+    </a:init-procedure>
+    <a:service-output output="/parameter/@json"/>
+</a:service>

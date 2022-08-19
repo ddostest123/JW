@@ -1,0 +1,293 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: zc  
+    $Date: 2017-7-29 上午11:17:35  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query autoCount="false" defaultWhereClause="ve_assess_id=${@ve_assess_id}" fetchAll="false" model="cux.SUGON.SGVES.SGVES3010.assess_event_query" rootPath="sgves3010_assess_event_init"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="sgves3010_assess_file_upload_link" url="${/request/@context_path}/uploadFile.screen"/>
+        <a:link id="sgves3010_query_assess_upload_link" url="${/request/@context_path}/check_uploadFile.screen"/>
+        <a:link id="sgves3010_delete_link" url="${/request/@context_path}/modules/cux/SUGON/SGVES/SGVES3010/assess_event_delete.svc"/>
+        <script><![CDATA[
+            var supply_assess_id = '${/parameter/@ve_assess_id}';
+            var Fields = ['ve_assess_time', 've_assess_eventnum', 've_assess_eventtitle', 've_assess_grade', 'pur_type_num', 'supply_number', 'company', 've_assess_cause', 'comments', 'enable_flag', 'item_code'];
+            var flag = 'TRUE';
+            
+            function sgves3010_back() {
+                $('sgves3010_assess_maintain_window').close();
+                $('sgves3010_assess_result_ds').query();
+            }
+            //下载附件	
+            
+            function sgves3010_upload_fun() {
+                var state = $('sgv3010_assess_ds').getCurrentRecord().get('state');
+                var user = $('sgv3010_assess_ds').getCurrentRecord().get('user_id');
+                var url;
+              
+                    url = $('sgves3010_query_assess_upload_link').getUrl() + "?table_name=PUR_SUPPLY_ASSESS&header_id=" + supply_assess_id;
+            
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:PROMPT.VIEW_ATTACHMENT}',
+                    id: 'sgves3010_assess_uploadordownload_window',
+                    width: 850,
+                    height: 500
+                });
+            }
+   
+   
+     
+            
+            function sgves3010_success_dispatch(ds, res) {
+                flag = 'TRUE';
+                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}');
+                var rec = ds.getCurrentRecord();
+                var assess_id = supply_assess_id == '' ? res.result.record.ve_assess_id : supply_assess_id;
+                Ext.get('sgves3010_upload_atm').show();
+                $('sgv3010_assess_ds').setQueryParameter('ve_assess_id', assess_id);
+                $('sgv3010_assess_ds').query();
+                supply_assess_id = assess_id;
+            }
+            
+            
+            function sgves3010_assess_event_query(ds) {
+                var record = $('sgv3010_assess_ds').getAt(0);
+                var state = record.get('state');
+                if (state == 'NEW') {
+                    Ext.get('sgves3010_delete').show();
+                    Ext.get('sgves3010_submit').show();
+                } else if (state == 'SUBMITTED') {
+                    for (var i = 0;i < Fields.length;i++) {
+                        record.getMeta().getField(Fields[i]).setReadOnly(true);
+                    }
+                }
+            }
+            //校验分值的取值范围
+            
+            function check_grade(record, name, value) {
+                var grade;
+                if (name == 've_assess_grade') {
+                    grade = record.get('ve_assess_grade');
+                    if (grade >= 0 || grade < -100) {
+                        return '${l:ASSESS_EVEN.GRADE}';
+                    } else {
+                        return true;
+                    }
+                }
+            }
+            
+            function assess_dateValidator(record, name, value) {
+                var assess_time;
+                var myDate = Aurora.formatDate(new Date());
+                if (name == 've_assess_time') {
+                    assess_time = Aurora.formatDate(record.get('ve_assess_time'));
+                    if (assess_time > myDate) {
+                        return '${l:ASSESS_EVEN.TIME_VALIDATE}';
+                    } else {
+                        return true;
+                    }
+                }
+            }
+            
+            function assess_event_company_update(ds, record, name, value, oldvalue) {
+                if (name == "company") {
+                    var company_id = record.get('company_id');
+                    record.getField('supply_number').setLovPara('company_id', company_id);
+                }
+                if(name == "ve_assess_eventnum"){
+                    if(record.get('ve_assess_eventnum') == '00005'){
+                        record.getField('level_fault_desc').setReadOnly(false);
+                        record.getField('level_fault_desc').setRequired(true);
+                    }
+                    else{
+                        record.getField('level_fault_desc').setReadOnly(true);
+                        record.getField('level_fault_desc').setRequired(false);
+                    }
+                }
+                if(name == "level_fault"){
+                        record.set('ve_assess_grade', -value);
+                }
+            }
+            
+            function ves_date_check(record,name,value){
+                if(name == 'date_from'){
+                    if(value > record.get('date_to')){
+                        return '生效日期从不得晚于生效日期至';
+                    }
+                }else if(name == 'date_to'){
+                    if(value < record.get('date_from')){
+                        return '生效日期从不得晚于生效日期至';
+                    }
+                }
+                return true;
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="level_fault_code_ds" lookupCode="VES3010_CODE"/>
+            <a:dataSet id="sgv3010_assess_ds" autoCount="false" fetchAll="true" model="cux.ZT.ves.VES7010.ves7010_assess_query" submitUrl="${/request/@context_path}/modules/cux/SUGON/SGVES/SGVES3010/assess_event_update.svc">
+                <a:datas dataSource="/model/sgves3010_assess_event_init"/>
+                <a:fields>
+                    <a:field name="ve_assess_id"/>
+                    <a:field name="ve_assess_num" readOnly="true"/>
+                    <a:field name="state"/>
+                    <a:field name="ve_assess_state" readOnly="true"/>
+                    <a:field name="ve_assess_founder" readOnly="true"/>
+                    <a:field name="ve_unit_id"/>
+                    <a:field name="ve_unit_name" readOnly="true"/>
+                    <a:field name="ve_assess_time" required="true" validator="assess_dateValidator"/>
+                    <a:field name="ve_assess_eventid"/>
+                    <a:field name="ve_assess_eventnum" autoComplete="true" autoCompleteField="detail_code" lovHeight="500" lovService="cux.SUGON.SGVES.SGVES3010.ve_assess_eventnum_lov" lovWidth="530" required="true" title="事件类型">
+                        <a:mapping>
+                            <a:map from="detail_id" to="ve_assess_eventid"/>
+                            <a:map from="detail_code" to="ve_assess_eventnum"/>
+                            <a:map from="description_id" to="ve_assess_eventdescid"/>
+                            <a:map from="description_text" to="ve_assess_eventdes"/>
+                            <a:map from="ve_assess_grade" to="ve_assess_grade"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="ve_assess_eventdescid"/>
+                    <a:field name="ve_assess_eventdes" readOnly="true" required="true"/>
+                    <a:field name="ve_assess_eventtitle" required="true"/>
+                    <a:field name="ve_assess_grade" required="true" validator="check_grade"/>
+                    <a:field name="company_id"/>
+                    <a:field name="company" autoComplete="true" autoCompleteField="company_full_name" lovHeight="500" lovService="cux.SUGON.SGVES.SGVES3010.assess_company_lov" lovWidth="530" required="true" title="公司名称">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_full_name" to="company"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="supply_id"/>
+                    <a:field name="supply_number" autoComplete="true" autoCompleteField="erp_vendor_code" lovHeight="500" lovService="cux.SUGON.SGVES.SGVES3010.assess_vendor_lov" lovWidth="550" required="true" title="VENDER_SEARCH">
+                        <a:mapping>
+                            <a:map from="vendor_id" to="supply_id"/>
+                            <a:map from="erp_vendor_code" to="supply_number"/>
+                            <a:map from="vendor_name" to="supply_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="supply_name" readOnly="true" required="true"/>
+                    <a:field name="item_id"/>
+                    <a:field name="item_code" autoComplete="true" autoCompleteField="item_code" lovGridHeight="390" lovHeight="500" lovService="cux.SUGON.SGVES.SGVES3010.assess_event_item_lov" lovWidth="700" required="true" title="选择物品">
+                        <a:mapping>
+                            <a:map from="item_id" to="item_id"/>
+                            <a:map from="item_code" to="item_code"/>
+                            <a:map from="item_name" to="item_desc"/>
+                            <a:map from="category_udf_id" to="pur_type_id"/>
+                            <a:map from="category_code" to="pur_type_num"/>
+                            <a:map from="category_name" to="pur_type_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="item_desc" readOnly="true" required="true"/>
+                    <a:field name="pur_type_id"/>
+                    <a:field name="pur_type_num" readOnly="true" required="true"/>
+                    <a:field name="pur_type_name" readOnly="true" required="true"/>
+                    <a:field name="enable_flag" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                    <a:field name="ve_assess_cause"/>
+                    <a:field name="comments"/>
+                    <a:field name="user_id"/>
+                    <a:field name="level_fault_desc" displayField="code_value_name" options="level_fault_code_ds" returnField="level_fault" valueField="code_value"/>
+                    <a:field name="date_from" validator="ves_date_check"/>
+                    <a:field name="date_to" validator="ves_date_check"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="submitsuccess" handler="sgves3010_success_dispatch"/>
+                    <a:event name="load" handler="sgves3010_assess_event_query"/>
+                    <a:event name="update" handler="assess_event_company_update"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:gridButton id="sgves3010_upload_atm" click="sgves3010_upload_fun" text="PROMPT.VIEW_ATTACHMENT" width="100"/>
+                <a:gridButton click="sgves3010_back" text="HAP_BACK" width="100"/>
+            </a:screenTopToolbar>
+            <a:fieldSet marginWidth="80" showBorder="true" title="ASSESS_EVEN.BASIC">
+                <a:hBox labelWidth="120">
+                    <a:textField name="ve_assess_num" bindTarget="sgv3010_assess_ds" prompt="ASSESS_EVEN.VE_ASSESS_NUM"/>
+                    <a:textField name="ve_assess_state" bindTarget="sgv3010_assess_ds" prompt="ASSESS_EVEN.VE_ASSESS_STATE" readOnly="true"/>
+                    <a:textField name="ve_assess_founder" bindTarget="sgv3010_assess_ds" prompt="ASSESS_EVEN.VE_ASSESS_FOUNDER" readOnly="true"/>
+                    <a:textField name="ve_unit_name" bindTarget="sgv3010_assess_ds" prompt="创建人部门" readOnly="true"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:lov name="ve_assess_eventnum" bindTarget="sgv3010_assess_ds" prompt="ASSESS_EVEN.VE_ASSESS_EVENTNUM" readOnly="true"/>
+                    <a:textField name="ve_assess_eventdes" bindTarget="sgv3010_assess_ds" prompt="ASSESS_EVEN.VE_ASSESS_EVENTDES" readOnly="true"/>
+                    <a:textField name="ve_assess_eventtitle" bindTarget="sgv3010_assess_ds" prompt="ASSESS_EVEN.VE_ASSESS_EVENTTITLE" readOnly="true"/>
+                    <a:numberField name="ve_assess_grade" allowDecimals="true" allowNegative="true" bindTarget="sgv3010_assess_ds" decimalPrecision="2" prompt="ASSESS_EVEN.VE_ASSESS_GRADE" readOnly="true"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:lov name="company" bindTarget="sgv3010_assess_ds" prompt="ASSESS_EVEN.COMPANY" readOnly="true"/>
+                    <a:lov name="supply_number" bindTarget="sgv3010_assess_ds" prompt="ASSESS_EVEN.SUPPLY_NUMBER" readOnly="true"/>
+                    <a:textField name="supply_name" bindTarget="sgv3010_assess_ds" prompt="ASSESS_EVEN.SUPPLY_NAME" readOnly="true"/>
+                    <a:datePicker name="ve_assess_time" bindTarget="sgv3010_assess_ds" prompt="ASSESS_EVEN.VE_ASSESS_TIME" readOnly="true"/>
+                </a:hBox>
+                <div id="level_fault_div">
+                    <a:hBox labelWidth="120">
+                        <a:lov name="item_code" bindTarget="sgv3010_assess_ds" prompt="物品编码" readOnly="true"/>
+                        <a:textField name="item_desc" bindTarget="sgv3010_assess_ds" prompt="物品名称" readOnly="true"/>
+                        <a:comboBox name="level_fault_desc" bindTarget="sgv3010_assess_ds" prompt="故障程度" readOnly="true"/>
+                        <a:comboBox name="service_faild_desc" bindTarget="sgv3010_assess_ds" prompt="交付服务不及时" readOnly="true"/>
+                        <a:comboBox name="market_service_desc" bindTarget="sgv3010_assess_ds" prompt="协调不响应/推诿" readOnly="true"/>
+                        <a:comboBox name="market_service_time_desc" bindTarget="sgv3010_assess_ds" prompt="市场服务逾期" readOnly="true"/>
+                        <a:comboBox name="complain_number_desc" bindTarget="sgv3010_assess_ds" prompt="用户投诉" readOnly="true"/>
+                    </a:hBox>
+                </div>
+                <a:hBox labelWidth="120">
+                    <a:textField name="pur_type_num" bindTarget="sgv3010_assess_ds" prompt="ASSESS_EVEN.PUR_TYPE_NUM" readOnly="true"/>
+                    <a:textField name="pur_type_name" bindTarget="sgv3010_assess_ds" prompt="ASSESS_EVEN.PUR_TYPE_NAME" readOnly="true"/>
+                    <a:checkBox name="enable_flag" bindTarget="sgv3010_assess_ds" prompt="ASSESS_EVEN.ENABLE_FLAG" readOnly="true"/>
+                    <a:dateTimePicker name="date_from" bindTarget="sgv3010_assess_ds" prompt="有效日期从" readOnly="false"/>
+                    <a:dateTimePicker name="date_to" bindTarget="sgv3010_assess_ds" prompt="有效日期至" readOnly="false"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:textField name="ve_assess_cause" bindTarget="sgv3010_assess_ds" prompt="ASSESS_EVEN.VE_ASSESS_CAUSE" readOnly="true" width="985"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:textArea name="comments" bindTarget="sgv3010_assess_ds" prompt="ASSESS_EVEN.COMMENTS" readOnly="true" width="978"/>
+                </a:hBox>
+            </a:fieldSet>
+        </a:screenBody>
+        <script><![CDATA[
+           function diaplayById(number) {
+                var ui = document.getElementById("level_fault_div").getElementsByTagName("th")[number];
+                var ui1 = document.getElementById("level_fault_div").getElementsByTagName("td")[number];
+                ui.style.display = "";
+                ui1.style.display = "";
+            }
+            function undiaplayById(number) {
+                var ui = document.getElementById("level_fault_div").getElementsByTagName("th")[number];
+                var ui1 = document.getElementById("level_fault_div").getElementsByTagName("td")[number];
+                ui.style.display = "none";
+                ui1.style.display = "none";
+            }
+        function assessInit(){
+            	undiaplayById(2);
+                undiaplayById(3);
+                undiaplayById(4);
+                undiaplayById(5);
+                undiaplayById(6);
+                var record = $('sgv3010_assess_ds').getAt(0);
+            	var value = record.get('ve_assess_eventnum');
+            	 if (value == '00005') {
+                        diaplayById(2);
+                    }
+                    if (value == 'JF0001') {
+                        diaplayById(3);
+                    } 
+                    if (value == 'SC0001') {
+                        diaplayById(4);
+                    }
+                    if (value == 'SC0002') {
+                        diaplayById(5);
+                    }
+                    if (value == 'SC0004') {
+                        diaplayById(6);
+                    }
+        }
+        assessInit();
+        ]]></script>
+    </a:view>
+</a:screen>

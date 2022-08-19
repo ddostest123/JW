@@ -1,0 +1,277 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: LIBIN  
+    $Date: 2014-10-27 上午11:25:49  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:service xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="v.rfx_header_id = ${/parameter/@rfx_header_id}" fetchAll="true" model="cux.MOR.pur.PUR7110.pur_rfx_super_cost" rootPath="head_data"/>
+        <a:model-query defaultWhereClause="p.rfx_header_id = ${/parameter/@rfx_header_id}" fetchAll="true" model="cux.MOR.pur.PUR7110.pur_rfx_super_cost_line" rootPath="line_data"/>
+        <s:server-script import="pur_rfx_super_cost.js"><![CDATA[
+            importClass(java.io.File);
+            importClass(java.io.FileOutputStream);
+            importPackage(java.lang);
+            
+            importClass(javax.servlet.http.HttpServlet);
+            importClass(javax.servlet.http.HttpServletRequest);
+            importClass(Packages.aurora.service.ServiceInstance);
+            
+            importClass(org.apache.poi.hssf.usermodel.HSSFCell);
+            importClass(org.apache.poi.hssf.usermodel.HSSFCellStyle);
+            importClass(org.apache.poi.hssf.usermodel.HSSFDataFormat);
+            importClass(org.apache.poi.hssf.usermodel.HSSFRow);
+            importClass(org.apache.poi.hssf.usermodel.HSSFSheet);
+            importClass(org.apache.poi.hssf.usermodel.HSSFWorkbook);
+            importClass(org.apache.poi.hssf.util.Region);
+            importClass(org.apache.poi.hssf.usermodel.HSSFFont);
+            importClass(org.apache.poi.ss.util.RegionUtil);
+            importClass(org.apache.poi.hssf.util.HSSFColor);
+            
+            var parameter = $ctx.parameter;
+            var styleArray = [];
+            var sheetdataNum = 0;
+            
+            var head_datas = $ctx.model.getChild("head_data").getChildren();
+            var line_datas = $ctx.model.getChild("line_data").getChildren();
+            
+            //获取值
+            function dataForInSelect(datas, query_data) {
+                for (var i = 0;i < datas.length;i++) {
+                    if ( !! datas[i].name) {
+                        datas[i].content = getNameValue(query_data, datas[i].name, datas[i].queryType);
+                    }
+                }
+            }
+            
+            function getNameValue(datas, name, queryType) {
+                if (queryType == 'F') {
+                    if (datas.length == 0) {
+                        return '';
+                    }
+                    return getValue(datas[0][name], '');
+                } else if (queryType == 'P') {
+                    var value = '';
+                    for (var i = 0;i < datas.length;i++) {
+                        value += getValue(datas[i][name], '') + (i == (datas.length - 1)) ? '' : '-';
+                    }
+                    return value;
+                } else if (typeof(queryType) == 'number') {
+                    if (datas.length <= queryType) {
+                        return '';
+                    }
+                    return getValue(datas[queryType][name], '');
+                }
+            }
+            
+            function getValue(value, nullValue) {
+                if (typeof(value) == 'undefined' || value == '') {
+                    return nullValue;
+                }
+                return String(value);
+            }
+            
+            function dataPushJson(array, rowIndex, place, content) {
+                array.push({
+                    row: rowIndex,
+                    place: place,
+                    content: getValue(content, ''),
+                    style: 2
+                });
+            }
+            
+            function createCoopLineData(datas, rowIndex, queryData) {
+                dataPushJson(datas, rowIndex, [rowIndex, 0, rowIndex, 0], queryData.line_num);
+                dataPushJson(datas, rowIndex, [rowIndex, 1, rowIndex, 1], queryData.item_desc);
+                dataPushJson(datas, rowIndex, [rowIndex, 2, rowIndex, 2], queryData.specification);
+                dataPushJson(datas, rowIndex, [rowIndex, 3, rowIndex, 3], queryData.uom_code);
+                dataPushJson(datas, rowIndex, [rowIndex, 4, rowIndex, 4], queryData.quantity);
+                dataPushJson(datas, rowIndex, [rowIndex, 5, rowIndex, 5], '￥'+queryData.cost_price);
+                dataPushJson(datas, rowIndex, [rowIndex, 6, rowIndex, 6], '￥'+queryData.total_cost);
+                dataPushJson(datas, rowIndex, [rowIndex, 7, rowIndex, 7], '￥'+queryData.valid_fb_retail_price);
+                dataPushJson(datas, rowIndex, [rowIndex, 8, rowIndex, 8], '￥'+queryData.retail_total_price);
+                dataPushJson(datas, rowIndex, [rowIndex, 9, rowIndex, 9], '￥'+queryData.difference);
+                dataPushJson(datas, rowIndex, [rowIndex, 10, rowIndex, 10], queryData.proportion*100+'%');
+                dataPushJson(datas, rowIndex, [rowIndex, 11, rowIndex, 11], queryData.highest);
+            }
+            
+            //动态行数据获取
+            function dataForInCreate(datas,query_data) {
+                var rowIndex = 8;
+                var flag = false;
+                // getNameValue(query_data, 'work_num', 'P');
+                // getNameValue(query_data, 'purchasing_agent_code', 'P');
+                for (var i = 0;i < query_data.length;i++) {
+                    // flag = false;
+                    // for (var j = 0;j < item_datas.length;j++) {
+                        // if (item_datas[j].item_desc == query_data[i].item_desc) {
+                            // flag = true;
+                            // break;
+                        // }
+                    // }
+                    // if (flag) {
+                        // continue;
+                    // }
+                    //sheet页的供应商报价信息，最多取5行(rowIndex初始为8)
+                    if (rowIndex <= 15) {
+                        createCoopLineData(datas, rowIndex, query_data[i]);
+                        rowIndex++;
+                }
+                sheetdataNum = rowIndex - 7;
+            }
+            }
+            
+            
+            //取值
+            function dataModify() {
+                //取值-头部数据封装
+                dataForInSelect(excelContent1, head_datas);
+                //获取-行数据封装
+                dataForInCreate(excelData, line_datas);
+            }
+            
+            //设置路径
+            
+            function createFilePath() {
+                var context = $ctx.getData();
+                var serviceInstance = ServiceInstance.getInstance(context);
+                var request = serviceInstance.getRequest();
+                var file = request.getSession().getServletContext().getRealPath(File.separator);
+                //文档保存路径
+                parameter.filePath = 'ueditor-jsp/jsp/upload/file/PUR7110/superCost.xls';
+                parameter.fileRoute = file + parameter.filePath;
+                parameter.fileLoad = file + 'ueditor-jsp/jsp/upload/file/PUR7110';
+                var dirFile = new File(parameter.fileLoad);
+                if (!dirFile.exists()) {
+                    dirFile.mkdir();
+                }
+            }
+            
+            function ceateStyle(wb, fontSize, bold, textAlign, border, fontColor) {
+                //创建样式
+                var style = wb.createCellStyle(); // 样式对象
+                style.setVerticalAlignment(HSSFCellStyle.VERTICAL_CENTER); // 垂直
+                style.setAlignment(textAlign);
+                style.setWrapText(true);
+                if (border) {
+                    style.setBorderTop(1);
+                    style.setBorderBottom(1);
+                    style.setBorderRight(1);
+                    style.setBorderLeft(1);
+                }
+                //设置字体
+                var font = wb.createFont();
+                //设置字体样式
+                font.setFontHeightInPoints(fontSize);
+                font.setFontName("宋体");
+                if (bold) {
+                    font.setBoldweight(HSSFFont.BOLDWEIGHT_BOLD);
+                }
+                font.setColor(fontColor);
+                font.setItalic(false);
+                style.setFont(font);
+                styleArray.push(style);
+                return style;
+            }
+            
+            function createExcel() {
+                //取值
+                dataModify();
+                //设置路径
+                createFilePath();
+                //创建excel文件，并填充内容
+                var wb = new HSSFWorkbook();
+                var sheet1 = wb.createSheet('比价表');
+                //sheet1.setDisplayGridlines(false);
+                //创建样式1
+                var styleHead = ceateStyle(wb, 22, true, HSSFCellStyle.ALIGN_CENTER, true, HSSFColor.BLACK.index);
+                var styleTitle = ceateStyle(wb, 10, true, HSSFCellStyle.ALIGN_CENTER, true, HSSFColor.BLACK.index);
+                var styleValue = ceateStyle(wb, 10, false, HSSFCellStyle.ALIGN_CENTER, true, HSSFColor.BLACK.index);
+                var styleTitleL = ceateStyle(wb, 10, false, HSSFCellStyle.ALIGN_LEFT, true, HSSFColor.BLACK.index);
+                var styleFont1 = ceateStyle(wb, 16, false, HSSFCellStyle.ALIGN_CENTER, true, HSSFColor.BLACK.index);
+                var styleNullBorder = ceateStyle(wb, 11, false, HSSFCellStyle.ALIGN_LEFT, false, HSSFColor.BLACK.index);
+                var styleNullBorderRed = ceateStyle(wb, 11, false, HSSFCellStyle.ALIGN_LEFT, false, HSSFColor.RED.index);
+                var styleFont2 = ceateStyle(wb, 12, true, HSSFCellStyle.ALIGN_CENTER, true, HSSFColor.BLACK.index);
+                var styleValue = ceateStyle(wb, 11, true, HSSFCellStyle.ALIGN_LEFT, true, HSSFColor.BLACK.index);
+                var styleValue2 = ceateStyle(wb, 12, false, HSSFCellStyle.ALIGN_LEFT, true, HSSFColor.BLACK.index);
+                var styleValue3 = ceateStyle(wb, 10, false, HSSFCellStyle.ALIGN_RIGHT, true, HSSFColor.BLACK.index);
+                sheet1.setDefaultRowHeight(400);
+                /*
+                 **渲染sheet页1
+                 **sheet页为'比价表'
+                 **创建新的sheet需要初始化sheetdataNum=0
+                 */
+                sheet1 = createContentArray(excelContent1, sheet1, wb);
+                //表格数据
+                sheet1 = createContentArray(excelData, sheet1, wb);
+                //尾部数据
+                sheet1 = createContentArray(excelFoot, sheet1, wb, true, sheetdataNum);
+                //保存文件
+                var fileOut = new FileOutputStream(parameter.fileRoute);
+                wb.write(fileOut);
+            }
+            
+            function createContentArray(array, sheet1, wb, lineSycFlag, sheetdataNum) {
+                var rowIndex = -1,
+                    row, cellIndex = 0;
+                for (var i = 0;i < array.length;i++) {
+                    //确定行数
+                    if (lineSycFlag) {
+                        array[i].row += sheetdataNum-2;
+                        array[i].place[0] += sheetdataNum-2;
+                        array[i].place[2] += sheetdataNum-2;
+                    }
+                    //创建行
+                    if (array[i].row != rowIndex) {
+                        row = selectRows(array[i].row, sheet1, lineSycFlag);
+                        rowIndex = array[i].row;
+                    }
+                    cellIndex = array[i].place[1];
+                    sheet1.addMergedRegion(new Region(array[i].place[0], array[i].place[1], array[i].place[2], array[i].place[3]));
+                    var cell1 = row.createCell(cellIndex);
+                    cell1.setCellStyle(styleArray[array[i].style]);
+                    createBoderComplete(sheet1, array[i], wb);
+                    cell1.setCellValue(array[i].content);
+                    if ( !! array[i].rowHeight) {
+                        row.setHeight(array[i].rowHeight);
+                    }
+                    if ( !! array[i].columnWidth) {
+                        sheet1.setColumnWidth(cellIndex, array[i].columnWidth * 256);
+                    }
+                }
+                return sheet1;
+            }
+            
+            function selectRows(index, sheet) {
+                var row = sheet.getRow(index);
+                if (row == null) {
+                    row = sheet.createRow(index);
+                }
+                return row;
+            }
+            //单元格边框问题
+            
+            function createBoderComplete(sheet, data, wb) {
+                for (var i = data.place[0];i <= data.place[2];i++) {
+                    var row = sheet.getRow(i);
+                    if (row == null) {
+                        row = sheet.createRow(i);
+                    }
+                    for (var j = data.place[1];j <= data.place[3];j++) {
+                        var cell = row.getCell(j);
+                        if (cell == null) {
+                            cell = row.createCell(j);
+                            cell.setCellValue("");
+                        }
+                        cell.setCellStyle(styleArray[data.style]);
+                    }
+                }
+            }
+            
+            //excel主函数
+            createExcel();
+        ]]></s:server-script>
+    </a:init-procedure>
+    <a:service-output output="/parameter"/>
+</a:service>

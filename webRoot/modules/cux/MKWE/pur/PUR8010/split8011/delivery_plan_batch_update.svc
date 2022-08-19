@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:service xmlns:t="aurora.application.action" xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="cux.MKWE.pur.PUR8010.srm_to_ebs_url_query" rootPath="url"/>
+        <a:batch-apply sourcepath="/parameter">
+            <p:switch test="@current_parameter/@_status">
+                <p:case value="update">
+                    <a:model-update model="cux.MKWE.inv.split8011.pur_update_to_ebs"/>
+                </p:case>
+                <p:case value="submit">
+                    <a:model-query fetchAll="true" model="cux.MKWE.pur.PUR8010.srm_to_ebs_url_query" rootPath="url"/>
+                    <a:model-query fetchAll="true" model="cux.MKWE.inv.split8011.pur_update_to_ebs" rootPath="detail_line"/>
+                    <p:echo/>
+                    <s:server-script><![CDATA[
+                        var logger = $logger('server-script');
+                        function log(msg) {
+                            logger.info(msg);
+                        }
+                        var data = $ctx.model.getChild('detail_line').getChildren();
+                        var soap_header = new CompositeMap('soapenv:Header');
+                        var cux_header = new CompositeMap('cux:SOAHeader');
+                        cux_header['xmlns:cux'] = 'http://xmlns.oracle.com/apps/cux/soaprovider/plsql/cux_srm_pvt/';
+                        soap_header.addChild(cux_header);
+                        var cux_lan = new CompositeMap('cux:NLSLanguage');
+                        cux_lan.setText('SIMPLIFIED CHINESE');
+                        cux_header.addChild(cux_lan);
+                        var security_header = new CompositeMap('wsse:Security');
+                        security_header['xmlns:wsse'] = 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd';
+                        soap_header.addChild(security_header);
+                        security_header['mustUnderstand'] = '1';
+                        var Token = new CompositeMap('wsse:UsernameToken');
+                        security_header.addChild(Token);
+                        var user_name = new CompositeMap('wsse:Username');
+                        user_name.setText('HANDSRM');
+                        Token.addChild(user_name);
+                        var password = new CompositeMap('wsse:Password');
+                        password.setText('11223344');
+                        Token.addChild(password);
+                        
+                        var soap_body = new CompositeMap('soapenv:Body');
+                        var InputParameters = new CompositeMap('upd:InputParameters');
+                        InputParameters['xmlns:upd'] = 'http://xmlns.oracle.com/apps/cux/soaprovider/plsql/cux_srm_pvt/update_shipment/';
+                        soap_body.addChild(InputParameters);
+                        var P_SHIPMENT_TBL = new CompositeMap('upd:P_SHIPMENT_TBL');
+                        InputParameters.addChild(P_SHIPMENT_TBL);
+                        //判断是否新增发运行
+                        var para_judge = {};
+                        var source_po_line_location_num = null;
+                        for (var i = 0;i < data.length;i++) {                        
+                            if (data[i].source_po_line_loc_new_num != data[i].source_po_line_location_num) {
+                                log('test + 1111 '+para_judge[data[i].source_po_line_location_id]);
+                                if (para_judge[data[i].source_po_line_location_id]) {
+                                    source_po_line_location_num = data[i].source_po_line_location_num;
+                                } else {
+                                    source_po_line_location_num = null;
+                                }
+                            } else {
+                                source_po_line_location_num = data[i].source_po_line_location_num;
+                            }
+                            para_judge[data[i].source_po_line_location_id] = 1;
+                            var datas = {
+                                'upd:ACTION_TYPE': 'UPDATE',
+                                'upd:ORG_ID': data[i].ou_id,
+                                'upd:PO_HEADER_ID': data[i].es_po_header_id,
+                                'upd:PO_LINE_ID': data[i].es_po_line_id,
+                                'upd:QUANTITY': data[i].need_del_quantity,
+                                'upd:PROMISE_DATE': data[i].need_arrive_date,
+                                'upd:ATTRIBUTE1': data[i].source_po_line_location_num ,//source_po_line_location_num,
+                                'upd:ATTRIBUTE2': data[i].source_po_line_loc_new_num,
+                                'upd:ATTRIBUTE3': data[i].organization_id,
+                                'upd:ATTRIBUTE4': data[i].source_code,
+                                'upd:ATTRIBUTE5': data[i].locked_flag,
+                                'upd:ATTRIBUTE6': data[i].item_code,
+                                'upd:ATTRIBUTE7': data[i].po_need_date
+                            };
+                            var P_SHIPMENT_TBL_ITEM = new CompositeMap('upd:P_SHIPMENT_TBL_ITEM');
+                            for (name in datas) {
+                                if (!datas[name]) {
+                                    continue;
+                                }
+                                var record = new CompositeMap(name);
+                                record.setText(datas[name]);
+                                P_SHIPMENT_TBL_ITEM.addChild(record);
+                            }
+                        
+                            P_SHIPMENT_TBL.addChild(P_SHIPMENT_TBL_ITEM);
+                        }
+                        var soap_all = new CompositeMap('soap');
+                        soap_all.addChild(soap_header);
+                        soap_all.addChild(soap_body);
+                        $ctx.addChild(soap_all);
+                    ]]></s:server-script>
+                    <p:echo/>
+                    <a:ws-invoker inputHeaderPath="/soap/soapenv:Header" inputPath="/soap/soapenv:Body/upd:InputParameters" raiseExceptionOnError="false" returnPath="/soapResponse" url="${/model/url/record/@post_url}"/>
+                    <p:method-invoke className="uncertain.composite.CompositeUtil" methodName="collapse">
+                        <p:arguments>
+                            <p:argument path="/soapResponse" type="uncertain.composite.CompositeMap"/>
+                        </p:arguments>
+                    </p:method-invoke>
+                    <t:test field="/soapResponse/@X_STATUS" message="${/soapResponse/@X_MESSAGE}" operator="!=" value="S"/>
+                </p:case>
+            </p:switch>
+        </a:batch-apply>
+    </a:init-procedure>
+</a:service>

@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" alias="t1">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+		        select v.*,
+				       ceil(line_count / 16) firstunion_pages 
+				      from (SELECT t1.display_po_number,
+				       to_char(t1.creation_date,
+				               'YYYY-MM-DD') creation_date,
+				       nvl((SELECT fv.company_full_name
+							  FROM pur_vendor_invite_advices a,
+							       pur_vendor_invitations    i,
+							       pur_vendors_vl            s,
+							       fnd_companies_vl          fv
+							 WHERE s.vendor_id = a.vendor_id(+)
+							       AND s.vendor_id = i.vendor_id(+)
+							       AND s.coop_company_id IS NOT NULL
+							       AND fv.company_id = a.advice_company_id
+							       AND s.business_group = t1.owner_business_group
+							       AND s.vendor_id = t1.vendor_id),
+							       (SELECT full_name FROM pur_vendors_vl pvv WHERE pvv.vendor_id = t1.vendor_id)) vendor_name,
+				       t1.company_name,
+				       t1.vendor_site_name,
+				       (SELECT fcsc.contact_name 
+							  FROM fnd_com_sup_contacts fcsc,
+							       pur_vendors_vl       pvv
+							 WHERE fcsc.company_id = pvv.coop_company_id
+							       AND fcsc.default_contact_flag = 'Y'
+							       AND pvv.vendor_id = t1.vendor_id
+							       and rownum=1) contact_name,
+				       (SELECT fcsc.mobile_phone
+				          FROM fnd_com_sup_contacts fcsc,
+				               pur_vendors_vl       pvv
+				         WHERE fcsc.company_id = pvv.coop_company_id
+				               AND fcsc.default_contact_flag = 'Y'
+				               AND pvv.vendor_id = t1.vendor_id
+				               AND rownum = 1) mobile_phone,
+				       nvl((SELECT fcsi.fax_no
+				          FROM fnd_com_sup_infos fcsi,
+				               pur_vendors_vl    pvv
+				         WHERE fcsi.company_id = pvv.coop_company_id
+				               AND pvv.vendor_id = t1.vendor_id
+				               AND rownum = 1),' ') fax_no,
+				       t1.company_id,
+				       nvl((SELECT fcv.post_code FROM fnd_companies_vl fcv WHERE fcv.company_id = t1.company_id),' ') post_code,
+				       t1.currency_code,
+				       (SELECT tc.tax_type_rate||'%'
+				          FROM pur_lines_all      pla,
+				               fnd_tax_type_codes tc
+				         WHERE pla.pur_header_id = t1.pur_header_id
+				               AND tc.tax_type_id = pla.tax_code_id
+				               AND rownum = 1) tax_rate,
+				       (SELECT pla.ship_to_location_address
+					          FROM pur_lines_all pla
+					         WHERE pla.pur_header_id = t1.pur_header_id
+					               AND rownum = 1) ship_to_location_address,
+					   (SELECT nvl(SUM(pll.quantity),
+							           0)
+							  FROM pur_line_locations_all pll,
+							       pur_lines_all          pla
+							 WHERE pll.pur_header_id = t1.pur_header_id
+							       AND pla.pur_line_id = pll.pur_line_id
+							       AND nvl(pla.cancel_flag,'N') = 'N'
+					               AND nvl(pll.cancel_flag,'N') = 'N'
+					               AND nvl(pll.frozen_flag,'N') = 'N'
+							) quantity_total,
+				       (SELECT nvl(SUM(pll.quantity *pla.original_unit_price),0)
+				          FROM pur_line_locations_all pll,
+				               pur_lines_all          pla
+				         WHERE pla.pur_line_id = pll.pur_line_id
+					           AND nvl(pla.cancel_flag,'N') = 'N'
+				               AND nvl(pll.cancel_flag,'N') = 'N'
+				               AND nvl(pll.frozen_flag,'N') = 'N'
+				               AND pll.pur_header_id = t1.pur_header_id) amount_total,
+				       (SELECT count(*)
+					          FROM pur_line_locations_all pll,
+					               pur_lines_all          pla
+					         WHERE pla.pur_line_id = pll.pur_line_id
+					               AND nvl(pla.cancel_flag,'N') = 'N'
+					               AND nvl(pll.cancel_flag,'N') = 'N'
+					               AND nvl(pll.frozen_flag,'N') = 'N'
+					               AND pll.pur_header_id = t1.pur_header_id) line_count,
+				               to_char(sysdate,'YYYY-MM-DD') current_date,
+				       (SELECT su.description FROM sys_user su WHERE su.user_id = t1.release_by) released_by_display,
+				       (SELECT bu.business_unit_name
+						        FROM fnd_business_units_vl bu WHERE bu.business_unit_id = t1.business_unit_id) business_unit_name,
+				       (SELECT bu.business_unit_name  FROM fnd_business_units_vl bu WHERE bu.business_unit_id = t1.business_unit_id) etc_sign_name,
+				       nvl(t1.type_lookup_desc,
+                           t1.erp_po_type_desc) type_lookup_desc,
+                        to_char(sysdate,'yyyy-mm-dd') as print_date,
+                        (SELECT cpv.description
+				          FROM csh_payment_terms_vl cpv,
+				               pur_vendors          pv
+				         WHERE pv.vendor_id = t1.vendor_id
+				               AND cpv.payment_term_id = pv.payment_term_id) payment_term_desc
+				  FROM pur_headers_all_v t1 
+                     #WHERE_CLAUSE#) v
+        ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter name="pur_header_id" expression="t1.pur_header_id=${@pur_header_id}"/>
+    </bm:data-filters>
+</bm:model>

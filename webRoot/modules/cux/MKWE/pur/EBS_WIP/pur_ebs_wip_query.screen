@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: WangQiaosen  
+    $Date: 2013年12月31日 下午4:21:04  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure/>
+    <a:view>
+        <a:link id="pur_ebs_wip_import_link" url="${/request/@context_path}/modules/cux/MKWE/pur/EBS_WIP/pur_ebs_wip_import.screen"/>
+        <a:link id="pur_ebs_wip_confirm_link" model="cux.MKWE.pur.EBS_WIP.pur_ebs_wip_query" modelaction="batch_update"/>
+        <a:link id="pur_ebs_wip_send_mail_link" model="cux.MKWE.pur.EBS_WIP.pur_ebs_wip_query" modelaction="execute"/>
+        <script><![CDATA[
+        	function pur_ebs_wipQuery() {
+                $('pur_ebs_wip_expert_alter_result_ds').query();
+            }
+            function pur_ebs_wipImport() {
+                new Aurora.Window({
+                    id: 'pur_ebs_wip_import_window',
+                    title: '${l:excel导入}',
+                    url: $('pur_ebs_wip_import_link').getUrl(),
+                    fullScreen: true
+                });
+            }
+            //供应商确认
+            function pur_confirm_function(){
+                var select_records = $('pur_ebs_wip_expert_alter_result_ds').getSelected(true);
+                if(select_records.length==0){
+                     Aurora.showErrorMessage('${l:PROMPT}', '请勾选数据后提交！');
+                       return;
+                }
+                var datas = [];
+                var get_first_id = select_records[0].get('ebs_wip_id');
+                for (var i = 0;i < select_records.length;i++) {
+                    if(select_records[i].get('status') =='CONFIRMED'){
+                       Aurora.showMessage('${l:PROMPT}', '已确认的数据不可再确认！');
+                       return '';
+                    }
+                     var llo = {}; 
+                     llo['_status'] = 'update';
+                     llo['ebs_wip_id'] = select_records[i].get('ebs_wip_id');  
+                     datas.push(llo);
+                    
+                }
+                 Aurora.showConfirm('${l:PROMPT}', '${l:确认提交?}', function() {
+                        Aurora.Masker.mask(Ext.getBody());
+                        Aurora.request({
+                            url: $('pur_ebs_wip_confirm_link').getUrl(),
+                            para: datas,
+                            success: function(res) {
+                                Aurora.showMessage('${l:PROMPT}', '确认成功！', function() {
+                                    //触发一次邮件发送事件
+                                    Aurora.request({
+			                            url: $('pur_ebs_wip_send_mail_link').getUrl(),
+			                            para: {'ebs_wip_id':get_first_id},
+			                            success: function(res) {
+			                                Aurora.Masker.unmask(Ext.getBody());
+			                                pur_ebs_wipQuery();
+			                            },
+			                            error: Aurora.Masker.unmask(Ext.getBody()),
+			                            failure: Aurora.Masker.unmask(Ext.getBody()),
+			                            scope: this
+			                        });
+                                });
+                            },
+                            error: Aurora.Masker.unmask(Ext.getBody()),
+                            failure: Aurora.Masker.unmask(Ext.getBody()),
+                            scope: this
+                        });
+                    }, null);
+            }
+            
+            
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="status_desc_ds">
+                <a:datas>
+                    <a:record name="新建" code="NEW"/>
+                    <a:record name="已确认" code="CONFIRMED"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="pur_ebs_wip_expert_alter_query_ds">
+                <a:fields>
+                    <a:field name="import_number"/>
+                    <a:field name="creation_date_from"/>
+                    <a:field name="creation_date_to"/>
+                    <a:field name="item_code"/>
+                    <a:field name="status_desc" displayField="name" options="status_desc_ds" returnField="status" valueField="code"/>
+                    <a:field name="vendor_name" autoComplete="true" autoCompleteField="vendor_code_name" lovGridHeight="330" lovHeight="450" lovService="pur.PUR7010.pur_vendors_by_user_authority_lov" lovWidth="500" title="PUR_VENDORS.VENDOR">
+                        <a:mapping>
+                            <a:map from="vendor_id" to="vendor_id"/>
+                            <a:map from="vendor_code" to="vendor_code"/>
+                            <a:map from="vendor_name" to="vendor_name"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="pur_ebs_wip_expert_alter_result_ds" autoCount="true" autoQuery="true" model="cux.MKWE.pur.EBS_WIP.pur_ebs_wip_query" pageSize="1000" queryDataSet="pur_ebs_wip_expert_alter_query_ds" selectable="true"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="pur_ebs_wipImport" text="EXCEL导入" width="100"/>
+                <a:toolbarButton click="pur_confirm_function" text="确认" width="100"/>
+                <a:gridButton bind="pur_ebs_wip_expert_alter_result_grid" type="delete"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="pur_ebs_wip_expert_alter_query_ds" resultTarget="pur_ebs_wip_expert_alter_result_ds" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:hBox labelWidth="120">
+                        <a:textField name="import_number" bindTarget="pur_ebs_wip_expert_alter_query_ds" prompt="导入编号">
+                            <a:events>
+                                <a:event name="enterdown" handler="pur_ebs_wipQuery"/>
+                            </a:events>
+                        </a:textField>
+                        <a:lov name="vendor_code" bindTarget="pur_ebs_wip_expert_alter_query_ds" prompt="供应商">
+                            <a:events>
+                                <a:event name="enterdown" handler="pur_ebs_wipQuery"/>
+                            </a:events>
+                        </a:lov>
+                        <a:dateTimePicker name="creation_date_from" bindTarget="pur_ebs_wip_expert_alter_query_ds" prompt="SACPUR5210.CREATION_DATE_FROM">
+                            <a:events>
+                                <a:event name="enterdown" handler="pur_ebs_wipQuery"/>
+                            </a:events>
+                        </a:dateTimePicker>
+                        <a:datePicker name="creation_date_to" bindTarget="pur_ebs_wip_expert_alter_query_ds" prompt="SACPUR5210.CREATION_DATE_TO">
+                            <a:events>
+                                <a:event name="enterdown" handler="pur_ebs_wipQuery"/>
+                            </a:events>
+                        </a:datePicker>
+                    </a:hBox>
+                </a:formToolBar>
+                <a:formBody>
+                    <a:hBox labelWidth="120">
+                        <a:textField name="item_code" bindTarget="pur_ebs_wip_expert_alter_query_ds" prompt="KW料号">
+                            <a:events>
+                                <a:event name="enterdown" handler="pur_ebs_wipQuery"/>
+                            </a:events>
+                        </a:textField>
+                        <a:comboBox name="status_desc" bindTarget="pur_ebs_wip_expert_alter_query_ds" prompt="状态">
+                            <a:events>
+                                <a:event name="enterdown" handler="pur_ebs_wipQuery"/>
+                            </a:events>
+                        </a:comboBox>
+                    </a:hBox>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="pur_ebs_wip_expert_alter_result_grid" autoAppend="false" bindTarget="pur_ebs_wip_expert_alter_result_ds" marginHeight="180" marginWidth="50" navBar="true">
+                <a:columns>
+                    <a:column name="status_desc" align="center" prompt="STATUS" width="50"/>
+                    <a:column name="import_number" align="center" prompt="导入编号" width="80"/>
+                    <a:column name="import_line_num" align="center" prompt="导入行号" width="35"/>
+                    <a:column name="vendor_name" align="left" prompt="供应商名称" width="100"/>
+                    <a:column name="wip_po_number" align="left" prompt="供应商订单" width="60"/>
+                    <a:column name="wip_item_code" align="left" prompt="供应商型号" width="60"/>
+                    <a:column name="item_code" align="left" prompt="客户料号" width="100"/>
+                    <a:column name="item_desc" align="left" prompt="终端P/N" width="120"/>
+                    <a:column name="pur_po_number" align="left" prompt="客户订单号" width="60"/>
+                    <a:column name="pur_po_line_num" align="left" prompt="客户订单行号" width="50"/>
+                    <a:column name="po_creation_date" align="left" prompt="下单时间" width="70"/>
+                    <a:column name="po_need_by_date" align="left" prompt="客户交期" width="70"/>
+                    <a:column name="sup_confirm_date" align="left" prompt="接单复期" width="70"/>
+                    <a:column name="po_quantity" align="left" prompt="订单数PCS" width="40"/>
+                    <a:column name="po_erea" align="left" prompt="订单面积" width="50"/>
+                    <a:column name="undelivered_quantity" align="left" prompt="未交数" width="40"/>
+                    <a:column name="undelivered_erea" align="left" prompt="未交面积" width="50"/>
+                    <a:column name="lot_card" align="left" prompt="LOT卡" width="60"/>
+                    <a:column name="production_cycle" align="left" prompt="周期" width="30"/>
+                    <a:column name="procedures" align="left" prompt="工序" width="40"/>
+                    <a:column prompt="工序数量">
+                        <a:column name="pnl_quantity" align="left" prompt="PNL数量" width="40"/>
+                        <a:column name="pcs_quantity" align="left" prompt="PCS数量" width="40"/>
+                    </a:column>
+                    <a:column name="scrap_quantity" align="left" prompt="报废数" width="40"/>
+                    <a:column name="remark" align="left" prompt="备注" width="120"/>
+                    <a:column name="creation_date" align="left" prompt="导入时间" width="70"/>
+                    <!-- <a:column name="application_date" align="center" prompt="BID_HEADERS.APPLICATION_DATE" renderer="Aurora.formatDate" width="80"/> -->
+                    <!-- <a:column name="operation_record" align="center" prompt="PROMPT.OPERATION_RECORD" renderer="pur_ebs_wipExpertAlterResultRender" width="60"/> -->
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

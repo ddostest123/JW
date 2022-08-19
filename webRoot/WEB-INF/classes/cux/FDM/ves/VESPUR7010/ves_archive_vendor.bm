@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" alias="t1">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+				SELECT u.*
+				  FROM (SELECT t.*,
+				               rank() over(PARTITION BY t.archive_code ORDER BY t.detail_scores DESC) score_rank,
+				               CASE
+				                 WHEN t.detail_scores >= 90 THEN
+				                  'A'
+				                 WHEN t.detail_scores >= 80 THEN
+				                  'B'
+				                 WHEN t.detail_scores >= 70 THEN
+				                  'C'
+				                 ELSE
+				                  'D'
+				               END score_level
+				          FROM (SELECT DISTINCT t1.archive_header_id,
+				                                t1.archive_code,
+				                                t1.archive_desc,
+				                                t1.inv_organization_id,
+				                                (SELECT iov.description
+				                                   FROM inv_organizations_vl iov
+				                                  WHERE iov.inv_organization_id = t1.inv_organization_id) inv_organization_desc,
+				                                t1.template_id,
+				                                (SELECT vtv.ve_template_name
+				                                   FROM ves_template_vl vtv
+				                                  WHERE vtv.ve_template_id = t1.template_id) AS template_desc,
+				                                to_char(t1.eval_start_date,
+				                                        'yyyy-mm-dd') eval_start_date,
+				                                to_char(t1.eval_end_date,
+				                                        'yyyy-mm-dd') eval_end_date,
+				                                
+				                                t1.company_id,
+				                                (SELECT fcv.company_code FROM fnd_companies_vl fcv WHERE fcv.company_id = t1.company_id) AS company_code,
+				                                (SELECT nvl(fcv.company_short_name,
+				                                            fcv.company_full_name) company_desc
+				                                   FROM fnd_companies_vl fcv
+				                                  WHERE fcv.company_id = t1.company_id) AS company_desc,
+				                                t1.business_group,
+				                                
+				                                t2.vendor_id,
+				                                t2.vendor_code,
+				                                t2.vendor_desc,
+				                                t1.creation_date,
+				                                (SELECT round(SUM(t3.detail_score) / COUNT(DISTINCT t3.item_category_id),
+				                                              2) detail_scores
+				                                   FROM ves_archive_detail_lines_vl t3
+				                                  WHERE t3.archive_id = t2.archive_id
+				                                        AND t3.vendor_id = t2.vendor_id
+				                                 
+				                                  GROUP BY t3.archive_id,
+				                                           t3.vendor_id) detail_scores_real,
+												(SELECT SUM(round(AVG(t3.detail_score),
+                                                  2)) detail_scores
+				                                   FROM ves_archive_detail_lines_vl t3
+				                                  WHERE t3.archive_id = t2.archive_id
+				                                        AND t3.vendor_id = t2.vendor_id
+				                                  GROUP BY t3.archive_id,
+				                                           t3.vendor_id,
+				                                           t3.detail_criterion_id) detail_scores
+				                  FROM ves_archive_headers         t1,
+				                       ves_archive_detail_lines_vl t2
+				                 WHERE t1.enabled_flag = 'Y'
+				                       AND t1.archive_header_id = t2.archive_id) t
+				         ORDER BY t.archive_code DESC,
+				                  t.vendor_code) u
+                  #WHERE_CLAUSE#
+         ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="archive_header_id" queryExpression="u.archive_header_id = ${@archive_header_id}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter name="filter" expression="u.business_group = ${/session/@business_group}"/>
+    </bm:data-filters>
+</bm:model>

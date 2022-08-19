@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="v.display_po_number desc, lpad(v.line_num,10,&apos;0&apos;) ASC">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            	select v.*,
+				       (v.deliver_quantity - v.po_quantity) trx_po_quantity,
+				       (v.bill_quantity - v.deliver_quantity) bill_trx_quantity,
+				       (v.invoice_quantity - v.po_quantity) invoice_po_quantity,
+				       (v.invoice_quantity - v.deliver_quantity) invoice_trx_quantity 
+       					from (SELECT pha.pur_header_id,
+							       pha.display_po_number,
+							       nvl(pha.erp_creation_date,pha.creation_date) creation_date,
+							       pha.release_date,
+							       to_char(nvl(pha.erp_creation_date,pha.creation_date),'yyyy-mm-dd') creation_date_desc,
+							       to_char(pha.release_date,'yyyy-mm-dd hh24:mi:ss') release_date_desc,
+							       pha.business_unit_id,
+							       (SELECT fbuv.business_unit_name
+							          FROM fnd_business_units_vl fbuv
+							         WHERE fbuv.business_unit_id = pha.business_unit_id) business_unit_name,
+							       pha.vendor_id,
+							       (SELECT pvv.display_vendor_code FROM pur_vendors_vl pvv WHERE pvv.vendor_id = pha.vendor_id) vendor_code,
+							       (SELECT pvv.full_name FROM pur_vendors_vl pvv WHERE pvv.vendor_id = pha.vendor_id) vendor_name,
+							       pha.erp_creation_date,
+							       pla.pur_line_id,
+							       pla.line_num,
+							       pla.item_id,
+							       pha.agent_id,
+							   	   pha.agent_code,
+							   	   pha.agent_name,
+							       pla.quantity po_quantity,
+							       nvl((SELECT msiv.display_item_code FROM mtl_system_items_vl msiv WHERE msiv.item_id = pla.item_id),pla.item_code) item_code,
+							       (SELECT msiv.used_item_code FROM mtl_system_items_vl msiv WHERE msiv.item_id = pla.item_id) used_item_code,
+       							   pla.item_description item_name,
+							       (SELECT plla.ship_to_organization_id
+							          FROM pur_line_locations_all plla
+							         WHERE plla.pur_line_id = pla.pur_line_id
+							               AND rownum < 2) inv_organization_id,
+							       (SELECT nvl(plla.frozen_flag,'N')
+			                        FROM pur_line_locations_all plla
+			                       WHERE plla.pur_line_id = pla.pur_line_id
+			                             AND rownum < 2) frozen_flag,
+							       (SELECT plla.ship_to_organization_name
+							          FROM pur_line_locations_all plla
+							         WHERE plla.pur_line_id = pla.pur_line_id
+							               AND rownum < 2) inv_organiztion_name,
+							       (SELECT nvl(SUM(nvl(ial.ship_quantity,
+							                           0)),
+							                   0)
+							          FROM inv_asn_lines          ial,
+							               inv_asn_headers        iah,
+							               pur_line_locations_all plla
+							         WHERE iah.asn_header_id = ial.asn_header_id
+							               AND ial.line_location_id = plla.pur_line_location_id
+							               AND plla.pur_line_id = pla.pur_line_id
+							               AND iah.status IN ('SEND_OUT',
+							                                  'PART_RECEIVE','ALL_RECEIVE','RECEIVE_CLOSE')) ship_quantity,
+							       (SELECT nvl(SUM(CASE
+							                     WHEN prtl.erp_rcv_trx_type IN ('101',
+							                                                    '123',
+							                                                    '162') THEN
+							                      prtl.trx_quantity
+							                     WHEN prtl.erp_rcv_trx_type IN ('102',
+							                                                    '122',
+							                                                    '161') THEN
+							                      prtl.trx_quantity * -1
+							                     ELSE
+							                      0
+							                   END),0)
+							          FROM pur_rcv_trx_lines prtl
+							         WHERE prtl.from_po_line_id = pla.pur_line_id) deliver_quantity,
+							         (select nvl(SUM(nvl(ad.transaction_quantity,0)),0) from acp_bill_details ad ,acp_bill_headers ah
+							         where ad.header_id = ah.header_id
+							         and ad.po_line_id = pla.pur_line_id
+							         and ah.status = 'CONFIRMED') bill_quantity,
+							         (SELECT nvl(sum(nvl(awl.bill_quantity,0)),0) from acp_web_invoice_lines awl,acp_web_invoice_headers awh
+							         where awl.invoice_header_id = awh.invoice_header_id
+							         and awl.po_line_id = pla.pur_line_id
+							         and awh.invoice_status= 'REVIEWED') invoice_quantity,
+							         nvl(pla.is_returned_flag,'N') is_returned_flag,
+							         decode(pla.is_returned_flag,'Y','是','否') is_returned_flag_desc，
+							         nvl(pla.is_sub_vendor,'N') is_sub_vendor,
+							         decode(pla.is_sub_vendor,'Y','是','否') is_sub_vendor_desc,
+							         nvl((select vl.uom_desc from fnd_uom_codes_vl vl where pla.unit_meas_lookup_code = vl.uom_code and vl.business_group = pha.owner_business_group),pla.unit_meas_lookup_code) unit_meas_lookup_code,
+							        (select pvv.full_name from pur_vendors_vl pvv where pvv.vendor_id = pla.sub_vendor_id) sub_vendor_desc
+							  FROM pur_headers_all pha,
+							       pur_lines_all   pla
+							 WHERE pha.pur_header_id = pla.pur_header_id
+							       AND pha.owner_business_group = ${/session/@business_group}
+							       AND EXISTS (SELECT 1
+								                  FROM pur_line_locations_all plla
+								                 WHERE plla.pur_line_id = pla.pur_line_id
+								                       AND nvl(plla.cancel_flag,
+								                               'N') = 'N')) v
+			#WHERE_CLAUSE#
+			#ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="item_id" queryExpression="v.item_id = ${@item_id}"/>
+        <bm:query-field name="agent_id" queryExpression="v.agent_id = ${@agent_id}"/>
+        <bm:query-field name="vendor_id" queryExpression="v.vendor_id = ${@vendor_id}"/>
+        <bm:query-field name="invoice_over_po_flag" queryExpression="((&apos;Y&apos; = ${@invoice_over_po_flag} and (v.invoice_quantity - v.po_quantity) &gt; 0) or (&apos;N&apos; = ${@invoice_over_po_flag}) )"/>
+        <bm:query-field name="ship_over_po_flag" queryExpression="((&apos;Y&apos; = ${@ship_over_po_flag} and (v.ship_quantity - v.po_quantity) &gt; 0) or (&apos;N&apos; = ${@ship_over_po_flag}) )"/>
+        <bm:query-field name="frozen_flag" queryExpression="v.frozen_flag = ${@frozen_flag}"/>
+        <bm:query-field name="business_unit_id" queryExpression="v.business_unit_id = ${@business_unit_id}"/>
+        <bm:query-field name="inv_organization_id" queryExpression="v.inv_organization_id = ${@inv_organization_id}"/>
+        <bm:query-field name="is_returned_flag" queryExpression="v.is_returned_flag = ${@is_returned_flag}"/>
+        <bm:query-field name="is_sub_vendor" queryExpression="v.is_sub_vendor = ${@is_sub_vendor}"/>
+        <bm:query-field name="creation_date_from" queryExpression="trunc(v.creation_date) &gt;= to_date(${@creation_date_from},&apos;YYYY-MM-DD&apos;)"/>
+        <bm:query-field name="creation_date_to" queryExpression="trunc(v.creation_date) &lt;= to_date(${@creation_date_to},&apos;YYYY-MM-DD&apos;)+1"/>
+        <bm:query-field name="release_date_from" queryExpression="v.release_date &gt;= to_date(${@release_date_from},&apos;YYYY-MM-DD&apos;)"/>
+        <bm:query-field name="release_date_to" queryExpression="v.release_date &lt;= to_date(${@release_date_to},&apos;YYYY-MM-DD&apos;)+1"/>
+        <bm:query-field name="display_po_number" queryExpression="v.display_po_number like &apos;%&apos;||${@display_po_number}||&apos;%&apos;"/>
+    </bm:query-fields>
+</bm:model>

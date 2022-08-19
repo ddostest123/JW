@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="update">
+            <!-- <bm:parameters>
+                <bm:parameter name="line_id" dataType="java.lang.Integer" input="true" output="false"/>
+                <bm:parameter name="es_line_location_id" dataType="java.lang.Integer" input="true" output="false"/>
+                <bm:parameter name="batch_id" dataType="java.lang.String" input="true" output="false"/>
+                <bm:parameter name="promise_date" dataType="java.lang.String" input="true" output="false"/>
+                <bm:parameter name="mrp_locked_flag" dataType="java.lang.String" input="true" output="false"/>
+            </bm:parameters> -->
+            <bm:update-sql><![CDATA[
+        	 begin                              
+               cux_split_import_pkg.update_del_plan_lines(p_header_id           => ${@header_id},
+                                                          p_line_id             => ${@line_id},
+                                  			              p_need_del_quantity   => ${@need_del_quantity},
+                                                          p_po_need_date        => to_date(${@po_need_date},'yyyy-mm-dd'),
+                                                          p_need_arrive_date    => to_date(${@need_arrive_date},'yyyy-mm-dd'),
+                                                          p_supplier_reply_date => to_date(${@supplier_reply_date},'yyyy-mm-dd'),
+                                                          p_send_address        => ${@send_address} ,
+                                                          p_received_inv_org    => ${@received_inv_org},
+                                                          p_agent_comment       => ${@agent_comment},
+                                                          p_mrp_locked_flag     => ${@mrp_locked_flag},
+                                                          p_user_id             => ${/session/@user_id});                                         
+        	 end;
+        	]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+   SELECT lt.line_id
+      ,lt.header_id
+      ,(SELECT es.es_po_header_id
+          FROM pur_headers_all_es es
+         WHERE es.pur_header_id = lt.source_po_header_id) es_po_header_id
+      ,lt.source_po_line_id
+      ,(SELECT es.es_po_line_id
+          FROM pur_lines_all_es es
+         WHERE es.pur_line_id = lt.source_po_line_id) es_po_line_id
+      ,lt.item_code
+      ,lt.need_del_quantity
+      ,to_char(lt.po_need_date, 'YYYY-MM-DD') po_need_date
+      ,to_char(lt.need_arrive_date, 'YYYY-MM-DD') need_arrive_date
+      ,(SELECT es.es_business_unit_id
+          FROM fnd_business_unit_es es
+         WHERE es.business_unit_id = h.business_unit_id) ou_id
+      ,lt.source_po_line_location_id
+      ,lt.source_po_line_location_num  source_po_line_location_num
+      ,lt.source_po_line_loc_new_num
+      ,decode(mrp_locked_flag, 'Y', '是', '否') mrp_locked_flag
+      ,(SELECT iov.description
+          FROM inv_organizations_vl iov
+         WHERE iov.es_inv_org_id = lt.received_inv_org) received_inv_org
+      ,lt.source_code
+      ,lt.received_inv_org organization_id
+      ,lt.mrp_locked_flag locked_flag
+  FROM pur_del_plan_lines   lt
+      ,pur_del_plan_headers h
+ WHERE lt.header_id = h.header_id
+  AND EXISTS (select 1 
+                from pur_lines_all l,
+                     pur_line_locations_all pa 
+               where l.pur_line_id = lt.source_po_line_id and 
+                     pa.pur_line_location_id = lt.source_po_line_location_id and 
+                     l.pur_line_id = pa.pur_line_id and 
+                     l.cancel_flag = 'N' and 
+                     l.closed_flag = 'N' and 
+                     (pa.closed_code =  'OPEN' or 
+                      (pa.consigned_flag = 'Y' and pa.closed_code = 'CLOSED FOR INVOICE' )) and 
+                      pa.cancel_flag = 'N')
+   AND EXISTS
+ (SELECT 'X' 
+          FROM (SELECT regexp_substr(${@header_id_arr}, '[^,]+', 1, LEVEL) header_id
+                  FROM dual
+                CONNECT BY LEVEL < regexp_count(${@header_id_arr}, ',') + 2) t
+         WHERE t.header_id = h.header_id)
+    ORDER BY
+           lt.segment1,
+           lt.line_num,
+           lt.source_po_line_location_num
+          ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

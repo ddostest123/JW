@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<p:procedure xmlns:t="aurora.application.action" xmlns:as="aurora.service" xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <!-- 获取TOKENurl -->
+        <a:model-query model="app.hmh.app_hmh_request_token" rootPath="token_url"/>
+        <!-- 获取valuePath,任意传值,避免空指针异常 -->
+        <a:model-execute model="app.hmh.app_hmh_request_token"/>
+        <p:switch test="/parameter/@token_flag">
+            <p:case value="0">
+                <!-- token失效时，调用RESTFUL风格接口获取TOKEN -->
+                <a:rest-invoker acceptLanguage="zh-CN,zh;q=0.8" cacheControl="no-cache" contentType="application/json" raiseExceptionOnError="true" requestMethod="POST" returnPath="/parameter/RESPONSE" url="${/model/token_url/record/@token_url}" valuePath="/soapRequest/requestValue"/>
+                <a:model-insert model="app.hmh.app_hmh_check_token"/>
+            </p:case>
+            <p:case value="1">
+                <a:model-query model="app.hmh.app_hmh_check_token" rootPath="token_value"/>
+            </p:case>
+        </p:switch>
+        <s:server-script><![CDATA[
+            //调用接口得到access_token
+            var token_flag = $ctx.get('/parameter/@token_flag');
+            if (token_flag == 0) {
+                var access_token = $ctx.get('/parameter/RESPONSE/@access_token');
+                var token_type = $ctx.get('/parameter/RESPONSE/@token_type');
+                var p = $ctx.parameter;
+                p.authoration = token_type + access_token;
+            }
+            //token未失效时得到access_token
+            if (token_flag == 1) {
+                var access_token = $ctx.get('/model/token_value/record/@access_token');
+                var token_type = $ctx.get('/model/token_value/record/@token_type');
+                var p = $ctx.parameter;
+                p.authoration = token_type + access_token;
+            }          
+        ]]></s:server-script>
+        <!-- 获取对应的接口url -->
+        <a:model-query defaultWhereClause="t1.enabled_flag = &apos;Y&apos; and t1.itf_code = &apos;CREATE_CONTACT&apos;" model="app.hmh.app_hmh_get_url" rootPath="create_contact_url"/>
+        <!-- 对新增用户进行bg分组-->
+        <a:model-query model="app.hmh.app_hmh_create_contact_data" rootPath="root_contact"/>
+        <a:batch-apply sourcepath="/model/root_contact">
+            <s:server-script><![CDATA[
+                //获取organizationId
+                var business_group = $ctx.current_parameter.business_group;
+                var param = {
+                    business_group: business_group
+                }
+                var result = new ModelService('app.hmh.app_hmh_get_organizationId').queryAsMap(param);
+                var organizationId = result.getChildren()[0].ORGANIZATION_ID;
+                //创建实例头             
+                var param_instance = {
+                    instance_type: 'CONTACT',
+                    business_group: business_group
+                };
+                $bm('app.hmh.app_hmh_create_instance_all').execute(param_instance);
+                var instance_id = $ctx.current_parameter.instance_id;
+                //创建实例行
+                var param_instance_lns = {
+                    instance_id: instance_id,
+                    instance_type: 'CONTACT',
+                    operation_type: 'INSERT'
+                };
+                $bm('app.hmh.app_hmh_create_instance_lns').execute(param_instance_lns);
+                //拼接接口地址url
+                var record = $ctx.model.getChild('create_contact_url').getChildren()[0];
+                $ctx.parameter.url = record.itf_url + '?organizationId=' + organizationId;
+                //获取对应的用户接口参数
+                var param_body = {
+                    instance_id: instance_id
+                };
+                $bm('app.hmh.app_hmh_create_contact_data').execute(param_body);
+                var requestData = $ctx.current_parameter.getChild('soapRequests').getChild('requestValue').getText();
+                var data = new CompositeMap('data');
+                data.setText(requestData);
+                $ctx.current_parameter.addChild(data);
+            ]]></s:server-script>
+            <!-- 调用RESTFUL风格接口 -->
+            <!-- <p:echo/> -->
+            <a:rest-invoker authoration="${/parameter/@authoration}" cacheControl="no-cache" contentType="application/json;charset=UTF-8" raiseExceptionOnError="true" requestMethod="POST" returnPath="@current_parameter/RESPONSE2" url="${/parameter/@url}" valuePath="@current_parameter/data"/>
+            <!-- 处理返回结果 -->
+            <a:batch-apply sourcepath="@current_parameter/RESPONSE2/rows">
+                <!-- 向接口表返回状态信息 -->
+                <a:model-update model="app.hmh.app_hmh_create_contact_data"/>
+            </a:batch-apply>
+        </a:batch-apply>
+    </a:init-procedure>
+    <a:service-output output="/parameter"/>
+</p:procedure>

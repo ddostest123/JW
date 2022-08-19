@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lianghuihao
+    $Date: 2018-8-8 下午4:08:25  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="false">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    t.*
+                FROM
+                    (SELECT
+                        km.sample_certification_header_id,
+                        pm.sub_materials_num,
+                        pm.sub_materials_name,
+                        pm.sub_materials_type,
+                        pm.env_category,
+                        (SELECT
+                            b.code_value_name
+                        FROM
+                            sys_codes_vl a,
+                            sys_code_values_vl b
+                        WHERE
+                            a.code_id    = b.code_id AND
+                            a.code       = 'ENV_CATEGORY' AND
+                            b.code_value = pm.env_category
+                        ) env_category_name,
+                        TO_CHAR(pm.disabled_date, 'YYYY-MM-DD') disabled_date,
+                        (
+                        (SELECT
+                            MIN(qm.disable_time)
+                        FROM
+                            qms_env_materials_report qm
+                        WHERE
+                            qm.env_materials_id = pm.env_materials_id
+                        ) - TRUNC(SYSDATE)) days,
+                        pm.company_code,
+                        (SELECT
+                            fnd.company_full_name
+                        FROM
+                            fnd_companies_vl fnd
+                        WHERE
+                            fnd.company_code = pm.company_code
+                        ) company_name,
+                        pm.business_group,
+                        pm.env_materials_id,
+                        km.sgs_id,
+                        pm.status
+                    FROM
+                        kw_sgs_env_materials km,
+                        pur_vendor_env_materials pm
+                    WHERE
+                        km.env_materials_id              = pm.env_materials_id AND
+                        km.sample_certification_header_id=${@sample_certification_header_id}
+                    UNION
+                    SELECT
+                        NULL sample_certification_header_id,
+                        pm.sub_materials_num,
+                        pm.sub_materials_name,
+                        pm.sub_materials_type,
+                        pm.env_category,
+                        (SELECT
+                            b.code_value_name
+                        FROM
+                            sys_codes_vl a,
+                            sys_code_values_vl b
+                        WHERE
+                            a.code_id    = b.code_id AND
+                            a.code       = 'ENV_CATEGORY' AND
+                            b.code_value = pm.env_category
+                        ) env_category_name,
+                        TO_CHAR(pm.disabled_date, 'YYYY-MM-DD') disabled_date,
+                        (
+                        (SELECT
+                            MIN(qm.disable_time)
+                        FROM
+                            qms_env_materials_report qm
+                        WHERE
+                            qm.env_materials_id = pm.env_materials_id
+                        ) - TRUNC(SYSDATE)) days,
+                        pm.company_code,
+                        (SELECT
+                            fnd.company_full_name
+                        FROM
+                            fnd_companies_vl fnd
+                        WHERE
+                            fnd.company_code = pm.company_code
+                        ) company_name,
+                        pm.business_group,
+                        pm.env_materials_id,
+                        NULL sgs_id,
+                        pm.status
+                    FROM
+                        qms_env_materials km,
+                        pur_vendor_env_materials pm
+                    WHERE
+                        km.env_materials_id = pm.env_materials_id AND
+                        km.line_id         IN
+                        (SELECT
+                            ql.line_id
+                        FROM
+                            qms_hom_material_lines ql,
+                            qms_hom_material_header qh,
+                            kw_sample_certification_header kh
+                        WHERE
+                            (SELECT
+                                    mi.category_udf_id
+                                FROM
+                                    mtl_category_classify_items mi
+                                WHERE
+                                    mi.item_id =
+                                    (SELECT
+                                        mtl.item_id
+                                    FROM
+                                        mtl_system_items mtl
+                                    WHERE
+                                        mtl.display_item_code = ql.material_code
+                                    ) AND
+                                    ROWNUM = 1
+                            )
+                            =
+                            (SELECT
+                                mi.category_udf_id
+                            FROM
+                                mtl_categories_user_defined_vl mi
+                            WHERE
+                                mi.category_code = kh.new_material_code
+                            ) AND
+                            kh.supplier_company_id            = qh.supplier_company_id AND
+                            qh.hom_material_header_id         = ql.hom_material_header_id AND
+                            kh.sample_certification_header_id = ${@sample_certification_header_id} AND
+                            ql.APPROVE_FLAG                   = 'APPROVED'
+                        )
+                    )t #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:parameters>
+                <bm:parameter name="sgs_id" input="false" output="true"/>
+            </bm:parameters>
+            <bm:update-sql><![CDATA[
+                begin
+                          kw_fnd_sample_certify_pkg.insert_sgs_env_materials(x_sgs_id                         => ${@sgs_id},
+									                                         p_sample_certification_header_id => ${@sample_certification_header_id},
+									                                         p_env_materials_id               => ${@env_materials_id},
+																		     p_user_id                        => ${/session/@user_id});
+                end;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+               begin
+                          kw_fnd_sample_certify_pkg.update_sgs_env_materials(p_sgs_id                         => ${@sgs_id},
+                                                                             p_sample_certification_header_id => ${@sample_certification_header_id},
+                                                                             p_env_materials_id               => ${@env_materials_id},
+                                                                             p_user_id                        => ${/session/@user_id});
+                end;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+                begin
+                  kw_fnd_sample_certify_pkg.delete_sgs_env_materials(p_sgs_id => ${@sgs_id},
+                                                        p_user_id     => ${/session/@user_id});
+                end;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

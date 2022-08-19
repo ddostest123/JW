@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wangcheng $
+	$Date: 2015/03/18 19:13:22 $
+	$Revision: 1.0
+	$Purpose: 上传文件处理页面
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query model="public.get_fnd_interface_header_id" rootPath="header"/>
+        <a:import-excel header_id="${/model/header/record/@header_id}" separator="," status_field="/parameter/@ImportSuccess" template_code="PUR_DELIVER_IMPORT" user_id="${/session/@user_id}"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="pur8011_split_import_data_init_link" model="cux.MKWE.inv.split8011.split_import_data_init" modelaction="execute"/>
+        <a:link id="pur8010_delivery_imp_submit_url" model="submit" url="${/request/@context_path}/modules/cux/MKWE/pur/PUR8010/split8011/delivery_plan_batch_update.svc"/>
+        <script><![CDATA[
+            function  pur8010_poImportUploadErrorBack() {
+                //window.location.href = $('gampur5010_po_import_upload_link').getUrl();
+                window.parent.closeWindow();
+            }
+        ]]></script>
+        <a:screenBody>
+            <a:hBox>
+                <a:button id="pur8010_poImportUploadErrorBack_btn" click="pur8010_poImportUploadErrorBack" hidden="true" text="HAP_BACK"/>
+            </a:hBox>
+        </a:screenBody>
+        <script><![CDATA[
+            function pur8010_poImportUploadComplete() {
+                window.parent.document.getElementById('prompt_message').innerHTML = "正在导入，请勿关闭此页面！";
+                window.parent.document.getElementById('upload_att').height = 0;
+                Aurora.request({
+                    url:  $('pur8011_split_import_data_init_link').getUrl(),
+                    para: {
+                        header_id: '${/model/header/record/@header_id}',
+                        batch_id: '${/parameter/@batch_id}'
+                    },
+                    success: function(args) {
+                       if( args.result.vx_status == 'E'){
+                         window.parent.document.getElementById('prompt_message').innerHTML = window.parent.document.getElementById('prompt_message').innerHTML+'</br>' +
+                          "数据已导入临时表,但有错误："+ args.result.vx_message;
+                       }else{
+                           window.parent.document.getElementById('prompt_message').innerHTML = window.parent.document.getElementById('prompt_message').innerHTML+'</br>' +
+                          "数据已导入临时表且已经更新到系统中，现在等待同步到EBS系统中...." ;
+                          pur8010_SubmitToEbs(args.result.vx_header_id);
+                       }
+                    },
+                    error: function(args) {
+                         window.parent.document.getElementById('prompt_message').innerHTML = window.parent.document.getElementById('prompt_message').innerHTML+'</br>' +
+                          "数据已导入临时表，但批量更新到EBS系统中失败："+ args.result.vx_message;
+                      //  $('pur8010_poImportUploadErrorBack_btn').setVisible(true);
+                    },
+                    scope: this
+                });
+            }
+            
+            function pur8010_SubmitToEbs(header_id_arr){
+                  window.parent.document.getElementById('prompt_message').innerHTML = "数据已导入临时表,等待系统更新；请勿关闭此页面";
+                  Aurora.request({
+                    url: $('pur8010_delivery_imp_submit_url').getUrl(),
+                    para:{header_id_arr:header_id_arr},
+                    success: function() {
+                       window.parent.document.getElementById('prompt_message').innerHTML = window.parent.document.getElementById('prompt_message').innerHTML+'</br>' + "数据同步到EBS中成功！";
+                    },
+                    error: function(args) {
+                        window.parent.document.getElementById('prompt_message').innerHTML = window.parent.document.getElementById('prompt_message').innerHTML +'</br>' + "数据同步到EBS失败，请查看失败原因："+ args.result.message;
+                    }, 
+                    scope: this
+                   }); 
+            }
+            
+            pur8010_poImportUploadComplete();
+        ]]></script>
+    </a:view>
+</a:screen>

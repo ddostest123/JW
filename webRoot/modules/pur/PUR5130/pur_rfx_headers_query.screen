@@ -1,0 +1,996 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: IsaacF  
+    $Date: 2013-6-28 下午3:10:34  
+    $Revision: 1.0  
+    $Purpose: 。
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="pur.public.pur_rfx_types_source" rootPath="pur5130_rfx_types_source"/>
+        <a:model-query fetchAll="true" model="public.csh_payment_methods_list" rootPath="pur5130_payment_methods_source"/>
+        <a:model-query fetchAll="true" model="public.currency_list" rootPath="pur5130_currency_source"/>
+        <a:model-query fetchAll="true" model="public.fnd_tax_type_code_lov" rootPath="pur5130_tax_type_code_source"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="pur5130_rfx_maintain_link" url="${/request/@context_path}/modules/pur/PUR5130/pur_rfx_maintain.screen"/>
+        <a:link id="pur5130_rfx_manual_maintain_link" url="${/request/@context_path}/modules/pur/PUR5130/pur_rfx_manual_maintain.screen"/>
+        <a:link id="pur5130_rfx_manual_create_link" url="${/request/@context_path}/modules/pur/PUR5120/pur_rfx_manual_create.screen"/>
+        <a:link id="pur5220_rfx_detail_link" url="${/request/@context_path}/modules/pur/PUR5220/pur_rfx_feedback_bargain.screen"/>
+        <a:link id="pur5130_rfx_first_trail_link" url="${/request/@context_path}/modules/pur/PUR5130/pur_rfx_first_trial.screen"/>
+        <a:link id="pur5130_rfx_view_detail_link" url="${/request/@context_path}/modules/pur/PUR5130/pur_rfx_details.screen"/>
+        <a:link id="pur5220_rfx_prequal_off_link" url="${/request/@context_path}/modules/pur/PUR5130/pur_rfx_prequal_requisition.screen"/>
+        <a:link id="pur5130_rfxFromDemandPoolInit_link" url="${/request/@context_path}/modules/pur/PUR5120/pur_rfx_demandpool_init.svc"/>
+        <!-- 通过需求池创建询价单预览界面 -->
+        <a:link id="pur5130_rfxFromDemandPoolPreview_link" url="${/request/@context_path}/modules/pur/PUR5130/pur_rfx_demandpool_maintain.screen"/>
+        <a:link id="pur5130_rfx_input_password_link" url="${/request/@context_path}/modules/pur/PUR5130/pur_rfx_input_password.screen"/>
+        <a:link id="pur5130_rfx_round_again_maintain_link" url="${/request/@context_path}/modules/pur/PUR5130/pur_rfx_first_trial_maintain.screen"/>
+        <a:link id="pur5130_agreement_delay_link" url="${/request/@context_path}/modules/pur/PUR5130/pur_package_agreement_delay_apply.screen"/>
+        <a:link id="pur5130_package_delay_edit_link" url="${/request/@context_path}/modules/pur/PUR5130/pur_package_agreement_delay_edit.screen"/>
+        <a:link id="pur5130_package_delay_view_link" url="${/request/@context_path}/modules/pur/PUR5130/pur_package_agreement_delay_view.screen"/>
+        <a:link id="pur5130_srm_to_ebs_link" url="${/request/@context_path}/modules/pur/PUR5130/pur_package_agreement_srm_to_ebs.svc"/>
+        <a:link id="pur5130_package_disable_link" model="pur.PUR5130.pur_demand_pool_assigned" modelaction="batch_update"/>
+        <script><![CDATA[
+            function pur5130_query() {
+                $('pur5130_rfx_header_result_ds').query();
+            }
+            
+            function pur5130_rfx_render(value, record, name) {
+                var rfx_header_id = record.get('rfx_header_id');
+                var atm_counts = record.get('atm_counts');
+                var atm_show_flag = record.get('atm_show_flag');
+                if (name == "rfx_number") {
+                    return '<a href="javascript:pur5130_rfx_view_detail_window(' + rfx_header_id + ',' + atm_counts + ')">' + value + '</a>';
+                }
+            
+                if (name == "atm_flag") {
+                    if (atm_show_flag == 'Y') {
+                        return '<div style="margin-top:3px;margin-left:auto;margin-right:auto;vertical-align:middle;height:20px;line-height:20px;"><img src="${/request/@context_path}/images/paperclip.png"/></div>';
+            
+                    } else {
+                        return '';
+                    }
+                }
+            }
+            
+            function pur5130_rfx_view_detail_window(rfx_header_id, atm_counts) {
+                new Aurora.Window({
+                    id: 'pur5130_rfx_view_detail_window',
+                    title: '询价单明细',
+                    url: $('pur5130_rfx_view_detail_link').getUrl() + '?rfx_header_id=' + rfx_header_id + '&atm_counts=' + atm_counts,
+                    fullScreen: true
+                });
+            }
+            
+            function pur5130_toEbsTest() {
+                Aurora.Masker.mask(Ext.getBody(), '${l:LOADING}');
+                Aurora.request({
+                    url: $('pur5130_srm_to_ebs_link').getUrl(),
+                    para: null,
+                    success: function(res) {
+                        Aurora.showMessage('${l:PROMPT}', '提交成功！');
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    failure: function(res) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    error: function(res) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    scope: this
+                });
+            }
+            
+            function pur5130_rfx_window(id, source_from, atm_counts,  type_po_item ) {
+                var window_id;
+                var url;
+                //if (source_from == 'MANUAL') {
+                window_id = 'pur51302_rfx_manual_maintain_window';
+                url = $('pur5130_rfx_manual_maintain_link').getUrl();
+            
+                //}
+                // else if (source_from == 'DEMAND_POOL') {
+                // window_id = 'pur51301_rfx_maintain_window';
+                // url = $('pur5130_rfx_maintain_link').getUrl();
+                // }
+                if (!Ext.isEmpty(url)) {
+                    url += '?rfx_header_id=' + id + '&atm_counts=' + atm_counts+'&type_po_item='+type_po_item;
+                    new Aurora.Window({
+                        id: window_id,
+                        title: '${l:PUR_RFX_HEADERS.MAINTAIN}',
+                        url: url,
+                        fullScreen: true
+                    }).on('beforeclose', pur5130_query);
+                }
+            }
+            
+            function pur5130_rfx_manual_create() {
+                debugger;
+                new Aurora.Window({
+                    id: 'pur51202_rfx_manual_create_window',
+                    title: '${l:PUR_RFX_HEADERS.CREATE}',
+                    url: $('pur5130_rfx_manual_create_link').getUrl(),
+                    fullScreen: true
+                }).on('beforeclose', pur5130_query);
+            }
+            
+            function pur5130_rfxOperationDescRender(value, record, name) {
+                var rfx_header_id = record.get('rfx_header_id');
+                var source_from = record.get('source_from');
+                var status = record.get('status');
+                var round = record.get('round');
+                var rfx_category = record.get('rfx_category');
+                var sealed_bid_flag = record.get('sealed_bid_flag');
+                var password_flag = record.get('password_flag');
+                var unopen_users = record.get('unopen_users');
+                var prequal_status = record.get('prequal_status');
+                var atm_counts = record.get('atm_counts');
+                var type_po_item = record.get('type_po_item');
+                var prequal_atm_counts = record.get('prequal_atm_counts');
+                if (status == 'NEW') {
+                    return '<a href="javascript:pur5130_rfx_window(' + rfx_header_id + ',\'' + source_from + '\',' + atm_counts  + ',\'' + type_po_item + '\')">维护</a>';
+                }
+                if (status == 'DEP_REJECTED') {
+                    return '<a href="javascript:pur5130_rfx_window(' + rfx_header_id + ',\'' + source_from + '\',' + atm_counts  + ',\'' + type_po_item + '\')">维护</a>';
+                }
+                if (status == 'APPROVED') {
+                    return '<a href="javascript:pur5220RfxFirstTrail(' + rfx_header_id + ',\'' + password_flag + '\',\'' + unopen_users + '\')">初审</a>';
+                }
+                if (status == 'PREQUAL') {
+                    return '<a href="javascript:pur5220_rfx_prequal(' + rfx_header_id + ',' + prequal_atm_counts + ')">查看预审</a>';
+                }
+            
+                if (status == 'PREQUAL_OFF' && prequal_status == 'SUBMITTED') {
+                    return '<a href="javascript:pur5220_rfx_prequal_off(' + rfx_header_id + ',' + round + ',' + prequal_atm_counts + ')">审批预审</a>';
+            
+                } else if (status == 'PREQUAL_OFF' && prequal_status == 'WORKFLOW') {
+                    return '<div>审批预审</div>';
+                }
+                if (status == 'DEPARTMENT_APPROVE') {
+                    return '-';
+                }
+                if (status == 'ISSUED') {
+                    if (rfx_category == 'RFA' || sealed_bid_flag == 'Y') {
+                        return '-';
+                    }
+                    return '<a href="javascript:pur5220RfxBargainDetail(' + rfx_header_id + ',' + atm_counts  + ',\'' + type_po_item + '\')">还比价</a>';
+                }
+                if (status == 'CUT_OFF') {
+                    return '<a href="javascript:pur5220RfxFirstTrail(' + rfx_header_id + ',\'' + password_flag + '\',\'' + unopen_users + '\',' + atm_counts+ ',\'' + type_po_item + '\')">初审</a>';
+                }
+            
+                if (status == 'WAITED_ROUND') {
+                    return '<a href="javascript:pur5130_rfxRoundAgainMaintain(' + rfx_header_id + ',' + atm_counts + ',\'' + type_po_item + '\')">维护</a>';
+                }
+            
+                return '-';
+            }
+            
+            function pur5130_agreement_delay_result_query() {
+                $('pur5130_agreement_delay_result_ds').query();
+            }
+            
+            function pur5130_rfxRoundAgainMaintain(rfx_header_id, atm_counts,type_po_item) {
+                new Aurora.Window({
+                    url: $('pur5130_rfx_round_again_maintain_link').getUrl() + '?rfx_header_id=' + rfx_header_id + '&atm_counts=' + atm_counts+ '&type_po_item=' + type_po_item,
+                    title: '发布多轮',
+                    id: 'pur5130_rfx_first_trail_maintain_window',
+                    fullScreen: true
+                }).on('beforeclose', pur5130_query);
+            }
+            
+            function pur5130_rfxQuoteResponseRenderFunction(value, record, name) {
+                var status = record.get('status');
+                if (status == 'NEW') {
+                    return '-';
+                } else {
+                    return value;
+                }
+            }
+            
+            function pur5220_rfx_prequal(rfx_header_id, atm_counts) {
+                new Aurora.Window({
+                    url: $('pur5220_rfx_prequal_off_link').getUrl() + '?rfx_header_id=' + rfx_header_id + '&view_flag=Y' + '&atm_counts=' + atm_counts,
+                    title: '查看预审',
+                    id: 'pur5220_rfx_prequal_off_window',
+                    fullScreen: true
+                });
+            }
+            
+            function pur5220_rfx_prequal_off(rfx_header_id, round, atm_counts) {
+                new Aurora.Window({
+                    url: $('pur5220_rfx_prequal_off_link').getUrl() + '?rfx_header_id=' + rfx_header_id + '&view_flag=N&round=' + round + '&atm_counts=' + atm_counts,
+                    title: '审批预审',
+                    id: 'pur5220_rfx_prequal_off_window',
+                    fullScreen: true
+                });
+            }
+            
+            function pur5220RfxFirstTrail(rfx_header_id, password_flag, unopen_users, atm_counts,type_po_item) {
+            
+                //判断是否需要开标，需要开标的话则需要输入开标密码
+                if (password_flag == 'Y') {
+            
+                    new Aurora.Window({
+                        url: $('pur5130_rfx_input_password_link').getUrl() + '?rfx_header_id=' + rfx_header_id + '&atm_counts=' + atm_counts+ '&type_po_item=' + type_po_item,
+                        title: '开标界面',
+                        id: 'pur5130_rfx_input_password_window',
+                        width: 500,
+                        height: 300
+                    });
+            
+                } else {
+                    if (unopen_users == '-1') {
+                        new Aurora.Window({
+                            url: $('pur5130_rfx_first_trail_link').getUrl() + '?rfx_header_id=' + rfx_header_id + '&atm_counts=' + atm_counts+ '&type_po_item=' + type_po_item,
+                            title: '初审',
+                            id: 'pur5130_rfx_first_trail_window',
+                            fullScreen: true
+                        }).on('beforeclose', pur5130_query);
+            
+                    } else {
+                        Aurora.showMessage('提示', unopen_users);
+                    }
+            
+            
+                }
+            
+            
+            }
+            
+            function pur5220RfxBargainDetail(rfx_header_id, atm_counts,type_po_item) {
+                new Aurora.Window({
+                    url: $('pur5220_rfx_detail_link').getUrl() + '?rfx_header_id=' + rfx_header_id + '&atm_counts=' + atm_counts+ '&type_po_item=' + type_po_item,
+                    title: '${l:PUR_RFX_HEADERS.FEEDBACK_BARGAIN}',
+                    id: 'pur52202_rfx_bargain_detail_window',
+                    fullScreen: true
+                });
+            }
+            //创建开票单
+            
+            function pur5010_checkBillLineExists(record) {
+                var line_records = $('pur5130_agreement_lines_temp_ds').getAll();
+                for (var i = 0;i < line_records.length;i++) {
+                    //并单规则
+                    //供应商
+                    if (line_records[i].get('is_collected') != record.get('is_collected')) {
+                        Aurora.showMessage('${l:PROMPT}', '勾选的数据中【集采类型】必须一致', null, 300, 120);
+                        return false;
+                    }
+                }
+                return true;
+            }
+            
+            function pur5130_agreement_create_view(trx_records) {
+                var header_ds = $('pur5130_agreement_header_temp_ds');
+                var line_ds = $('pur5130_agreement_lines_temp_ds');
+            
+                //开票单头
+                var now = new Date();
+                var month = now.getMonth() + 1;
+                month = month > 9 ? month : '0' + month;
+                var day = now.getDate();
+                day = day > 9 ? day : '0' + day;
+                var date = now.getFullYear() + '-' + month + '-' + day; //STRING类型
+                trx_records[0].set('creation_date_headers', date); //创建日期
+                header_ds.create(trx_records[0].data);
+            
+                var new_line = false;
+                line_ds.create(trx_records[0].data);
+                for (var k = 1;k < trx_records.length;k++) {
+                    if (!pur5010_checkBillLineExists(trx_records[k])) {
+                        return false;
+                    } else if (pur5010_checkBillLineExists(trx_records[k])) {
+                        line_ds.create(trx_records[k].data);
+                        new_line = true;
+                    }
+                }
+                return true;
+            }
+            
+            function pur5130_packageDisable() {
+                var records = $('pur5130_demand_pool_assigned_result_selected_ds').getAll();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SELECT_ONE_RECORD_AT_LEAST}');
+                    return;
+                }
+                for (var i = 0;i < records.length;i++) {
+                    var data_source = records[i].get('data_source');
+                    if (data_source != 'YLZ') {
+                        Aurora.showMessage('${l:PROMPT}', '只有数据来源为一揽子协议的单据才能失效！');
+                        return;
+                    }
+                }
+                var datas = [];
+                for (var j = 0;j < records.length;j++) {
+                    var data = records[j].data;
+                    data._status = 'update';
+                    datas.push(data);
+                }
+            
+                Aurora.showConfirm('${l:PROMPT}', '是否确认失效？', function() {
+                    Aurora.Masker.mask(Ext.getBody(), '${l:LOADING}');
+                    Aurora.request({
+                        url: $('pur5130_package_disable_link').getUrl(),
+                        para: datas,
+                        success: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            Aurora.showMessage('${l:PROMPT}', '失效成功!');
+                            $('pur5130_demand_pool_assigned_result_ds').query();
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            return;
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            return;
+                        }
+                    });
+                });
+            
+            }
+            
+            function pur5130_packageAgreeApply() {
+                var header_ds = $('pur5130_agreement_header_temp_ds');
+                var line_ds = $('pur5130_agreement_lines_temp_ds');
+                var records = $('pur5130_demand_pool_assigned_result_selected_ds').getAll();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SELECT_ONE_RECORD_AT_LEAST}');
+                    return;
+                }
+                for (var i = 0;i < records.length;i++) {
+                    var data_source = records[i].get('data_source');
+                    var ylz_delay_flag = records[i].get('ylz_delay_flag');
+                    if (data_source != 'YLZ') {
+                        Aurora.showMessage('${l:PROMPT}', '只有数据来源为一揽子协议的单据才能进行延期申请！');
+                        return;
+                    }
+                    if (ylz_delay_flag != 'N') {
+                        Aurora.showMessage('${l:PROMPT}', '已创建延期申请的单据不能再次创建！');
+                        return;
+                    }
+                }
+                header_ds.removeAll();
+                line_ds.removeAll();
+                var flag = pur5130_agreement_create_view(records);
+                if (flag) {
+                    new Aurora.Window({
+                        id: 'pur5130_agreement_delay_link_window',
+                        url: $('pur5130_agreement_delay_link').getUrl(),
+                        title: '一揽子协议延期申请创建页面',
+                        fullScreen: true
+                    });
+                }
+            }
+            
+            function pur5130_switchToBiddingHall() {
+                window.parent.openFunction('modules/bid/BID5040/bid_entrustment_query.screen?function_code=BID5040', '招标申请创建');
+            }
+            
+            function pur5130_demandPoolAssignedQueryFunction() {
+                $('pur5130_demand_pool_assigned_result_ds').query();
+            }
+            
+            function pur5130_resultDsRenderer(value, record, name) {
+                var header_id = record.get('header_id');
+                var status = record.get("status");
+                if (name == 'apply_number') {
+                    if (record.get('header_id')) {
+                        if (status == '10_NEW' || status == '40_REJECTED') {
+                            return '<a href="javascript:pur5130_openConMaintainDetail(' + header_id + ')">' + value + '</a>';
+                        } else {
+                            return '<a href="javascript:pur5130_openConMaintainReadOnly(' + header_id + ')">' + value + '</a>';
+                        }
+                    }
+                }
+            
+            }
+            
+            function pur5130_openConMaintainDetail(header_id) {
+                new Aurora.Window({
+                    id: 'pur5130_package_delay_edit_link_window',
+                    title: '一揽子延期申请编辑',
+                    url: $('pur5130_package_delay_edit_link').getUrl() + '?header_id=' + header_id,
+                    fullScreen: true
+                }).on('beforeclose', function() {
+                    pur5130_agreement_delay_result_query();
+                });
+            }
+            
+            function pur5130_openConMaintainReadOnly(header_id) {
+                new Aurora.Window({
+                    id: 'pur5130_package_delay_view_link_window',
+                    title: '一揽子延期申请查看',
+                    url: $('pur5130_package_delay_view_link').getUrl() + '?header_id=' + header_id,
+                    fullScreen: true
+                }).on('beforeclose', function() {
+                    pur5130_agreement_delay_result_query();
+                });
+            }
+            //通过需求池创建询价单预览界面
+            
+            function pur5130_rfxFromDemandPoolPreviewFunction(rfx_header_id) {
+                new Aurora.Window({
+                    url: $('pur5130_rfxFromDemandPoolPreview_link').getUrl() + '?rfx_header_id=' + rfx_header_id,
+                    title: '询价单预览',
+                    id: 'pur5130_rfxFromDemandPoolPreview_window',
+                    fullScreen: true
+                });
+            }
+            
+            //通过需求池创建询价单
+            
+            function pur5130_rfxFromDemandPool() {
+                var records = $('pur5130_demand_pool_assigned_result_selected_ds').getAll();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SELECT_ONE_RECORD_AT_LEAST}');
+                    return;
+                }
+                var datas = [];
+                for (var i = 0;i < records.length;i++) {
+                    datas.push(records[i].data);
+                }
+                Aurora.Masker.mask(Ext.getBody());
+                Aurora.request({
+                    url: $('pur5130_rfxFromDemandPoolInit_link').getUrl(),
+                    para: datas,
+                    success: function(res) {
+                        var rfx_header_id = res.result.feedback_id;
+                        Aurora.Masker.unmask(Ext.getBody());
+                        $('pur5130_demand_pool_assigned_result_selected_ds').removeAll();
+                        pur5130_demandPoolAssignedQueryFunction();
+                        pur5130_rfxFromDemandPoolPreviewFunction(rfx_header_id);
+                    },
+                    failure: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        pur5130_demandPoolAssignedQueryFunction();
+                    },
+                    error: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        pur5130_demandPoolAssignedQueryFunction();
+                    },
+                    scope: this,
+                    sync: true
+                });
+            }
+            
+            function pur5130_demand_pool_query_ds_onUpdate(ds, record, name, value, oldvalue) {
+                var field;
+                if (name == 'item_category_id') {
+                    field = record.getMeta().getField('item_name');
+                    if (!Aurora.isEmpty(value)) {
+                        field.setLovPara('item_category_id', value);
+                    } else {
+                        field.setLovPara('item_category_id', '');
+                    }
+                }
+            }
+            
+            function pur5130_demand_pool_assigned_result_ds_select(ds, record) {
+                var list_ds = $('pur5130_demand_pool_assigned_result_selected_ds');
+                var req_line_id = record.get('req_line_id');
+                var result_record = list_ds.find('req_line_id', req_line_id);
+                if (Aurora.isEmpty(result_record)) {
+                    $('pur5130_demand_pool_assigned_result_selected_ds').create(record.data);
+                }
+            }
+            
+            function pur5130_demand_pool_assigned_result_ds_unselect(ds, record) {
+                var list_ds = $('pur5130_demand_pool_assigned_result_selected_ds');
+                var req_line_id = record.get('req_line_id');
+                var result_record = list_ds.find('req_line_id', req_line_id);
+                if (!Aurora.isEmpty(result_record)) {
+                    list_ds.remove(result_record);
+                }
+            }
+            
+            // 页面执行重新查询时所做的操作
+            
+            function pur5130_demand_pool_assigned_result_ds_grid_render(grid) {
+                var ds = $('pur5130_demand_pool_assigned_result_ds');
+                var records = ds.getAll();
+                var list_ds = $('pur5130_demand_pool_assigned_result_selected_ds');
+                var list_records = list_ds.getAll();
+                for (var i = 0;i < records.length;i++) {
+                    var select_record = list_ds.find('req_line_id', records[i].get('req_line_id'));
+                    if (!Aurora.isEmpty(select_record)) {
+                        ds.select(records[i]);
+                    }
+                }
+            }
+            
+            
+            function time_mouseover(feedback_end_time, rfx_header_id) {
+                var class_time = new Date(feedback_end_time); //将时间字符串转换为时间.
+                var now_time = new Date();
+                var totalSecs = (class_time - now_time) / 1000; //获得两个时间的总毫秒数. 靠前的就调换再减。
+                var days = Math.floor(totalSecs / 3600 / 24);
+                var hours = Math.floor((totalSecs - days * 24 * 3600) / 3600);
+                var mins = Math.floor((totalSecs - days * 24 * 3600 - hours * 3600) / 60);
+                var secs = Math.floor((totalSecs - days * 24 * 3600 - hours * 3600 - mins * 60));
+                if (totalSecs >= 0) {
+                    document.getElementById(rfx_header_id).title = "距离开标时间还有：" + days + '天' + hours + '时' + mins + '分' + secs + '秒';
+                }
+            
+            }
+            
+            function time_render(value, record, name) {
+                var remain_time = record.get('remain_time');
+                var feedback_end_time = record.get('feedback_end_time');
+                var rfx_header_id = record.get('rfx_header_id');
+                var status = record.get('status');
+                if (status == 'NEW') {
+                    return '<a class="fa icon-time"  id="' + rfx_header_id + '"  onmouseover="time_mouseover(\'' + feedback_end_time + '\',' + rfx_header_id + ')"  style="margin-top:3px;margin-left:-5px;font-size:15px;text-decoration:none;color:#cccccc;"></a>';
+                } else if (remain_time < 0.5) {
+                    return '<a class="fa icon-time"  id="' + rfx_header_id + '" onmouseover="time_mouseover(\'' + feedback_end_time + '\',' + rfx_header_id + ')"  style="margin-top:3px;margin-left:-5px;font-size:15px;color:red;text-decoration:none;"></a>';
+                } else {
+                    return '<a class="fa icon-time"  id="' + rfx_header_id + '"  onmouseover="time_mouseover(\'' + feedback_end_time + '\',' + rfx_header_id + ')"  style="margin-top:3px;margin-left:-5px;font-size:15px;text-decoration:none;color:#66afe9;"></a>';
+                }
+            
+            
+            
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="pur5130_agreement_header_temp_ds">
+                <a:fields>
+                    <a:field name="apply_number" defaultValue="待生成"/>
+                    <a:field name="status_display" defaultValue="新建"/>
+                    <a:field name="apply_reason" required="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="pur5130_agreement_lines_temp_ds"/>
+            <a:dataSet id="pur5130_rfx_category_ds" lookupCode="PUR_RFX_CATEGORY"/>
+            <a:dataSet id="pur5130_rfx_method_ds" lookupCode="PUR_RFX_METHOD"/>
+            <a:dataSet id="pur5130_rfx_auction_direction_ds" lookupCode="PUR_RFX_AUCTION_DIRECTION"/>
+            <a:dataSet id="pur5130_rfx_auction_rule_ds" lookupCode="PUR_RFX_AUCTION_RULE"/>
+            <a:dataSet id="pur5130_rfx_open_rule_ds" lookupCode="PUR_RFX_OPEN_RULE"/>
+            <a:dataSet id="pur5130_rfx_data_source_ds" lookupCode="DEMPOND_POOL_DATA_SOURCE"/>
+            <a:dataSet id="pur5130_rfx_ranking_rule_ds" lookupCode="PUR_RFX_RANKING_RULE"/>
+            <a:dataSet id="pur5130_rfx_auction_ranking_ds" lookupCode="PUR_RFX_AUCTION_RANKING"/>
+            <a:dataSet id="pur5130_rfx_status_ds" lookupCode="PUR_RFX_STATUS"/>
+            <a:dataSet id="pur5130_rfx_yesorno_ds" lookupCode="YES_OR_NO"/>
+            <a:dataSet id="pur5130_agreement_delay_status_ds" lookupCode="PUR_AGREEMENT_DELAY_STATUS"/>
+            <a:dataSet id="pur5130_rfx_types_ds" autoCreate="true" loadData="true">
+                <a:datas dataSource="/model/pur5130_rfx_types_source"/>
+            </a:dataSet>
+            <a:dataSet id="pur5130_payment_method_ds" autoCreate="true" loadData="true">
+                <a:datas dataSource="/model/pur5130_payment_methods_source"/>
+            </a:dataSet>
+            <a:dataSet id="pur5130_currency_ds" autoCreate="true" loadData="true">
+                <a:datas dataSource="/model/pur5130_currency_source"/>
+            </a:dataSet>
+            <a:dataSet id="pur5130_tax_type_code_ds" autoCreate="true" loadData="true">
+                <a:datas dataSource="/model/pur5130_tax_type_code_source"/>
+            </a:dataSet>
+            <a:dataSet id="pur5130_rfx_header_query_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="agent_name" autoComplete="true" autoCompleteField="code_name" lovGridHeight="320" lovHeight="480" lovService="public.pur_buyers_lov" lovWidth="500" title="PUR_HEADERS_ALL.PUR_BUYER">
+                        <a:mapping>
+                            <a:map from="buyer_id" to="agent_id"/>
+                            <a:map from="buyer_code" to="agent_code"/>
+                            <a:map from="description" to="agent_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="agent_id"/>
+                    <a:field name="company_id"/>
+                    <a:field name="company_desc" autoComplete="true" autoCompleteField="code_name" lovGridHeight="320" lovHeight="450" lovService="public.fnd_companies_lov" lovWidth="500" title="PUR_RFX_HEADERS.COMPANY_ID">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_short_name" to="company_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="pur_organization_name" autoComplete="true" autoCompleteField="pur_organization_code_name" lovHeight="480" lovService="public.pur_organization_lov" lovWidth="510" title="PUR_ORGANIZATIONS.PUR_ORGANIZATION">
+                        <a:mapping>
+                            <a:map from="pur_organization_id" to="pur_organization_id"/>
+                            <a:map from="pur_organization_code" to="pur_organization_code"/>
+                            <a:map from="pur_organization_name" to="pur_organization_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="business_unit_name" autoComplete="true" autoCompleteField="business_unit_code_name" lovHeight="480" lovService="public.fnd_business_unit_lov" lovWidth="510" title="FND_BUSINESS_UNITS.BUSINESS_UNIT_QUERY">
+                        <a:mapping>
+                            <a:map from="business_unit_id" to="owner_business_unit_id"/>
+                            <a:map from="business_unit_code" to="business_unit_code"/>
+                            <a:map from="business_unit_name" to="business_unit_name"/>
+                            <a:map from="company_id" to="company_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="rfx_type_id"/>
+                    <a:field name="rfx_type_desc" displayField="rfx_type_desc" options="pur5130_rfx_types_ds" returnField="rfx_type_id" valueField="rfx_type_id">
+                        <a:mapping>
+                            <a:map from="rfx_type_id" to="rfx_type_id"/>
+                            <a:map from="rfx_type_desc" to="rfx_type_desc"/>
+                            <a:map from="rfx_category" to="rfx_category"/>
+                            <a:map from="rfx_category_desc" to="rfx_category_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="rfx_category_desc" displayField="code_value_name" options="pur5130_rfx_category_ds" returnField="rfx_category" valueField="code_value"/>
+                    <a:field name="status_desc" displayField="code_value_name" options="pur5130_rfx_status_ds" returnField="status" valueField="code_value"/>
+                    <a:field name="rfx_method"/>
+                    <a:field name="rfx_method_desc" displayField="code_value_name" options="pur5130_rfx_method_ds" returnField="rfx_method" valueField="code_value"/>
+                    <a:field name="auction_direction"/>
+                    <a:field name="auction_direction_desc" displayField="code_value_name" options="pur5130_rfx_auction_direction_ds" returnField="auction_direction" valueField="code_value"/>
+                    <a:field name="auction_rule"/>
+                    <a:field name="auction_rule_desc" displayField="code_value_name" options="pur5130_rfx_auction_rule_ds" returnField="auction_rule" valueField="code_value"/>
+                    <a:field name="open_rule"/>
+                    <a:field name="open_rule_desc" displayField="code_value_name" options="pur5130_rfx_open_rule_ds" returnField="open_rule" valueField="code_value"/>
+                    <a:field name="ranking_rule"/>
+                    <a:field name="ranking_rule_desc" displayField="code_value_name" options="pur5130_rfx_ranking_rule_ds" returnField="ranking_rule" valueField="code_value"/>
+                    <a:field name="auction_ranking"/>
+                    <a:field name="auction_ranking_desc" displayField="code_value_name" options="pur5130_rfx_auction_ranking_ds" returnField="auction_ranking" valueField="code_value"/>
+                    <a:field name="payment_method_id"/>
+                    <a:field name="payment_method_desc" displayField="payment_method_desc" options="pur5130_payment_method_ds" returnField="payment_method_id" valueField="payment_method_id"/>
+                    <a:field name="currency_code"/>
+                    <a:field name="currency_desc" displayField="currency_name" options="pur5130_currency_ds" returnField="currency_code" valueField="currency_code">
+                        <a:mapping>
+                            <a:map from="currency_name" to="currency_desc"/>
+                            <a:map from="currency_code" to="currency_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="tax_type_id"/>
+                    <a:field name="tax_type_desc" displayField="description" options="pur5130_tax_type_code_ds" prompt="PUR_RFX_HEADERS.TAX_TYPE_RATE" valueField="tax_type_id">
+                        <a:mapping>
+                            <a:map from="tax_type_id" to="tax_type_id"/>
+                            <a:map from="description" to="tax_type_desc"/>
+                            <a:map from="tax_type_rate" to="tax_type_rate"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="created_by_desc" autoComplete="true" autoCompleteField="user_desc" lovGridHeight="320" lovHeight="450" lovService="public.sys_user_lov_by_business_group" lovWidth="500" title="PUR_RFX_HEADERS.CREATED_BY">
+                        <a:mapping>
+                            <a:map from="user_id" to="created_by"/>
+                            <a:map from="user_desc" to="created_by_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="tax_included_flag_desc" displayField="code_value_name" options="pur5130_rfx_yesorno_ds" returnField="tax_included_flag" valueField="code_value"/>
+                    <a:field name="sealed_bid_flag_desc" displayField="code_value_name" options="pur5130_rfx_yesorno_ds" returnField="sealed_bid_flag" valueField="code_value"/>
+                </a:fields>
+            </a:dataSet>
+            <!-- <a:dataSet id="pur5130_rfx_header_result_ds" autoCount="true" autoPageSize="true" autoQuery="true" fetchAll="false" model="pur.PUR5130.pur_rfx_headers_query" queryDataSet="pur5130_rfx_header_query_ds" queryUrl="${/request/@context_path}/modules/pur/PUR5130/pur_rfx_headers_query.svc"> -->
+            <a:dataSet id="pur5130_rfx_header_result_ds" autoCount="true" autoPageSize="true" autoQuery="true" fetchAll="false" model="pur.PUR5130.pur_rfx_headers_query" queryDataSet="pur5130_rfx_header_query_ds">
+                <a:fields>
+                    <a:field name="rfx_header_id"/>
+                    <a:field name="tax_included_flag" checkedValue="Y" uncheckedValue="N"/>
+                    <a:field name="prequal_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="expert_score_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+            <!-- 需求池 -->
+            <a:dataSet id="pur5130_demand_pool_assigned_query_ds">
+                <a:fields>
+                    <a:field name="data_source" displayField="code_value_name" options="pur5130_rfx_data_source_ds" valueField="code_value"/>
+                    <a:field name="business_unit_id"/>
+                    <a:field name="business_unit_name" autoComplete="true" autoCompleteField="business_unit_code_name" lovHeight="480" lovService="public.fnd_business_unit_lov" lovWidth="510" title="FND_BUSINESS_UNITS.BUSINESS_UNIT_QUERY">
+                        <a:mapping>
+                            <a:map from="business_unit_id" to="business_unit_id"/>
+                            <a:map from="business_unit_code" to="business_unit_code"/>
+                            <a:map from="business_unit_name" to="business_unit_name"/>
+                            <a:map from="company_id" to="company_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="item_category_id"/>
+                    <a:field name="item_category" autoComplete="true" autoCompleteField="category_code_name" lovHeight="480" lovService="pur.PUR5130.mtl_categories_user_defined_vl" lovWidth="510" title="PUR_REQUISITION_LNS.ITEM_CATEGORY_ID">
+                        <a:mapping>
+                            <a:map from="category_udf_id" to="item_category_id"/>
+                            <a:map from="category_code" to="item_category_code"/>
+                            <a:map from="category_name" to="item_category"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="item_id"/>
+                    <a:field name="item_name" autoComplete="true" autoCompleteField="item_code_name" lovHeight="480" lovService="pur.PUR5130.mtl_system_item_lov" lovWidth="510" title="PUR_REQUISITION_LINES.ITEM_ID">
+                        <a:mapping>
+                            <a:map from="item_id" to="item_id"/>
+                            <a:map from="item_code" to="item_code"/>
+                            <a:map from="item_name" to="item_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="pur_buyer" autoComplete="true" autoCompleteField="buyer_code_desc" lovHeight="480" lovService="pur.PUR5130.pur_buyers_lov" lovWidth="510" title="PUR_HEADERS_ALL.PUR_BUYER">
+                        <a:mapping>
+                            <a:map from="buyer_id" to="buyer_id"/>
+                            <a:map from="buyer_code" to="buyer_code"/>
+                            <a:map from="buyer_desc" to="pur_buyer"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="pur5130_demand_pool_query_ds_onUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="pur5130_demand_pool_assigned_result_ds" autoCount="true" autoPageSize="true" model="pur.PUR5130.pur_demand_pool_assigned" queryDataSet="pur5130_demand_pool_assigned_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="ylz_delay_flag" checkedValue="Y" readOnly="true" uncheckedValue="N"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="select" handler="pur5130_demand_pool_assigned_result_ds_select"/>
+                    <a:event name="unselect" handler="pur5130_demand_pool_assigned_result_ds_unselect"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="pur5130_agreement_delay_result_query_ds" autoCreate="false">
+                <a:fields>
+                    <a:field name="status_display" displayField="code_value_name" options="pur5130_agreement_delay_status_ds" returnField="status" valueField="code_value"/>
+                    <a:field name="status"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="pur5130_agreement_delay_result_ds" autoCount="true" autoPageSize="true" autoQuery="true" fetchAll="false" model="pur.PUR5130.pur_agreement_apply_headers_query" queryDataSet="pur5130_agreement_delay_result_query_ds"/>
+            <a:dataSet id="pur5130_demand_pool_assigned_result_selected_ds"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:tabPanel marginHeight="80" marginWidth="100">
+                <a:tabs>
+                    <a:tab prompt="待询价申请" width="130">
+                        <a:screenTopToolbar>
+                            <a:toolbarButton click="pur5130_rfxFromDemandPool" style="margin-left:20px;" text="申请转询价" width="100"/>
+                            <a:toolbarButton click="pur5130_rfx_manual_create" style="margin-left:20px;" text="手工创建询价" width="100"/>
+                            <a:toolbarButton click="pur5130_switchToBiddingHall" style="margin-left:20px;" text="跳转招标大厅" width="100"/>
+                            <a:toolbarButton click="pur5130_packageAgreeApply" style="margin-left:20px;" text="一揽子延期申请" width="100"/>
+                            <a:toolbarButton click="pur5130_packageDisable" style="margin-left:20px;" text="失效" width="100"/>
+                            <!-- <a:toolbarButton click="pur5130_toEbsTest" style="margin-left:20px;" text="提交EBS" width="100"/> -->
+                        </a:screenTopToolbar>
+                        <a:queryForm bindTarget="pur5130_demand_pool_assigned_query_ds" resultTarget="pur5130_demand_pool_assigned_result_ds">
+                            <a:formToolBar>
+                                <a:hBox labelWidth="120">
+                                    <a:lov name="item_name" prompt="PUR_REQUISITION_LINES.ITEM_ID">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_demandPoolAssignedQueryFunction"/>
+                                        </a:events>
+                                    </a:lov>
+                                    <a:lov name="item_category" bindTarget="pur5130_demand_pool_assigned_query_ds" prompt="PUR_REQUISITION_LNS.ITEM_CATEGORY_ID">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_demandPoolAssignedQueryFunction"/>
+                                        </a:events>
+                                    </a:lov>
+                                    <a:textField name="item_desc" bindTarget="pur5130_demand_pool_assigned_query_ds" prompt="物料描述">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_demandPoolAssignedQueryFunction"/>
+                                        </a:events>
+                                    </a:textField>
+                                    <a:comboBox name="data_source" bindTarget="pur5130_demand_pool_assigned_query_ds" prompt="数据来源">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_demandPoolAssignedQueryFunction"/>
+                                        </a:events>
+                                    </a:comboBox>
+                                </a:hBox>
+                            </a:formToolBar>
+                            <a:formBody>
+                                <a:hBox labelWidth="120">
+                                    <a:textField name="req_number" bindTarget="pur5130_demand_pool_assigned_query_ds" prompt="ACP_ACP_REQUISITION_HDS.REQUISITION_NUMBER">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_demandPoolAssignedQueryFunction"/>
+                                        </a:events>
+                                    </a:textField>
+                                    <a:lov name="business_unit_name" bindTarget="pur5130_demand_pool_assigned_query_ds" prompt="FND_BUSINESS_UNITS.BUSINESS_UNIT">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_demandPoolAssignedQueryFunction"/>
+                                        </a:events>
+                                    </a:lov>
+                                    <a:textField name="line_number" prompt="PUR_REQUISITION_LINES.LINE_NUMBER">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_demandPoolAssignedQueryFunction"/>
+                                        </a:events>
+                                    </a:textField>
+                                    <a:lov name="pur_buyer" prompt="PUR_HEADERS_ALL.PUR_BUYER">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_demandPoolAssignedQueryFunction"/>
+                                        </a:events>
+                                    </a:lov>
+                                </a:hBox>
+                            </a:formBody>
+                        </a:queryForm>
+                        <a:grid autoAppend="false" bindTarget="pur5130_demand_pool_assigned_result_ds" marginHeight="200" marginWidth="100" navBar="true">
+                            <a:columns>
+                                <a:column name="req_number" lock="true" prompt="ACP_ACP_REQUISITION_HDS.REQUISITION_NUMBER" width="100"/>
+                                <a:column name="suggested_vendor_name" lock="true" prompt="供应商" width="100"/>
+                                <a:column name="line_num" lock="true" prompt="PUR_REQUISITION_LNS.LINE_NUMBER" width="40"/>
+                                <a:column name="item_code" lock="true" prompt="PUR_REQUISITION_LNS.ITEM_CODE" width="80"/>
+                                <a:column name="item_description" lock="true" prompt="PUR_REQUISITION_LNS.ITEM_DESC" width="100"/>
+                                <!--  <a:column name="item_category_desc" prompt="PUR_REQUISITION_LNS.ITEM_CATEGORY_ID" width="100"/> -->
+                                <!-- <a:column name="organization_desc" prompt="PUR_REQUISITION_LNS.INV_ORG_ID" width="100"/> -->
+                                <a:column name="organization_desc" prompt="业务实体" width="100"/>
+                                <a:column name="quantity" align="right" prompt="数量" width="40"/>
+                                <a:column name="unit_price" align="right" prompt="历史含税单价" width="50"/>
+                                <a:column name="untax_unit_price" prompt="历史不含税单价" width="60"/>
+                                <a:column name="expiration_date" align="center" prompt="到期日" width="60"/>
+                                <a:column name="unit_meas_lookup_code" prompt="单位" width="40"/>
+                                <a:column name="currency_code" prompt="币种" width="40"/>
+                                <!--  <a:column name="rate" prompt="汇率" width="40"/>
+                                <a:column name="need_by_date" prompt="PUR_REQUISITION_LNS.NEED_BY_DATE" width="80"/>
+                                <a:column name="work_num" prompt="PUR_RFX_LN_ITEMS.WORK_NUMBER" width="60"/>
+                                <a:column name="bom_num" prompt="PUR_RFX_LN_ITEMS.BOM_NUMBER" width="60"/> -->
+                                <!--  <a:column name="specification" prompt="PUR_REQUISITION_LNS.SPECIFICATION" width="60"/>
+                                <a:column prompt="申请人" width="40"/>
+                                <a:column name="purchasing_agent_code" prompt="采购员" width="40"/>
+                                <a:column prompt="部门" width="40"/>
+                                <a:column prompt="申请日期" width="40"/> -->
+                                <a:column name="creation_date" prompt="创建时间" renderer="Aurora.formatDate"/>
+                                <!-- <a:column name="sm_comment" prompt="PUR_REQUISITION_LNS.NOTE" width="40"/> -->
+                                <a:column name="data_source" align="center" prompt="PUR_REQ_HEADERS.DATA_SOURCE" width="40"/>
+                                <a:column name="is_collected" align="center" prompt="是否集采"/>
+                                <a:column name="ylz_delay_flag" align="center" prompt="是否创建了延期申请"/>
+                                <a:column name="assigned_to_desc" align="center" prompt="分配人" width="100"/>
+                            </a:columns>
+                            <a:events>
+                                <a:event name="render" handler="pur5130_demand_pool_assigned_result_ds_grid_render"/>
+                            </a:events>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab prompt="进行中的询价单" selected="true" width="130">
+                        <a:queryForm bindTarget="pur5130_rfx_header_query_ds" resultTarget="pur5130_rfx_header_result_ds">
+                            <a:formToolBar>
+                                <a:hBox labelWidth="120">
+                                    <a:textField name="item_code" bindTarget="pur5130_rfx_header_query_ds" prompt="物料编码">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_query"/>
+                                        </a:events>
+                                    </a:textField>
+                                    <!-- <a:lov name="pur_organization_name" bindTarget="pur5130_rfx_header_query_ds" prompt="PUR_ORGANIZATIONS.PUR_ORGANIZATION">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_query"/>
+                                        </a:events>
+                                    </a:lov> -->
+                                    <a:textField name="vendor_desc" bindTarget="pur5130_rfx_header_query_ds" prompt="供应商">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_query"/>
+                                        </a:events>
+                                    </a:textField>
+                                    <a:textField name="item_desc" bindTarget="pur5130_rfx_header_query_ds" prompt="物料描述">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_query"/>
+                                        </a:events>
+                                    </a:textField>
+                                    <a:lov name="agent_name" bindTarget="pur5130_rfx_header_query_ds" prompt="PUR_HEADERS_ALL.PUR_BUYER">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_query"/>
+                                        </a:events>
+                                    </a:lov>
+                                </a:hBox>
+                            </a:formToolBar>
+                            <a:formBody>
+                                <a:hBox labelWidth="120">
+                                    <a:textField name="rfx_number" bindTarget="pur5130_rfx_header_query_ds" prompt="PUR_RFX_HEADERS.RFX_NUMBER">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_query"/>
+                                        </a:events>
+                                    </a:textField>
+                                    <!-- <a:lov name="pur_organization_name" bindTarget="pur5130_rfx_header_query_ds" prompt="PUR_ORGANIZATIONS.PUR_ORGANIZATION">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_query"/>
+                                        </a:events>
+                                    </a:lov> -->
+                                    <a:lov name="business_unit_name" bindTarget="pur5130_rfx_header_query_ds" prompt="FND_BUSINESS_UNITS.BUSINESS_UNIT">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_query"/>
+                                        </a:events>
+                                    </a:lov>
+                                    <a:comboBox name="status_desc" bindTarget="pur5130_rfx_header_query_ds" prompt="PUR_RFX_HEADERS.STATUS">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_query"/>
+                                        </a:events>
+                                    </a:comboBox>
+                                </a:hBox>
+                                <a:hBox labelWidth="120">
+                                    <a:comboBox name="rfx_type_desc" bindTarget="pur5130_rfx_header_query_ds" prompt="PUR71101.RFX_TYPE">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_query"/>
+                                        </a:events>
+                                    </a:comboBox>
+                                    <a:comboBox name="rfx_method_desc" bindTarget="pur5130_rfx_header_query_ds" prompt="PUR_RFX_HEADERS.RFX_METHOD">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_query"/>
+                                        </a:events>
+                                    </a:comboBox>
+                                    <a:textField name="title" bindTarget="pur5130_rfx_header_query_ds" prompt="PUR_RFX_HEADERS.TITLE">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_query"/>
+                                        </a:events>
+                                    </a:textField>
+                                </a:hBox>
+                                <a:hBox labelWidth="120">
+                                    <a:comboBox name="sealed_bid_flag_desc" bindTarget="pur5130_rfx_header_query_ds" prompt="PUR_RFX_HEADERS.SEALED_BID_FLAG">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_query"/>
+                                        </a:events>
+                                    </a:comboBox>
+                                    <a:datePicker name="creation_date_from" bindTarget="pur5130_rfx_header_query_ds" prompt="SACPUR5210.CREATION_DATE_FROM">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_query"/>
+                                        </a:events>
+                                    </a:datePicker>
+                                    <a:datePicker name="creation_date_to" bindTarget="pur5130_rfx_header_query_ds" prompt="SACPUR5210.CREATION_DATE_TO">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_query"/>
+                                        </a:events>
+                                    </a:datePicker>
+                                </a:hBox>
+                                <a:hBox labelWidth="120">
+                                    <a:comboBox name="currency_desc" bindTarget="pur5130_rfx_header_query_ds" prompt="PUR_RFX_HEADERS.CURRENCY_CODE">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_query"/>
+                                        </a:events>
+                                    </a:comboBox>
+                                    <a:comboBox name="auction_direction_desc" bindTarget="pur5130_rfx_header_query_ds" prompt="PUR_RFX_HEADERS.AUCTION_DIRECTION">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_query"/>
+                                        </a:events>
+                                    </a:comboBox>
+                                    <a:comboBox name="tax_included_flag_desc" bindTarget="pur5130_rfx_header_query_ds" prompt="PUR_RFX_HEADERS.TAX_INCLUDED_FLAG">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_query"/>
+                                        </a:events>
+                                    </a:comboBox>
+                                </a:hBox>
+                            </a:formBody>
+                        </a:queryForm>
+                        <a:grid id="pur5130_req_demand_pool_result_grid" autoAppend="false" bindTarget="pur5130_rfx_header_result_ds" marginHeight="160" marginWidth="100" navBar="true">
+                            <a:columns>
+                                <a:column align="center" lock="true" renderer="time_render" width="20"/>
+                                <a:column name="status_desc" align="center" lock="true" prompt="PUR_RFX_HEADERS.STATUS" sortable="true" width="40"/>
+                                <a:column name="operation_code" align="center" lock="true" prompt="操作" renderer="pur5130_rfxOperationDescRender" width="40"/>
+                                <a:column name="atm_flag" align="center" lock="true" renderer="pur5130_rfx_render" width="20"/>
+                                <!--  <a:column name="vendor_name" align="center" lock="true" prompt="供应商"  width="100"/> -->
+                                <a:column name="rfx_number" align="center" lock="true" prompt="PUR_RFX_HEADERS.RFX_NUMBER" renderer="pur5130_rfx_render" width="80"/>
+                                <a:column name="title" align="left" lock="true" prompt="PUR_RFX_HEADERS.TITLE" sortable="true" width="60"/>
+                                <a:column name="creation_date_desc" align="center" lock="true" prompt="PUR_RFX_HEADERS.CREATION_DATE" sortable="true" width="60"/>
+                                <a:column name="feedback_end_time" align="center" lock="true" prompt="报价截止时间" sortable="true" width="60"/>
+                                <!-- <a:column name="pur_organization_name" align="left" lock="true" prompt="PUR_ORGANIZATIONS.PUR_ORG_NAME" sortable="true" width="60"/> -->
+                                <a:column name="business_unit_name" align="center" lock="true" prompt="FND_BUSINESS_UNITS.BUSINESS_UNIT" sortable="true" width="60"/>
+                                <a:column name="round" align="center" prompt="PUR_RFX_HEADERS.ROUND" sortable="true" width="30"/>
+                                <a:column name="quote_response" align="center" prompt="报价响应" renderer="pur5130_rfxQuoteResponseRenderFunction" width="40"/>
+                                <!-- <a:column name="prequal_flag" align="center" prompt="资格预审" width="40"/> -->
+                                <!-- <a:column name="prequal_closing_date" align="center" prompt="预审截止时间" sortable="true" width="60"/> -->
+                                <!-- <a:column name="expert_score_flag" align="center" prompt="专家评分" width="40"/> -->
+                                <a:column name="rfx_type_desc" align="center" prompt="询价单类型" sortable="true" width="50"/>
+                                <!--   <a:column name="rfx_category_desc" align="center" prompt="PUR_RFX_HEADERS.RFX_CATEGORY" sortable="true" width="50"/> -->
+                                <!-- <a:column name="rfx_method_desc" align="center" prompt="PUR_RFX_HEADERS.RFX_METHOD" sortable="true" width="40"/> -->
+                                <!-- <a:column name="sealed_bid_flag_desc" align="center" prompt="PUR_RFX_HEADERS.SEALED_BID_FLAG" sortable="true" width="40"/> -->
+                                <a:column name="currency_desc" align="center" prompt="PUR_RFX_HEADERS.CURRENCY_CODE" sortable="true" width="40"/>
+                                <!-- <a:column name="tax_included_flag_desc" align="center" prompt="PUR_RFX_HEADERS.TAX_INCLUDED_FLAG" sortable="true" width="40"/> -->
+                                <a:column name="tax_type_rate" align="right" prompt="PUR_RFX_HEADERS.TAX_RATE" sortable="true" width="40"/>
+                                <!-- <a:column name="auction_direction_desc" align="center" prompt="PUR_RFX_HEADERS.AUCTION_DIRECTION" sortable="true" width="40"/> -->
+                                <a:column name="agent_name" prompt="采购员" width="40"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab prompt="一揽子协议延期申请" width="140">
+                        <!-- <a:screenTopToolbar>
+                            <a:toolbarButton click="pur5130_rfxFromDemandPool" style="margin-left:20px;" text="申请转询价" width="100"/>
+                            <a:toolbarButton click="pur5130_rfx_manual_create" style="margin-left:20px;" text="手工创建询价" width="100"/>
+                            <a:toolbarButton click="pur5130_switchToBiddingHall" style="margin-left:20px;" text="跳转招标大厅" width="100"/>
+                            <a:toolbarButton click="pur5130_packageAgreeApply" style="margin-left:20px;" text="一揽子延期申请" width="100"/>
+                        </a:screenTopToolbar> -->
+                        <a:queryForm bindTarget="pur5130_agreement_delay_result_query_ds" resultTarget="pur5130_agreement_delay_result_ds">
+                            <a:formToolBar>
+                                <a:hBox labelWidth="120">
+                                    <a:textField name="apply_number" bindTarget="pur5130_agreement_delay_result_query_ds" prompt="申请编号">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_agreement_delay_result_query"/>
+                                        </a:events>
+                                    </a:textField>
+                                    <a:comboBox name="status_display" bindTarget="pur5130_agreement_delay_result_query_ds" prompt="状态">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_agreement_delay_result_query"/>
+                                        </a:events>
+                                    </a:comboBox>
+                                </a:hBox>
+                            </a:formToolBar>
+                        </a:queryForm>
+                        <a:grid autoAppend="false" bindTarget="pur5130_agreement_delay_result_ds" marginHeight="200" marginWidth="100" navBar="true">
+                            <a:columns>
+                                <a:column name="apply_number" align="center" prompt="ACP_ACP_REQUISITION_HDS.REQUISITION_NUMBER" renderer="pur5130_resultDsRenderer" width="100"/>
+                                <a:column name="status_display" align="center" prompt="状态" width="80"/>
+                                <a:column name="is_collected" align="center" prompt="是否集采" width="80"/>
+                                <a:column name="data_source" align="center" prompt="数据来源" width="80"/>
+                                <a:column name="creation_date" align="center" prompt="创建日期" width="100"/>
+                                <a:column name="created_by_desc" align="center" prompt="创建人" width="100"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+        <script><![CDATA[
+            // Aurora.onReady(function() {
+             // alert(1);
+            // });
+        ]]></script>
+    </a:view>
+</a:screen>

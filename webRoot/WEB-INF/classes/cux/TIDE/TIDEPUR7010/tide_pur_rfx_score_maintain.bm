@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: shenjun  
+    $Date: 2017-1-17 下午7:18:49  
+    $Revision: 1.0  
+    $Purpose: 泰德询价单评分
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                   (SELECT h.rfx_header_id,
+					       v.rfx_line_vendor_id,
+					       h.rfx_number,
+					       h.title,
+					       h.rfx_category,
+					       h.rfx_type_id,
+					       (SELECT p.rfx_type_desc FROM pur_bg_rfx_types_vl p WHERE p.rfx_type_id = h.rfx_type_id) rfx_type_desc,
+					       h.owner_company_id,
+					       h.owner_business_unit_id,
+					       (SELECT buv.business_unit_name
+					          FROM fnd_business_units_vl buv
+					         WHERE buv.business_unit_id = h.owner_business_unit_id) AS owner_business_unit_name,
+					       h.created_by,
+					       h.creation_date AS header_creation_date,
+					       (SELECT su.description FROM sys_user su WHERE su.user_id = h.created_by) AS created_by_user,
+					       v.coop_business_group,
+					       v.coop_company_id,
+					       (SELECT fcv.company_code FROM fnd_companies_vl fcv WHERE fcv.company_id = v.coop_company_id) AS coop_company_code,
+					       (SELECT fcv.company_full_name FROM fnd_companies_vl fcv WHERE fcv.company_id = v.coop_company_id) AS coop_company_name,
+					       (SELECT fcv.company_full_name FROM fnd_companies_vl fcv WHERE fcv.company_id = h.owner_company_id) AS owner_company_name,
+					       rh.score_header_id,
+					       nvl(rh.status,
+					           'NEW') AS status,
+					       (SELECT code_value_name
+					          FROM sys_code_values_v
+					         WHERE code = 'TIDE_PUR_RFX_SCORE_STATUS'
+					               AND code_value = nvl(rh.status,
+					                                    'NEW')) AS status_display,
+					       rh.score_date,
+					       to_char(rh.score_date,
+					               'YYYY-MM-DD') AS score_date_fmt,
+							(SELECT t.role_code
+							  FROM sys_role t
+							 WHERE t.start_date < SYSDATE
+							       AND (t.end_date > SYSDATE - 1 OR t.end_date IS NULL)
+							       AND t.role_id =  ${/session/@role_id}) AS role_code
+					  FROM pur_rfx_headers h,
+					       tide_pur_rfx_score_hds rh,
+					       (SELECT lv.coop_business_group,
+					               lv.coop_company_id,
+					               lv.rfx_line_vendor_id,
+					               lv.rfx_header_id
+					          FROM pur_rfx_ln_items         li,
+					               pur_rfx_ln_vendors       lv,
+					               pur_rfx_feedback_lines   fl,
+					               pur_rfx_feedback_headers fh
+					         WHERE fl.rfx_line_item_id = li.rfx_line_item_id
+					               AND fh.rfx_header_id = li.rfx_header_id
+					               AND fh.feedback_header_id = fl.feedback_header_id
+					               AND fh.coop_business_group = lv.coop_business_group
+					               AND fh.coop_company_id = lv.coop_company_id
+					               AND lv.rfx_header_id = li.rfx_header_id
+					               AND fl.cancel_flag = 'N'
+					               AND li.cancel_flag = 'N'
+					               AND fl.suggested_flag = 'Y'
+					               AND fh.owner_business_group = ${/session/@business_group}
+					         GROUP BY lv.coop_business_group,
+					                  lv.coop_company_id,
+					                  lv.rfx_line_vendor_id,
+					                  lv.rfx_header_id) v
+					 WHERE h.rfx_header_id = v.rfx_header_id
+					       AND rh.rfx_header_id(+) = h.rfx_header_id
+					       AND rh.rfx_line_vendor_id(+) = v.rfx_line_vendor_id
+					       AND h.status = 'FINISHED'
+					       AND h.owner_business_group =  ${/session/@business_group} 
+                    ) v #AUTHORIY_FROM# #WHERE_CLAUSE# #AUTHORIY_WHERE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="rfx_number" queryExpression="v.rfx_number like &apos;%&apos;||trim(${@rfx_number})||&apos;%&apos;"/>
+        <bm:query-field name="title" queryExpression="v.title like &apos;%&apos;||trim(${@title})||&apos;%&apos;"/>
+        <bm:query-field name="vendor_company_id" queryExpression="v.coop_company_id = ${@vendor_company_id}"/>
+        <bm:query-field name="business_unit_id" queryExpression="v.owner_business_unit_id = ${@business_unit_id}"/>
+        <bm:query-field name="item_id" queryExpression="v.item_id = ${@item_id}"/>
+        <bm:query-field name="rfx_category" queryExpression="v.rfx_category = ${@rfx_category}"/>
+        <bm:query-field name="early_or_delay" queryExpression="v.early_or_delay = ${@early_or_delay}"/>
+        <bm:query-field name="complaint" queryExpression="v.complaint_flag = ${@complaint}"/>
+        <bm:query-field name="breach_contract" queryExpression="v.breach_of_contract = ${@breach_contract}"/>
+        <bm:query-field name="created_by" queryExpression="v.created_by = ${@created_by}"/>
+        <bm:query-field name="score_date_from" queryExpression="trunc(v.score_date) &gt;= to_date(${@score_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="score_date_to" queryExpression="trunc(v.score_date) &lt;= to_date(${@score_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="status" queryExpression="v.status = ${@status}"/>
+        <bm:query-field name="rfx_type_id" queryExpression="v.rfx_type_id = ${@rfx_type_id}"/>
+        <bm:query-field name="category_udf_id" queryExpression="v.item_category_id = ${@category_udf_id}"/>
+        <bm:query-field name="item_desc" queryExpression="v.item_desc like &apos;%&apos;||trim(${@item_desc})||&apos;%&apos;"/>
+        <bm:query-field name="inv_organization_desc" queryExpression="v.inv_organization_desc like &apos;%&apos;||${@inv_organization_desc}||&apos;%&apos;"/>
+        <bm:query-field name="req_number" queryExpression="v.req_number like &apos;%&apos;||${@req_number}||&apos;%&apos;"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="1 = 1"/>
+        <bm:data-filter name="query" expression="((v.status IN (&apos;SPOT_CHECKED&apos;,&apos;SCORED&apos;) AND v.role_code IN (&apos;TIDE_AUD&apos;, &apos;TIDE_FIN&apos;, &apos;TIDE_TAX&apos;, &apos;TIDE_LED&apos;)) OR (EXISTS (SELECT 1 FROM tide_pur_rfx_sc_user_assgin ua WHERE ua.user_id = ${/session/@user_id} AND ua.score_header_id = v.score_header_id) AND v.role_code = &apos;TIDE_REQ&apos;) OR ( v.role_code = &apos;TIDE_PRO&apos;))"/>
+    </bm:data-filters>
+    <authority foundation_code="RFX">
+        <authority-segment source_alias="v" source_name="created_by" type="CREATER"/>
+        <authority-segment source_alias="v" source_name="owner_company_id" type="COMPANY"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="RECEIVER"/>
+        <authority-segment source_alias="v" source_name="owner_business_unit_id" type="BUSINESS_UNIT"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="PUR_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="INV_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="SD_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="VENDOR"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="CLIENT"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="PURHASE_MATERIAL"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="SALES_PRODUCTION"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="CLIENT_SITE"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="VENDOR_SITE"/>
+        <authority-segment source_alias="v" source_name="agent_id" type="PUR_BUYER"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+            var cx = Packages.aurora.javascript.Context.getCurrentContext();
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

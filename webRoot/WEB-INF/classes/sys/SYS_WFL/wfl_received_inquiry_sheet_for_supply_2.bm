@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wangcheng  
+    $Date: 2015-09-21
+    $Revision: 1.0  
+    $Purpose: 收到的询价单（未参与的询价单）
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    COUNT(*) AS received_inquiry_count_notin
+                FROM
+                    (SELECT
+                        prv.coop_company_id
+                    FROM
+                        pur_rfx_headers rh,
+                        (SELECT
+                            'INVITE' AS rfx_method,
+                            v.rfx_header_id,
+                            v.rfx_line_vendor_id,
+                            v.feedback_status,
+                            v.coop_business_group,
+                            v.coop_company_id,
+                            v.vendor_id 
+                        FROM
+                            pur_rfx_ln_vendors v
+                        WHERE
+                            v.coop_business_group = ${/session/@business_group}
+                        UNION ALL
+                        SELECT
+                            'OPEN' AS rfx_method,
+                            NULL,
+                            NULL,
+                            NULL,
+                            fcv.business_group AS coop_business_group,
+                            fcv.company_id AS coop_company_id,
+                            NULL
+                        FROM
+                            fnd_companies_vl fcv
+                        WHERE
+                            fcv.business_group = ${/session/@business_group}
+                        ) prv
+                    WHERE
+                        SYSDATE BETWEEN rh.feedback_start_time AND rh.feedback_end_time AND
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            fnd_cooperative_partners fcp
+                        WHERE
+                            fcp.vendor_flag          = 'Y' AND
+                            fcp.coop_business_group  = ${/session/@business_group} AND
+                            fcp.owner_business_group = rh.owner_business_group
+                        ) AND
+                        rh.status = 'ISSUED' AND
+                        (
+                            (
+                                rh.rfx_method       = 'INVITE' AND
+                                prv.rfx_method      = 'INVITE' AND
+                                rh.rfx_header_id    = prv.rfx_header_id AND
+                                prv.feedback_status = 'NEW'
+                            )
+                            OR
+                            (
+                                rh.rfx_method        = 'OPEN' AND
+                                prv.rfx_method       = 'OPEN' AND
+                                prv.feedback_status IS NULL
+                            )
+                        )
+                        AND
+                        NVL(
+                        (SELECT
+                            prlv.feedback_status
+                        FROM
+                            pur_rfx_ln_vendors prlv
+                        WHERE
+                            prlv.coop_business_group = prv.coop_business_group AND
+                            prlv.coop_company_id     = prv.coop_company_id AND
+                            prlv.rfx_header_id       = rh.rfx_header_id
+                        ), 'NOT_IN')                IN ('NOT_IN', 'NEW') AND
+                        (
+                            rh.prequal_flag = 'Y' AND
+                            SYSDATE         <
+                            (SELECT
+                                bph.closing_date
+                            FROM
+                                bid_prequal_headers bph
+                            WHERE
+                                bph.entrustment_header_id = -rh.rfx_header_id
+                            ) OR
+                            NVL(rh.prequal_flag, 'N') = 'N'
+                        )
+                    ) v,
+                    fnd_user_authority user_auth_0
+                WHERE
+                    1                          = 1 AND
+                    user_auth_0.user_id        = ${/session/@user_id} AND
+                    user_auth_0.authority_type = 'COMPANY' AND
+                    user_auth_0.assign_id      = v.coop_company_id
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

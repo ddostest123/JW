@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: yangqingsong $
+	$Date: 2015/05/04 11:43:22 $
+	$Revision: 1.0
+	$Purpose: 网上发票创建
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query defaultwhereclause="gc.enabled_flag=&apos;Y&apos;" model="gld.gld_currency" rootpath="currency_code_list"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="lj_acp2040_invoice_submit_link" url="${/request/@context_path}/modules/cux/LJBB/acp/LJ_ACP2040/acp_invoice_data_submit.svc"/>
+        <script><![CDATA[
+            function lj_acp2040_queryFunction() {
+                $('lj_acp2040_acp_invoice_data_result_ds').query();
+            }
+            
+            //日期校验
+            function lj_acp2040_compareDate(start, end) {
+                if (start > end) {
+                    return false;
+                }
+                return true;
+            }
+            function lj_acp2040_invoice_dateValidator(record, name, value) {
+                if (name == 'invoice_date_from' || name == 'invoice_date_to') {
+                    var start = record.get('invoice_date_from');
+                    var end = record.get('invoice_date_to');
+          
+                    if ( !! end) {
+                        if (!lj_acp2040_compareDate(start, end)) {
+                            return '${l:START_GREATER_THAN_END}';
+                        }
+                    }
+                    return true;
+                }
+            }
+            
+            function lj_acp2040_invoice_submit_fun() {
+                var ds = $('lj_acp2040_acp_invoice_data_result_ds');
+                
+                if (!ds.validate()) {
+                  return;   
+                }
+                
+                var records = ds.getSelected();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '请选择需要提交的发票.');
+                    return;
+                }
+                Aurora.showConfirm('${l:PROMPT}', '确定提交所选择的发票吗？', function() {
+                    var datas = [];
+                    for (var i = 0;i < records.length;i++) {
+                        var data = {
+                            'acp_web_invoice_id': records[i].get('acp_web_invoice_id')
+                        };
+                        datas.push(data);
+                    }
+                    Aurora.Masker.mask(Ext.getBody());
+                    Aurora.request({
+                        url: $('lj_acp2040_invoice_submit_link').getUrl(),
+                        para: datas,
+                        success: function(res) {
+                            ds.query();
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        failure: function(res) {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        error: function(res) {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        scope: this
+                    });
+                });
+            }
+            
+            function validateInvoiceAmount(record, name, value) {
+			    if(value > record.get('can_invoice_amount')) {
+			      return '发票金额不能大于可开票金额';   
+			    }
+			    return true;
+			}
+            
+            function lj_acp2040_addFunction(ds,record,index){
+               record.set('currency','CNY');
+               record.set('currency_name','人民币');
+            }
+            
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="lj_acp2040_acp_invoice_data_status_ds" lookupCode="LJ_ACP_INVOICE_STATUS"/>
+            <a:dataSet id="currency_code_list">
+                <a:datas datasource="/model/currency_code_list"/>
+            </a:dataSet>
+            <a:dataSet id="lj_acp2040_acp_invoice_data_query_ds">
+                <a:fields>
+                    <a:field name="company_name" autoComplete="true" autoCompleteField="company_full_name" lovHeight="500" lovService="public.fnd_cooperative_company_by_supply_lov" lovWidth="500" title="FND_COMPANIES.QUERY">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_full_name" to="company_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="invoice_status_display" displayField="code_value_name" options="lj_acp2040_acp_invoice_data_status_ds" returnField="invoice_status" valueField="code_value"/>
+                    <a:field name="invoice_date_from" validator="lj_acp2040_invoice_dateValidator"/>
+                    <a:field name="invoice_date_to" validator="lj_acp2040_invoice_dateValidator"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="lj_acp2040_acp_invoice_data_result_ds" autoCount="true" autoPageSize="true" autoQuery="true" model="cux.LJBB.acp.LJ_ACP2040.lj_acp_invoice_data" queryDataSet="lj_acp2040_acp_invoice_data_query_ds" queryUrl="${/request/@context_path}/autocrud/cux.LJBB.acp.LJ_ACP2040.lj_acp_invoice_data/query" selectable="true">
+                <a:fields>
+                    <a:field name="invoice_number" readOnly="true"/>
+                    <a:field name="owner_company_name" autoComplete="true" autoCompleteField="company_full_name" lovHeight="500" lovService="public.fnd_cooperative_company_by_supply_lov" lovWidth="500" required="true" title="FND_COMPANIES.QUERY">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_full_name" to="owner_company_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="bill_number" autoComplete="true" autoCompleteField="bill_number" lovHeight="500" lovService="cux.LJBB.acp.LJ_ACP_PUBLIC.lj_acp_bill_data_lov" lovWidth="660" required="true" title="对账单">
+                        <a:mapping>
+                            <a:map from="bill_number" to="bill_number"/>
+                            <a:map from="current_month_invoice_amount" to="current_month_invoice_amount"/>
+                            <a:map from="invoiced_amount" to="invoiced_amount"/>
+                            <a:map from="can_invoice_amount" to="can_invoice_amount"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="current_month_invoice_amount" readOnly="true"/>
+                    <a:field name="invoiced_amount" readOnly="true"/>
+                    <a:field name="can_invoice_amount" readOnly="true"/>
+                    <a:field name="invoice_date" required="true"/>
+                    <a:field name="tax_number" required="true"/>
+                    <a:field name="invoice_amount" required="true"/>
+                    <a:field name="currency_name" displayfield="currency_name" options="currency_code_list" prompt="ACP_ACP_REQUISITION_HDS.CURRENCY_CODE" readOnly="true" required="true" returnField="currency" valueField="currency_code"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="lj_acp2040_addFunction"/>
+                    <a:event name="submitsuccess" handler="lj_acp2040_queryFunction"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:gridButton bind="lj_acp2040_acp_invoice_data_result_ds_grid" style="margin-left:20px;" type="add" width="100"/>
+                <a:gridButton bind="lj_acp2040_acp_invoice_data_result_ds_grid" style="margin-left:20px;" type="save" width="100"/>
+                <a:toolbarButton click="lj_acp2040_invoice_submit_fun" text="提交" width="100"/>
+                <a:gridButton bind="lj_acp2040_acp_invoice_data_result_ds_grid" style="margin-left:20px;" type="delete" width="100"/>
+            </a:screenTopToolbar>
+            <a:queryForm id="lj_acp2040_acp_invoice_data_queryForm" bindTarget="lj_acp2040_acp_invoice_data_query_ds" resultTarget="lj_acp2040_acp_invoice_data_result_ds" style="border:none">
+                <a:formToolBar>
+                    <a:textField style="width:100%;display:none"/>
+                    <a:hBox labelWidth="100">
+                        <a:textField name="invoice_number" prompt="网上发票编号">
+                            <a:events>
+                                <a:event name="enterdown" handler="lj_acp2040_queryFunction"/>
+                            </a:events>
+                        </a:textField>
+                        <a:textField name="bill_number" prompt="对账单号">
+                            <a:events>
+                                <a:event name="enterdown" handler="lj_acp2040_queryFunction"/>
+                            </a:events>
+                        </a:textField>
+                        <a:textField name="tax_number" prompt="税务发票编号">
+                            <a:events>
+                                <a:event name="enterdown" handler="lj_acp2040_queryFunction"/>
+                            </a:events>
+                        </a:textField>
+                        <a:comboBox name="invoice_status_display" prompt="状态">
+                            <a:events>
+                                <a:event name="enterdown" handler="lj_acp2040_queryFunction"/>
+                            </a:events>
+                        </a:comboBox>
+                    </a:hBox>
+                </a:formToolBar>
+                <a:formBody style="margin-left:7px">
+                    <a:hBox labelWidth="100">
+                        <a:lov name="company_name" prompt="客户名称">
+                            <a:events>
+                                <a:event name="enterdown" handler="lj_acp2040_queryFunction"/>
+                            </a:events>
+                        </a:lov>
+                        <a:datePicker name="invoice_date_from" prompt="开票日期从">
+                            <a:events>
+                                <a:event name="enterdown" handler="lj_acp2040_queryFunction"/>
+                            </a:events>
+                        </a:datePicker>
+                        <a:datePicker name="invoice_date_to" prompt="开票日期到">
+                            <a:events>
+                                <a:event name="enterdown" handler="lj_acp2040_queryFunction"/>
+                            </a:events>
+                        </a:datePicker>
+                    </a:hBox>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="lj_acp2040_acp_invoice_data_result_ds_grid" bindTarget="lj_acp2040_acp_invoice_data_result_ds" marginHeight="180" marginWidth="65" navBar="true">
+                <a:columns>
+                    <a:column name="status_dis" align="center" prompt="状态" sortable="true" width="60"/>
+                    <a:column name="invoice_number" align="center" prompt="网上发票编号" sortable="true" width="90"/>
+                    <a:column name="owner_company_name" editor="lj_acp2040_lov" prompt="客户名称" width="120"/>
+                    <a:column name="bill_number" align="center" editor="lj_acp2040_lov" prompt="对账单号" sortable="true" width="90"/>
+                    <a:column name="current_month_invoice_amount" align="right" prompt="本期应开票金额" renderer="Aurora.formatMoney" width="80"/>
+                    <a:column name="invoiced_amount" align="right" prompt="已开票金额" renderer="Aurora.formatMoney" width="80"/>
+                    <a:column name="can_invoice_amount" align="right" prompt="可开票金额" renderer="Aurora.formatMoney" width="80"/>
+                    <a:column name="invoice_date" editor="lj_acp2040_dp" prompt="发票日期" renderer="Aurora.formatDate" width="70"/>
+                    <a:column name="tax_number" align="center" editor="lj_acp2040_tf" prompt="税务发票编号" sortable="true" width="80"/>
+                    <a:column name="discount_amount" align="right" editor="lj_acp2040_nf" prompt="票折金额" renderer="Aurora.formatMoney" width="80"/>
+                    <a:column name="invoice_amount" align="right" editor="lj_acp2040_nf" prompt="发票金额" renderer="Aurora.formatMoney" sortable="true" width="80"/>
+                    <a:column name="currency_name" align="center" editor="lj_acp2040_cob" prompt="币种" sortable="true" width="60"/>
+                </a:columns>
+                <a:editors>
+                    <a:textField id="lj_acp2040_tf"/>
+                    <a:lov id="lj_acp2040_lov"/>
+                    <a:numberField id="lj_acp2040_nf"/>
+                    <a:comboBox id="lj_acp2040_cob"/>
+                    <a:datePicker id="lj_acp2040_dp"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

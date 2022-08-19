@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: zhouweijia
+    $Date: 2018-5-22 下午14:28:26
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="false">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    h.contract_header_id,                     --框架合同头ID
+                    h.contract_number frame_agreement_number, --框架协议编号
+                    h.company_id,                             --公司
+                    (SELECT
+                        f.company_full_name
+                    FROM
+                        fnd_companies_vl f
+                    WHERE
+                        f.company_id = h.company_id
+                    ) owner_company_desc, --公司
+                    h.vendor_id,
+                    (SELECT
+                        s.company_full_name
+                    FROM
+                        fnd_companies_vl s
+                    WHERE
+                        s.company_id = h.contract_object_id
+                    ) vendor_company_desc,
+                    l.item_id,
+                    l.contract_object_line_code item_code,
+                    l.contract_object_line_name item_desc,
+                    TO_CHAR(h.effective_date, 'yyyy-mm-dd') submit_date, --报价时间-->提交时间
+                    TO_CHAR(h.start_date, 'yyyy-mm-dd') date_from,
+                    TO_CHAR(h.end_date, 'yyyy-mm-dd') date_to,
+                    l.primary_quantity  quantity,              --数量
+                    (SELECT fuc.uom_desc FROM fnd_uom_codes_vl fuc WHERE fuc.uom_id = l.uom_id) unit_meas_lookup_code, 
+                    h.currency_code,         --币种
+                    (SELECT
+                        curr.currency_name
+                    FROM
+                        gld_currency_bg_v curr
+                    WHERE
+                        curr.currency_code  = h.currency_code AND
+                        curr.business_group = 'BG00000101'
+                    ) AS currency_name,
+                    (SELECT fttcbv.tax_type_id   FROM fnd_tax_type_codes_bg_v fttcbv  WHERE fttcbv.tax_type_id = l.TAX_TYPE_ID    and fttcbv.bg_enabled_flag = 'Y') tax_rate,
+                    l.attribute2 unit_price,  --含税单价
+                    (SELECT fttcbv.tax_type_name   FROM fnd_tax_type_codes_bg_v fttcbv  WHERE fttcbv.tax_type_id = l.TAX_TYPE_ID    and fttcbv.bg_enabled_flag = 'Y') bg_tax_type_code,
+                    'KJXY' type_code, --数据来源KJXY
+                    '框架协议' type_desc,
+                    '' brand_name, --品牌名
+                    NULL   model,       --规格型号
+                    l.attribute10 warranty,    --质保期
+                    l.contract_object_line_id
+                FROM
+                    con_contract_headers h,
+                    con_contract_object_lines l #WHERE_CLAUSE#
+                ORDER BY
+                    h.contract_header_id DESC
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+        		BEGIN
+        		      pur_quotation_result_pkg.create_result_by_req(p_requestion_header_id => ${@header_id},
+                                                p_requestion_line_id => ${@line_id},
+                                                p_current_quantity => ${@current_quantity},
+                                                p_current_uom_code => ${@current_uom_code},
+                                                p_history_quotation_result_id => ${@quotation_result_id},
+        		    							p_user_id =>${/session/@user_id});
+        		END;
+    		]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter expression="h.contract_header_id = l.contract_header_id(+)"/>
+        <bm:data-filter expression="h.attribute5 = &apos;Y&apos;"/>
+        <bm:data-filter expression="h.status = &apos;EFFECTED&apos;"/>
+        <bm:data-filter expression="EXISTS(SELECT 1 FROM fnd_user_authority a WHERE a.authority_type = &apos;COMPANY&apos; AND a.assign_id = h.company_id AND a.user_id = ${/session/@user_id})"/>
+        <bm:data-filter expression="NOT EXISTS (select 1  from pur_catelog_items_vl m where m.data_source like &apos;%KJXY%&apos; and m.data_source_id=l.contract_object_line_id)"/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field name="item_code" queryExpression="l.item_code like &apos;%&apos;|| ${@item_code} || &apos;%&apos;"/>
+        <bm:query-field name="item_desc" queryExpression="l.item_desc like &apos;%&apos;|| ${@item_desc} || &apos;%&apos;"/>
+        <!-- <bm:query-field name="item_category_id" queryExpression="r.item_category_id = ${@item_category_id}"/> -->
+        <bm:query-field name="date_from" queryExpression="h.start_date &gt;= to_date(${@date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="date_to" queryExpression="h.end_date &lt;= to_date(${@date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="vendor_company_desc" queryExpression="owner_company_desc like &apos;%&apos; || ${@owner_company_desc}|| &apos;%&apos;"/>
+        <bm:query-field name="price_from" queryExpression="l.unit_price &gt;= ${@price_from}"/>
+        <bm:query-field name="price_to" queryExpression="l.unit_price &lt;= ${@price_to}"/>
+        <bm:query-field name="brand_name" queryExpression="l.brand_name like &apos;%&apos;|| ${@brand_name} || &apos;%&apos;"/>
+        <bm:query-field name="model" queryExpression="l.model like &apos;%&apos;|| ${@model} || &apos;%&apos;"/>
+        <bm:query-field name="warranty" queryExpression="(trunc(l.end_date) - trunc(SYSDATE)) &lt;= ${@warranty}"/>
+        <bm:query-field name="frame_agreement_number" queryExpression="h.frame_agreement_number= ${@frame_agreement_number}"/>
+    </bm:query-fields>
+</bm:model>

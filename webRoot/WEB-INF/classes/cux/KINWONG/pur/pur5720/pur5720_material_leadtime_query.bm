@@ -1,0 +1,269 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*
+                FROM
+                    (SELECT plc.batch_sample_lead_time sample_lead_time,
+					       plc.batch_lead_time purchase_leadtime,
+					       plc.status,
+					       (SELECT B.CODE_VALUE_NAME
+					          FROM SYS_CODES_VL A, SYS_CODE_VALUES_VL B
+					         WHERE A.CODE_ID = B.CODE_ID
+					           AND A.CODE = 'PUR_LEADTIME_STATUS'
+					           AND B.CODE_VALUE = plc.status) status_display,
+					       plc.vendor_number,
+					       plc.item_code,
+					       'ALL' company_name,
+					       '' unit_code,
+					       plc.item_name,
+			       decode((select count(1) 
+					from rcv_transactions r,
+	                      pur_lines_all    pl,
+	                      pur_headers_all  ph
+	                where r.destination_type_code = 'RECEIVING'
+	                  and r.transaction_date between add_months(sysdate, -6) AND
+	                      sysdate
+	                  and pl.es_po_line_id = r.po_line_id
+	                  and pl.pur_header_id = ph.pur_header_id
+	                  and pl.item_id = plc.item_id
+	                  and ph.vendor_code = plc.vendor_number),0,null,
+	          			(select round(avg(trunc(r.transaction_date) -
+	                                trunc(NVL(ph.erp_creation_date,
+	                                          ph.creation_date))))
+	                 from rcv_transactions r,
+	                      pur_lines_all    pl,
+	                      pur_headers_all  ph
+	                where r.destination_type_code = 'RECEIVING'
+	                  and r.transaction_date between add_months(sysdate, -6) AND
+	                      sysdate
+	                  and r.transaction_date between add_months((select transaction_date from (select r.transaction_date from rcv_transactions r,
+	                      pur_lines_all    pl,
+	                      pur_headers_all  ph
+	                where r.destination_type_code = 'RECEIVING'
+	                  and r.transaction_date between add_months(sysdate, -6) AND
+	                      sysdate
+	                  and pl.es_po_line_id = r.po_line_id
+	                  and pl.pur_header_id = ph.pur_header_id
+	                  and pl.item_id = plc.item_id
+	                  and ph.vendor_code = plc.vendor_number order by transaction_date desc) where rownum =1 ), -1) AND
+	                 (select transaction_date from (select r.transaction_date from rcv_transactions r,
+	                      pur_lines_all    pl,
+	                      pur_headers_all  ph
+	                where r.destination_type_code = 'RECEIVING'
+	                  and r.transaction_date between add_months(sysdate, -6) AND
+	                      sysdate
+	                  and pl.es_po_line_id = r.po_line_id
+	                  and pl.pur_header_id = ph.pur_header_id
+	                  and pl.item_id = plc.item_id
+	                  and ph.vendor_code = plc.vendor_number order by transaction_date desc) where rownum =1 )
+	                  and pl.es_po_line_id = r.po_line_id
+	                  and pl.pur_header_id = ph.pur_header_id
+	                  and pl.item_id = plc.item_id
+	                  and ph.vendor_code = plc.vendor_number)) diffday,
+					       (select batch_lead_time
+					          from (select m.batch_lead_time
+					                  from pur_leadtime_material m
+					                 where m.vendor_number = plc.vendor_number
+					                   and m.item_id = plc.item_id
+					                   and m.status = '50_APPROVED'
+					                 order by m.creation_date desc)
+					         where rownum = 1) last_purchase_leadtime,
+					       (select batch_sample_lead_time
+					          from (select m.batch_sample_lead_time
+					                  from pur_leadtime_material m
+					                 where m.vendor_number = plc.vendor_number
+					                   and m.item_id = plc.item_id
+					                   and m.status = '50_APPROVED'
+					                 order by m.creation_date desc)
+					         where rownum = 1) last_sample_lead_time,
+					         pv.attribute22 jx_pur_kw,
+	                         pv.attribute23 lc_pur_kw,
+	                         pv.attribute24 fs_pur_kw,
+	                         pv.attribute25 glg_pur_kw,
+	                         pv.attribute26 ljb_pur_kw,
+	                         pv.attribute27 jx_sp_kw,
+	                         pv.attribute28 lc_sp_kw,
+	                         pv.attribute29 fs_sp_kw,
+	                         pv.attribute30 glg_sp_kw,
+	                         pv.attribute31 ljb_sp_kw 
+					  FROM pur_leadtime_material plc, pur_vendors_vl pv
+					 WHERE plc.vendor_number = pv.display_vendor_code
+					   AND nvl(plc.all_flag, 'N') = 'Y'
+					   and plc.status != '10_NEW'
+					   and pv.coop_business_group = ${/session/@business_group}
+					 group by plc.item_id,
+					          plc.vendor_number,
+					          plc.status,
+					          plc.batch_sample_lead_time,
+					          plc.batch_lead_time,
+					          plc.item_code,
+					          plc.item_name,
+					          pv.attribute22,
+                              pv.attribute23,
+                              pv.attribute24,
+                              pv.attribute25,
+                              pv.attribute26,
+                              pv.attribute27,
+                              pv.attribute28,
+                              pv.attribute29,
+                              pv.attribute30,
+                              pv.attribute31
+					union all
+					SELECT plc.batch_sample_lead_time sample_lead_time,
+					       plc.batch_lead_time purchase_leadtime,
+					       plc.status,
+					       (SELECT B.CODE_VALUE_NAME
+					          FROM SYS_CODES_VL A, SYS_CODE_VALUES_VL B
+					         WHERE A.CODE_ID = B.CODE_ID
+					           AND A.CODE = 'PUR_LEADTIME_STATUS'
+					           AND B.CODE_VALUE = plc.status) status_display,
+					       plc.vendor_number,
+					       plc.item_code,
+					       plc.unit_code,
+					       (select c.company_full_name
+					          from fnd_business_units u, fnd_companies_vl c
+					         where u.company_id = c.company_id
+					           and u.display_code = plc.unit_code) company_name,
+					       plc.item_name,
+					       decode((select count(1) 
+					from rcv_transactions r,
+	                      pur_lines_all    pl,
+	                      pur_headers_all  ph
+	                where r.destination_type_code = 'RECEIVING'
+	                  and r.transaction_date between add_months(sysdate, -6) AND
+	                      sysdate
+	                  and pl.es_po_line_id = r.po_line_id
+	                  and pl.pur_header_id = ph.pur_header_id
+	                  and pl.item_id = plc.item_id
+	                  and ph.vendor_code = plc.vendor_number),0,null,
+	          			(select round(avg(trunc(r.transaction_date) -
+	                                trunc(NVL(ph.erp_creation_date,
+	                                          ph.creation_date))))
+	                 from rcv_transactions r,
+	                      pur_lines_all    pl,
+	                      pur_headers_all  ph
+	                where r.destination_type_code = 'RECEIVING'
+	                  and r.transaction_date between add_months(sysdate, -6) AND
+	                      sysdate
+	                  and r.transaction_date between add_months((select last_update_date from (select r.last_update_date from rcv_transactions r,
+	                      pur_lines_all    pl,
+	                      pur_headers_all  ph
+	                where r.destination_type_code = 'RECEIVING'
+	                  and r.transaction_date between add_months(sysdate, -6) AND
+	                      sysdate
+	                  and pl.es_po_line_id = r.po_line_id
+	                  and pl.pur_header_id = ph.pur_header_id
+	                  and pl.item_id = plc.item_id
+	                  and ph.vendor_code = plc.vendor_number order by last_update_date desc) where rownum =1 ), -1) AND
+	                 (select last_update_date from (select r.last_update_date from rcv_transactions r,
+	                      pur_lines_all    pl,
+	                      pur_headers_all  ph
+	                where r.destination_type_code = 'RECEIVING'
+	                  and r.transaction_date between add_months(sysdate, -6) AND
+	                      sysdate
+	                  and pl.es_po_line_id = r.po_line_id
+	                  and pl.pur_header_id = ph.pur_header_id
+	                  and pl.item_id = plc.item_id
+	                  and ph.vendor_code = plc.vendor_number order by last_update_date desc) where rownum =1 )
+	                  and pl.es_po_line_id = r.po_line_id
+	                  and pl.pur_header_id = ph.pur_header_id
+	                  and pl.item_id = plc.item_id
+	                  and ph.vendor_code = plc.vendor_number)) diffday,
+					       (select batch_lead_time
+					          from (select m.batch_lead_time
+					                  from pur_leadtime_material m
+					                 where m.vendor_number = plc.vendor_number
+					                   and m.item_id = plc.item_id
+					                   and m.unit_code = plc.unit_code
+					                   and m.status = '50_APPROVED'
+					                 order by m.creation_date desc)
+					         where rownum = 1) last_purchase_leadtime,
+					       (select batch_sample_lead_time
+					          from (select m.batch_sample_lead_time
+					                  from pur_leadtime_material m
+					                 where m.vendor_number = plc.vendor_number
+					                   and m.item_id = plc.item_id
+					                    and m.unit_code = plc.unit_code
+					                   and m.status = '50_APPROVED'
+					                 order by m.creation_date desc)
+					         where rownum = 1) last_sample_lead_time,
+					         pv.attribute22 jx_pur_kw,
+	                         pv.attribute23 lc_pur_kw,
+	                         pv.attribute24 fs_pur_kw,
+	                         pv.attribute25 glg_pur_kw,
+	                         pv.attribute26 ljb_pur_kw,
+	                         pv.attribute27 jx_sp_kw,
+	                         pv.attribute28 lc_sp_kw,
+	                         pv.attribute29 fs_sp_kw,
+	                         pv.attribute30 glg_sp_kw,
+	                         pv.attribute31 ljb_sp_kw 
+					  FROM pur_leadtime_material plc, pur_vendors_vl pv
+					 WHERE plc.vendor_number = pv.display_vendor_code 
+					   AND nvl(plc.all_flag, 'N') = 'N'
+					   and plc.status != '10_NEW'
+                       and pv.coop_business_group = ${/session/@business_group}
+                    ) v #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+                begin
+                   kw_pur_leadtime_pkg.update_pur_leadtime_material(p_batch_lead_time       => ${@purchase_leadtime},
+                                                                    p_batch_sample_lead_time=> ${@sample_lead_time}, 
+							                                        p_vendor_number         => ${@vendor_number}, 
+							                                        p_item_code             => ${@item_code}, 
+							                                        p_sup_remark            => ${@sup_remark}, 
+							                                        p_status                => ${@status}, 
+							                                        p_jx_pur_kw             => ${@jx_pur_kw}, 
+							                                        p_lc_pur_kw             => ${@lc_pur_kw}, 
+							                                        p_fs_pur_kw             => ${@fs_pur_kw}, 
+							                                        p_glg_pur_kw            => ${@glg_pur_kw}, 
+							                                        p_ljb_pur_kw            => ${@ljb_pur_kw}, 
+							                                        p_jx_sp_kw              => ${@jx_pur_kw}, 
+							                                        p_lc_sp_kw              => ${@lc_pur_kw}, 
+							                                        p_fs_sp_kw              => ${@fs_pur_kw}, 
+							                                        p_glg_sp_kw             => ${@glg_pur_kw}, 
+							                                        p_ljb_sp_kw             => ${@ljb_pur_kw}, 
+							                                        p_user_id	   			=> ${/session/@user_id});
+                end;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+                begin
+                   kw_pur_leadtime_pkg.submit_pur_leadtime_material(p_vendor_number   => ${@vendor_number},
+							                                        p_item_code             => ${@item_code}, 
+							                                        p_status                => ${@status}, 
+                                                                    p_user_id         => ${/session/@user_id});
+                end;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:update-sql><![CDATA[
+                begin
+                   kw_pur_leadtime_pkg.save_leadtime_vendor(p_vendor_number   => ${@vendor_number},
+							                                        p_jx_pur_kw             => ${@jx_pur_kw}, 
+							                                        p_lc_pur_kw             => ${@lc_pur_kw}, 
+							                                        p_fs_pur_kw             => ${@fs_pur_kw}, 
+							                                        p_glg_pur_kw            => ${@glg_pur_kw}, 
+							                                        p_ljb_pur_kw            => ${@ljb_pur_kw}, 
+							                                        p_jx_sp_kw              => ${@jx_pur_kw}, 
+							                                        p_lc_sp_kw              => ${@lc_pur_kw}, 
+							                                        p_fs_sp_kw              => ${@fs_pur_kw}, 
+							                                        p_glg_sp_kw             => ${@glg_pur_kw}, 
+							                                        p_ljb_sp_kw             => ${@ljb_pur_kw}, 
+                                                                    p_user_id         => ${/session/@user_id});
+                end;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="item_code" queryExpression="v.item_code like &apos;%&apos;||trim(${@item_code})||&apos;%&apos;"/>
+        <bm:query-field name="item_name" queryExpression="v.item_name like &apos;%&apos;||trim(${@item_name})||&apos;%&apos;"/>
+        <bm:query-field name="unit_code" queryExpression="v.company_name like &apos;%&apos;||trim(${@unit_code})||&apos;%&apos;"/>
+        <bm:query-field name="status" queryExpression="v.status = ${@status}"/>
+    </bm:query-fields>
+</bm:model>

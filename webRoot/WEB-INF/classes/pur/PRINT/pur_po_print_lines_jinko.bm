@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" alias="t1" defaultOrderBy="t1.line_num,t1.shipment_num">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    t1.*,
+                    rownum rn,
+                   (original_sum_amount-sum_amount) tax_sum_amount
+                FROM
+                    (SELECT
+                        pla.pur_header_id,
+                        pla.pur_line_id,
+                        pll.pur_line_location_id,
+                        pla.line_num,
+                        pll.shipment_num,
+                        pla.item_id,
+                        pla.item_code,
+                        pla.item_description,
+                        fnd_document_control_pkg.get_reality_value(p_rule_code => 'PRICE_SECRECY', p_role_id => ${/session/@role_id}, p_foundation_code => 'PUR_PO', p_document_id => pha.pur_header_id, p_control_area => 'EXTERNAL', p_business_group => ${/session/@business_group}, p_value => pla.original_unit_price) unit_price,
+                        DECODE(pha.type_lookup_code,'BLANKET', fnd_document_control_pkg.get_reality_value(p_rule_code => 'PRICE_SECRECY', p_role_id => ${/session/@role_id}, p_foundation_code => 'PUR_PO', p_document_id => pha.pur_header_id, p_control_area => 'EXTERNAL', p_business_group => ${/session/@business_group}, p_value => pll.quantity * pla.original_unit_price), NVL(TRUNC((pll.quantity/pla.quantity)*pla.TAX_AMOUNT_1,2), fnd_document_control_pkg.get_reality_value(p_rule_code => 'PRICE_SECRECY', p_role_id => ${/session/@role_id}, p_foundation_code => 'PUR_PO', p_document_id => pha.pur_header_id, p_control_area => 'EXTERNAL', p_business_group => ${/session/@business_group}, p_value => pll.quantity * pla.original_unit_price))) AS line_amount,
+                        pll.quantity,
+                        pla.unit_meas_lookup_code,
+                        TO_CHAR(pll.need_by_date, 'YYYY-MM-DD') need_by_date,
+                        NVL(DECODE(pha.type_lookup_code,'ZTH','Y',''),' ') return_flag,
+                        NVL(NVL(pla.ean_code,
+                        (SELECT
+                            msi.used_item_code
+                        FROM
+                            mtl_system_items msi
+                        WHERE
+                            msi.item_id = pla.item_id
+                        )),' ') ean_code,
+                        DECODE(pla.is_returned_flag,'N',' ',pla.is_returned_flag) is_returned_flag,
+                        (SELECT
+                            tc.bg_tax_type_rate
+                        FROM
+                            fnd_tax_type_codes_bg tc
+                        WHERE
+                            tc.tax_type_id    = NVL(pll.tax_code_id, pla.tax_code_id) AND
+                            tc.business_group = pha.owner_business_group
+                        ) tax_rate,
+                         fnd_document_control_pkg.get_reality_value(p_rule_code => 'PRICE_SECRECY', p_role_id => ${/session/@role_id}, p_foundation_code => 'PUR_PO', p_document_id => pha.pur_header_id, p_control_area => 'INTERNAL', p_business_group => ${/session/@business_group}, p_value =>
+                        (SELECT
+                            SUM(DECODE(pha.type_lookup_code,'BLANKET',(l.unit_price * pll.quantity), 
+                        decode(l.quantity,0,(l.unit_price * pll.quantity),null,(l.unit_price * pll.quantity),nvl(trunc((pll.quantity/l.quantity)*l.NO_TAX_AMOUNT,2),(l.unit_price * pll.quantity)))))
+                        FROM
+                            pur_lines_all l,
+                            pur_line_locations_all pll
+                        WHERE
+                            l.pur_line_id            = pll.pur_line_id AND
+                            l.pur_header_id          = pha.pur_header_id AND
+                            NVL(pll.cancel_flag,'N') = 'N'
+                        )) AS sum_amount,
+                         fnd_document_control_pkg.get_reality_value(p_rule_code => 'PRICE_SECRECY', p_role_id => ${/session/@role_id}, p_foundation_code => 'PUR_PO', p_document_id => pha.pur_header_id, p_control_area => 'INTERNAL', p_business_group => ${/session/@business_group}, p_value =>
+                        (SELECT
+                            SUM(DECODE(pha.type_lookup_code,'BLANKET',(l.original_unit_price * pll.quantity), 
+                        decode(l.quantity,0,(l.original_unit_price * pll.quantity),null,(l.original_unit_price * pll.quantity),nvl(trunc((pll.quantity/l.quantity)*l.TAX_AMOUNT_1,2),(l.original_unit_price * pll.quantity)))))
+                        FROM
+                            pur_lines_all l,
+                            pur_line_locations_all pll
+                        WHERE
+                            l.pur_line_id            = pll.pur_line_id AND
+                            l.pur_header_id          = pha.pur_header_id AND
+                            NVL(pll.cancel_flag,'N') = 'N'
+                        )) AS original_sum_amount,
+                        pla.line_desc
+                    FROM
+                        pur_headers_all pha,
+                        pur_lines_all pla,
+                        pur_line_locations_all pll
+                    WHERE
+                        pla.pur_line_id   = pll.pur_line_id AND
+                        pha.pur_header_id = pla.pur_header_id AND
+                        pha.cancel_flag   = 'N' AND
+                        pla.cancel_flag   = 'N' AND
+                        pll.cancel_flag   = 'N' AND
+                        pll.frozen_flag   = 'N'
+                    ORDER BY
+                        pla.line_num ASC
+                    ) t1 #WHERE_CLAUSE#
+                ORDER BY
+                    to_number(t1.line_num)
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter name="pur_header_id" expression="t1.pur_header_id=${@pur_header_id}"/>
+    </bm:data-filters>
+</bm:model>

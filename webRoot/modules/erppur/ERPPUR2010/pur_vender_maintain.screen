@@ -1,0 +1,681 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 完成（供应商信息维护） -->
+<a:screen xmlns:c="aurora.application.action" xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause=" company_id =${/parameter/@company_id} and basic_type = &apos;VENDER&apos;" model="erppur.ERPPUR2010.pur_vender_get_manual_flag" rootPath="erppur_2010_manual_flag"/>
+        <a:model-query model="erppur.ERPPUR2010.fnd_addresses" rootPath="erppur_2010_contact_info"/>
+        <!-- <a:model-query model="db.erpfnd_parameter_pkg.get_amount_precision" rootPath="erppur_2010_amount_percision"/>
+        <a:model-query model="db.erpfnd_precision_pkg.get_price_precision" rootPath="erppur_2010_price_percision"/> -->
+        <a:model-query defaultWhereClause="f.partner_id = ${/parameter/@partner_id}" model="erppur.ERPPUR2010.pur_vender_basic" rootPath="erppur_2010_basic_result_data"/>
+        <a:model-query model="erppublic.get_default_information" rootPath="erppur_2010_default_inf"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="erppur_2010_vender_contact_maintain_link" url="${/request/@context_path}/modules/erppur/ERPPUR2010/pur_vender_contact_maintain.screen"/>
+        <a:link id="erppur_2010_vender_contact_maintain_svc_link" model="erppur.ERPPUR2010.fnd_addresses" modelaction="delete"/>
+        <a:link id="erppur_2010_vender_contact_default_link" model="erppur.ERPPUR2010.pur_vender_contact_default" modelaction="update"/>
+        <script><![CDATA[
+            var erppur_2010_partner_id = '${/parameter/@partner_id}';
+            var erppur_2010_submit_flag = 'N';
+            var erppur_2010_contact_id;
+            
+            function erppur_2010_save_basic() {
+                var ds = $('erppur_2010_vender_basic_result_ds');
+                if ('${/model/erppur_2010_manual_flag/record/@manual_flag}' == 'N') {
+                    var record = ds.getAt(0);
+                    var partner_code = record.get('partner_code');
+                    if (partner_code == '${l:ERPPUR.MESSAGE11}') {
+                        record.set('partner_code', null);
+                    }
+                }
+                ds.submit();
+            } /*锁屏*/
+            
+            function erppur2010_basic_submit_lock() {
+                Aurora.Masker.mask($('erppur_vender_maintain_window').wrap, '${l:MASCLOUD.SUBMITTING}');
+            }
+            
+            /*解锁*/
+            
+            function erppur2010_basic_submit_unlock() {
+                Aurora.Masker.unmask($('erppur_vender_maintain_window').wrap);
+            }
+            
+            function erppur2010_submitsuccess(ds, res) {
+                Aurora.Masker.unmask($('erppur_vender_maintain_window').wrap);
+                var message = '${l:ERPPUR.SUCCESSFULLY_SAVED}';
+                Aurora.SideBar.enable = true;
+                Aurora.SideBar.show({
+                    msg: message,
+                    duration: 2000
+                });
+                $('erppur_2010_result_main_ds').query();
+                if (erppur_2010_submit_flag == 'Y') {
+                    var record = ds.getAt(0);
+                    record.getField('partner_code').setReadOnly(true);
+                    erppur_2010_submit_flag = 'N';
+                    $('erppur_2010_maitain_panel').setEnabled(1);
+                    $('erppur_2010_maitain_panel').setEnabled(2);
+                    erppur_2010_partner_id = res.result.record.partner_id;
+                }
+            }
+            
+            // function erppur_2010_address_rd(value, record, name) {
+            // return '<a href="javascript:erppur_2010_contact_delete(' + value + ')">${l:ORD2010.ORD_DELETE_CONTACT}</a>';
+            // }
+            
+            function erppur_2010_default_contact(address_id, partner_id, record_id) {
+                var para = {
+                    "address_id": address_id,
+                    "partner_id": partner_id
+                };
+                Aurora.request({
+                    url: $('erppur_2010_vender_contact_default_link').getUrl(),
+                    para: para,
+                    success: function(res) {
+                        var ds = $('erppur_2010_vender_contact_result_ds');
+                        var old_default_record = ds.findById(erppur_2010_contact_id);
+                        if (old_default_record) {
+                            old_default_record.set('default_flag', 'N');
+                            var default_record = ds.findById(record_id);
+                            default_record.set('default_flag', 'Y');
+                            old_default_record.commit();
+                            default_record.commit();
+                        } else {
+                            default_record = ds.findById(record_id);
+                            default_record.set('default_flag', 'Y');
+                            default_record.commit();
+                        }
+                    }
+                });
+            }
+            
+            function erppur_2010_formatMoney(value, record, name) {　　
+                //return Aurora.formatNumber(value, '${/model/erppur_2010_amount_percision/record/@value}');
+                return Aurora.formatNumber(value, '4');
+            }
+            
+            function erppur_2010_ds_update_maintain(ds, record, name, value, oldvalue) {
+                if (name == "company_id") {
+                    var metadata = record.getMeta();
+                    var f1 = metadata.getField('vender_type_desc');
+                    // var customer_type_id = '${/parameter/@customer_type_id}';
+                    if (!record.get('company_id') || record.get('company_id') == '') {
+                        f1.setLovService('');
+                    } else {
+                        f1.setLovService('erppur.ERPPUR1010.fnd_business_partner_types');
+                        f1.setLovPara('enabled_flag','Y');
+                        f1.setLovPara('company_id', record.get('company_id') || '');
+                        // f1.setLovPara('customer_type_id', customer_type_id);
+                    }
+                }
+                
+                if (name == 'province_id') {
+                    record.set('city_desc', '');
+                    record.set('district_desc', '');
+                    record.set('city_id', '');
+                    record.set('district_id', '');
+                    if (!Aurora.isEmpty(value)) {
+                        record.getField('city_desc').setLovPara('province_id', value);
+                        record.getField('city_desc').setLovService('erpsys.public.sys_region_city_lov');
+                    } else {
+                        record.getField('city_desc').setLovService('');
+                    }
+                    record.getMeta().getField('district_desc').setLovService('');
+                }
+            
+                if (name == 'city_id') {
+                    record.set('district_desc', '');
+                    record.set('district_id', '');
+                    var address_province_id = record.get('province_id');
+                    if (!Aurora.isEmpty(value)) {
+                        record.getField('district_desc').setLovPara('province_id', address_province_id);
+                        record.getField('district_desc').setLovPara('city_id', value);
+                        record.getField('district_desc').setLovService('erpsys.public.sys_region_district_lov');
+                    } else {
+                        record.getField('district_desc').setLovService('');
+                    }
+                }
+            }
+            
+            function erppur_2010_contact_ds_update(ds, record, name, value, oldvalue) {
+                if (name == 'province_id') {
+                    record.set('city_desc', '');
+                    record.set('district_desc', '');
+                    record.set('city_id', '');
+                    record.set('district_id', '');
+                    if (!Aurora.isEmpty(value)) {
+                        record.getField('city_desc').setLovPara('province_id', value);
+                        record.getField('city_desc').setLovService('erpsys.public.sys_region_city_lov');
+                    } else {
+                        record.getField('city_desc').setLovService('');
+                    }
+                    record.getMeta().getField('district_desc').setLovService('');
+                }
+            
+                if (name == 'city_id') {
+                    record.set('district_desc', '');
+                    record.set('district_id', '');
+                    var address_province_id = record.get('province_id');
+                    if (!Aurora.isEmpty(value)) {
+                        record.getField('district_desc').setLovPara('province_id', address_province_id);
+                        record.getField('district_desc').setLovPara('city_id', value);
+                        record.getField('district_desc').setLovService('erpsys.public.sys_region_district_lov');
+                    } else {
+                        record.getField('district_desc').setLovService('');
+                    }
+                }
+            }
+            
+            function erppur_2010_conatact_ds_add(ds, record) {
+                record.set('partner_id', erppur_2010_partner_id);
+            }
+            
+            function erppur_2010_item_ds_add(ds, record) {
+                //var tax_nature = '${/model/erppur_2010_default_inf/record/@tax_nature}';
+                var tax_rate = $('erppur_2010_vender_basic_result_ds').getAt(0).get('tax_rate');
+                var company_id = $('erppur_2010_vender_basic_result_ds').getAt(0).get('company_id');
+                record.set('company_id',company_id);
+                record.set('partner_id', erppur_2010_partner_id);
+                //alert('${/parameter/@company_id}');
+                /* record.set('company_id', '${/parameter/@company_id}'); */
+                
+                
+                //if (Aurora.isEmpty(tax_rate)) {
+                //record.set('tax_rate', ${/model/erppur_2010_default_inf/record/@tax_rate});
+                //} else {
+                record.set('tax_rate', tax_rate);
+                //}
+                // if (tax_nature == 'SMALL_SCALE_TAXPAYERS') {
+                // record.set('tax_include_flag', null);
+                // record.set('tax_rate', null);
+                // }
+            }
+            
+            function erppur_2010_contact_render(value, record, name) {
+                var address_id = record.get('address_id');
+                if (record.isNew) {
+                    return;
+                }
+                if (value == 'Y') {
+                    erppur_2010_contact_id = record.id;
+                    return '${l:ERPPUR.DEFAULT}';
+                }
+                var record_id = record.id;
+                return '<a href="javascript:erppur_2010_default_contact(' + address_id + ',' + erppur_2010_partner_id + ',' + record_id + ')">' + '${l:ERPPUR.SET_AS_DEFAULT}' + '</a>';
+            }
+            
+            function erppur_2010_vender_contact_add() {
+                $('erppur_2010_vender_contact_result_grid').showEditorByRecord($('erppur_2010_vender_contact_result_ds').create());
+            }
+            
+            function erppur_2010_vender_contact_delete() {
+                var records = $('erppur_2010_vender_contact_result_ds').getSelected();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:MASCLOUD.PROMPT}', '${l:ERPPUR.MESSAGE12}');
+                } else {
+                    $('erppur_2010_vender_contact_result_grid').remove();
+                }
+            }
+            
+            function erppur_2010_vender_contact_submit() {
+                $('erppur_2010_vender_contact_result_ds').submit();
+            }
+            
+            function erppur_vender_erppurchase_result_add() {
+                $('erppur_vender_erppurchase_result_grid').showEditorByRecord($('erppur_vender_erppurchase_result_ds').create());
+            }
+            
+            function erppur_vender_erppurchase_result_delete() {
+                var records = $('erppur_vender_erppurchase_result_ds').getSelected();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:MASCLOUD.PROMPT}', '${l:ERPPUR.MESSAGE12}');
+                } else {
+                    $('erppur_vender_erppurchase_result_grid').remove();
+                }
+            }
+            
+            function erppur_vender_erppurchase_result_submit() {
+                $('erppur_vender_erppurchase_result_ds').submit();
+            }
+            
+            function erppur2010_partner_code_validator(record, name, value) {
+                var partner_code = record.get('partner_code');
+                var regex = /^[\dA-Z\-]+$/;
+                if ('${/model/erppur_2010_manual_flag/record/@manual_flag}' == 'Y') {
+                    if (!regex.test(partner_code)) {
+                        return '${l:ERPPUR.MESSAGE8}';
+                    }
+                }
+                return true;
+            }
+            
+            function erppur2010_basic_tax_rate_validator(record, name, value) {
+                if (value > 100) {
+                    return '${l:ERPPUR.MESSAGE9}';
+                }
+                return true;
+            }
+            
+            function erppur_2010_grid_rowclick(grid, row, record) {
+                var province_id_con = record.get('province_id');
+                var city_id_con = record.get('city_id');
+                if (!Aurora.isEmpty(province_id_con)) {
+                    record.getField('city_desc').setLovService('erpsys.public.sys_region_city_lov');
+                    record.getField('city_desc').setLovPara('province_id', province_id_con);
+                    if (!Aurora.isEmpty(city_id_con)) {
+                        record.getField('district_desc').setLovService('erpsys.public.sys_region_district_lov');
+                        record.getField('district_desc').setLovPara('province_id', province_id_con);
+                        record.getField('district_desc').setLovPara('city_id', city_id_con);
+                    }
+                }
+            }
+            function pmtGridcellclick(grid, row, name, record) {
+                if (name == 'company_id') {
+                var metadata = record.getMeta();
+                    var f1 = metadata.getField('vender_type_desc');
+                    // var customer_type_id = '${/parameter/@customer_type_id}';
+                    if (!record.get('company_id') || record.get('company_id') == '') {
+                        f1.setLovService('');
+                    } else {
+                        f1.setLovService('erppur.ERPPUR1010.fnd_business_partner_types');
+                        f1.setLovPara('enabled_flag','Y');
+                        f1.setLovPara('company_id', record.get('company_id') || '');
+                        // f1.setLovPara('customer_type_id', customer_type_id);
+                    }
+                }
+            }
+            //采购信息 行点击事件
+            function erppur2010_gridclick(grid,row,name,record){
+                // var metadata = record.getMeta();
+                var company_id = record.get('company_id');
+                  var metadata = record.getMeta();
+                var f1 = metadata.getField('item_code');
+            
+                f1.setLovService('erpinv.public.inv_items_query_lov');
+                f1.setLovPara('enable_flag','Y');
+                f1.setLovPara('company_id', record.get('company_id') || '');
+                
+                if (name == 'currency_code') {
+                	// $('erpord_2010_currency_code_ds').setQueryParameter('warehouse_type', '(\'NORMAL\')');
+                	$('erppur_2010_currency_code_ds').setQueryParameter('enable_flag', 'Y');
+                	$('erppur_2010_currency_code_ds').setQueryParameter('company_id', company_id);
+                    $('erppur_2010_currency_code_ds').query();
+                }
+               if (name == 'trade_uom_desc'){
+                   $('erppur2010_uom_ds').setQueryParameter('enable_flag', 'Y');
+                	$('erppur2010_uom_ds').setQueryParameter('company_id', company_id);
+                    $('erppur2010_uom_ds').query();
+               }
+               
+              // if (name == 'item_code'){
+                   // $('erpord_2010_vender_purchase_result_ds').setQueryParameter('enable_flag', 'Y');
+                	// $('erpord_2010_vender_purchase_result_ds').setQueryParameter('company_id', company_id);
+                    // $('erpord_2010_vender_purchase_result_ds').query();
+               // }
+            }
+            
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="erppur2010_uom_ds" fetchAll="true" loadData="true" model="erpinv.public.inv_uom_codes_lov"/>
+            <a:dataSet id="erppur_vender_code_rule_ds" autoQuery="true" model="erppur.ERPPUR2010.pur_vender_code_rule">
+                <a:fields>
+                    <a:field name="erppur_2010_manual_flag"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="erppur_2010_trade_uom_ds" loadData="true" model="erppur.ERPPUR2010.pur_vender_trade_uom"/>
+            <a:dataSet id="erppur_2010_currency_code_ds" loadData="true" model="erpgld.public.gld_currency"/>
+            <a:dataSet id="erppur_2010_item_list" loadData="true" model="erppur.ERPPUR2010.pur_vender_item_list"/>
+            <!-- 基本信息 -->
+            <a:dataSet id="erppur_2010_vender_basic_result_ds" autoCreate="true" model="erppur.ERPPUR2010.pur_vender_basic">
+                <a:datas dataSource="/model/erppur_2010_basic_result_data"/>
+                <a:fields>
+                    <a:field name="company_id"/>
+                    <a:field name="company_code"/>
+                    <a:field name="company_name" autoComplete="true" autoCompleteSize="1" lovGridHeight="350" lovHeight="500" lovService="erppublic.fnd_company_list" lovWidth="450" required="true" title="FND1910.SELECT_COMPANY">
+                        <a:mapping>
+                            <a:map from="company_full_name" to="company_name"/>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_code" to="company_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="sys_customer_desc" readOnly="true"/>
+                    <a:field name="partner_id"/>
+                    <a:field name="partner_code" typeCase="upper" validator="erppur2010_partner_code_validator"/>
+                    <a:field name="partner_name" required="true"/>
+                    <a:field name="detail_address"/>
+                    <a:field name="enabled_flag" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                    <a:field name="customer_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="vender_flag" defaultValue="Y"/>
+                    <a:field name="management_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="province_id"/>
+                    <a:field name="city_id"/>
+                    <a:field name="district_id"/>
+                    <a:field name="province_desc" autoComplete="true" autoCompleteField="province_code_name" autoCompleteSize="1" lovGridHeight="350" lovHeight="500" lovService="erpsys.public.sys_region_province_lov" lovWidth="450" title="ERPFND1010.PROVINCE_INFO">
+                        <a:mapping>
+                            <a:map from="province_name" to="province_desc"/>
+                            <a:map from="province_id" to="province_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="city_desc" autoComplete="true" autoCompleteField="city_code_name" autoCompleteSize="1" lovGridHeight="350" lovHeight="500" lovService="erpsys.public.sys_region_city_lov" lovWidth="450" title="ERPFND1010.CITY_INFO">
+                        <a:mapping>
+                            <a:map from="city_name" to="city_desc"/>
+                            <a:map from="city_id" to="city_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="district_desc" autoComplete="true" autoCompleteField="district_code_name" autoCompleteSize="1" lovGridHeight="350" lovHeight="500" lovService="erpsys.public.sys_region_district_lov" lovWidth="500" title="ERPFND1010.COUNTRY_INFO">
+                        <a:mapping>
+                            <a:map from="district_name" to="district_desc"/>
+                            <a:map from="district_id" to="district_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="vender_type_desc" autoComplete="true" autoCompleteField="code_name" autoCompleteSize="1" lovGridHeight="350" lovHeight="500" lovLabelWidth="100" lovWidth="550" title="ERPPUR.VENDER_TYPE_DESC">
+                        <a:mapping>
+                            <a:map from="code_name" to="vender_type_desc"/>
+                            <a:map from="partner_type_id" to="vender_type_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="tax_rate" validator="erppur2010_basic_tax_rate_validator"/>
+                    <!-- defaultValue="${/model/erppur_2010_default_inf/record/@tax_rate}" -->
+                </a:fields>
+                <a:events>
+                    <a:event name="submit" handler="erppur2010_basic_submit_lock"/>
+                    <a:event name="submitfailed" handler="erppur2010_basic_submit_unlock"/>
+                    <a:event name="ajaxfailed" handler="erppur2010_basic_submit_unlock"/>
+                    <a:event name="submitsuccess" handler="erppur2010_submitsuccess"/>
+                    <a:event name="update" handler="erppur_2010_ds_update_maintain"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 采购信息 -->
+            <a:dataSet id="erppur_vender_erppurchase_result_ds" autoCreate="true" autoPageSize="true" autoQuery="true" model="erppur.ERPPUR2010.pur_vender_purchase" queryUrl="${/request/@context_path}/autocrud/erppur.ERPPUR2010.pur_vender_purchase/query?partner_id=${/parameter/@partner_id}" selectable="true">
+                <a:fields>
+                    <a:field name="company_id"/>
+                    <a:field name="currency_code" defaultValue="${/model/erppur_2010_default_inf/record/@functional_currency_code}" displayField="currency_code" options="erppur_2010_currency_code_ds" prompt="ERPFND_BUSINESS_PARTNER_ITEMS.CURRENCY_CODE" returnField="currency_code" valueField="currency_code"/>
+                    <a:field name="partner_id"/>
+                    <a:field name="item_code" autoComplete="true" autoCompleteField="item_code" lovGridHeight="300" lovHeight="430" lovWidth="500" prompt="ERPFND_BUSINESS_PARTNER_ITEMS.ITEM_CODE" required="true" title="HAP_QUERY" typeCase="upper">
+                        <a:mapping>
+                            <a:map from="item_code" to="item_code"/>
+                            <a:map from="item_name" to="item_name"/>
+                            <a:map from="item_specs" to="item_specs"/>
+                            <a:map from="item_id" to="item_id"/>
+                            <a:map from="trade_uom" to="trade_uom"/>
+                            <a:map from="trade_uom_desc" to="trade_uom_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="item_id"/>
+                    <a:field name="item_name" prompt="ERPFND_BUSINESS_PARTNER_ITEMS.ITEM_NAME" readOnly="true"/>
+                    <a:field name="item_specs" prompt="ERPFND_BUSINESS_PARTNER_ITEMS.ITEM_SPECS" readOnly="true"/>
+                    <a:field name="partner_item_code" prompt="ERPPUR.PARTNER_ITEM_CODE" typeCase="upper"/>
+                    <a:field name="partner_item_name" prompt="ERPPUR.PARTNER_ITEM_NAME"/>
+                    <a:field name="trade_uom_desc" displayField="uom_description" options="erppur2010_uom_ds" prompt="ERPFND_BUSINESS_PARTNER_ITEMS.TRADE_UOM_DESC" required="true">
+                        <a:mapping>
+                            <a:map from="uom_description" to="trade_uom_desc"/>
+                            <a:map from="uom_code" to="trade_uom"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="trade_uom"/>
+                    <a:field name="tax_include_flag" checkedValue="Y" prompt="ERPFND_BUSINESS_PARTNER_ITEMS.TAX_INCLUDE_FLAG" uncheckedValue="N"/>
+                    <!-- defaultValue="${/model/erppur_2010_default_inf/record/@tax_included_flag}" -->
+                    <a:field name="tax_rate" prompt="ERPFND_BUSINESS_PARTNER_ITEMS.TAX_RATE"/>
+                    <a:field name="tax_code_id"/>
+                    <a:field name="tax_code_desc" autoComplete="true" autoCompleteField="tax_type_code" autoCompleteSize="1" lovGridHeight="320" lovHeight="450" lovService="public.fnd_tax_type_code_lov?business_group=${/session/@business_group}" lovWidth="500" required="true" title="税率查询">
+                        <a:mapping>
+                            <a:map from="tax_type_id" to="tax_code_id"/>
+                            <a:map from="description" to="tax_code_desc"/>
+                            <a:map from="tax_type_rate" to="tax_rate"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="price" prompt="ERPFND_BUSINESS_PARTNER_ITEMS.PRICE"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="erppur_2010_item_ds_add"/>
+                    <a:event name="submit" handler="erppur2010_basic_submit_lock"/>
+                    <a:event name="submitfailed" handler="erppur2010_basic_submit_unlock"/>
+                    <a:event name="ajaxfailed" handler="erppur2010_basic_submit_unlock"/>
+                    <a:event name="submitsuccess" handler="erppur2010_basic_submit_unlock"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 联系信息 -->
+            <a:dataSet id="erppur_2010_vender_contact_result_ds" autoPageSize="true" autoQuery="true" model="erppur.ERPPUR2010.fnd_addresses" queryUrl="${/request/@context_path}/autocrud/erppur.ERPPUR2010.fnd_addresses/query?partner_id=${/parameter/@partner_id}" selectable="true">
+                <a:fields>
+                    <a:field name="company_id"/>
+                    <a:field name="address_id"/>
+                    <a:field name="contact_name" required="true"/>
+                    <a:field name="province_id"/>
+                    <a:field name="city_id"/>
+                    <a:field name="district_id"/>
+                    <a:field name="province_desc" autoComplete="true" autoCompleteField="province_code_name" autoCompleteSize="1" lovGridHeight="350" lovHeight="500" lovService="erpsys.public.sys_region_province_lov" lovWidth="450" title="ERPFND1010.PROVINCE_INFO">
+                        <a:mapping>
+                            <a:map from="province_name" to="province_desc"/>
+                            <a:map from="province_id" to="province_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="city_desc" autoComplete="true" autoCompleteField="city_code_name" autoCompleteSize="1" lovGridHeight="350" lovHeight="500" lovService="erpsys.public.sys_region_city_lov" lovWidth="450" title="ERPFND1010.CITY_INFO" typeCase="upper">
+                        <a:mapping>
+                            <a:map from="city_name" to="city_desc"/>
+                            <a:map from="city_id" to="city_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="district_desc" autoComplete="true" autoCompleteField="district_code_name" autoCompleteSize="1" lovGridHeight="350" lovHeight="500" lovService="erpsys.public.sys_region_district_lov" lovWidth="500" title="ERPFND1010.COUNTRY_INFO" typeCase="upper">
+                        <a:mapping>
+                            <a:map from="district_name" to="district_desc"/>
+                            <a:map from="district_id" to="district_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="address"/>
+                    <a:field name="post_code"/>
+                    <a:field name="phone_number"/>
+                    <a:field name="mobile_phone"/>
+                    <a:field name="fax_number"/>
+                    <a:field name="email"/>
+                    <a:field name="default_flag" defaultValue="N"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="erppur_2010_contact_ds_update"/>
+                    <a:event name="add" handler="erppur_2010_conatact_ds_add"/>
+                    <a:event name="submit" handler="erppur2010_basic_submit_lock"/>
+                    <a:event name="submitfailed" handler="erppur2010_basic_submit_unlock"/>
+                    <a:event name="ajaxfailed" handler="erppur2010_basic_submit_unlock"/>
+                    <a:event name="submitsuccess" handler="erppur2010_basic_submit_unlock"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:popupScreen>
+            <a:tabPanel id="erppur_2010_maitain_panel" marginHeight="55" marginWidth="50">
+                <a:tabs>
+                    <!-- 基本信息 -->
+                    <a:tab prompt="ERPPUR2010.ERPPUR_BASIC_INFORMATION" width="100">
+                        <a:screenTopToolbar>
+                            <a:toolbarButton className="item-rbtn-blue button-save" click="erppur_2010_save_basic" style="margin-left:20px;" text="PROMPT.SAVE" width="100"/>
+                        </a:screenTopToolbar>
+                        <a:hBox>
+                            <a:lov name="company_name" bindTarget="erppur_2010_vender_basic_result_ds" prompt="ERPFND.COMPANY_DESC" width="210"/>
+                        </a:hBox>
+                        <a:hBox>
+                            <a:textField name="partner_code" bindTarget="erppur_2010_vender_basic_result_ds" maxLength="15" prompt="ERPPUR2010.ERPPUR_VENDER_CODE" typeCase="upper" width="210"/>
+                            <a:vBox labelWidth="150">
+                                <a:checkBox name="customer_flag" bindTarget="erppur_2010_vender_basic_result_ds" prompt="ERPPUR2010.ERPPUR_VENDER_CUSTOMER_FLAG"/>
+                            </a:vBox>
+                        </a:hBox>
+                        <a:hBox>
+                            <a:textField name="partner_name" bindTarget="erppur_2010_vender_basic_result_ds" maxLength="1000" prompt="ERPPUR2010.ERPPUR_VENDER_NAME" width="383"/>
+                        </a:hBox>
+                        <a:hBox>
+                            <a:textField name="sys_customer_desc" bindTarget="erppur_2010_vender_basic_result_ds" prompt="ERPFND_BUSINESS_PARTNERS.SYS_CUSTOMER_DESC" width="383"/>
+                        </a:hBox>
+                        <a:hBox>
+                            <a:lov name="vender_type_desc" bindTarget="erppur_2010_vender_basic_result_ds" prompt="ERPFND_BUSINESS_PARTNERS.VENDER_TYPE_DESC" width="217"/>
+                            <a:hBox id="erppur2010_basic_tax_rate_div">
+                                <a:numberField name="tax_rate" id="erppur2010_basic_tax_rate" allowNegative="false" bindTarget="erppur_2010_vender_basic_result_ds" decimalPrecision="2" prompt="ERPFND_BUSINESS_PARTNERS.TAX_RATE" width="80"/>
+                                <!-- decimalPrecision="${/model/erppur_2010_amount_percision/record/@value}" -->
+                                <div><![CDATA[%]]></div>
+                            </a:hBox>
+                        </a:hBox>
+                        <a:hBox>
+                            <a:lov name="province_desc" bindTarget="erppur_2010_vender_basic_result_ds" prompt="ERPFND_BUSINESS_PARTNERS.PROVINCE_DESC" width="100"/>
+                            <div><![CDATA[${l:ERPFND_COMPANIES.ADDRESS_PROVINCE}]]></div>
+                            <a:lov name="city_desc" bindTarget="erppur_2010_vender_basic_result_ds" prompt="" width="100"/>
+                            <div><![CDATA[${l:ERPFND_COMPANIES.ADDRESS_CITY}]]></div>
+                            <a:lov name="district_desc" bindTarget="erppur_2010_vender_basic_result_ds" prompt="" width="100"/>
+                            <div><![CDATA[${l:ERPFND_COMPANIES.ADDRESS_COUNTY}]]></div>
+                            <a:textField name="detail_address" bindTarget="erppur_2010_vender_basic_result_ds" defaultQueryHint="ERPFND_BUSINESS_PARTNERS.DETAIL_ADDRESS" prompt="" width="249"/>
+                        </a:hBox>
+                        <a:hBox>
+                            <a:textField name="legal_representative" bindTarget="erppur_2010_vender_basic_result_ds" prompt="ERPFND_BUSINESS_PARTNERS.LEGAL_REPRESENTATIVE" width="150"/>
+                            <a:textField name="tax_number" bindTarget="erppur_2010_vender_basic_result_ds" prompt="ERPFND_BUSINESS_PARTNERS.TAX_NUMBER" width="150"/>
+                        </a:hBox>
+                        <a:hBox>
+                            <a:textField name="bank_name" bindTarget="erppur_2010_vender_basic_result_ds" prompt="ERPFND_BUSINESS_PARTNERS.BANK_NAME" width="150"/>
+                            <a:textField name="bank_account" bindTarget="erppur_2010_vender_basic_result_ds" prompt="ERPFND_BUSINESS_PARTNERS.BANK_ACCOUNT" width="150"/>
+                        </a:hBox>
+                        <a:hBox>
+                            <a:textField name="homepage" bindTarget="erppur_2010_vender_basic_result_ds" prompt="ERPFND_BUSINESS_PARTNERS.HOMEPAGE" width="383"/>
+                        </a:hBox>
+                        <a:hBox labelWidth="100">
+                            <a:checkBox name="management_flag" bindTarget="erppur_2010_vender_basic_result_ds" prompt="ERPFND_BUSINESS_PARTNERS.MANAGEMENT_FLAG"/>
+                            <a:checkBox name="enabled_flag" bindTarget="erppur_2010_vender_basic_result_ds" prompt="ERPFND_BUSINESS_PARTNERS.ENABLED_FLAG"/>
+                        </a:hBox>
+                        <a:events>
+                            <a:event name="cellclick" handler="pmtGridcellclick"/>
+                        </a:events>
+                    </a:tab>
+                    <!-- 联系信息 -->
+                    <a:tab prompt="ERPPUR2010.ERPPUR_CONTACT_INF" width="100">
+                        <a:screenTopToolbar>
+                            <a:gridButton bind="erppur_2010_vender_contact_result_grid" style="margin-left:20px;" text="PROMPT.ADD" type="add" width="100"/>
+                            <a:gridButton bind="erppur_2010_vender_contact_result_grid" text="PROMPT.SAVE" type="save" width="100"/>
+                            <a:gridButton bind="erppur_2010_vender_contact_result_grid" text="PROMPT.DELETE" type="delete" width="100"/>
+                        </a:screenTopToolbar>
+                        <a:grid id="erppur_2010_vender_contact_result_grid" bindTarget="erppur_2010_vender_contact_result_ds" height="355" marginHeight="127" marginWidth="54" navbar="true" width="855">
+                            <a:columns>
+                                <a:column name="contact_name" editor="erppur_2010_contact_tef" width="80"/>
+                                <a:column name="default_flag" prompt="ERPFND_ADDRESSES.DEFAULT_FLAG" renderer="erppur_2010_contact_render" width="50"/>
+                                <a:column prompt="ERPFND_ADDRESSES.CONTACT_ADDRESS">
+                                    <a:column name="province_desc" editor="erppur_2010_cantact_lov" prompt="ERPFND_ADDRESSES.PROVINCE_DESC" width="50"/>
+                                    <a:column name="city_desc" editor="erppur_2010_cantact_lov" prompt="ERPFND_ADDRESSES.CITY_DESC" width="50"/>
+                                    <a:column name="district_desc" editor="erppur_2010_cantact_lov" prompt="ERPFND_ADDRESSES.DISTRICT_DESC" width="50"/>
+                                    <a:column name="address" editor="erppur_2010_contact_tef" width="110"/>
+                                </a:column>
+                                <a:column name="post_code" editor="erppur_2010_contact_tef" width="70"/>
+                                <a:column name="phone_number" editor="erppur_2010_contact_tef" width="70"/>
+                                <a:column name="mobile_phone" editor="erppur_2010_contact_tef" width="70"/>
+                                <a:column name="fax_number" editor="erppur_2010_contact_tef" width="70"/>
+                                <a:column name="email" editor="erppur_2010_contact_tef" width="90"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:lov id="erppur_2010_cantact_lov"/>
+                                <a:numberField id="erppur_2010_cantact_nbf" allowDecimals="false" allowNegative="false"/>
+                                <a:comboBox id="erppur_2010_cantact_cmb"/>
+                                <a:textField id="erppur_2010_contact_tef"/>
+                            </a:editors>
+                            <a:events>
+                                <a:event name="rowclick" handler="erppur_2010_grid_rowclick"/>
+                            </a:events>
+                        </a:grid>
+                    </a:tab>
+                    <!-- 采购信息 -->
+                    <a:tab id="erppur_vender_tab_id" prompt="ERPPUR2010.ERPPUR_VENDER_INF" width="100">
+                        <a:screenTopToolbar>
+                            <a:gridButton bind="erppur_vender_erppurchase_result_grid" style="margin-left:20px;" text="PROMPT.ADD" type="add" width="100"/>
+                            <a:gridButton bind="erppur_vender_erppurchase_result_grid" text="PROMPT.SAVE" type="save" width="100"/>
+                            <a:gridButton bind="erppur_vender_erppurchase_result_grid" text="PROMPT.DELETE" type="delete" width="100"/>
+                        </a:screenTopToolbar>
+                        <a:grid id="erppur_vender_erppurchase_result_grid" bindtarget="erppur_vender_erppurchase_result_ds" height="355" marginHeight="127" marginWidth="54" navbar="true" width="855">
+                            <a:columns>
+                                <a:column name="item_code" editor="erppur_2010_maintain_lov" width="100"/>
+                                <a:column name="item_name" width="100"/>
+                                <a:column name="item_specs" width="50"/>
+                                <a:column name="partner_item_code" editor="erppur_2010_text_Field1" width="100"/>
+                                <a:column name="partner_item_name" editor="erppur_2010_text_Field1" width="100"/>
+                                <a:column name="trade_uom_desc" editor="erppur_2010_currency_code_cmb1" width="50"/>
+                                <a:column name="currency_code" editor="erppur_2010_currency_code_cmb1" width="50"/>
+                                <a:column name="tax_include_flag" editor="erppur_2010_tax_flag_ckb1" width="40"/>
+                                <!-- <a:column name="tax_rate" align="right" editor="erppur_2010_number_f" renderer="erppur_2010_formatMoney" sortable="true" width="60"/> -->
+                                <a:column name="tax_code_desc" align="right" editor="erppur_2010_maintain_lov" prompt="税率" sortable="true" width="60"/>
+                                <a:column name="price" align="right" editor="erppur_2010_number_f1" sortable="true" width="70"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:lov id="erppur_2010_maintain_lov"/>
+                                <a:textField id="erppur_2010_text_Field1"/>
+                                <a:comboBox id="erppur_2010_currency_code_cmb1"/>
+                                <a:checkBox id="erppur_2010_tax_flag_ckb1"/>
+                                <a:numberField id="erppur_2010_number_f" allowDecimals="true" allowFormat="true" allowNegative="false" decimalPrecision="4"/>
+                                <a:numberField id="erppur_2010_number_f1" allowDecimals="true" allowFormat="true" allowNegative="false" decimalPrecision="2"/>
+                                <!-- decimalPrecision="${/model/erppur_2010_amount_percision/record/@value}"   decimalPrecision="${/model/erppur_2010_price_percision/record/@value}"-->
+                            </a:editors>
+                            <a:events>
+                                <a:event name="cellclick" handler="erppur2010_gridclick"/>
+                            </a:events>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:popupScreen>
+        <script><![CDATA[
+            function erppur_2010_init() {
+                //var tax_nature = '${/model/erppur_2010_default_inf/record/@tax_nature}';
+                //var system_mode = '${/model/erppur_2010_default_inf/record/@system_mode}';
+                //debugger;
+                var ds = $('erppur_2010_vender_basic_result_ds');
+                var record = ds.getAt(0);
+                if ('${/model/erppur_2010_manual_flag/record/@manual_flag}' == 'Y') {
+                    //手工方式：设置必输
+                    record.getField('partner_code').setRequired(true);
+                } else {
+                    //自动方式：生成供应商编码并赋值
+                    //....
+                    record.getField('partner_code').setReadOnly(true);
+                }
+                if (!Aurora.isEmpty(erppur_2010_partner_id)) {
+                    //debugger;
+                    record.getField('partner_code').setReadOnly(true);
+                    record.getField('company_name').setReadOnly(true);
+                    erppur_2010_submit_flag = 'N';
+                    var province_id = record.get('province_id');
+                    var city_id = record.get('city_id');
+                    if (!Aurora.isEmpty(province_id)) {
+                        record.getField('city_desc').setLovService('erpsys.public.sys_region_city_lov');
+                        record.getField('city_desc').setLovPara('province_id', province_id);
+                        if (!Aurora.isEmpty(city_id)) {
+                            record.getField('district_desc').setLovService('erpsys.public.sys_region_district_lov');
+                            record.getField('district_desc').setLovPara('province_id', province_id);
+                            record.getField('district_desc').setLovPara('city_id', city_id);
+                        }
+                    }
+            
+                } else {
+                    if ('${/model/erppur_2010_manual_flag/record/@manual_flag}' == 'N') {
+                        record.set('partner_code', '${l:ERPPUR.MESSAGE11}');
+                    }
+                    erppur_2010_submit_flag = 'Y';
+                    $('erppur_2010_maitain_panel').setDisabled(1);
+                    $('erppur_2010_maitain_panel').setDisabled(2);
+                }
+                var r = ds.getAt(0);
+                var metadata = r.getMeta();
+                var f1 = metadata.getField('vender_type_desc');
+                // var customer_type_id = '${/parameter/@customer_type_id}';
+                if (!r.get('company_id') || r.get('company_id') == '') {
+                    f1.setLovService('');
+                } else {
+                    f1.setLovService('erppur.ERPPUR1010.fnd_business_partner_types');
+                    f1.setLovPara('enabled_flag', 'Y');
+                    f1.setLovPara('company_id', r.get('company_id') || '');
+                    // f1.setLovPara('customer_type_id', customer_type_id);
+                }
+                var ds1 = $('erppur_vender_erppurchase_result_ds');
+                var r1 = ds1.getAt(0);
+                var metadata1 = r1.getMeta();
+                var f2 = metadata1.getField('item_code');
+                // var customer_type_id = '${/parameter/@customer_type_id}';
+                if (!r1.get('company_id') || r1.get('company_id') == '') {
+                    f2.setLovService('');
+                } else {
+                    f2.setLovService('erpinv.public.inv_items_query_lov');
+                    f2.setLovPara('company_id', r1.get('company_id') || '');
+                    // f1.setLovPara('customer_type_id', customer_type_id);
+                }
+            }
+            erppur_2010_init();
+        ]]></script>
+    </a:view>
+</a:screen>

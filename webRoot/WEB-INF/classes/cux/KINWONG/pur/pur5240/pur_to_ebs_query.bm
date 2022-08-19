@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT DISTINCT
+                    h.feedback_header_id,
+                    l.feedback_line_id,
+                    (SELECT
+                        v.company_full_name
+                    FROM
+                        fnd_companies_vl v
+                    WHERE
+                        h.coop_company_id = v.company_id
+                    ) AS company_name,
+                    (SELECT
+                        e.es_business_unit_id
+                    FROM
+                        fnd_business_unit_es e
+                    WHERE
+                        e.business_unit_id = h.owner_business_unit_id
+                    ) org_id,
+                    (SELECT
+                        es.es_vendor_id
+                    FROM
+                        pur_vendor_es es
+                    WHERE
+                        es.vendor_id =
+                        (SELECT
+                            pv.vendor_id
+                        FROM
+                            pur_vendors_vl pv
+                        WHERE
+                            pv.coop_company_id = h.coop_company_id AND
+                            rownum             = 1
+                        )
+                    ) es_vendor_id,
+                    pes.es_site_id AS es_site_id,
+                    ps.display_site_code,
+                    h.currency_code,
+                    (SELECT
+                        ies.es_item_id
+                    FROM
+                        mtl_system_items_es ies
+                    WHERE
+                        ies.item_id = l.item_id
+                    ) es_item_id,
+                    l.item_code,
+                    l.item_desc,
+                    to_char(nvl(l.current_fb_retail_price,0)) AS LINE_ATTRIBUTE1,
+                    to_char(nvl(l.untax_price,0)) AS UNIT_PRICE,
+                    l.quantity,
+                    -- l.uom_code,
+                    NVL(
+                    (SELECT
+                        t.uom_code
+                    FROM
+                        fnd_uom_codes_vl t ,
+                        pur_rfx_ln_items prl
+                    WHERE
+                        1                    = 1 AND
+                        t.uom_name           = prl.pur_uom_desc AND
+                        prl.rfx_line_item_id = l.rfx_line_item_id
+                    ),
+                    nvl((SELECT
+                        fuc.uom_code
+                    FROM
+                        mtl_item_inv_organization miv ,
+                        fnd_uom_codes_vl fuc ,
+                        pur_rfx_ln_items prl
+                    WHERE
+                        1                             = 1 AND
+                        prl.rfx_line_item_id          = l.rfx_line_item_id AND
+                        fuc.uom_name                  = miv.c_attribute9 AND
+                        miv.item_id                   = prl.item_id AND
+                        miv.inventory_organization_id = prl.inv_organization_id
+                    ),l.uom_code) ) uom_code,
+                    nvl(l.tax_type_code,h.tax_type_code) tax_type_code,
+                    DECODE(prv.is_cen_pur,'Y','1','2') is_cen_pur_desc,
+                    DECODE(prv.source_type,'CONSIGNMENT','Y','N') source_type_desc,
+                    (SELECT
+                        fu.display_code
+                    FROM
+                        fnd_business_units fu
+                    WHERE
+                        fu.business_unit_id = h.owner_business_unit_id
+                    ) AS ou_code,
+                    (SELECT
+                        pbv.buyer_desc
+                    FROM
+                        pur_rfx_headers ph ,
+                        pur_buyers_vl pbv
+                    WHERE
+                        pbv.buyer_id     = ph.agent_id AND
+                        ph.rfx_header_id = h.rfx_header_id
+                    ) buyer_desc,
+                    l.attribute1 inch_price
+                    
+                FROM
+                    pur_rfx_feedback_headers h,
+                    pur_rfx_feedback_lines l,
+                    pur_vendor_site_es pes,
+                    pur_vendor_sites ps,
+                    pur_vendors_vl pv,
+                    pur_rfx_ln_vendors prv
+                WHERE
+                    h.feedback_header_id       = l.feedback_header_id AND
+                    pes.vendor_site_id         = ps.vendor_site_id AND
+                    ps.vendor_id               = pv.vendor_id AND
+                    pv.coop_company_id         = h.coop_company_id AND
+                    ps.org_id                  = h.owner_business_unit_id AND
+                    pv.coop_company_id         = h.coop_company_id AND
+                    prv.coop_company_id        = h.coop_company_id AND
+                    prv.rfx_header_id          = h.rfx_header_id AND
+                    h.feedback_header_id       = ${/parameter/@rfx_number} AND
+                    ps.display_site_code       = prv.vendor_site AND
+                    NVL(l.suggested_flag, 'N') = 'Y' AND
+                    NVL(l.status, 'XXX')      <> 'ABANDONED'
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: FelixDru  
+    $Date: 2018年02月05日 上午10:21:05  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="released_flag ASC,clarification_number DESC,rfx_number DESC">
+    <bm:fields>
+        <bm:field name="clarification_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="clarification_number" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="rfx_header_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="rfx_number" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="round" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="version" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="title" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="publisher_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="publisher_name" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="released_flag" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="released_flag_desc" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="useless_id"/>
+        <bm:field name="owner_company_id"/>
+        <bm:field name="created_by_or_receiver"/>
+        <bm:field name="owner_business_unit_id"/>
+        <bm:field name="atm_counts"/>
+        <bm:field name="prequal_atm_counts"/>
+    </bm:fields>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT c.clarification_id,
+       c.clarification_number,
+       -1 * c.entrustment_header_id rfx_header_id,
+       c.round,
+       c.version,
+       c.publisher_id,
+       c.released_flag,
+       decode(c.released_flag,
+              'Y',
+              '已发布',
+              'N',
+              '未发布') AS released_flag_desc,
+       h.rfx_number,
+       h.title,
+       ee.description AS publisher_name,
+       h.owner_business_unit_id,
+       h.owner_company_id,
+       c.created_by,
+       (
+                            CASE
+                                WHEN ${/session/@user_id} = h.created_by
+                                THEN h.created_by
+                                ELSE h.deliver_id
+                            END) created_by_or_receiver,
+      (SELECT COUNT(*)
+						   FROM fnd_atm_attachment_multi aam
+						  WHERE aam.table_name = 'PUR_RFX_HEADERS'
+						        AND EXISTS (SELECT 1
+						           FROM fnd_atm_lines fal
+						          WHERE fal.source_table_name = 'PUR_RFX_HEADERS'
+						                AND fal.atm_line_id = aam.table_pk_value
+						                AND fal.source_pk_value = to_char(h.rfx_header_id))
+						        AND rownum = 1) AS atm_counts,
+		(SELECT COUNT(*)
+						   FROM fnd_atm_attachment_multi aam
+						  WHERE aam.table_name = 'BID_PREQUAL_HEADERS'
+						        AND aam.table_pk_value = to_char(-h.rfx_header_id)
+						        AND rownum = 1) AS prequal_atm_counts,				        
+       NULL useless_id
+  FROM bid_clarifications c,
+       pur_rfx_headers    h,
+       sys_user           ee
+ WHERE -1 * c.entrustment_header_id = h.rfx_header_id
+       AND ee.user_id(+) = c.publisher_id
+ and c.owner_business_group = ${/session/@business_group}
+                    ) v  #AUTHORIY_FROM# #WHERE_CLAUSE# #AUTHORIY_WHERE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field field="clarification_number" queryExpression="clarification_number like &apos;%&apos;||${@clarification_number}||&apos;%&apos;"/>
+        <bm:query-field field="rfx_number" queryExpression="rfx_number like &apos;%&apos;||${@rfx_number}||&apos;%&apos;"/>
+        <bm:query-field field="clarification_id" queryOperator="="/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="1 = 1"/>
+    </bm:data-filters>
+    <authority foundation_code="RFX">
+        <authority-segment source_alias="v" source_name="created_by_or_receiver" type="CREATER"/>
+        <authority-segment source_alias="v" source_name="owner_company_id" type="COMPANY"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="RECEIVER"/>
+        <authority-segment source_alias="v" source_name="owner_business_unit_id" type="BUSINESS_UNIT"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="PUR_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="INV_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="SD_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="VENDOR"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="CLIENT"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="PURHASE_MATERIAL"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="SALES_PRODUCTION"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="CLIENT_SITE"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="VENDOR_SITE"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+            var cx = Packages.aurora.javascript.Context.getCurrentContext();
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

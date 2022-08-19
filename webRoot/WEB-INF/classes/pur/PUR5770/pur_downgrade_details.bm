@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    t1.downgrade_id,
+                    t1.downgrade_code,
+                    t1.status,
+                    t1.vendor_id,
+                    (SELECT
+                        f.supplier_id
+                    FROM
+                        fnd_com_sup_infos f
+                    WHERE
+                        f.company_id = t1.vendor_id
+                    ) AS supplier_id,
+                    (SELECT
+                        fcv.company_code
+                    FROM
+                        fnd_companies_vl fcv
+                    WHERE
+                        fcv.company_id = t1.vendor_id
+                    ) AS vendor_code,
+                    (SELECT
+                        fcv.company_full_name
+                    FROM
+                        fnd_companies_vl fcv
+                    WHERE
+                        fcv.company_id = t1.vendor_id
+                    ) AS vendor_desc,
+                    t1.process_type,
+                    t1.downgrade_to,
+                    t1.stage_code,
+                    t1.downgrade_reason,
+                    t1.owner_business_group,
+                    t1.owner_company_id,
+                    t1.coop_business_group,
+                    t1.coop_company_id,
+                    t1.released_by,
+                    t1.released_date,
+                    t1.deleted_by,
+                    t1.deleted_date,
+                    t1.comments,
+                    TO_CHAR(t1.creation_date,'YYYY-MM-DD') creation_date,
+                    (SELECT
+                        B.CODE_VALUE_NAME
+                    FROM
+                        SYS_CODES_VL A,
+                        SYS_CODE_VALUES_VL B
+                    WHERE
+                        A.CODE_ID    = B.CODE_ID AND
+                        A.CODE       = 'BLACK_LIST_FLAG' AND
+                        B.CODE_VALUE = (DECODE(
+                        (SELECT
+                            NVL(fc.black_list_flag, 'N') FROM pur_vendor_black_list fc WHERE fc.coop_company_id = t1.vendor_id AND
+                            fc.owner_business_group                                                             = t1.owner_business_group AND
+                            (
+                                fc.black_list_expiry_date IS NULL OR
+                                (
+                                    fc.black_list_expiry_date >= SYSDATE
+                                )
+                            )
+                        ), 'Y', 'Y', 'N'))
+                    ) black_list_flag_oa,
+                    t1.created_by,
+                    (SELECT
+                        su.description
+                    FROM
+                        sys_user su
+                    WHERE
+                        su.user_id = t1.created_by
+                    ) AS created_by_display,
+                    t1.last_update_date,
+                    t1.last_updated_by,
+                    (DECODE(
+                    (SELECT
+                        NVL(fc.black_list_flag, 'N') FROM pur_vendor_black_list fc WHERE fc.coop_company_id = t1.vendor_id AND
+                        fc.owner_business_group                                                             = t1.owner_business_group AND
+                        (
+                            fc.black_list_expiry_date IS NULL OR
+                            (
+                                fc.black_list_expiry_date >= SYSDATE
+                            )
+                        )
+                    ), 'Y', 'Y', 'N')) AS black_list_flag,
+                    (SELECT
+                        TO_CHAR(fc.black_list_expiry_date, 'yyyy-mm-dd')
+                    FROM
+                        fnd_companies fc
+                    WHERE
+                        fc.company_id = t1.vendor_id
+                    ) AS black_list_expiry_date,
+                    (SELECT
+                        pv.display_vendor_code
+                    FROM
+                        pur_vendors_vl pv
+                    WHERE
+                        pv.coop_company_id     = t1.coop_company_id AND
+                        pv.coop_business_group = t1.coop_business_group
+                    ) display_vendor_code,
+                    (SELECT
+                        listagg(
+                        (SELECT
+                            mtl.category_name
+                        FROM
+                            mtl_categories_user_defined_vl mtl
+                        WHERE
+                            mtl.category_udf_id = psl.category_udf_id
+                        ), ',') within GROUP(
+                    ORDER BY
+                        psl.category_udf_id) category_names
+                    FROM
+                        pur_supply_ability_hds ph,
+                        pur_supply_ability_lns psl
+                    WHERE
+                        ph.vendor_id      = t1.coop_company_id AND
+                        ph.ability_hds_id = psl.ability_hds_id
+                    ) category_names
+                FROM
+                    pur_downgrade_vendors t1
+                WHERE
+                    t1.status              IN ('NEW', 'APPROVE_REJECTED', 'RELEASED') AND
+                    t1.owner_business_group = ${/session/@business_group} AND
+                    t1.downgrade_id         = ${@downgrade_id}
+                ORDER BY
+                    downgrade_code DESC
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+                begin
+                    pur_downgrade_vendor_pkg.vendor_downgrade_oa_return(
+                                     p_downgrade_code => ${@downgrade_code},
+                                     p_status      => ${@status},
+                                     p_comments     => ${@comments},
+                                     p_user_id => 1);
+                end;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

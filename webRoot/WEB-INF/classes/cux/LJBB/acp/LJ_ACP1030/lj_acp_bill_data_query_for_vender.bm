@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: yangqingsong $
+	$Date: 2015/04/22 11:43:22 $
+	$Revision: 1.0
+	$Purpose: 对账单确认(供)
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="bill_status,acp_bill_data_id desc">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+				 select *
+					  from (
+					  	select d.acp_bill_data_id,
+					  			d.owner_business_group,
+						       d.owner_company_id,
+						       (select c.company_full_name from fnd_companies_vl c where c.company_id =d.owner_company_id) owner_company_name,
+						       d.business_unit_id,
+						       (select u.business_unit_name
+						          from fnd_business_units_vl u
+						         where u.business_unit_id = d.business_unit_id) business_unit_name,
+						       (SELECT fvv.flex_desc
+				                     FROM fnd_flex_values_v fvv
+				                    WHERE fvv.flex_value_set_code = 'LJ_PAY_METHOD'
+				                          AND fvv.flex_value = d.pay_method) pay_method_display,
+				               (select c.code_value_name from sys_code_values_v c where c.code = 'LJ_ACP_BILL_DATA_STATUS' and c.code_value = d.bill_status) status_dis,   
+				               d.bill_status,        
+						       d.pay_method,
+						       '元/含税' primary_uom,
+						       d.bill_number,
+						       to_char(d.bill_date,'yyyy-mm-dd') bill_date,
+							   d.bill_period,
+						       d.bill_version,
+						       d.pre_payable_amount	, --上期应付账款余额
+							   d.current_pur_amount	, --本期进货额
+							   d.current_vote_amount	, --本期来票金额
+							   d.due_current_payable_amount , --截止本期应付账款余额
+							   d.current_cost		, --本期销售成本
+							   d.rebate_amount		, --返利
+							   d.delivery_amount	, --配送费
+							   d.adjust_amount		,--调整金额
+							   d.current_sum_amount	,--本期送货小计
+							   --d.current_month_invoice_amount  , --本月开票金额
+							   --d.current_month_payable_amount, --本月应付款金额
+							   month_sales_amount , --月销售额
+							month_cost,	   --月成本数
+							quarter_deduction,  --季度扣点
+							invoice_amount		,--开票金额
+							real_clear_amount	,--实结金额
+							last_amount		,--上期余额
+							current_payment_amount	,--本期付款金额
+							current_get_pur_amount	,--本期来货金额
+							current_get_vote_amount	,--本期来票金额
+							current_add_expense_amount, --本期新增费用金额
+							end_amount		,--期末余额
+							pre_payment_amount	,--预订订金金额
+							others_amount		,--铺底货金额
+							tax_amount		,--欠税票金额
+							decode(d.pay_method,
+									'Z02',
+									d.tax_amount,
+									'Z07',
+									d.invoice_amount,
+									d.current_month_invoice_amount) current_month_invoice_amount,--本月应开票金额
+							decode(d.pay_method,
+									'Z02',
+									d.end_amount,
+									'Z07',
+									d.real_clear_amount,
+									d.current_month_payable_amount) current_month_payable_amount,--本月应付款金额		
+							note,
+							note1,
+							note2,
+							note3,
+							note4,
+							note5,
+							note6,
+							nvl((select sum(w.invoice_amount)
+					                      from lj_acp_web_invoice_data w
+					                     where w.enabled_flag = 'Y' and w.invoice_status = '30' and w.bill_number = d.bill_number),0) invoiced_amount,--已开票金额
+					        nvl((select sum(p.payment_amount) from lj_acp_payment_data p 
+					        	where p.enabled_flag = 'Y' and p.bill_number = d.bill_number),0) paymented_amount   
+						  from LJ_ACP_BILL_DATA d
+						 where  d.bill_status <> '10'
+						 		and d.coop_business_group = ${/session/@business_group}
+						 		and d.enabled_flag = 'Y'
+					  ) v
+                 #WHERE_CLAUSE# #ORDER_BY_CLAUSE# 
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+    			begin
+    			    lj_acp_bill_data_pkg.acp_bill_confirm(p_acp_bill_data_id	=> ${@acp_bill_data_id},
+    			    								   p_coop_business_group	=> ${/session/@business_group},
+				                                 	   p_user_id 	 		=> ${/session/@user_id});
+                end;
+    		]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="acp_bill_data_id" queryExpression="v.acp_bill_data_id=${@acp_bill_data_id}"/>
+        <bm:query-field name="bill_status" queryExpression="v.bill_status=${@bill_status}"/>
+        <bm:query-field name="pay_method" queryExpression="v.pay_method=${@pay_method}"/>
+        <bm:query-field name="company_id" queryExpression="v.owner_company_id=${@company_id}"/>
+        <bm:query-field name="business_unit_id" queryExpression="v.business_unit_id=${@business_unit_id}"/>
+        <bm:query-field name="bill_date_from" queryExpression="v.bill_date &gt;= ${@bill_date_from}"/>
+        <bm:query-field name="bill_date_to" queryExpression="v.bill_date &lt;= ${@bill_date_to}"/>
+        <bm:query-field name="bill_period" queryExpression="v.bill_period like &apos;%&apos;||trim(${@bill_period})||&apos;%&apos;"/>
+        <bm:query-field name="bill_number" queryExpression="v.bill_number=${@bill_number}"/>
+    </bm:query-fields>
+</bm:model>

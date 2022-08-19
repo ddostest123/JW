@@ -1,0 +1,338 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Tu Guanghui6743
+    $Date: 2014-10-10 09:42:56  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    t1.*
+                FROM
+                    (SELECT
+                        t1.*,
+                        CASE
+                            WHEN need_arrive_date + 2 < trunc(trx_date) or  need_arrive_date - 2 > trunc(trx_date)
+                            THEN '延期'
+                            ELSE '未延期'
+                        END AS delay_desc
+                    FROM
+                        (SELECT
+                            prth.rcv_trx_header_id,
+                            prth.owner_business_group,
+                            (SELECT
+                                fbu.company_id
+                            FROM
+                                fnd_business_units_vl fbu
+                            WHERE
+                                prtl.business_unit_id = fbu.business_unit_id
+                            ) owner_company_id,
+                            (SELECT
+                                fbu.business_unit_name
+                            FROM
+                                fnd_business_units_vl fbu
+                            WHERE
+                                prtl.business_unit_id = fbu.business_unit_id
+                            ) owner_business_unit_name,
+                            prtl.vendor_id,
+                            (SELECT
+                                NVL(pv.coop_company_id, -1)
+                            FROM
+                                pur_vendors_v pv
+                            WHERE
+                                pv.vendor_id = prtl.vendor_id
+                            ) vendor_company_id,
+                            (SELECT
+                                pv.display_vendor_code
+                            FROM
+                                pur_vendors_v pv
+                            WHERE
+                                pv.vendor_id = prtl.vendor_id
+                            ) vendor_code,
+                            (SELECT
+                                pv.full_name
+                            FROM
+                                pur_vendors_v pv
+                            WHERE
+                                pv.vendor_id = prtl.vendor_id
+                            ) vendor_name,
+                            prtl.vendor_site_id,
+                            (SELECT
+                                pha.vendor_site_code
+                            FROM
+                                pur_headers_all pha
+                            WHERE
+                                pha.pur_header_id = prtl.from_po_header_id
+                            ) vendor_site_code,
+                            (SELECT
+                                pha.vendor_site_name
+                            FROM
+                                pur_headers_all pha
+                            WHERE
+                                pha.pur_header_id = prtl.from_po_header_id
+                            ) vendor_site_name,
+                            --prth.display_number trx_number,
+                            prth.receipt_num,
+                            prth.trx_source_type header_trx_source_type,
+                            prth.trx_source_id header_trx_source_id,
+                            prth.processed_flag,
+                            prth.comments header_comments,
+                            prtl.rcv_trx_line_id,
+                            prtl.line_number,
+                            prtl.pur_organization_id,
+                            (SELECT
+                                iov.description
+                            FROM
+                                inv_organizations_vl iov
+                            WHERE
+                                iov.inv_organization_id = prtl.pur_organization_id
+                            ) pur_organization_name,
+                            prtl.rcv_trx_type,
+                            (SELECT
+                                prtt.description1
+                            FROM
+                                pur_rcv_trx_types_vl prtt
+                            WHERE
+                                prtt.rcv_trx_type = prtl.rcv_trx_type
+                            ) rcv_trx_type_desc,
+                            prtl.trx_date,
+                            TO_CHAR(prtl.trx_date, 'yyyy-mm-dd hh24:mi:ss') trx_date_fmt,
+                            DECODE(prtl.rcv_trx_type,'RETURN_DIRECT',(prtl.trx_quantity*-1),prtl.trx_quantity) trx_quantity,
+                            prtl.currency_code,
+                            DECODE(rcv_trx_type, 'RETURN_DIRECT', prtl.trx_amount * -1, prtl.trx_amount) trx_amount,
+                            prtl.period_name,
+                            prtl.item_id,
+                            --msiv.display_item_code as item_code,
+                            --msiv.item_name,
+                            (
+                            SELECT
+                                pla.item_code
+                            FROM
+                                pur_lines_all pla
+                            WHERE
+                                pla.pur_line_id = prtl.from_po_line_id
+                            ) item_code,
+                            (SELECT
+                                pla.item_description
+                            FROM
+                                pur_lines_all pla
+                            WHERE
+                                pla.pur_line_id = prtl.from_po_line_id
+                            ) item_name,
+                            (SELECT
+                                msi.used_item_code
+                            FROM
+                                mtl_system_items msi
+                            WHERE
+                                msi.item_id = prtl.item_id
+                            ) used_item_code,
+                            prtl.inv_organization_id,
+                            (SELECT
+                                iov.description
+                            FROM
+                                inv_organizations_vl iov
+                            WHERE
+                                iov.inv_organization_id = prtl.inv_organization_id
+                            ) inv_organization_name,
+                            prtl.uom_code,
+                            NVL(
+                            (SELECT
+                                fuc.uom_code
+                                || '/'
+                                || fuc.uom_desc
+                            FROM
+                                fnd_uom_codes_vl fuc
+                            WHERE
+                                fuc.uom_code       = prtl.uom_code AND
+                                fuc.business_group = prtl.business_group
+                            ), prtl.uom_code) uom_name,
+                            prtl.warehouse_id,
+                            (SELECT
+                                iwv.description
+                            FROM
+                                inv_warehouses_vl iwv
+                            WHERE
+                                iwv.warehouse_id = prtl.warehouse_id
+                            ) AS warehouse_name,
+                            prtl.inv_location_id,
+                            (SELECT
+                                ilv.description
+                            FROM
+                                inv_locations_vl ilv
+                            WHERE
+                                ilv.location_id = prtl.inv_location_id
+                            ) inv_location_name,
+                            DECODE(prtl.stock_type,'OWN_STOCK','自有库存','CONSIGNMENT','寄售') stock_type,
+                            (SELECT
+                                ial.lots_num
+                            FROM
+                                inv_asn_lines ial
+                            WHERE
+                                ial.asn_line_id = prtl.from_asn_line_id
+                            ) lots_num,
+                            (SELECT
+                                ial.lots_validity_date
+                            FROM
+                                inv_asn_lines ial
+                            WHERE
+                                ial.asn_line_id = prtl.from_asn_line_id
+                            ) lots_validity_date,
+                            prtl.serial_num,
+                            prtl.functional_trx_price,
+                            prtl.functional_trx_amount,
+                            prtl.functional_currency_code,
+                            prtl.exchange_rate_type,
+                            prtl.exchange_rate,
+                            prtl.bill_matched_flag bill_closed_flag,
+                            prtl.business_unit_id,
+                            DECODE(bill_matched_flag, 'N', 0, trx_quantity) quant_of_bill_matching,
+                            DECODE(bill_matched_flag, 'N', 'NO_MATCHING', 'ALL_MATCHING') bill_matching_status,
+                            prtl.invoice_closed_flag,
+                            prtl.invoice_matching_status,
+                            prtl.quant_of_invoice_matching,
+                            prtl.trx_source_type line_trx_source_type,
+                            prtl.trx_source_id line_trx_source_id,
+                            prtl.trx_source_line_id,
+                            prtl.terms_id,
+                            prtl.terms_code,
+                            prtl.terms_name,
+                            prtl.reverse_flag,
+                            prtl.reverse_line_id,
+                            prtl.from_po_header_id,
+                            prtl.from_po_display_number from_po_number,
+                            (SELECT
+                                pha.display_release_num
+                            FROM
+                                pur_headers_all pha
+                            WHERE
+                                pha.pur_header_id = prtl.from_po_header_id
+                            ) from_display_release_num,
+                            prtl.from_po_line_id,
+                            prtl.from_po_line_num,
+                            prtl.from_po_line_location_id,
+                            prtl.from_po_line_location_num,
+                            prtl.from_asn_header_id,
+                            prtl.from_asn_number,
+                            prtl.from_asn_display_number,
+                            prtl.from_asn_line_id,
+                            prtl.from_asn_line_num,
+                            prtl.parent_rcv_trx_line_id,
+                            prtl.line_number AS parent_rcv_trx_line_number,
+                            prtl.comments line_comments,
+                            rtrim(TO_CHAR(NVL(prtl.po_unit_price,
+                            (SELECT
+                                la.unit_price
+                            FROM
+                                pur_lines_all la
+                            WHERE
+                                la.pur_line_id = prtl.from_po_line_id
+                            )), 'FM999999990.9999'), '.') AS po_unit_price,
+                            prtl.receiver_id,
+                            prtl.receiver_code,
+                            prtl.receiver_name,
+                            prtl.vendor_lots_num,
+                            prtl.vendor_lots_validity_date,
+                            (SELECT
+                                pha.agent_id
+                            FROM
+                                pur_headers_all pha
+                            WHERE
+                                pha.pur_header_id = prtl.from_po_header_id
+                            ) auth_pur_buyer_id,
+                            (SELECT
+                                pha.pur_organization_id
+                            FROM
+                                pur_headers_all pha
+                            WHERE
+                                pha.pur_header_id = prtl.from_po_header_id
+                            ) auth_pur_organization_id,
+                            prtl.move_reason_desc,
+                            NULL AS useless_id_1,
+                            NULL AS useless_id_2,
+                            NULL AS useless_id_5,
+                            NULL AS useless_id_6,
+                            NULL AS useless_id_7,
+                            NULL AS useless_id_8,
+                            NULL AS useless_id_10,
+                            NULL AS useless_id_11,
+                            NULL AS useless_id_13,
+                            (SELECT
+                                pdl.need_arrive_date
+                            FROM
+                                pur_del_plan_lines pdl
+                            WHERE
+                                prtl.from_po_line_location_id = pdl.source_po_line_location_id AND
+                                rownum                        = 1
+                            ) AS need_arrive_date
+                        FROM
+                            pur_rcv_trx_lines prtl,
+                            pur_rcv_trx_headers prth
+                        WHERE
+                            prtl.rcv_trx_header_id    = prth.rcv_trx_header_id AND
+                            prth.processed_flag       = 'Y' AND
+                            prtl.business_group       = ${/session/@business_group} AND
+                            prth.owner_business_group = ${/session/@business_group} AND
+                            prtl.rcv_trx_type NOT    IN ('RECEIVE_STANDARD','RETURN_TO_RECEIVING')
+                        ) t1
+                    ) t1 #AUTHORIY_FROM# #WHERE_CLAUSE# #AUTHORIY_WHERE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="rcv_trx_header_id" queryExpression="t1.rcv_trx_header_id=${@rcv_trx_header_id}"/>
+        <bm:query-field name="owner_company_id" queryExpression="t1.owner_company_id=${@owner_company_id}"/>
+        <bm:query-field name="owner_business_unit_id" queryExpression="t1.business_unit_id=${@owner_business_unit_id}"/>
+        <bm:query-field name="vendor_id" queryExpression="t1.vendor_id=${@vendor_id}"/>
+        <bm:query-field name="vendor_site_id" queryExpression="t1.vendor_site_id=${@vendor_site_id}"/>
+        <!-- <bm:query-field name="trx_number" queryExpression="t1.trx_number like &apos;%&apos;||${@trx_number}||&apos;%&apos;"/> -->
+        <bm:query-field name="receipt_num" queryExpression="t1.receipt_num like &apos;%&apos;||${@receipt_num}||&apos;%&apos;"/>
+        <bm:query-field name="rcv_trx_type" queryExpression="t1.rcv_trx_type=${@rcv_trx_type}"/>
+        <bm:query-field name="trx_date_from" queryExpression="t1.trx_date &gt;=to_date(${@trx_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="trx_date_to" queryExpression="t1.trx_date &lt;=to_date(${@trx_date_to},&apos;yyyy-mm-dd&apos;)+1"/>
+        <bm:query-field name="item_id" queryExpression="t1.item_id=${@item_id}"/>
+        <bm:query-field name="inv_organization_id" queryExpression="t1.inv_organization_id=${@inv_organization_id}"/>
+        <bm:query-field name="warehouse_id" queryExpression="t1.warehouse_id=${@warehouse_id}"/>
+        <bm:query-field name="inv_location_id" queryExpression="t1.inv_location_id=${@inv_location_id}"/>
+        <bm:query-field name="pur_organization_id" queryExpression="t1.auth_pur_organization_id = ${@pur_organization_id}"/>
+        <bm:query-field name="pur_buyer_id" queryExpression="t1.auth_pur_buyer_id = ${@pur_buyer_id}"/>
+        <bm:query-field name="stock_type" queryExpression="t1.stock_type=${@stock_type}"/>
+        <bm:query-field name="from_po_number" queryExpression="t1.from_po_number like &apos;%&apos;||${@from_po_number}||&apos;%&apos;"/>
+        <bm:query-field name="from_po_line_num" queryExpression="t1.from_po_line_num=${@from_po_line_num}"/>
+        <bm:query-field name="from_po_line_location_num" queryExpression="t1.from_po_line_location_num=${@from_po_line_location_num}"/>
+        <bm:query-field name="from_po_display_number" queryExpression="t1.from_po_display_number like &apos;%&apos;||${@from_po_display_number}||&apos;%&apos;"/>
+        <bm:query-field name="from_asn_number" queryExpression="t1.from_asn_display_number like &apos;%&apos;||${@from_asn_number}||&apos;%&apos;"/>
+        <bm:query-field name="from_display_release_num" queryExpression="t1.from_display_release_num like &apos;%&apos;||${@from_display_release_num}||&apos;%&apos;"/>
+        <bm:query-field name="rcv_trx_line_id" queryExpression="t1.rcv_trx_line_id=${@rcv_trx_line_id}"/>
+        <bm:query-field name="invoice_id" queryExpression="EXISTS (select 1 from erp_ap_invoice_lines eail where eail.invoice_id=${@invoice_id} and eail.rcv_transaction_id=t1.rcv_trx_header_id)"/>
+        <bm:query-field name="delay_desc" queryExpression="t1.delay_desc = ${@delay_desc}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="1=1"/>
+    </bm:data-filters>
+    <authority foundation_code="PUR_RCV_TRX">
+        <authority-segment source_alias="t1" source_name="useless_id_1" type="CREATER"/>
+        <authority-segment source_alias="t1" source_name="useless_id_2" type="RECEIVER"/>
+        <authority-segment source_alias="t1" source_name="owner_company_id" type="COMPANY"/>
+        <authority-segment source_alias="t1" source_name="business_unit_id" type="BUSINESS_UNIT"/>
+        <authority-segment source_alias="t1" source_name="useless_id_5" type="INV_ORGANIZATION"/>
+        <authority-segment source_alias="t1" source_name="auth_pur_buyer_id" type="PUR_BUYER"/>
+        <authority-segment source_alias="t1" source_name="auth_pur_organization_id" type="PUR_ORGANIZATION"/>
+        <authority-segment source_alias="t1" source_name="useless_id_7" type="SD_ORGANIZATION"/>
+        <authority-segment source_alias="t1" source_name="useless_id_8" type="CLIENT"/>
+        <authority-segment source_alias="t1" source_name="vendor_company_id" type="VENDOR"/>
+        <authority-segment source_alias="t1" source_name="useless_id_10" type="PURHASE_MATERIAL"/>
+        <authority-segment source_alias="t1" source_name="useless_id_11" type="SALES_PRODUCTION"/>
+        <authority-segment source_alias="t1" source_name="vendor_site_id" type="VENDOR_SITE"/>
+        <authority-segment source_alias="t1" source_name="useless_id_13" type="CLIENT_SITE"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+            var cx = Packages.aurora.javascript.Context.getCurrentContext();
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

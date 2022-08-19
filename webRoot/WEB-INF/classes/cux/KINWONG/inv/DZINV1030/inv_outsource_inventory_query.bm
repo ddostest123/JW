@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="inv.inv_period, inv.item_code">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[ 
+			SELECT * FROM
+			(SELECT vv.*,
+       				nvl((select uc.uom_desc from fnd_uom_codes_vl uc where vv.uom_code = uc.uom_code and uc.business_group = vv.business_group),vv.uom_code) uom_desc,
+			       (vv.beginning_inventory + vv.period_ship_qty - nvl(vv.actual_used_qty, 0)) AS ending_inventory,
+			       ((nvl(vv.actual_used_qty, 0) - vv.theoretic_used_qty) / decode(vv.theoretic_used_qty, 0, null, vv.theoretic_used_qty)) AS differ_ratio
+				FROM
+			   (SELECT v.inv_period,
+					   v.item_id,
+					   v.vendor_id,
+					   v.actual_used_qty,
+					   v.deficient_materiel_qty,
+					  (dz_inv_trx_outsource_pkg.get_period_ship_qty(p_vendor_id       => v.vendor_id,
+					                                                p_item_id         => v.item_id,
+					                                                p_trx_month       => v.inv_period,
+					                                                p_business_group =>  v.coop_business_group,
+					                                                p_business_unit_id =>  v.business_unit_id,
+					                                                p_user_id         => ${/session/@user_id})) AS period_ship_qty,
+					  (dz_inv_trx_outsource_pkg.get_theoretic_used_qty(p_vendor_id       => v.vendor_id,
+					                                                p_item_id         => v.item_id,
+					                                                p_trx_month       => v.inv_period,
+					                                                p_business_group => v.coop_business_group,
+					                                                p_business_unit_id =>  v.business_unit_id,
+					                                                p_user_id         => ${/session/@user_id})) AS theoretic_used_qty,
+					   (dz_inv_trx_outsource_pkg.get_beginning_inventory(p_vendor_id       => v.vendor_id,
+					                                                p_item_id         => v.item_id,
+					                                                p_trx_month       => v.inv_period,
+					                                                p_business_unit_id =>  v.business_unit_id,
+					                                                p_user_id         => ${/session/@user_id})) AS beginning_inventory,
+					   v.comments,
+					   v.record_id,
+				       (SELECT msi.display_item_code
+				          FROM mtl_system_items_vl msi
+				         WHERE msi.item_id = v.item_id
+				               AND msi.business_group = v.business_group) AS item_code,
+				       (SELECT msi.item_name
+				          FROM mtl_system_items_vl msi
+				         WHERE msi.item_id = v.item_id
+				               AND msi.business_group = v.business_group) AS item_name,
+		               (SELECT msi.primary_uom
+		                  FROM mtl_system_items_vl msi
+		                 WHERE msi.item_id = v.item_id
+		                       AND msi.business_group = v.business_group) AS uom_code,
+				       (SELECT p.short_name FROM pur_vendors_vl p WHERE p.vendor_id = v.vendor_id) AS vendor_name,
+				       (SELECT p.display_vendor_code FROM pur_vendors_vl p WHERE p.vendor_id = v.vendor_id) AS vendor_code,
+						(SELECT f.company_full_name
+						  FROM fnd_companies_vl         f,
+						       fnd_cooperative_partners p,
+						       pur_vendors_vl           pv
+						 WHERE f.company_id = p.coop_company_id
+						       AND pv.coop_company_id = p.owner_company_id
+						       AND pv.vendor_id = v.vendor_id
+						       AND p.client_flag = 'Y'
+						       AND p.owner_business_group = v.coop_business_group
+						       AND rownum = 1) AS company_name,
+						(SELECT f.company_id
+						  FROM fnd_companies_vl         f,
+						       fnd_cooperative_partners p,
+						       pur_vendors_vl           pv
+						 WHERE f.company_id = p.coop_company_id
+						       AND pv.coop_company_id = p.owner_company_id
+						       AND pv.vendor_id = v.vendor_id
+						       AND p.client_flag = 'Y'
+						       AND p.owner_business_group = v.coop_business_group
+						       AND rownum = 1) AS company_id,
+						 v.business_unit_id,
+		               (SELECT business_unit_code
+		                  FROM fnd_business_units_vl buv
+		                 WHERE buv.business_unit_id = v.business_unit_id) business_unit_code,
+		               (SELECT business_unit_name
+		                  FROM fnd_business_units_vl buv
+		                 WHERE buv.business_unit_id = v.business_unit_id) business_unit_name,
+		                 v.business_group
+				  FROM  dz_inv_trx_outsource_v  v
+				  WHERE v.coop_business_group = ${/session/@business_group}) vv) inv
+				       #WHERE_CLAUSE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:update-sql><![CDATA[ 
+				BEGIN
+					dz_inv_trx_outsource_pkg.insert_dz_inv_trx_outsource(p_record_id 		   => ${@record_id},
+																	    p_inv_period           => ${@inv_period}          ,
+																	    p_company_id           => ${@company_id}          ,
+																	    p_business_unit_id     => ${@business_unit_id}    ,
+																	    p_vendor_id            => ${@vendor_id}           ,
+																	    p_item_id              => ${@item_id}             ,
+																	    p_uom_code             => ${@uom_code}            ,
+																	    p_actual_used_qty      => ${@actual_used_qty}     ,
+																	    p_deficient_materiel_qty      => ${@deficient_materiel_qty}     ,
+																	    p_ending_inventory     => ${@ending_inventory}    ,
+																	    p_comments             => ${@comments}            ,
+																	    p_owner_business_group => ${/session/@business_group},
+																	    p_owner_company_id     => ${@owner_company_id}    ,
+																	    p_coop_business_group  => ${@business_group} ,
+																	    p_coop_company_id      => ${@coop_company_id}     ,
+																	    p_user_id              => ${/session/@user_id});
+				END;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[ 
+				BEGIN
+					dz_inv_trx_outsource_pkg.open_current_inv_period(p_business_group => ${/session/@business_group},
+																	p_user_id         => ${/session/@user_id});
+				END;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="inv_period" queryExpression="inv.inv_period = ${@inv_period}"/>
+        <bm:query-field name="item_name" queryExpression="inv.item_name like &apos;%&apos;||${@item_name}||&apos;%&apos;"/>
+        <bm:query-field name="item_id" queryExpression="inv.item_id = ${@item_id}"/>
+        <bm:query-field name="company_id" queryExpression="inv.company_id = ${@company_id}"/>
+        <bm:query-field name="business_unit_id" queryExpression="inv.business_unit_id = ${@business_unit_id}"/>
+    </bm:query-fields>
+</bm:model>

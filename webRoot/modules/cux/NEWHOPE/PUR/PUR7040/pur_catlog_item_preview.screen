@@ -1,0 +1,951 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="default_flag=&apos;Y&apos; and address_source=${/parameter/@data_source} and company_id = ${/parameter/@company_id}" fetchAll="true" model="cux.NEWHOPE.PUR.PUR7040.pur_catlog_address_lov" rootPath="default_address"/>
+        <a:model-query fetchAll="true" model="cux.NEWHOPE.PUR.PUR7040.pur_item_catelog_shopping_cart" rootPath="shopping_cart_info"/>
+    </a:init-procedure>
+    <a:view>
+        <meta CONTENT="no-cache" HTTP-EQUIV="Pragma"/>
+        <meta CONTENT="no-cache" HTTP-EQUIV="Cache-Control"/>
+        <meta CONTENT="0" HTTP-EQUIV="Expires"/>
+        <meta charset="UTF-8"/>
+        <a:link id="pur_reflash_sn_link" url="${/request/@context_path}/modules/cux/NEWHOPE/PUR/PUR7040/pur_reflash_sn.svc"/>
+        <a:link id="pur_add_to_shopping_cart_link" model="cux.NEWHOPE.PUR.PUR7040.pur_item_catelog_application" modelaction="insert"/>
+        <a:link id="pur_shopping_cart_delete_link" model="cux.NEWHOPE.PUR.PUR7040.pur_item_catelog_application" modelaction="delete"/>
+        <a:link id="pur_shopping_cart_validate_no" model="cux.NEWHOPE.PUR.PUR7040.pur_catelog_add_no_validate" modelaction="execute"/>
+        <link href="${/request/@context_path}/css/item/product_view.css?v=20171221902" rel="stylesheet" type="text/css"/>
+        <script src="${/request/@context_path}/javascripts/jquery-3.1.0.min.js"/>
+        <script src="${/request/@context_path}/javascripts/productview.js"/>
+        <style><![CDATA[
+			.layout-table {
+				width: 0px !important;
+			}
+		]]></style>
+        <a:script><![CDATA[
+            var jQuery = jQuery.noConflict();
+            var price;
+            var stage; //库存状态
+            var image_url = '';
+            var add_flag = 'Y';
+            
+            function get_project_name() {
+                //获取当前地址
+                var curWwwPath = window.document.location.href;
+                //获取主机地址之后的目录如：/dev/login.screen
+                var pathName = window.document.location.pathname;
+                var pos = curWwwPath.indexOf(pathName);
+                //获取主机地址，如：//localhost:8080
+                var localhostPaht = curWwwPath.substring(0, pos);
+                //获取带"/"的项目名，如：dev
+                var projectName = pathName.substring(1, pathName.substr(1).indexOf('/') + 1);
+            
+                return projectName;
+            }
+            
+            function format_number(value, decimalprecision) {
+                if (Ext.isEmpty(value)) return '';
+                value = String(value).replace(/,/g, '');
+                if (isNaN(value)) return '';
+                if (decimalprecision || decimalprecision === 0) var point_value = value.split('.');
+                var in_length = (point_value.length == 2) ? '.' + point_value[1] : '';
+                if (in_length.length - 1 < decimalprecision) {
+                    decimalprecision = in_length.length - 1
+                };
+                if (in_length.length == 0) {
+                    decimalprecision = 0;
+                }
+                value = Number(value).toFixed(decimalprecision);
+                var ps = value.split('.');
+                var sub = (ps.length == 2) ? '.' + ps[1] : '';
+                var whole = ps[0];
+                var r = /(\d+)(\d{3})/;
+                while (r.test(whole)) {
+                    whole = whole.replace(r, '$1' + ',' + '$2');
+                }
+                Math.round();
+                v = whole + sub;
+                return v;
+            }
+            
+            //刷新价格
+            
+            function reflash_price(city_id) {
+                Aurora.Masker.mask($('pur_catlog_item_detail_window').wrap, '${l:PROMPT.LOADING}');
+                Aurora.request({
+                    url: $('pur_reflash_sn_link').getUrl(),
+                    para: {
+                        'item_id': '${/parameter/@item_id}',
+                        'city_id': city_id,
+                        'api_code': 'SN_PRODPRICE'
+                    },
+                    success: function(res) {
+                        Aurora.Masker.unmask($('pur_catlog_item_detail_window').wrap);
+            
+                        var err_message = res.result.err_message;
+                        if (!Aurora.isEmpty(err_message)) {
+                            Aurora.showMessage('${l:PROMPT}', '${l:CUX_NEWHOME.SUNING_RETURNS}' + err_message);
+                        } else {
+                            price = res.result.price;
+                            if (Aurora.isEmpty(price) || price == 'undefined' || price == '' || price.indexOf('aurora.javascript.Undefined') == 0) {
+                                document.getElementById('gb-price').innerHTML = '${l:CUX_NEWHOME.NO_PRICE}';
+                            } else {
+                                $('pur_catlog_address_ds').getAt(0).set('price', price);
+                                document.getElementById('gb-price').innerHTML = '￥' + format_number(price, 2);
+                            }
+                        }
+                    },
+                    failure: function() {
+                        Aurora.Masker.unmask($('pur_catlog_item_detail_window').wrap);
+                    },
+                    error: function() {
+                        Aurora.Masker.unmask($('pur_catlog_item_detail_window').wrap);
+                    },
+                });
+            }
+            
+            //刷新库存
+            
+            function reflash_stock(city_id, county_id) {
+            
+                var quantity = document.getElementById('shopping-number').value;
+                Aurora.Masker.mask($('pur_catlog_item_detail_window').wrap, '${l:PROMPT.LOADING}');
+                Aurora.request({
+                    url: $('pur_reflash_sn_link').getUrl(),
+                    para: {
+                        'item_id': '${/parameter/@item_id}',
+                        'city_id': city_id,
+                        'county_id': county_id,
+                        'quantity': quantity,
+                        'api_code': 'SN_STOCK_PRECISE'
+                    },
+                    success: function(res) {
+                        Aurora.Masker.unmask($('pur_catlog_item_detail_window').wrap);
+                        var stock_stage;
+                        stage = res.result.state;
+                        var join_shopping_cart_btn = document.getElementById('join-shopping-cart-btn');
+            
+                        if (stage == '00') {
+                            stock_stage = '${l:CUX_NEWHOME.GOODS_ENOUGH}';
+                            document.getElementById('join-shopping-cart-btn').style.backgroundColor = '#f72c40';
+                            jQuery(join_shopping_cart_btn).addClass('enabled');
+                        } else if (stage == '01') {
+                            stock_stage = '${l:CUX_NEWHOME.NOT_SELL_YET}';
+                            document.getElementById('join-shopping-cart-btn').style.backgroundColor = '#ddd';
+                            jQuery(join_shopping_cart_btn).addClass('disabled');
+                        } else if (stage == '02') {
+                            stock_stage = '${l:CUX_NEWHOME.NO_GOODS}';
+                            document.getElementById('join-shopping-cart-btn').style.backgroundColor = '#ddd';
+                            jQuery(join_shopping_cart_btn).addClass('disabled');
+                        } else if (stage == '03') {
+                            stock_stage = '${l:CUX_NEWHOME.NO_STOCK}';
+                            document.getElementById('join-shopping-cart-btn').style.backgroundColor = '#ddd';
+                            jQuery(join_shopping_cart_btn).addClass('disabled');
+                        } else {
+                            stock_stage = stage;
+                            document.getElementById('join-shopping-cart-btn').style.backgroundColor = '#ddd';
+                            jQuery(join_shopping_cart_btn).addClass('disabled');
+                        }
+                        document.getElementById('stock-stage').innerHTML = '' + stock_stage;
+                    },
+                    failure: function() {
+                        Aurora.Masker.unmask($('pur_catlog_item_detail_window').wrap);
+                    },
+                    error: function() {
+                        Aurora.Masker.unmask($('pur_catlog_item_detail_window').wrap);
+                    },
+                });
+            }
+            
+            //初始化地址
+            
+            function init() {
+                var records = $('pur_default_address_ds').getAll();
+                var delivery_id = '',
+                    city_id = '',
+                    inv_organization_name = '',
+                    contact_name = '',
+                    county_id = '',
+                    county_name = '';
+                if (records.length > 0) {
+                    delivery_id = records[0].get('delivery_id');
+                    city_id = records[0].get('city_id');
+                    contact_name = records[0].get('contact_name');
+                    inv_organization_name = records[0].get('inv_organization_name');
+                    county_id = records[0].get('county_id');
+                    county_name = records[0].get('county_name');
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '${l:CUX_NEWHOME.PROMPT_MESSAGE1}');
+                    $('pur_catlog_item_detail_window').close();
+                }
+            
+                var data = {
+                    'delivery_id': delivery_id,
+                    'city_id': city_id,
+                    'contact_name': contact_name,
+                    'inv_organization_name': inv_organization_name,
+                    'county_id': county_id,
+                    'county_name': county_name
+                };
+                var record = $('pur_catlog_address_ds').create(data);
+                quantity_change();
+                if ('${/parameter/@data_source}' == 'SN') {
+                    if (city_id) {
+                        reflash_price(city_id);
+                    } else {
+                        add_flag = 'N';
+                        Aurora.showMessage('${l:PROMPT}', '${l:CUX_NEWHOME.SELECT_ADDRESS_MESSAGE}');
+                    }
+                }
+            }
+            
+            function subtraction(_this) {
+                var shopping_number = document.getElementById('shopping-number');
+                var number = parseInt(shopping_number.value);
+                if (number >= 2) {
+                    jQuery('#shopping-number').removeAttr('disabled');
+                    document.getElementById('subtraction').style.backgroundColor = '#fff';
+                    shopping_number.value = number - 1;
+                    shopping_number.setAttribute('value', number - 1);
+                    jQuery(_this).removeClass('disabled');
+                    quantity_change();
+                } else {
+                    shopping_number.setAttribute('disabled', 'true');
+                    document.getElementById('subtraction').style.backgroundColor = '#ddd';
+                    jQuery(_this).addClass('disabled');
+                }
+            }
+            
+            function plus() {
+                var shopping_number = document.getElementById('shopping-number');
+                var number = parseInt(shopping_number.value);
+                shopping_number.value = number + 1;
+                shopping_number.setAttribute('value', number + 1);
+                jQuery('#shopping-number').removeAttr('disabled');
+                document.getElementById('subtraction').style.backgroundColor = '#fff';
+                quantity_change();
+            }
+            
+            function pur_catlog_item_details_Load(ds) {
+                var records = ds.getAll();
+                var display_item_code = records[0].data.display_item_code; // 商品编码
+                var owner_company_name = records[0].data.owner_company_name; // 上架公司
+                var name = records[0].data.item_name; // 商品名字
+                var vendor_name = records[0].data.vendor_name; // 供应商名称
+                var brand = records[0].data.brand; // 品牌
+                var item_specs = records[0].data.item_specs; //规格
+                var item_model = records[0].data.item_model; //型号
+                var utit = records[0].data.utit; //单位
+                var atm_count = records[0].data.atm_count; //附件数量
+                var prodparams = records[0].data.prodparams; //商品参数
+                //prodparams = prodparams.replace("\'"/g, '\"');
+                if (Aurora.isEmpty(owner_company_name)) {
+                    owner_company_name = '';
+                }
+                if (Aurora.isEmpty(brand)) {
+                    brand = '';
+                }
+            
+                if (Aurora.isEmpty(item_specs)) {
+                    item_specs = '';
+                }
+            
+                if (Aurora.isEmpty(item_model)) {
+                    item_model = '';
+                }
+            
+                item_model = item_specs + item_model;
+            
+                if (Aurora.isEmpty(utit)) {
+                    utit = '';
+                }
+            
+                if (atm_count > 0) {
+                    document.getElementById('download_btn_id').style.display = 'block';
+                }
+            
+                price = records[0].data.price; // 价格
+                var information = records[0].data.information; // 商品介绍
+                document.getElementById('product-title').innerHTML = name; // 标题
+                document.getElementById('product-title').setAttribute('title', name);
+                document.getElementById('display-item-code').innerHTML = '：' + display_item_code;
+                document.getElementById('owner_company_name').innerHTML = '：' + owner_company_name;
+                document.getElementById('barnd-name').innerHTML = '：' + brand;
+                document.getElementById('item-model').innerHTML = '：' + item_model;
+                document.getElementById('vendor_name').innerHTML = '：' + vendor_name;
+                document.getElementById('gb-price').innerHTML = '￥' + format_number(price, 2);
+                document.getElementById('utit').innerHTML = '：' + utit;
+            
+                if (Aurora.isEmpty(prodparams) || prodparams == 'undefined') {
+                    '';
+                } else {
+                    if ('${/parameter/@data_source}' == 'CG') {
+            
+                        prodparams = prodparams.replace("<table class='Ptable'>", '[');
+                        prodparams = prodparams.replace(new RegExp("<tr>< td class='tdTitle'>", "gm"), '{"parameter":"');
+                        prodparams = prodparams.replace("<tr>< td class='tdTitle'>", ',{"parameter":"');
+                        prodparams = prodparams.replace("</td></tr></table>", '"}]');
+                        prodparams = prodparams.replace(new RegExp("<td>", "gm"), ',{"parameter":"');
+                        prodparams = prodparams.replace(new RegExp("</td>", "gm"), '"}');
+                        prodparams = prodparams.replace(new RegExp("</tr>", "gm"), ',');
+            
+                        var obj = JSON.parse(prodparams);
+            
+                        var html = '<table>';
+                        html += '<tr style="font-weight: 900;"><td colspan="2" style="text-align: center;">${l:CUX_NEWHOME.BASIC_INFO}</td></tr>';
+                        for (var i = 0;i < obj.length;i++) {
+                            if (i % 2 == 0) {
+                                html += '<tr><td>' + obj[i].parameter + '</td>';
+                            } else {
+                                html += '<td>' + obj[i].parameter + '</td>';
+                                html += '</tr>';
+                            };
+                        }
+                        html += '</table>';
+                        information = html + information;
+                    } else if ('${/parameter/@data_source}' == 'LD') {
+                        information = prodparams + information;
+                    } else if ('${/parameter/@data_source}' == 'SN') {
+                        var obj = JSON.parse(prodparams);
+                        var html = '<table>';
+                        html += '<tr style="font-weight: 900;"><td colspan="2" style="text-align: center;">${l:CUX_NEWHOME.PARAMTER_MAIN}</td></tr>';
+                        for (var i = 0;i < obj.length;i++) {
+                            for (var j = 0;j < obj[i].param.length;j++) {
+                                if (obj[i].param[j].coreFlag == 'X') {
+                                    html += '<tr><td>' + obj[i].param[j].snparameterdesc + '</td>';
+                                    html += '<td>' + obj[i].param[j].snparameterVal + '</td>';
+                                    html += '</tr>';
+                                };
+                            }
+                        }
+                        html += '</table>';
+                        information = html + information;
+                    }
+                }
+            
+                if (Aurora.isEmpty(information) || information == 'undefined') {
+                    information = '';
+                }
+                document.getElementById('information').innerHTML = information;
+                init();
+            }
+            
+            function pur_catlog_item_img_Load(ds) {
+                var records = ds.getAll();
+                var length = records.length;
+            
+                for (var i = 0;i < length;i++) {
+                    load_product_image(records[i]);
+                }
+                var prev_btn = document.getElementById('prev');
+                var next_btn = document.getElementById('next');
+            
+                if (length <= 6) {
+                    prev_btn.setAttribute('href', 'javascript:void(0);');
+                    jQuery('#prev').addClass('disabled');
+                    next_btn.setAttribute('href', 'javascript:void(0);');
+                    jQuery('#next').addClass('disabled');
+                } else if (length > 6) {
+                    prev_btn.setAttribute('href', 'javascript:void(0);');
+                    jQuery('#next').removeClass('disabled');
+                    next_btn.setAttribute('href', 'javascript:img_next();');
+                    jQuery('#next').removeClass('disabled');
+                }
+                var image_paths;
+                if (records.length > 0) {
+                    if ('${/parameter/@data_source}' == 'SRM') {
+                        image_paths = '/' + records[0].data.image_url;
+                        var projectName = get_project_name();
+                        if (!Aurora.isEmpty(projectName)) {
+                            image_paths = '/' + projectName + image_paths;
+                        }
+            
+                    } else {
+                        image_paths = '' + records[0].data.image_url;
+                    }
+                    if (Aurora.isEmpty(records[0].data.image_url)) {
+                        var projectName = get_project_name();
+                        if (!Aurora.isEmpty(projectName)) {
+                            image_paths = '/' + projectName + image_paths;
+                        }
+                        image_paths = '/images/NoPictrue.jpg';
+                    }
+                } else {
+                    var projectName = get_project_name();
+                    if (!Aurora.isEmpty(projectName)) {
+                        image_paths = '/' + projectName + image_paths;
+                    }
+                    image_paths = '/images/NoPictrue.jpg';
+                }
+                if (Aurora.isEmpty(image_url) || image_url == '') {
+                    image_url = image_paths;
+                }
+                document.getElementById('big-img').setAttribute('src', image_paths);
+                document.getElementById("addAnimation_0").setAttribute('src', image_paths);
+            }
+            
+            function load_product_image(record) {
+                var big_image_path;
+                if ('${/parameter/@data_source}' == 'SRM') {
+                    big_image_path = '/' + record.data.image_url;
+                    var projectName = get_project_name();
+                    if (!Aurora.isEmpty(projectName)) {
+                        big_image_path = '/' + projectName + big_image_path;
+                    }
+                } else {
+                    big_image_path = '' + record.data.image_url;
+                }
+                if (Aurora.isEmpty(record.data.image_url)) {
+                    big_image_path = '/images/NoPictrue.jpg';
+                    var projectName = get_project_name();
+                    if (!Aurora.isEmpty(projectName)) {
+                        big_image_path = '/' + projectName + big_image_path;
+                    }
+                }
+            
+                var li = window.document.createElement('li');
+                var img = window.document.createElement('img');
+                var ul = document.getElementById('small-img-ul');
+                li.className = 'small-img-li';
+                img.setAttribute('src', big_image_path);
+                li.appendChild(img);
+                ul.appendChild(li);
+                jQuery(".small-img-li").hover(function() {
+                    jQuery(".small-img-li").removeClass('hover');
+                    jQuery(this).addClass('hover');
+                    var src = this.childNodes[0].getAttribute('src');
+                    jQuery("#addAnimation_0")[0].setAttribute('src', src);
+                    jQuery("#big-img")[0].setAttribute('src', src);
+                }, function() {
+                    return false;
+                });
+            }
+            
+            //地址变更
+            
+            function on_address_update(ds, record, name, value, oldvalue) {
+                //苏宁的存在不同的地址有不同的价格
+                if (name == "county_id") {
+                    var county_id = record.get('county_id');
+                    if (Aurora.isEmpty(county_id)) {
+                        if ('${/parameter/@data_source}' == 'SN') {
+                            document.getElementById('gb-price').innerHTML = '${l:CUX_NEWHOME.NO_PRICE}';
+                        }
+                        document.getElementById('stock-stage').innerHTML = '';
+                        var join_shopping_cart_btn = document.getElementById('join-shopping-cart-btn');
+                        join_shopping_cart_btn.style.backgroundColor = '#ddd';
+                        jQuery(join_shopping_cart_btn).addClass('disabled');
+                    } else {
+                        //苏宁的要调整价格和库存信息
+                        if ('${/parameter/@data_source}' == 'SN') {
+                            var city_id = record.get('city_id');
+                            reflash_stock(city_id, county_id);
+                            reflash_price(city_id);
+                            //其它的可以直接购买
+                        } else {
+                            document.getElementById('join-shopping-cart-btn').style.backgroundColor = '#f72c40';
+                            jQuery(join_shopping_cart_btn).addClass('enabled');
+                        }
+                    }
+                }
+            }
+            
+            //数量变更，校验库存
+            
+            function quantity_change() {
+            
+                var quantity = parseInt(document.getElementById('shopping-number').value);
+            
+                if (isNaN(quantity)) {
+                    quantity = 1;
+                    document.getElementById('shopping-number').value = 1;
+                }
+            
+                if (typeof(quantity) != 'number') {
+                    quantity = 1;
+                    document.getElementById('shopping-number').value = 1;
+                }
+            
+                if (Aurora.isEmpty(quantity) || quantity == '' || quantity == null || quantity == 'undefined') {
+                    quantity = 1;
+                    document.getElementById('shopping-number').value = 1;
+                }
+            
+                if (quantity < 1) {
+                    quantity = 1;
+                    document.getElementById('shopping-number').value = 1;
+                }
+                document.getElementById('shopping-number').value = quantity;
+                document.getElementById('shopping-number').setAttribute('value', quantity);
+            
+                if ('${/parameter/@data_source}' == 'SN') {
+                    var record = $('pur_catlog_address_ds').getAt(0);
+                    var city_id = record.get('city_id');
+                    var county_id = record.get('county_id');
+                    if (Aurora.isEmpty(county_id)) {
+                        document.getElementById('stock-stage').innerHTML = '';
+                    } else {
+                        reflash_stock(city_id, county_id);
+                    }
+                }
+                /* else if ('${/parameter/@data_source}' == 'SRM') {
+                 var quantity = document.getElementById('shopping-number').value;
+                 Aurora.Masker.mask($('pur_catlog_item_detail_window').wrap, '${l:PROMPT.LOADING}');
+                 Aurora.request({
+                 url: $('pur_shopping_cart_validate_no').getUrl(),
+                 para: {
+                 'item_id': '${/parameter/@item_id}'
+                 },
+                 success: function(res) {
+                 var can_no = res.result.can_num;
+                 var data_type = res.result.data_type;
+                 var stage;
+                 Aurora.Masker.unmask($('pur_catlog_item_detail_window').wrap);
+                 var join_shopping_cart_btn = document.getElementById('join-shopping-cart-btn');
+                 if (data_type == 'KJXY') {
+                 var no = can_no-quantity;
+                 if (no < 0) {
+                 stage = '03';
+                 } else {
+                 stage = '00';
+                 }
+                 } else {
+                 stage = '00';
+                 }
+                 if (stage == '00') {
+                 stock_stage = '有货';
+                 document.getElementById('join-shopping-cart-btn').style.backgroundColor = '#f72c40';
+                 jQuery(join_shopping_cart_btn).addClass('enabled');
+                 } else if (stage == '01') {
+                 stock_stage = '暂不销售';
+                 document.getElementById('join-shopping-cart-btn').style.backgroundColor = '#ddd';
+                 jQuery(join_shopping_cart_btn).addClass('disabled');
+                 } else if (stage == '02') {
+                 stock_stage = '无货';
+                 document.getElementById('join-shopping-cart-btn').style.backgroundColor = '#ddd';
+                 jQuery(join_shopping_cart_btn).addClass('disabled');
+                 } else if (stage == '03') {
+                 stock_stage = '库存不足';
+                 document.getElementById('join-shopping-cart-btn').style.backgroundColor = '#ddd';
+                 jQuery(join_shopping_cart_btn).addClass('disabled');
+                 } else {
+                 stock_stage = stage;
+                 document.getElementById('join-shopping-cart-btn').style.backgroundColor = '#ddd';
+                 jQuery(join_shopping_cart_btn).addClass('disabled');
+                 }
+                 document.getElementById('stock-stage').innerHTML = '' + stock_stage;
+                 },
+                 failure: function() {
+                 Aurora.Masker.unmask($('pur_catlog_item_detail_window').wrap);
+                 },
+                 error: function() {
+                 Aurora.Masker.unmask($('pur_catlog_item_detail_window').wrap);
+                 },
+                 });
+                 } */
+            }
+            
+            //加入购物车逻辑判断
+            
+            function add_shopping_cart() {
+                //苏宁的如果不是有货状态，不允许加入购物车
+                if ('${/parameter/@data_source}' == 'SN') {
+                    if (stage != '00') {
+                        add_flag = 'N';
+                    }
+                }
+            
+                var item_record = $('pur_catlog_item_ds').getAt(0);
+                var record = $('pur_catlog_address_ds').getAt(0);
+            
+                county_id = record.get('county_id');
+            
+            
+                //判断收货地址是否已选择
+                if (!county_id) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:CUX_NEWHOME.SELECT_ADDRESS_MESSAGE}');
+                    add_flag = 'N'
+                }
+            
+                if (Aurora.isEmpty(price)) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:CUX_NEWHOME.PRODUCT_HAS_NO_PRICE}');
+                    add_flag = 'N'
+                }
+            
+                if (add_flag == 'Y') {
+                    var quantity = document.getElementById('shopping-number').getAttribute('value');
+                    Aurora.Masker.mask($('pur_catlog_item_detail_window').wrap, '${l:PROMPT.LOADING}');
+                    Aurora.request({
+                        url: $('pur_add_to_shopping_cart_link').getUrl(),
+                        para: {
+                            'data_source': '${/parameter/@data_source}',
+                            'delivery_id': record.get('delivery_id'),
+                            'item_id': '${/parameter/@item_id}',
+                            'display_item_code': item_record.get('display_item_code'),
+                            'item_name': item_record.get('item_name'),
+                            'item_category_id': '${/parameter/@item_category_id}',
+                            'image_url': image_url,
+                            'vendor_id': item_record.get('vendor_id'),
+                            'vendor_name': item_record.get('vendor_name'),
+                            'quantity': quantity,
+                            'price': price,
+                            'uom_code': item_record.get('primary_uom'),
+                            'uom_desc': item_record.get('utit'),
+                            'data_type': 'CATALOG'
+                        },
+                        success: function() {
+                            Aurora.Masker.unmask($('pur_catlog_item_detail_window').wrap);
+                            addAnimation();
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask($('pur_catlog_item_detail_window').wrap);
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask($('pur_catlog_item_detail_window').wrap);
+                        },
+                    });
+                }
+            }
+            
+            function addAnimation() {
+                var img = document.getElementById('addAnimation_0');
+                jQuery('#addAnimation_0').css('display', 'block');
+                var shoppingcart = document.getElementById('shopping-carts');
+                var parabloa = funParabola(img, shoppingcart, {
+                    speed: 500,
+                    complete: function() {
+                        jQuery('#addAnimation_0').css('display', 'none');
+                        $('pur_shopping_cart_count_ds').query();
+                        $('pur_shopping_cart_details_ds').query();
+                    }
+                }).mark();
+                img.style.marginLeft = '0px';
+                img.style.marginTop = '0px';
+                img.style.transform = '0';
+                parabloa.init();
+            }
+            
+            function shopping_cart() {
+                window.location.href = '${/request/@context_path}/modules/cux/NEWHOPE/PUR/PUR7040/pur_item_application_list.screen';
+            }
+            
+            function pur_shopping_cart_details_Loads(ds) {
+                var records = ds.getAll();
+                document.getElementById('shopping-cart-content-ul').innerHTML = '';
+                for (var i = 0;i < records.length;i++) {
+                    pur_shopping_cart_details_Load(records[i]);
+                }
+                document.getElementsByClassName('shopping-cart-none')[0].style.display = 'none';
+                document.getElementsByClassName('shopping-content-bottom')[0].style.display = 'block';
+            }
+            
+            function pur_shopping_cart_count_Loads(ds) {
+                var record = ds.getAt(0);
+                var totle_species = record.get('totle_species'); //商品种类
+                var total_amount = record.get('total_amount'); //商品总金额
+                var commodity_count = document.getElementById('commodity-count');
+                var commodity_price = document.getElementById('commodity-price');
+                var commodity_count_tow = document.getElementById('commodity-count-tow');
+                var commodity_price_tow = document.getElementById('commodity-price-tow');
+                commodity_count.innerHTML = totle_species;
+                commodity_count_tow.innerHTML = totle_species;
+                commodity_price.innerHTML = '￥' + total_amount;
+                commodity_price_tow.innerHTML = '￥' + total_amount;
+            }
+            
+            function delete_product(_this, shopping_cart_id) {
+            
+                Aurora.request({
+                    url: $('pur_shopping_cart_delete_link').getUrl(),
+                    para: {
+                        'shopping_cart_id': shopping_cart_id,
+                    },
+                    success: function() {
+                        var record = $('pur_shopping_cart_details_ds').find('shopping_cart_id', shopping_cart_id);
+            
+                        var quantity = record.get('quantity');
+                        var price = record.get('price');
+                        var amount = quantity * price;
+            
+                        var commodity_count = document.getElementById('commodity-count');
+                        var commodity_price = document.getElementById('commodity-price');
+                        var commodity_count_tow = document.getElementById('commodity-count-tow');
+                        var commodity_price_tow = document.getElementById('commodity-price-tow');
+                        var totle_species = commodity_count.innerHTML; //商品种类
+                        var total_amount = commodity_price.innerHTML.replace('￥', ''); //商品总金额
+                        commodity_count.innerHTML = totle_species - 1;
+                        commodity_count_tow.innerHTML = totle_species - 1;
+                        commodity_price.innerHTML = '￥' + (total_amount - amount);
+                        commodity_price_tow.innerHTML = '￥' + (total_amount - amount);
+                        jQuery(_this).parent().remove();
+                    },
+                    failure: function() {},
+                    error: function() {},
+                    scope: this
+                });
+            }
+            
+            function pur_shopping_cart_details_Load(record) {
+                var product_id = record.data.item_id;
+                var quantity = record.data.quantity;
+                var price = record.data.price;
+                var title = record.data.item_name;
+                var image_path = record.data.image_url;
+                var shopping_cart_id = parseInt(record.data.shopping_cart_id);
+                var ul = document.getElementById('shopping-cart-content-ul');
+            
+                //数据加载
+                var li = document.createElement('li');
+                li.className = 'shopping-cart-content-li';
+                var TagA1, TagA2, TagA3, span, span_1, span_2, span_3, span_4, TagA1_img;
+                TagA1 = document.createElement('a');
+                TagA1.className = 'shopping-cart-content-a';
+                TagA1_img = document.createElement('img');
+                TagA1_img.setAttribute('onerror', 'javascript:nofind()');
+                //TagA1_img.setAttribute('onclick', 'javascript:open_product_details("' + product_id + '")');
+                TagA1_img.src = image_path;
+                TagA1.appendChild(TagA1_img);
+            
+                TagA2 = document.createElement('a');
+                TagA2.className = 'shopping-cart-content-a name';
+                //TagA2.setAttribute('onclick', 'javascript:open_product_details("' + product_id + '")');
+                TagA2.innerHTML = title;
+                TagA2.setAttribute('title', title);
+            
+                span = document.createElement('span');
+                span.className = 'shopping-price';
+                span_1 = document.createElement('span');
+                span_1.className = 'currence';
+                span_1.innerHTML = '￥';
+                span_2 = document.createElement('span');
+                span_2.className = 'price';
+                span_2.id = 'price';
+                span_2.innerHTML = format_number(price, 2);
+                span_3 = document.createElement('span');
+                span_3.className = 'symbol';
+                span_3.innerHTML = '×';
+                span_4 = document.createElement('span');
+                span_4.className = 'number';
+                span_4.id = 'number';
+                span_4.innerHTML = quantity;
+                span.appendChild(span_1);
+                span.appendChild(span_2);
+                span.appendChild(span_3);
+                span.appendChild(span_4);
+            
+                var TagA4 = document.createElement('img');
+                TagA4.className = 'delete-icon';
+                TagA4.src = '${/request/@context_path}/images/main/icon_close_default.png';
+                TagA4.setAttribute('onclick', 'javascript:delete_product(this,' + shopping_cart_id + ')');
+            
+                li.appendChild(TagA1);
+                li.appendChild(TagA2);
+                li.appendChild(span);
+                li.appendChild(TagA4);
+                ul.appendChild(li);
+            }
+            
+            function pur_prewiew_download() {
+                new Aurora.Window({
+                    url: '${/request/@context_path}/attachment_file_download.screen?table_name=PUR_CATELOG_ITEM&pkvalue=${/parameter/@item_id}',
+                    title: '${l:PROMPT_PUBLIC.ACCTCHMENT_VIEW}',
+                    id: 'mtl_atm_window',
+                    width: 820,
+                    height: 400
+                });
+            }
+        ]]></a:script>
+        <a:dataSets>
+            <a:dataSet id="pur_default_address_ds">
+                <a:datas dataSource="/model/default_address"/>
+            </a:dataSet>
+            <a:dataSet id="pur_catlog_item_ds" autoQuery="true" queryUrl="${/request/@context_path}/autocrud/cux.NEWHOPE.PUR.PUR7040.pur_catlog_item/query?item_id=${/parameter/@item_id}&amp;data_source=${/parameter/@data_source}">
+                <a:events>
+                    <a:event name="load" handler="pur_catlog_item_details_Load"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="pur_catlog_item_image_url_ds" autoQuery="true" queryUrl="${/request/@context_path}/autocrud/cux.NEWHOPE.PUR.PUR7040.pur_catlog_item_img/query?item_id=${/parameter/@item_id}&amp;data_source=${/parameter/@data_source}">
+                <a:events>
+                    <a:event name="load" handler="pur_catlog_item_img_Load"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="pur_catlog_address_ds">
+                <a:fields>
+                    <a:field name="delivery_id"/>
+                    <a:field name="county_name" lovGridHeight="330" lovHeight="450" lovService="cux.NEWHOPE.PUR.PUR7040.pur_catlog_address_lov?data_source=${/parameter/@data_source}&amp;company_id=${/parameter/@company_id}" lovWidth="720" prompt="CUX_NEWHOME.SHOUHUO_ADDRESS" required="true" requiredMessage="${l:CUX_NEWHOME.SHOUHUO_ADDRESS_REQUIRE}" title="CUX_NEWHOME.SHOUHUO_ADDRESS">
+                        <a:mapping>
+                            <a:map from="delivery_id" to="delivery_id"/>
+                            <a:map from="city_id" to="city_id"/>
+                            <a:map from="inv_organization_name" to="inv_organization_name"/>
+                            <a:map from="contact_name" to="contact_name"/>
+                            <a:map from="county_id" to="county_id"/>
+                            <a:map from="county_name" to="county_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="price"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="on_address_update"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="pur_shopping_cart_details_ds" autoQuery="true" model="cux.NEWHOPE.PUR.PUR7040.pur_item_catelog_application">
+                <a:events>
+                    <a:event name="load" handler="pur_shopping_cart_details_Loads"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="pur_shopping_cart_count_ds" autoQuery="true" model="cux.NEWHOPE.PUR.PUR7040.pur_item_catelog_shopping_cart">
+                <a:events>
+                    <a:event name="load" handler="pur_shopping_cart_count_Loads"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <screenBody id="body-4" class="show">
+            <div class="content">
+                <div class="product-shopping">
+                    <div class="fl left">
+                        <div class="big-img">
+                            <img id="big-img" alt="" src=""/>
+                        </div>
+                        <div class="small-img">
+                            <a id="prev" class="prev disabled" href="javascript:img_prev();"><![CDATA[<]]></a>
+                            <a id="next" class="next" href="javascript:img_next();"><![CDATA[>]]></a>
+                            <div class="small-img-div">
+                                <ul id="small-img-ul"/>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="fl right">
+                        <div id="shopping-carts" class="fr shopping-cart">
+                            <i class="fa fa-2x fa-shopping-cart"/>
+                            <span id="commodity-count" class="commodity-count"><![CDATA[${/model/shopping_cart_info/record/@totle_species}]]></span>
+                            <span class="commodity-text"><![CDATA[${l:CUX_NEWHOME.TEXT_TOTAL_LINES}]]></span>
+                            <span id="commodity-price" class="price"><![CDATA[￥${/model/shopping_cart_info/record/@total_amount}]]></span>
+                        </div>
+                        <div class="shopping-cart-content">
+                            <div class="shopping-cart-none">
+                                <span class="fl cart-none-img">
+                                    <img src="/images/main/icon_shoppingcart_nogoods_default.png"/>
+                                </span>
+                                <span class="fl cart-none-text"><![CDATA[${l:CUX_NEWHOME.SHOPPING_CART_HAS_NO_PRODUCT}]]></span>
+                            </div>
+                            <ul id="shopping-cart-content-ul"/>
+                            <div class="shopping-content-bottom" style="display: none;">
+                                <div class="shopping-cart-tow">
+                                    <div class="altogether">
+                                        <span class=""><![CDATA[${l:PROMPT_PUBLIC.TOTAL}]]></span>
+                                        <span id="commodity-count-tow" class="commodity-count-tow"><![CDATA[0]]></span>
+                                        <span class="commodity-text-tow"><![CDATA[${l:CUX_NEWHOME.TEXT_TOTAL_LINES}]]></span>
+                                    </div>
+                                    <div class="tatal">
+                                        <span class="tatal-price"><![CDATA[${l:CUX_NEWHOME.PROMPT_TOTAL}]]></span>
+                                        <span id="commodity-price-tow" class="price-tow"><![CDATA[￥0]]></span>
+                                    </div>
+                                </div>
+                                <a class="shopping-btn" href="javascript:shopping_cart();"><![CDATA[${l:CUX_NEWHOME.GO_TO_SHOPPING_CART}]]></a>
+                            </div>
+                        </div>
+                        <span id="product-title" class="span title" style="text-align: left"/>
+                        <span class="brand">
+                            <span class="text"><![CDATA[${l:CUX_NEWHOME.PRODUCT_NUMBER}]]></span>
+                            <span id="display-item-code"/>
+                        </span>
+                        <span class="brand">
+                            <span class="text"><![CDATA[${l:CUX_NEWHOME.UP_COMPANY}]]></span>
+                            <span id="owner_company_name"/>
+                        </span>
+                        <span class="brand">
+                            <span class="text"><![CDATA[供]]></span>
+                            <span class="text" style="margin-left:8px;"><![CDATA[应]]></span>
+                            <span class="text" style="margin-left:8px;"><![CDATA[商]]></span>
+                            <span id="vendor_name"/>
+                        </span>
+                        <span class="brand">
+                            <span class="text"><![CDATA[品]]></span>
+                            <span class="text" style="margin-left:35px;"><![CDATA[牌]]></span>
+                            <span id="barnd-name"/>
+                        </span>
+                        <span class="brand">
+                            <span class="text"><![CDATA[规]]></span>
+                            <span class="text" style="margin-left:35px;"><![CDATA[格]]></span>
+                            <span id="item-model"/>
+                        </span>
+                        <span class="brand">
+                            <span class="text"><![CDATA[单]]></span>
+                            <span class="text" style="margin-left:35px;"><![CDATA[位]]></span>
+                            <span id="utit"/>
+                        </span>
+                        <span class="gb-price-span" style="text-align: left">
+                            <span id="gb-price" class="gb-price"/>
+                        </span>
+                        <div class="background-gray"/>
+                        <div class="location-block">
+                            <div class="location-show">
+                                <span class="locate-text"><![CDATA[${l:CUX_NEWHOME.SEND_TO}]]></span>
+                                <a:lov name="county_name" bindTarget="pur_catlog_address_ds"/>
+                                <span id="stock-stage"/>
+                            </div>
+                        </div>
+                        <div class="location-block">
+                            <div class="location-show">
+                                <span class="locate-text" style="margin-top: -1px;"><![CDATA[${l:CUX_NEWHOME.SHOUHUO_SIDE}]]></span>
+                                <a:label name="inv_organization_name" bindTarget="pur_catlog_address_ds"/>
+                                <span id="stock-stage"/>
+                            </div>
+                            <div class="location-show">
+                                <span class="locate-text" style="margin-top: -2px;"><![CDATA[${l:CUX_NEWHOME.SHOUHUO_PERSION}]]></span>
+                                <a:label name="contact_name" bindTarget="pur_catlog_address_ds"/>
+                                <span id="stock-stage"/>
+                            </div>
+                        </div>
+                        <div id="background-gray" class="background-gray"/>
+                        <span class="span join-shopping-carts">
+                            <input id="shopping-number" class="number-number" onchange="quantity_change()" type="text" value="1"/>
+                            <span id="plus" class="number-number-button plus" onclick="javascript:plus();"><![CDATA[+]]></span>
+                            <span id="subtraction" class="number-number-button subtraction" onclick="javascript:subtraction(this);"><![CDATA[-]]></span>
+                            <img id="addAnimation_0" alt="none" src="" style="display:none"/>
+                            <a id="join-shopping-cart-btn" class="join-shopping-cart" href="javascript:add_shopping_cart();"><![CDATA[${l:CUX_NEWHOME.ADD_TO_SHOPPING_CART}]]></a>
+                            <a id="download_btn_id" class="download-btn" href="javascript:pur_prewiew_download();" style="display:none"><![CDATA[${l:CUX_NEWHOME.FILE_DOWLOAD}]]></a>
+                        </span>
+                    </div>
+                </div>
+                <div class="product-details">
+                    <div class="tabs">
+                        <ul class="tabs-ul">
+                            <li class="active tabs-li"><![CDATA[${l:CUX_NEWHOME.PRODUCT_INTRO}]]></li>
+                        </ul>
+                    </div>
+                    <div class="details-content">
+                        <div id="information" class="product-introduce" style="text-align: left"/>
+                    </div>
+                </div>
+            </div>
+            <div id="back"/>
+        </screenBody>
+        <script><![CDATA[
+    		//购物车详情显示
+            jQuery('.shopping-cart').hover(function() {
+                jQuery('.shopping-cart-content').css('display', 'block');
+                jQuery('.shopping-cart-cover').css('display', 'block');
+                $('pur_shopping_cart_details_ds').query();
+                $('pur_shopping_cart_count_ds').query();
+            }, function() {
+                jQuery('.shopping-cart-content').css('display', 'none');
+                jQuery('.shopping-cart-cover').css('display', 'none');
+            });
+        	jQuery('.shopping-cart-content').hover(function() {
+                    jQuery('.shopping-cart-content').css('display', 'block');
+                    jQuery('.shopping-cart-cover').css('display', 'block');
+            }, function() {
+                jQuery('.shopping-cart-content').css('display', 'none');
+                jQuery('.shopping-cart-cover').css('display', 'none');
+            });
+            jQuery('.shopping-cart-cover').hover(function() {
+                jQuery('.shopping-cart-content').css('display', 'block');
+                jQuery('.shopping-cart-cover').css('display', 'block');
+            }, function() {
+                jQuery('.shopping-cart-content').css('display', 'none');
+                jQuery('.shopping-cart-cover').css('display', 'none');
+            });
+            
+        ]]></script>
+    </a:view>
+</a:screen>

@@ -1,0 +1,298 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: 7211
+    $Date: 2015-4-05 下午13:46:29  
+    $Revision: 1.0  
+    $Purpose: 考评档案填制
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;VES_ARC_DETAIL_LINE_STATUS&apos;" fetchAll="true" model="public.fnd_flex_value_v_lov" rootPath="jk_ves5020_arc_detail_line_status_data"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="jk_ves5020_archive_detail_lines_update_link" model="ves.VES5020.ves_archive_detail_lines" modelaction="batch_update"/>
+        <a:link id="jk_ves5020_archive_detail_lines_execute_link" model="ves.VES5020.ves_archive_detail_lines" modelaction="batch_update"/>
+        <script><![CDATA[
+        	function init(){
+        	    var archive_header_id = '${/parameter/@archive_header_id}';
+        	    if(archive_header_id){
+        	        $('jk_ves5020_archive_header_maintain_ds').setQueryParameter('archive_header_id', archive_header_id);
+        	        $('jk_ves5020_archive_header_maintain_ds').query();
+        	        //考评明细行查询
+        	       // $('jk_ves5020_archive_detail_line_maintain_ds').setQueryParameter('archive_header_id', archive_header_id);
+        	       // $('jk_ves5020_archive_detail_line_maintain_ds').query();
+        	        
+        	    }
+        	}
+        	
+        	//得分校检,需在合理区间内
+        	function jk_ves5020_detail_score_validator(record,name,value){
+        	 	if(name == 'detail_score'){   
+        	 	 	var score_from = record.get('score_from') || 0,
+        	 	 		score_to	= record.get('score_to') || 0;
+        	 	 	if(value < score_from || value > score_to){
+        	 	 	 	return '得分需在合理分值区间内！';      
+        	 	 	}
+        	 	 	return true;
+        	 	}
+        	 	return true;
+        	}
+        	
+        	//考评档案填制  --手工评分可维护得分，系统评分不能维护
+        	function jk_ves5020_edit_detail_score(record,name){
+        		if(record.get('scoring_method') == 'MANUAL'){
+					return 'jk_ves5020_archive_detail_lines_grid_nf'; 
+			    } else {
+			    	return ''; 	 
+			    }      
+        	}
+        	
+        	//考评档案填制备注维护
+        	function jk_ves5020_edit_detail_line_comments(record,name){
+        	 	if(record.get('scoring_method') == 'MANUAL'){
+					return 'jk_ves5020_archive_detail_lines_grid_tf'; 
+			    } else {
+			    	return ''; 	 
+			    }   	   
+        	}
+			
+			//行信息快速查询
+			function jk_ves5020_archive_maintain_line_query(){
+			 	$('jk_ves5020_archive_detail_line_maintain_ds').query();
+			}
+
+        	
+        	//保存
+        	function jk_ves5020_archive_maintain_save(){
+        		var jk_ves5020_archive_detail_line_maintain_ds = $('jk_ves5020_archive_detail_line_maintain_ds');
+			 	//var para =  jk_ves5020_archive_detail_line_maintain_ds.getJsonData(false);
+			 	if(jk_ves5020_archive_detail_line_maintain_ds.validate()){
+			 	    var records = $('jk_ves5020_archive_detail_line_maintain_ds').getAll(),
+			 	    	para = [];
+			 	    for(var i = 0; i < records.length; i++){
+	        	            if(records[i].get('scoring_method') == 'MANUAL'){
+		        	            records[i].set('_status', 'update');
+		        	            para.push(records[i].data);
+	        	            }
+	        	    }
+			 	    
+			 	    Aurora.Masker.mask($('jk_ves5020_archive_maintain_win').wrap,'正在提交...'); 
+			 	    //更新数据
+			 	 	Aurora.request({
+	        	        url:$('jk_ves5020_archive_detail_lines_update_link').getUrl(),
+	        	        para:para,
+	        	        success:function(){ 
+        	                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SAVE_SUCCESS}', function(){
+	        	            	jk_ves5020_archive_maintain_line_query();
+        	                	Aurora.Masker.unmask($('jk_ves5020_archive_maintain_win').wrap);	
+	        	            	//Aurora.Masker.unmask($('jk_ves5020_archive_maintain_win').wrap);	    
+        	                }); 
+	        	        },
+	        	        failure:function(){
+		        	       Aurora.Masker.unmask($('jk_ves5020_archive_maintain_win').wrap);
+	        	        },
+	        	        error:function(){
+	        	        	Aurora.Masker.unmask($('jk_ves5020_archive_maintain_win').wrap);   
+	        	        },
+	        	        scope:this
+	        	    });
+			 	}	
+        	}
+        	
+        	
+        	//提交
+        	function jk_ves5020_archive_maintain_release(){
+        	 	var records = $('jk_ves5020_archive_detail_line_maintain_ds').getAll();
+        	    if(records.length > 0){
+        	        //判断数据是否已经保存
+        	        for(var i = 0; i < records.length; i++){
+	        	            if(records[i].dirty){
+	        	             	Aurora.showMessage('${l:PROMPT}', '数据尚未保存 !');
+	        	             	return ;   
+	        	            }
+	        	            
+	        	             //如果存在得分为空的情况则禁止提交
+	        	            if(!records[i].get('detail_score')){
+	        	                if(!(records[i].get('detail_score') == 0)){
+	        	                 	Aurora.showMessage('${l:PROMPT}', '请维护所有手工评分后，然后进行提交操作！');  
+	        	                 	return ; 
+	        	                }
+	        	            }
+	        	    }
+        	        Aurora.showConfirm('${l:PROMPT}','是否确认提交？',function(){
+	        	        var para = [];
+	        	        for(var i = 0; i < records.length; i++){
+
+	        	            //如果记录的评分方式为手动评分则可以进行提交操作
+	        	            if(records[i].get('scoring_method') == 'MANUAL'){
+		        	            records[i].set('_status', 'execute');
+		        	            para.push(records[i].data);
+	        	            }
+	        	        }
+	        	        Aurora.Masker.mask($('jk_ves5020_archive_maintain_win').wrap,'正在提交...');
+	        	        Aurora.request({
+		        	        url:$('jk_ves5020_archive_detail_lines_execute_link').getUrl(),
+		        	        para:para,
+		        	        success:function(){
+		        	            Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function(){
+		        	                Aurora.Masker.unmask($('jk_ves5020_archive_maintain_win').wrap);
+		        	                jk_ves5020_archive_maintain_return();	  
+	        	                });
+		        	        },
+		        	        failure:function(){
+		        	        	Aurora.Masker.unmask($('jk_ves5020_archive_maintain_win').wrap);	  
+		        	        },
+		        	        error:function(){
+		        	         	Aurora.Masker.unmask($('jk_ves5020_archive_maintain_win').wrap);	    
+		        	        },
+		        	        scope:this
+		        	    });
+	        	    },function(){},300,100);
+        	    }
+        	}
+        		
+        	//返回
+        	function jk_ves5020_archive_maintain_return(){
+        	 	$('jk_ves5020_archive_maintain_win').close();   
+        	}
+        	
+        	//查查询结果集更新处理方法
+        	function jk_ves5020_archive_detail_line_query_ds_update_handler(dataSet,record,name,value,oldvalue){
+        		if(name == 'main_criterion_id'){
+        			if(value){
+        				record.getField('detail_criterion_name').setLovPara('main_criterion_id',value);
+        				record.getField('detail_criterion_name').setReadOnly(false);    
+        			}else {
+        			 	record.getField('detail_criterion_name').setReadOnly(true); 
+        			 	record.set('detail_criterion_name','');
+        			 	record.set('detail_criterion_id','');    
+        			}
+        		}    
+        	}
+        	
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="jk_ves5020_arc_detail_line_status_ds">
+                <a:datas dataSource="jk_ves5020_arc_detail_line_status_data"/>
+            </a:dataSet>
+            <a:dataSet id="jk_ves5020_scoring_method_ds" lookupCode="XC_VE_SCORING_METHOD"/>
+            <a:dataSet id="jk_ves5020_archive_header_maintain_ds" model="cux.JINKO.VES.JK_VES5020.jk_ves_archive_headers">
+                <a:fields>
+                    <a:field name="archive_status_display" displayField="flex_desc" options="jk_ves5020_archive_status_ds" returnField="archive_status" valueField="flex_value"/>
+                    <a:field name="sys_value_open_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="jk_ves5020_archive_detail_line_query_ds">
+                <a:fields>
+                    <a:field name="archive_header_id" defaultValue="${/parameter/@archive_header_id}"/>
+                    <a:field name="no_scored_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="vendor_code" autoComplete="true" autoCompleteField="vendor_code_desc" lovHeight="530" lovService="ves.pur_vendors_lov" lovWidth="530" title="供应商选择">
+                        <a:mapping>
+                            <a:map from="vendor_id" to="vendor_id"/>
+                            <a:map from="vendor_code" to="vendor_code"/>
+                            <a:map from="vendor_name" to="vendor_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="item_category_desc" autoComplete="true" autoCompleteField="category_code_desc" lovHeight="530" lovService="ves.mtl_item_categories_lov" lovWidth="530" title="采购品类选择">
+                        <a:mapping>
+                            <a:map from="category_id" to="item_category_id"/>
+                            <a:map from="category_code" to="item_category_code"/>
+                            <a:map from="category_name" to="item_category_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="detail_criterion_name" lovHeight="530" lovService="ves.ves_detail_criteria_lov" lovWidth="530" title="考评细项选择">
+                        <a:mapping>
+                            <a:map from="detail_id" to="detail_id"/>
+                            <a:map from="detail_name" to="detail_criterion_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="main_criterion_name" lovHeight="530" lovService="ves.ves_main_criteria_lov" lovWidth="530" required="true" title="初级指标选择">
+                        <a:mapping>
+                            <a:map from="main_criterion_id" to="main_criterion_id"/>
+                            <a:map from="main_criterion_name" to="main_criterion_name"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="jk_ves5020_archive_detail_line_query_ds_update_handler"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="jk_ves5020_archive_detail_line_maintain_ds" autoCount="true" autoPageSize="true" fetchAll="true" model="ves.VES5020.ves_archive_detail_lines" queryDataSet="jk_ves5020_archive_detail_line_query_ds">
+                <a:fields>
+                    <a:field name="detail_score" validator="jk_ves5020_detail_score_validator"/>
+                    <!--
+                    <a:field name="detail_line_status_display" displayField="flex_desc" options="jk_ves5020_arc_detail_line_status_ds" returnField="detail_line_status" valueField="flex_value"/>
+                    <a:field name="scoring_method_display" displayField="code_value_name" options="jk_ves5020_scoring_method_ds" returnField="scoring_method" valueField="code_value"/>
+                	-->
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="jk_ves5020_archive_maintain_line_query" text="查询" width="100"/>
+                <a:toolbarButton click="jk_ves5020_archive_maintain_save" text="保存" width="100"/>
+                <a:toolbarButton click="jk_ves5020_archive_maintain_release" text="提交" width="120"/>
+                <a:toolbarButton click="jk_ves5020_archive_maintain_return" text="PROMPT.RETURN" width="100"/>
+            </a:screenTopToolbar>
+            <a:fieldSet column="1" title="快速定位">
+                <a:hBox labelWidth="100">
+                    <a:lov name="vendor_code" bindTarget="jk_ves5020_archive_detail_line_query_ds" prompt="供应商编码" width="150"/>
+                    <a:textField name="vendor_desc" bindTarget="jk_ves5020_archive_detail_line_query_ds" prompt="供应商名称" readOnly="true" width="150"/>
+                    <a:lov name="main_criterion_name" bindTarget="jk_ves5020_archive_detail_line_query_ds" prompt="初级指标" width="150"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:lov name="detail_criterion_name" bindTarget="jk_ves5020_archive_detail_line_query_ds" prompt="考评细项" readOnly="true" width="150"/>
+                    <a:lov name="item_category_desc" bindTarget="jk_ves5020_archive_detail_line_query_ds" prompt="采购品类" width="150"/>
+                    <a:checkBox name="no_scored_flag" bindTarget="jk_ves5020_archive_detail_line_query_ds" prompt="隐藏已评分项" width="150"/>
+                </a:hBox>
+            </a:fieldSet>
+            <a:accordionPanel id="bid5040_createAccordion_dim" height="180" showIcon="true" singleMode="false" width="900">
+                <a:accordions>
+                    <a:accordion prompt="基本信息" selected="false">
+                        <a:hBox labelWidth="100">
+                            <a:textField name="archive_code" bindTarget="jk_ves5020_archive_header_maintain_ds" readOnly="true" width="150"/>
+                            <a:textField name="archive_desc" bindTarget="jk_ves5020_archive_header_maintain_ds" readOnly="true" width="150"/>
+                            <a:textField name="archive_status_display" bindTarget="jk_ves5020_archive_header_maintain_ds" prompt="状态" readOnly="true" width="150"/>
+                        </a:hBox>
+                        <a:hBox labelWidth="100">
+                            <a:textField name="eval_monthly" bindTarget="jk_ves5020_archive_header_maintain_ds" prompt="考评月度" readOnly="true" width="150"/>
+                            <a:textField name="template_desc" bindTarget="jk_ves5020_archive_header_maintain_ds" prompt="考评模板" readOnly="true" width="150"/>
+                            <a:dateTimePicker name="creation_date" bindTarget="jk_ves5020_archive_header_maintain_ds" readOnly="true" renderer="Aurora.formatDateTime" width="150"/>
+                        </a:hBox>
+                        <a:hBox labelWidth="100">
+                            <a:datePicker name="eval_start_date" bindTarget="jk_ves5020_archive_header_maintain_ds" readOnly="true" width="150"/>
+                            <a:datePicker name="eval_end_date" bindTarget="jk_ves5020_archive_header_maintain_ds" readOnly="true" width="150"/>
+                            <a:textField name="created_by_display" bindTarget="jk_ves5020_archive_header_maintain_ds" readOnly="true" width="150"/>
+                        </a:hBox>
+                        <a:hBox labelWidth="100">
+                            <a:textArea name="eval_desc" bindTarget="jk_ves5020_archive_header_maintain_ds" readOnly="true" width="667"/>
+                        </a:hBox>
+                    </a:accordion>
+                </a:accordions>
+            </a:accordionPanel>
+            <a:grid id="jk_ves5020_archive_detail_lines_grid" bindTarget="jk_ves5020_archive_detail_line_maintain_ds" marginHeight="286" marginWidth="100" navBar="true" width="950">
+                <a:columns>
+                    <a:column name="detail_line_status_display" align="center" prompt="状态" sortable="true" width="60"/>
+                    <a:column name="scoring_method_display" align="center" prompt="评分方式" sortable="true" width="60"/>
+                    <a:column name="vendor_code" align="center" sortable="true" width="80"/>
+                    <a:column name="vendor_desc"/>
+                    <a:column name="item_category_desc" sortable="true"/>
+                    <a:column name="detail_criterion_name" sortable="true"/>
+                    <a:column name="detail_note_desc"/>
+                    <a:column name="detail_score" align="right" editorFunction="jk_ves5020_edit_detail_score" renderer="Aurora.formatMoney" sortable="true" width="60"/>
+                    <a:column name="scored_by_display" prompt="责任人" width="80"/>
+                    <a:column name="score_from" align="right" sortable="true" width="60"/>
+                    <a:column name="score_to" align="right" sortable="true" width="60"/>
+                    <a:column name="comments" editorFunction="jk_ves5020_edit_detail_line_comments" prompt="备注"/>
+                </a:columns>
+                <a:editors>
+                    <a:textField id="jk_ves5020_archive_detail_lines_grid_tf"/>
+                    <a:numberField id="jk_ves5020_archive_detail_lines_grid_nf" allowDecimals="true" allowFormat="true" decimalPrecision="2"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+        <script><![CDATA[
+        	init();
+        ]]></script>
+    </a:view>
+</a:screen>

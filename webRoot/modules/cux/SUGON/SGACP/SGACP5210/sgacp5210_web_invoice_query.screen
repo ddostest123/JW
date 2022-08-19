@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:view>
+        <a:link id="sgacp5210_web_invoice_line_link" url="${/request/@context_path}/modules/acp/ACP7030/acp_web_invoice_lines.screen"/>
+        <a:link id="sgacp5210_payment_apply_maintain_link" url="${/request/@context_path}/modules/cux/SUGON/SGACP/SGACP5210/sgacp5210_payment_apply_maintain.screen"/>
+        <script><![CDATA[
+			
+			//事务日期校检
+			function sgacp5210_transaction_date_validator(record,name,value){
+			 	if(name == "transaction_date_from" || name == "transaction_date_to"){
+			 	 	var start_date = record.get("transaction_date_from");  
+			 	 	var end_date = record.get("transaction_date_to");
+			 	 	if(typeof(end_date) != 'undefined' && !Ext.isEmpty(end_date) && typeof(start_date) != 'undefined' && !Ext.isEmpty(start_date)){
+			 	 	 	if(start_date > end_date){
+			 	 	 	 	return '事务日期从不能大于事务日期至！';   
+			 	 	 	}   
+			 	 	}
+			 	 	return true;
+			 	}   
+			}
+			
+			//校验所选数据都一致(公司+供应商+币种+汇率)
+            function sgacp5210_check_header_exists(record) {
+                var header_record = $('sgacp5210_payment_apply_headers_ds').getCurrentRecord();
+                if (header_record.get('company_id') == record.get('company_id') && header_record.get('vendor_id') == record.get('vendor_id') &&  header_record.get('currency_code') == record.get('currency_code') && header_record.get('tax_rate') == record.get('tax_rate')) {
+                    return true;
+                }
+                return false;
+            }
+			
+			//组织付款申请预览的dataSet
+			function sgacp5210_payment_apply_ds_create(records) {
+			    var final_payment_date,
+			    	header_ds  = $('sgacp5210_payment_apply_headers_ds'),
+			    	line_ds 	= $('sgacp5210_payment_apply_lines_ds');
+                header_ds.removeAll();
+                line_ds.removeAll();
+                //含税总金额
+                var tax_total_amount = 0;
+                //创建头
+                header_ds.create();
+                var header_record = header_ds.getAt(0);
+                header_record.set('company_id', records[0].get('company_id'));
+                header_record.set('company_name', records[0].get('company_name'));
+                header_record.set('vendor_id', records[0].get('vendor_id'));
+                header_record.set('vendor_code', records[0].get('vendor_code'));
+                header_record.set('vendor_name', records[0].get('vendor_name'));
+                header_record.set('currency_code', records[0].get('currency_code'));
+                header_record.set('tax_rate', records[0].get('tax_rate')); //税率
+                //header_record.set('tax_total_amount', records[0].get('tax_total_amount'));//含税总金额
+            
+                for (var i = 0;i < records.length;i++) {
+            
+                    if (!sgacp5210_check_header_exists(records[i])) {
+                        Aurora.showMessage('${l:PROMPT}', '勾选的数据中公司+供应商+币种+汇率不一致!',function(){},300,120);
+                        return false;
+                    } else {
+                        //取行上的max(事务日期加付款周期)
+                        if(!final_payment_date){
+                         	final_payment_date = records[i].get('transaction_date');	   
+                        } else if(final_payment_date < records[i].get('transaction_date')){
+                        	final_payment_date =  records[i].get('transaction_date');   
+                        }
+                     	tax_total_amount += (records[i].get('tax_bill_amount') || 0) ;
+                     	//设置行信息
+                     	line_ds.create(records[i].data);
+                    }
+                }
+            
+            	header_record.set('tax_total_amount', tax_total_amount);//含税总金额
+            	header_record.set('final_payment_date', final_payment_date);//含税总金额
+                return true;
+            }
+			
+			//创建预览
+			function sgacp5210_payment_apply_create(){
+                var result_ds = $('sgacp5210_web_invoice_result_ds');
+                var records = result_ds.getSelected();
+            
+                if (records.length > 0) {
+                    if (sgacp5210_payment_apply_ds_create(records)) {
+                        new Aurora.Window({
+                            id: 'sgacp5210_payment_apply_maintain_win',
+                            title: '付款申请创建预览',
+                            url: $('sgacp5210_payment_apply_maintain_link').getUrl(),
+                            fullScreen: true
+                        }).on('beforeclose', function() {
+                            sgacp5210_web_invoice_query();
+                        });
+                    }
+            
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '至少勾选一条数据创建预览付款申请！');
+                }   
+			}
+			
+			//导出
+			function sgacp5210_web_invoice_export(){
+			 	alert('导出');   
+			}
+			
+			//网上发票号渲染
+			function sgacp5210_web_invoice_num_renderer(value,record,name){
+				var invoice_header_id = record.get('invoice_header_id');
+				if (record.get('invoice_header_id')) {
+	            	return '<a href="javascript:sgacp5210_web_invoice_line_info(' + invoice_header_id + ')">' + value + '</a>';
+	            } 	   
+			}
+			
+			
+			function sgacp5210_web_invoice_line_info(invoice_header_id) {
+                new Aurora.Window({
+                    id: 'acp7030_web_invoice_line_window',
+                    url: $('sgacp5210_web_invoice_line_link').getUrl() + '?invoice_header_id=' + invoice_header_id,
+                    title: '${l:ACP_WEB_INVOICE.WEB_INVOICE_MAINTAIN}',
+                    fullScreen: true
+                });
+            }
+			
+			//查询应付发票
+			function sgacp5210_web_invoice_query(){
+			 	$('sgacp5210_web_invoice_result_ds').query();   
+			}
+		]]></script>
+        <a:dataSets>
+            <!-- 创建预览 -->
+            <a:dataSet id="sgacp5210_payment_apply_headers_ds" model="cux.SUGON.SGACP.SGACP5210.sgacp_payment_apply_headers"/>
+            <a:dataSet id="sgacp5210_payment_apply_lines_ds" model="cux.SUGON.SGACP.SGACP5210.sgacp_payment_apply_lines"/>
+            <a:dataSet id="sgacp5210_web_invoice_query_ds">
+                <a:fields>
+                    <a:field name="transaction_date_from" validator="sgacp5210_transaction_date_validator"/>
+                    <a:field name="transaction_date_to" validator="sgacp5210_transaction_date_validator"/>
+                    <a:field name="company_desc" lovHeight="530" lovService="cux.SUGON.SGACP.fnd_assign_company_lov" lovWidth="530" title="公司选择">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_desc" to="company_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="vendor_desc" lovHeight="530" lovService="cux.SUGON.SGACP.pur_vendors_lov" lovWidth="530" title="供应商选择">
+                        <a:mapping>
+                            <a:map from="vendor_id" to="vendor_id"/>
+                            <a:map from="vendor_desc" to="vendor_desc"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="sgacp5210_web_invoice_result_ds" model="cux.SUGON.SGACP.SGACP5210.sgacp_web_invoice_query" queryDataSet="sgacp5210_web_invoice_query_ds" selectable="true"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="sgacp5210_payment_apply_create" text="创建预览" width="100"/>
+                <a:gridButton bind="sgacp5210_web_invoice_result_grid" type="excel" width="100"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="sgacp5210_web_invoice_query_ds" resultTarget="sgacp5210_web_invoice_result_ds">
+                <a:formToolBar>
+                    <a:hBox labelWidth="110">
+                        <a:textField name="invoice_num" bindTarget="sgacp5210_web_invoice_query_ds" prompt="网上发票号">
+                            <a:events>
+                                <a:event name="enterdown" handler="sgacp5210_web_invoice_query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:textField name="order_num" bindTarget="sgacp5210_web_invoice_query_ds" prompt="采购订单号">
+                            <a:events>
+                                <a:event name="enterdown" handler="sgacp5210_web_invoice_query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:lov name="vendor_desc" bindTarget="sgacp5210_web_invoice_query_ds" prompt="供应商">
+                            <a:events>
+                                <a:event name="enterdown" handler="sgacp5210_web_invoice_query"/>
+                            </a:events>
+                        </a:lov>
+                    </a:hBox>
+                </a:formToolBar>
+                <a:formBody>
+                    <a:hBox labelWidth="110">
+                        <a:lov name="company_desc" bindTarget="sgacp5210_web_invoice_query_ds" prompt="公司">
+                            <a:events>
+                                <a:event name="enterdown" handler="sgacp5210_web_invoice_query"/>
+                            </a:events>
+                        </a:lov>
+                        <a:textField name="tax_invoice_num" bindTarget="sgacp5210_web_invoice_query_ds" prompt="税务发票号">
+                            <a:events>
+                                <a:event name="enterdown" handler="sgacp5210_web_invoice_query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:textField name="recept_num" bindTarget="sgacp5210_web_invoice_query_ds" prompt="接收编号">
+                            <a:events>
+                                <a:event name="enterdown" handler="sgacp5210_web_invoice_query"/>
+                            </a:events>
+                        </a:textField>
+                    </a:hBox>
+                    <a:hBox labelWidth="110">
+                        <a:datePicker name="transaction_date_from" bindTarget="sgacp5210_web_invoice_query_ds" prompt="事务日期从">
+                            <a:events>
+                                <a:event name="enterdown" handler="sgacp5210_web_invoice_query"/>
+                            </a:events>
+                        </a:datePicker>
+                        <a:datePicker name="transaction_date_to" bindTarget="sgacp5210_web_invoice_query_ds" prompt="事务日期至">
+                            <a:events>
+                                <a:event name="enterdown" handler="sgacp5210_web_invoice_query"/>
+                            </a:events>
+                        </a:datePicker>
+                    </a:hBox>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="sgacp5210_web_invoice_result_grid" bindTarget="sgacp5210_web_invoice_result_ds" marginHeight="240" marginWidth="80" navBar="true" width="900">
+                <a:columns>
+                    <a:column name="invoice_num" align="center" renderer="sgacp5210_web_invoice_num_renderer" sortable="true" width="80"/>
+                    <a:column name="invoice_line_num" align="right" width="60"/>
+                    <a:column name="item_code" align="center" sortable="true" width="80"/>
+                    <a:column name="item_name"/>
+                    <a:column name="bill_quantity" align="right" sortable="true" width="60"/>
+                    <a:column name="item_uom" width="60"/>
+                    <a:column name="currency_code" sortable="true" width="60"/>
+                    <a:column name="unit_price" align="right" renderer="Aurora.formatMoney" sortable="true" width="80"/>
+                    <a:column name="invoice_price" align="right" renderer="Aurora.formatMoney" sortable="true" width="80"/>
+                    <a:column name="bill_amount" align="right" renderer="Aurora.formatMoney" sortable="true" width="60"/>
+                    <a:column name="tax_rate" align="right" sortable="true" width="60"/>
+                    <a:column name="tax_bill_amount" align="right" renderer="Aurora.formatMoney" sortable="true" width="60"/>
+                    <a:column name="order_num" align="right" sortable="true" width="60"/>
+                    <a:column name="line_num" align="right" sortable="true" width="60"/>
+                    <a:column name="shipment_num" align="right" sortable="true" width="60"/>
+                    <a:column name="recept_num" align="right" sortable="true" width="60"/>
+                    <a:column name="transaction_date" align="right" renderer="Aurora.formatDate" sortable="true" width="80"/>
+                    <a:column name="tax_invoice_num" align="right" sortable="true" width="80"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

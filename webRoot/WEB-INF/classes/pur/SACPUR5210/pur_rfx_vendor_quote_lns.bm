@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            select * from (
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        vql.vendor_quote_ln_id,
+                        vql.vendor_quote_hd_id,
+                        vql.quote_line_id,
+                        ql.config_item,
+                        ql.template_line_id,
+                        ql.parameter_requirements,
+                        ql.quantity_code,
+                        vql.quantity,
+                        ql.price_code,
+                        vql.price,
+                        ql.comment_code,
+                        vql.comments,
+                        (vql.quantity * vql.price) amount
+                    FROM
+                        pur_rfx_feedback_lines fl,
+                        pur_rfx_feedback_headers fh,
+                        pur_rfx_quote_headers qh,
+                        pur_rfx_quote_lines ql,
+                        pur_rfx_vendor_quote_hds vqh,
+                        pur_rfx_vendor_quote_lns vql
+                    WHERE
+                        fl.feedback_header_id  = fh.feedback_header_id AND
+                        fl.rfx_line_item_id    = qh.rfx_line_item_id AND
+                        vqh.feedback_line_id   = fl.feedback_line_id AND
+                        ql.quote_header_id     = qh.quote_header_id AND
+                        vql.vendor_quote_hd_id = vqh.vendor_quote_hd_id AND
+                        vql.quote_line_id      = ql.quote_line_id AND
+                        qh.quote_header_id     = ${@quote_header_id} AND
+                        fl.feedback_line_id    = ${@feedback_line_id}
+                    UNION
+                    SELECT
+                        NULL vendor_quote_ln_id,
+                        NULL vendor_quote_hd_id,
+                        ql.quote_line_id,
+                        ql.config_item,
+                        ql.template_line_id,
+                        ql.parameter_requirements,
+                        ql.quantity_code,
+                        NULL quantity,
+                        ql.price_code,
+                        NULL price,
+                        ql.comment_code,
+                        NULL comments,
+                        NULL amount
+                    FROM
+                        pur_rfx_quote_lines ql
+                    WHERE
+                        ql.quote_header_id = ${@quote_header_id} AND
+                        NOT EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            pur_rfx_feedback_lines fl,
+                            pur_rfx_feedback_headers fh,
+                            pur_rfx_quote_headers qh,
+                            pur_rfx_vendor_quote_hds vqh
+                        WHERE
+                            fl.feedback_header_id = fh.feedback_header_id AND
+                            fl.rfx_line_item_id   = qh.rfx_line_item_id AND
+                            vqh.feedback_line_id  = fl.feedback_line_id AND
+                            qh.quote_header_id    = ql.quote_header_id AND
+                            fl.feedback_line_id   = ${@feedback_line_id}
+                        )
+                    )order by template_line_id )#WHERE_CLAUSE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:parameters>
+                <bm:parameter name="vendor_quote_ln_id" input="true" inputPath="@vendor_quote_ln_id" output="true" outputPath="@vendor_quote_ln_id"/>
+            </bm:parameters>
+            <bm:update-sql><![CDATA[
+            BEGIN
+  pur_rfx_feedback_pkg.save_vendor_quote_lns(p_vendor_quote_ln_id =>${@vendor_quote_ln_id},
+                                             p_vendor_quote_hd_id => NVL(${@vendor_quote_hd_id},${../../@vendor_quote_hd_id}),
+                                             p_quote_line_id      => ${@quote_line_id},
+                                             p_quantity           => ${@quantity},
+                                             p_price              => ${@price},
+                                             p_comments           => ${@comments},
+                                             p_user_id             => ${/session/@user_id});
+END;
+        ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

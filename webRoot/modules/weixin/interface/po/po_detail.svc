@@ -1,0 +1,308 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao  
+    $Date: 2015-09-08 下午04:38:31  
+    $Revision: 1.0  
+    $Purpose: 微信企业号，订单明细
+-->
+<a:service xmlns:s="aurora.plugin.script" xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+    <a:init-procedure>
+        <s:server-script><![CDATA[
+            /**
+             *read me
+             *1.订单明细查询接口
+             *2.对传入参数进行校验。进行其他动作之前，必须先获取用户id，角色id，BG等信息。
+             *3.指定每页页数和页码，定义全局默认值。
+             *4.对传入的查询条件进行处理。
+             *5.处理查询的数据集合，按指定格式返回。
+             *6.调试函数:println(Object);会将Object打印在控制台（如应用服务器tomcat的控制台）。例如：println($session.toXML());会将session对象以xml格式打印出来。
+             */
+            try {
+            
+                var parameter = $ctx.parameter;
+            
+                var result; //返回结果，json格式字符串
+                var pagesize = 10; //页数，默认每页10条
+                var pagenum = 1; //页码，默认第1页
+                var check = true; //校验结果,true通过,false不通过
+                var supply = 'supply'; //来之供应商
+                var purchase = 'purchase'; //来之采购方
+            
+                //赋值user_id
+                parameter.user_id = $session.user_id;
+            
+                /*
+                 ***************
+                 * 测试代码
+                 */
+                // //供应商
+                // if (parameter.from == supply) {
+                    // parameter.user_id = 1285826;
+                    // //采购方
+                // } else if (parameter.from == purchase) {
+                    // parameter.user_id = 1285624;
+                // }
+                /*
+                 ***************
+                 * 测试代码
+                 */
+            
+                //判断from是否有值
+                if (check) {
+                    if (!parameter.from) {
+                        check = false;
+                        result = {
+                            success: false,
+                            error: {
+                                message: 'from 没有获取到值，请联系管理员！'
+                            }
+                        };
+                    }
+                }
+            
+                //判断from的值，默认的值只有supply和purchase
+                if (check) {
+                    if (parameter.from != supply && parameter.from != purchase) {
+                        check = false;
+                        result = {
+                            success: false,
+                            error: {
+                                message: 'from 的值不是“supply”或者“purchase”，请联系管理员！'
+                            }
+                        };
+                    }
+                }
+            
+                //判断user_id
+                if (check) {
+                    if (!parameter.user_id) {
+                        check = false;
+                        result = {
+                            success: false,
+                            error: {
+                                message: 'user_id 没有获取到值，请联系管理员！'
+                            }
+                        };
+                    }
+                }
+            
+                //判断pur_header_id
+                if (check) {
+                    if (!parameter.pur_header_id) {
+                        check = false;
+                        result = {
+                            success: false,
+                            error: {
+                                message: 'pur_header_id 没有获取到值，请联系管理员！'
+                            }
+                        };
+                    }
+                }
+            
+                //通过所有校验
+                if (check) {
+            
+                    //获取用户信息，用户id，角色id，BG
+                    var user_info_bm = new ModelService('weixin.interface.public.user_info_with_userid');
+                    user_info_bm.execute({
+                        from_user_id: parameter.user_id
+                    });
+            
+                    //供应商
+                    if (parameter.from == supply) {
+                        //获取订单头信息
+                        var po_header_bm = new ModelService('weixin.interface.po.supply.po_detail_header');
+                        //获取订单行明细,指定查询订单列表BM，指定分页信息
+                        var po_lines_bm = new ModelService('weixin.interface.po.supply.po_detail_lines');
+            
+                        //采购方
+                    } else if (parameter.from == purchase) {
+                        //获取订单头信息
+                        var po_header_bm = new ModelService('weixin.interface.po.purchase.po_detail_header');
+                        //获取订单行明细,指定查询订单列表BM，指定分页信息
+                        var po_lines_bm = new ModelService('weixin.interface.po.purchase.po_detail_lines');
+            
+                    }
+            
+                    //获取头信息
+                    var po_header_records = po_header_bm.queryAsMap({
+                        pur_header_id: parameter.pur_header_id
+                    }).getChildren();
+                    if (po_header_records.length > 0) {
+                        var po_header_record = po_header_records[0];
+                    }
+            
+                    //设置查询分页条件
+                    if (parameter.pagenum) {
+                        pagenum = parameter.pagenum;
+                    }
+                    po_lines_bm.fetchDescriptor = {
+                        pagesize: pagesize,
+                        pagenum: pagenum
+                    };
+            
+                    //整理订单行数据
+                    var po_lines_records = po_lines_bm.queryAsMap({
+                        pur_header_id: parameter.pur_header_id
+                    }).getChildren();
+                    var po_liness = [];
+                    for (var i = 0;i < po_lines_records.length;i++) {
+            
+                        var po_lines = {};
+            
+                        if (po_lines_records[i].line_num) {
+                            po_lines.line_num = po_lines_records[i].line_num;
+                        } else {
+                            po_lines.line_num = '';
+                        }
+            
+                        if (po_lines_records[i].item_code) {
+                            po_lines.item_code = po_lines_records[i].item_code;
+                        } else {
+                            po_lines.item_code = '';
+                        }
+            
+                        if (po_lines_records[i].item_name) {
+                            po_lines.item_name = po_lines_records[i].item_name;
+                        } else {
+                            po_lines.item_name = '';
+                        }
+            
+                        if (po_lines_records[i].unit_price || po_lines_records[i].unit_price == 0) {
+                            po_lines.unit_price = po_lines_records[i].unit_price;
+                        } else {
+                            po_lines.unit_price = '';
+                        }
+            
+                        if (po_lines_records[i].quantity) {
+                            po_lines.quantity = po_lines_records[i].quantity;
+                        } else {
+                            po_lines.quantity = '';
+                        }
+            
+                        if (po_lines_records[i].unit_code) {
+                            po_lines.unit_code = po_lines_records[i].unit_code;
+                        } else {
+                            po_lines.unit_code = '';
+                        }
+            
+                        if (po_lines_records[i].line_amount || po_lines_records[i].line_amount == 0) {
+                            po_lines.line_amount = po_lines_records[i].line_amount;
+                        } else {
+                            po_lines.line_amount = '';
+                        }
+            
+                        if (po_lines_records[i].original_unit_price || po_lines_records[i].original_unit_price == 0) {
+                            po_lines.original_unit_price = po_lines_records[i].original_unit_price;
+                        } else {
+                            po_lines.original_unit_price = '';
+                        }
+            
+                        if (po_lines_records[i].need_by_date) {
+                            po_lines.need_by_date = po_lines_records[i].need_by_date;
+                        } else {
+                            po_lines.need_by_date = '';
+                        }
+            
+                        if (po_lines_records[i].actual_receiver_name) {
+                            po_lines.actual_receiver_name = po_lines_records[i].actual_receiver_name;
+                        } else {
+                            po_lines.actual_receiver_name = '';
+                        }
+            
+                        if (po_lines_records[i].ship_to_location_address) {
+                            po_lines.ship_to_location_address = po_lines_records[i].ship_to_location_address;
+                        } else {
+                            po_lines.ship_to_location_address = '';
+                        }
+            
+                        if (po_lines_records[i].expand_flag) {
+                            po_lines.expand_flag = po_lines_records[i].expand_flag;
+                        } else {
+                            po_lines.expand_flag = '';
+                        }
+            
+                        if (po_lines_records[i].frozen_flag) {
+                            po_lines.frozen_flag = po_lines_records[i].frozen_flag;
+                        } else {
+                            po_lines.frozen_flag = '';
+                        }
+            
+                        po_liness.push(po_lines);
+                    }
+            
+                    //处理头数据
+                    if (po_header_record) {
+            
+                        if (!po_header_record.receiving_party) {
+                            po_header_record.receiving_party = '';
+                        }
+            
+                        if (!po_header_record.bill_to_party) {
+                            po_header_record.bill_to_party = '';
+                        }
+            
+                        if (!po_header_record.po_type) {
+                            po_header_record.po_type = '';
+                        }
+            
+                        if (!po_header_record.po_amount) {
+                            po_header_record.po_amount = '';
+                        }
+            
+                        if (!po_header_record.line_count) {
+                            po_header_record.line_count = '';
+                        }
+            
+                        if (!po_header_record.release_num) {
+                            po_header_record.release_num = '';
+                        }
+            
+                        if (!po_header_record.comments) {
+                            po_header_record.comments = '';
+                        }
+            
+                        //拼接头行信息
+                        var record = {
+                            header: {
+                                receiving_party: po_header_record.receiving_party,
+                                bill_to_party: po_header_record.bill_to_party,
+                                po_type: po_header_record.po_type,
+                                po_amount: po_header_record.po_amount,
+                                line_count: po_header_record.line_count,
+                                release_num: po_header_record.release_num,
+                                comments: po_header_record.comments
+                            },
+                            lines: po_liness
+                        }
+                    } else {
+                        var record = {};
+                    }
+            
+                    //返回字符串
+                    result = {
+                        result: {
+                            record: record,
+                            totalCount: 0
+                        },
+                        success: true
+                    };
+            
+                }
+            
+            } catch (e) {
+                $ctx.success = true;
+                result = {
+                    success: false,
+                    error: {
+                        message: e.message
+                    }
+                };
+            } finally {
+                //执行finally代码，将result对象回写
+                $ctx.parameter.json = JSON.stringify(result);
+            }
+        ]]></s:server-script>
+    </a:init-procedure>
+    <a:service-output output="/parameter/@json"/>
+</a:service>

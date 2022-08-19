@@ -1,0 +1,463 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: 7211
+    $Date: 2015-1-05 下午13:46:29  
+    $Revision: 1.0  
+    $Purpose: 8D创建
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query model="qms.QMS5050.get_current_employee_name" rootPath="qms5050_current_user"/>
+        <a:model-query model="qms.QMS5050.qms_check_batch_query" rootPath="qms_check_batch_query_data"/>
+        <a:model-query model="qms.QMS5050.qms_lines_desc" rootPath="qms_lines"/>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;ABNORMAL_SOURCE&apos;" fetchAll="true" model="qms.QMS5050.fnd_flex_value_sets_query" rootPath="qms5050_abnormal_source_data"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="qms5050_8d_insert_link" model="qms.QMS5050.qms_8d_query" modelaction="insert"/>
+        <a:link id="qms5050_8d_update_link" model="qms.QMS5050.qms_8d_query" modelaction="update"/>
+        <a:link id="qms5050_8d_delete_link" model="qms.QMS5050.qms_8d_query" modelaction="delete"/>
+        <a:link id="qms5050_8d_submit_link" model="qms.QMS5050.qms_8d_query" modelaction="execute"/>
+        <script><![CDATA[
+        	function init(){
+        	    var qms_8d_id = '${/parameter/@qms_8d_id}';
+        	    //检验批创建8D参数
+        	    if(qms_8d_id){
+        	        $('qms5050_8d_maintain_ds').setQueryParameter('qms_8d_id', qms_8d_id);
+        	        $('qms5050_8d_maintain_ds').query();
+        	    }else{
+        	        var record = $('qms5050_8d_maintain_ds').create();
+        	        var date = new Date();
+        	        //var record = $('qms5050_8d_maintain_ds').getCurrentRecord();
+        	        record.set('created_date', Aurora.formatDate(date));
+        	        //ICA要求时间为当前时间+24小时
+        	        var ica_require_date = new Date(date.getFullYear(), date.getMonth(), date.getDate()+1, date.getHours(), date.getMinutes(), date.getSeconds());
+        	        //PCA要求时间为当前日期+14天
+        	        var pca_require_date = new Date(date.getFullYear(), date.getMonth(), date.getDate()+14);
+        	        // record.set('ica_require_date', Aurora.formatDateTime(ica_require_date));
+        	        // record.set('pca_require_date', pca_require_date);
+        	        //设置重要度和紧急程度
+        	        record.set('importance_degree','NORMAL');
+        	        record.set('importance_degree_display','${l:QMS5050.GENERAL}');
+        	        record.set('urgency_degree','NORMAL');
+        	        record.set('urgency_degree_display','${l:QMS5050.GENERAL}');
+        	        
+        	        //设置供应商不可选择
+        	        record.getField('coop_company_code').setReadOnly(true);
+        	    }
+        	}
+        	
+        	//问题详述长度校检
+        	function qms5050_8d_issue_desc_validator(record,name,value){
+        	 	if(name == "issue_desc"){
+			 	 	var issue_desc = record.get("issue_desc");
+			 	 	if(issue_desc){
+			 	 	    if(issue_desc.length > 500){
+			 	 	     	return '${l:QMS5050.ISSUE_DETAIL_OVERLENGTH}';   
+			 	 	    }
+			 	 	}
+			 	 	return true;
+			 	} 
+        	}
+        	
+        	function qms5050_8d_maintain_return(){
+        	    $('qms5050_8d_create_operation_win').close();
+        	}
+        	
+        	function qms5050_8d_maintain_upload(){
+        	    var qms_8d_id = $('qms5050_8d_maintain_ds').getCurrentRecord().get('qms_8d_id');
+        	    if(qms_8d_id){
+        	        new Aurora.Window({
+	                    id: 'qms5050_8d_upload_win',
+	                    title: '${l:ATM.UPLOAD_ATTACHMENT}',
+	                    url: $('qms5050_8d_upload_link').getUrl()+'?pkvalue='+qms_8d_id+'&table_name=QMS_8D_FILE',
+	                    width: 850,
+	                    height: 500
+	                });
+        	    }else{
+        	        Aurora.showMessage('${l:PROMPT}', '${l:QMS5050.DATA_IS_NOT_SAVED}');
+        	        return;
+        	    }
+        	}
+        	
+        	//保存8D
+        	function qms5050_8d_save(){
+        	    var ds = $('qms5050_8d_maintain_ds');
+        	    if(ds.validate()){
+	        	    var record = ds.getCurrentRecord();
+	        	    var url;
+	        	    
+	        	    if(record.isNew){
+	        	        url = $('qms5050_8d_insert_link').getUrl();
+	        	    }else{
+	        	        url = $('qms5050_8d_update_link').getUrl();
+	        	    }
+	        	    Aurora.Masker.mask($('qms5050_8d_create_operation_win').wrap,'${l:QMS5050.BEING_SUBMITTED}'); 
+	        	    Aurora.request({
+	        	        url:url,
+	        	        para:record.data,
+	        	        success:function(res){
+	        	            var qms_8d_id = res.result.qms_8d_id?res.result.qms_8d_id:'${/parameter/@qms_8d_id}';
+        	                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SAVE_SUCCESS}', function(){
+	        	                ds.setQueryParameter('qms_8d_id', qms_8d_id);
+	        	                ds.query();
+	        	                Aurora.Masker.unmask($('qms5050_8d_create_operation_win').wrap);
+        	                });  
+	        	        },
+	        	        failure:function(){
+	        	        	Aurora.Masker.unmask($('qms5050_8d_create_operation_win').wrap);    
+	        	        },
+	        	        error:function(){
+	        	         	Aurora.Masker.unmask($('qms5050_8d_create_operation_win').wrap);   
+	        	        },
+	        	        scope:this
+	        	    });
+        	    }
+        	}
+        	
+        	function qms5050_rendererDay(cell,date,text,currentMonth){
+				var today=new Date();
+				if(date < new Date(today.getFullYear(),today.getMonth(),today.getDate())){
+					cell.disabled=true;
+				}
+				return text;
+			}
+			
+			function qms5050_8d_delete(){
+		        var record = $('qms5050_8d_maintain_ds').getCurrentRecord();
+		        if(record.get('qms_8d_id')){
+				    Aurora.showConfirm('${l:PROMPT}', '${l:QMS5050.SURE_TO_DELETE}', function(){
+				        Aurora.Masker.mask($('qms5050_8d_create_operation_win').wrap,'${l:QMS5050.BEING_SUBMITTED}'); 
+				        Aurora.request({
+		        	        url:$('qms5050_8d_delete_link').getUrl(),
+		        	        para:record.data,
+		        	        success:function(){
+	        	                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function(){
+	        	                    Aurora.Masker.unmask($('qms5050_8d_create_operation_win').wrap); 
+		        	                qms5050_8d_maintain_return();
+	        	                });
+		        	        },
+		        	        error:function(){
+		        	        	Aurora.Masker.unmask($('qms5050_8d_create_operation_win').wrap);     
+		        	        },
+		        	        failure:function(){
+		        	         	Aurora.Masker.unmask($('qms5050_8d_create_operation_win').wrap);    
+		        	        },
+		        	        scope:this
+		        	    });
+				    }, function(){}, 300, 100);
+			    }else{
+        	        Aurora.showMessage('${l:PROMPT}', '${l:QMS5050.DATA_IS_NOT_SAVED}');
+        	        return;
+        	    }
+			}
+        	
+        	function qms5050_8d_release(){
+        	    var record = $('qms5050_8d_maintain_ds').getCurrentRecord();
+		        if(record.get('qms_8d_id')){
+		            if(record.dirty){
+		             	Aurora.showMessage('${l:PROMPT}', '${l:QMS5050.DATA_IS_NOT_SAVED}'); 
+		             	return ;  
+		            }
+		            Aurora.showConfirm('${l:PROMPT}','${l:QMS5050.SURE_TO_RELEASE}',function(){
+		                Aurora.Masker.mask($('qms5050_8d_create_operation_win').wrap,'${l:QMS5050.BEING_SUBMITTED}'); 
+				        Aurora.request({
+		        	        url:$('qms5050_8d_submit_link').getUrl(),
+		        	        para:record.data,
+		        	        success:function(){
+	        	                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function(){
+	        	                    Aurora.Masker.unmask($('qms5050_8d_create_operation_win').wrap);  
+		        	                qms5050_8d_maintain_return();
+	        	                });
+		        	        },
+		        	        error:function(){
+		        	        	Aurora.Masker.unmask($('qms5050_8d_create_operation_win').wrap);     
+		        	        },
+		        	        failure:function(){
+		        	         	Aurora.Masker.unmask($('qms5050_8d_create_operation_win').wrap);    
+		        	        },
+		        	        scope:this
+		        	    });		                
+		            },function(){},300,100);
+			    }else{
+        	        Aurora.showMessage('${l:PROMPT}', '${l:QMS5050.DATA_IS_NOT_SAVED}');
+        	        return;
+        	    }
+        	}
+        	
+        	//查看送货检验情况
+        	
+        	function qms5050_query_deliver_inspection(){
+        	    var inspection_id = '${/parameter/@inspection_id}';
+        	    new Aurora.Window({
+        	        id:'qms7100_inspection_maintain_win',
+        	        title:'${l:QMS7100.MY_DELIVERY_INSPECTION}',
+        	        url:$('qms7100_inspection_maintain_link').getUrl()+'?inspection_id='+inspection_id,
+        	        fullScreen:true
+        	    });
+        	}
+        	
+        	//8D更新处理
+        	function qms5050_8d_update_handler(dataSet,record,name,value,oldvalue){
+        		if(name == "company_id"){
+        		 	//选择公司后，设置供应商可选额
+			     	if(value){
+			     	    //清空之前选择的供应商
+			     	   	record.set('coop_company_code','');
+			     	   	record.set('coop_company_desc','');
+			     	 	record.getField('coop_company_code').setReadOnly(false);  
+			     	 	//设置查询参数
+			     	 	record.getField('coop_company_code').setLovPara('owner_company_id',value); 
+			     	 	
+			     	 	//Add by Hunter 2658 at 2018-01-06 T1929
+			     	 	//增加公司与库存组织的关联
+			     	 	record.getField('inv_organization_code').setLovPara('owner_company_id',value);
+			     	 	record.getField('inv_organization_code').setReadOnly(false); 
+			     	 	record.getField('inv_organization_code').setRequired(true); 
+			     	}else{
+			     	 	record.getField('inv_organization_code').setLovPara('owner_company_id','');
+			     	 	record.set('inv_organization_id','');
+			     	 	record.set('inv_organization_code','');
+			     	 	record.set('inv_organization_desc','');
+			     	 	record.getField('inv_organization_code').setReadOnly(true); 
+			     	}
+        		} 	  
+        		
+        		
+        		if(name=="sampling_quantity" && value!=undefined)
+        		{
+        		    if(record.get('bad_quantity')!=undefined)
+        		    {
+        		         record.set('adverse_rate',record.get('bad_quantity')*100/record.get('sampling_quantity'));
+        		    }
+        		}
+        		
+        		if(name=="bad_quantity" && value!=undefined)
+        		{
+        		    if(record.get('sampling_quantity')!=undefined)
+        		    {
+        		         record.set('adverse_rate',record.get('bad_quantity')*100/record.get('sampling_quantity'));
+        		    }
+        		}
+        		
+        		if(name=='send_date')
+        		{
+        		    if(record.get('pca_require_date')==undefined)
+        		    {
+        		        var date = new Date(record.get('send_date').getFullYear(),record.get('send_date').getMonth(),record.get('send_date').getDate()+7); 
+        		        record.set('pca_require_date',date);
+        		    }
+        		} 
+        	}
+        	
+        	//8D加载完成
+        	function qms5050_8d_load_handler(dataSet){  
+        	 	   var record = dataSet.getCurrentRecord();
+        	 	   var company_id = record.get('company_id');
+        	 	   if(record.get('data_source') == 'SYN'){
+        	 	    	record.getField('coop_company_code').setReadOnly(true); 
+        	 	    	record.getField('inv_organization_code').setReadOnly(true); 
+        	 	    	record.getField('item_code').setReadOnly(true);
+        	 	    	record.getField('company_desc').setReadOnly(true); 
+        	 	   } else {
+        	 	    	if(company_id){
+        	 	    		record.getField('coop_company_code').setLovPara('owner_company_id',record.get('company_id'));    
+        	 	    		
+        	 	    		//Add by Hunter 2658 at 2018-01-06 T1929
+			     	 		//增加公司与库存组织的关联
+        	 	    		record.getField('inv_organization_code').setLovPara('owner_company_id',record.get('company_id')); 
+        	 	    		record.getField('inv_organization_code').setReadOnly(false); 
+        	 	    	}   
+        	 	   }   
+        	}  
+
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="qms5050_abnormal_source_ds">
+                <a:datas dataSource="qms5050_abnormal_source_data"/>
+            </a:dataSet>
+            <a:dataSet id="qms5050_8d_maintain_ds" loadData="true" model="qms.QMS5050.qms_8d_query">
+                <a:fields>
+                    <a:field name="qms_8d_title" required="true"/>
+                    <a:field name="company_id" defaultValue="${/model/qms_check_batch_query_data/record/@company_id}" required="true"/>
+                    <a:field name="company_desc" defaultValue="${/model/qms_check_batch_query_data/record/@company_desc}" required="true"/>
+                    <a:field name="inv_organization_id" defaultValue="${/model/qms_check_batch_query_data/record/@inv_organization_id}"/>
+                    <a:field name="inv_organization_desc" defaultValue="${/model/qms_check_batch_query_data/record/@inv_organization_desc}"/>
+                    <a:field name="ica_require_date" required="true"/>
+                    <a:field name="pca_require_date" required="true"/>
+                    <a:field name="display_po_number"/>
+                    <a:field name="asn_number"/>
+                    <a:field name="lots_num"/>
+                    <a:field name="issue_desc" defaultValue="${/model/qms_lines/record/@desc1}" required="true" validator="qms5050_8d_issue_desc_validator"/>
+                    <a:field name="created_by_name" defaultValue="${/model/qms5050_current_user/record/@description}"/>
+                    <a:field name="created_date"/>
+                    <a:field name="issue_type_display" displayField="flex_desc" options="qms5050_8d_issue_type_ds" required="true" returnField="issue_type" valueField="flex_value"/>
+                    <a:field name="status_display" displayField="flex_desc" options="qms5050_8d_status_ds" returnField="status" valueField="flex_value"/>
+                    <a:field name="data_source_desc" defaultValue="${/parameter/@data_source_desc}"/>
+                    <a:field name="data_source_desc_display" displayField="flex_desc" options="qms5050_8d_data_source_desc_ds" returnField="data_source_desc" valueField="flex_value"/>
+                    <a:field name="data_source_code" defaultValue="${/model/qms_check_batch_query_data/record/@inspection_code}"/>
+                    <a:field name="data_source" defaultValue="${/parameter/@data_source}"/>
+                    <a:field name="data_source_display" displayField="flex_desc" options="qms5050_8d_data_source_ds" returnField="data_source" valueField="flex_value"/>
+                    <!-- <a:field name="coop_company_desc" defaultValue="${/model/qms_check_batch_query_data/record/@vendor_desc}"/> -->
+                    <a:field name="coop_business_group" defaultValue="${/model/qms_check_batch_query_data/record/@coop_business_group}"/>
+                    <a:field name="coop_company_id" defaultValue="${/model/qms_check_batch_query_data/record/@coop_company_id}"/>
+                    <!--                     <a:field name="coop_company_code" defaultValue="${/model/qms_check_batch_query_data/record/@vendor_code}" lovHeight="530" lovService="qms.QMS5050.fnd_coop_companies_lov" lovWidth="530" title="QMS_8D.VENDER_SEARCH">
+                        <a:mapping>
+                            <a:map from="coop_partner_id" to="coop_partner_id"/>
+                            <a:map from="coop_company_code" to="coop_company_code"/>
+                            <a:map from="coop_company_desc" to="coop_company_desc"/>
+                            <a:map from="coop_business_group" to="coop_business_group"/>
+                            <a:map from="coop_company_id" to="coop_company_id"/>
+                        </a:mapping>
+                    </a:field> -->
+                    <a:field name="coop_company_desc" defaultValue="${/model/qms_check_batch_query_data/record/@vendor_desc}" lovHeight="530" lovService="qms.QMS5050.fnd_coop_companies_lov" lovWidth="530" title="QMS_8D.VENDER_SEARCH">
+                        <a:mapping>
+                            <a:map from="coop_partner_id" to="coop_partner_id"/>
+                            <a:map from="coop_company_code" to="coop_company_code"/>
+                            <a:map from="coop_company_desc" to="coop_company_desc"/>
+                            <a:map from="coop_business_group" to="coop_business_group"/>
+                            <a:map from="coop_company_id" to="coop_company_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="coop_company_code" defaultValue="${/model/qms_check_batch_query_data/record/@vendor_code}"/>
+                    <a:field name="item_id" defaultValue="${/model/qms_check_batch_query_data/record/@item_id}"/>
+                    <a:field name="item_name" defaultValue="${/model/qms_check_batch_query_data/record/@item_desc}"/>
+                    <a:field name="item_code" autoComplete="true" autoCompleteField="item_code" defaultValue="${/model/qms_check_batch_query_data/record/@item_code}" lovHeight="530" lovService="qms.QMS5050.inv_system_items_vl_lov?enabled_flag=Y" lovWidth="530" title="QMS_8D.ITEM_QUERY">
+                        <a:mapping>
+                            <a:map from="item_id" to="item_id"/>
+                            <a:map from="item_code" to="item_code"/>
+                            <a:map from="item_desc" to="item_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="inv_organization_code" autoComplete="true" autoCompleteField="inv_organization_code" defaultValue="${/model/qms_check_batch_query_data/record/@inv_organization_code}" lovHeight="530" lovLabelWidth="100" lovService="qms.QMS5050.inv_organizations_lov" lovWidth="530" title="QMS_8D.INV_ORG_QUERY">
+                        <a:mapping>
+                            <a:map from="inv_organization_id" to="inv_organization_id"/>
+                            <a:map from="inv_organization_code" to="inv_organization_code"/>
+                            <a:map from="inv_organization_desc" to="inv_organization_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="company_desc" autoComplete="true" autoCompleteField="company_desc" lovHeight="530" lovLabelWidth="100" lovService="qms.QMS5050.fnd_assign_company_lov" lovWidth="530" required="true" title="QMS_8D.COMPANY_QUERY">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_code" to="company_code"/>
+                            <a:map from="company_desc" to="company_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="importance_degree_display" displayField="flex_desc" options="qms5050_8d_importance_degree_ds" required="true" returnField="importance_degree" valueField="flex_value"/>
+                    <a:field name="urgency_degree_display" displayField="flex_desc" options="qms5050_8d_urgency_degree_ds" required="true" returnField="urgency_degree" valueField="flex_value"/>
+                    <a:field name="abnormal_source" defaultValue="进料异常" displayField="flex_desc" options="qms5050_abnormal_source_ds" returnField="abnormal_source_code" valueField="flex_value"/>
+                    <a:field name="abnormal_source_code" defaultValue="ABNORMITY_OF_FEED"/>
+                    <a:field name="discovery" defaultValue="${/model/qms5050_current_user/record/@description}" readOnly="true"/>
+                    <a:field name="adverse_rate" defaultValue="${/model/qms_check_batch_query_data/record/@adverse_rate}" readOnly="true"/>
+                    <a:field name="sampling_quantity" defaultValue="${/model/qms_check_batch_query_data/record/@sampling_quantity}"/>
+                    <a:field name="bad_quantity" defaultValue="${/model/qms_check_batch_query_data/record/@bad_quantity}"/>
+                    <a:field name="data_source_id" defaultValue="${/parameter/@inspection_id}"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="qms5050_8d_load_handler"/>
+                    <a:event name="update" handler="qms5050_8d_update_handler"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="qms5050_8d_save" text="PROMPT.SAVE" width="100"/>
+                <a:toolbarButton click="qms5050_8d_release" text="PROMPT.RELEASE" width="100"/>
+                <a:toolbarButton click="qms5050_query_deliver_inspection" text="QMS5050.QUERY_DELIVER_INSPECTION" width="120"/>
+                <a:toolbarButton click="qms5050_8d_delete" text="PROMPT.DELETE" width="100"/>
+                <a:toolbarButton click="qms5050_8d_maintain_upload" text="QMS_8D.UPLOAD_ATTACHMENT" width="100"/>
+                <a:toolbarButton click="qms5050_8d_maintain_return" text="HAP_BACK" width="100"/>
+            </a:screenTopToolbar>
+            <a:fieldSet column="1" title="PROMPT.BASIC_INFOMATION">
+                <a:hBox labelWidth="100">
+                    <a:textField name="qms_8d_title" bindTarget="qms5050_8d_maintain_ds" width="667"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textField name="qms_8d_code" bindTarget="qms5050_8d_maintain_ds" readOnly="true" width="150"/>
+                    <a:datePicker name="send_date" bindTarget="qms5050_8d_maintain_ds" prompt="发出日期" renderer="Aurora.formatDateTime" width="150"/>
+                    <!-- <a:textField name="version" bindTarget="qms5050_8d_maintain_ds" prompt="版本" width="150" /> -->
+                    <a:lov name="coop_company_desc" bindTarget="qms5050_8d_maintain_ds" prompt="PUR_VENDORS.VENDOR_NAME" width="150"/>
+                    <a:comboBox name="abnormal_source" bindTarget="qms5050_8d_maintain_ds" prompt="异常来源" width="150"/>
+                    <!-- <a:textField name="status_display" bindTarget="qms5050_8d_maintain_ds" prompt="QMS_8D.STATUS_DISPLAY" readOnly="true" width="150"/> -->
+                    <!-- <a:textField name="created_by_name" bindTarget="qms5050_8d_maintain_ds" readOnly="true" width="150"/> -->
+                    <!-- <a:textField name="created_date" bindTarget="qms5050_8d_maintain_ds" readOnly="true" width="150"/> -->
+                </a:hBox>
+                <!--                 <a:hBox labelWidth="100">
+                    <a:lov name="company_desc" bindTarget="qms5050_8d_maintain_ds" prompt="FND_COMPANIES.COMPANY" width="150"/>
+                    <a:lov name="inv_organization_code" bindTarget="qms5050_8d_maintain_ds" readOnly="true" width="150"/>
+                    <a:textField name="inv_organization_desc" bindTarget="qms5050_8d_maintain_ds" readOnly="true" width="150"/>
+                    <a:textField name="project_code" bindTarget="qms5050_8d_maintain_ds" width="150"/>
+                </a:hBox> -->
+                <a:hBox labelWidth="100">
+                    <a:lov name="company_desc" bindTarget="qms5050_8d_maintain_ds" prompt="FND_COMPANIES.COMPANY" width="150"/>
+                    <a:lov name="inv_organization_code" bindTarget="qms5050_8d_maintain_ds" readOnly="true" width="150"/>
+                    <a:textField name="inv_organization_desc" bindTarget="qms5050_8d_maintain_ds" readOnly="true" width="150"/>
+                    <a:textField name="data_source_display" bindTarget="qms5050_8d_maintain_ds" prompt="PROMPT.DATA_SOURCE" readOnly="true" width="150"/>
+                    <!--                     <a:lov name="coop_company_code" bindTarget="qms5050_8d_maintain_ds" prompt="PUR_VENDORS.VENDOR_CODE" width="150"/>
+                    <a:textField name="coop_company_desc" bindTarget="qms5050_8d_maintain_ds" prompt="PUR_VENDORS.VENDOR_NAME" readOnly="true" width="150"/>
+                    <a:lov name="item_code" bindTarget="qms5050_8d_maintain_ds" width="150"/>
+                    <a:textField name="item_name" bindTarget="qms5050_8d_maintain_ds" readOnly="true" width="150"/> -->
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:dateTimePicker name="ica_require_date" bindTarget="qms5050_8d_maintain_ds" dayRenderer="qms5050_rendererDay" renderer="Aurora.formatDateTime" width="150"/>
+                    <a:datePicker name="pca_require_date" bindTarget="qms5050_8d_maintain_ds" dayRenderer="qms5050_rendererDay" width="150"/>
+                    <a:textField name="discovery" bindTarget="qms5050_8d_maintain_ds" prompt="发现人" width="150"/>
+                    <a:datePicker name="discovery_date" bindTarget="qms5050_8d_maintain_ds" prompt="发现日期" renderer="Aurora.formatDateTime" width="150"/>
+                </a:hBox>
+                <!-- <a:hBox labelWidth="100"> -->
+                <!-- <a:textField name="data_source_desc_display" bindTarget="qms5050_8d_maintain_ds" prompt="QMS_8D.DATA_SOURCE_DESC" readOnly="true" width="150"/> -->
+                <!-- <a:textField name="data_source_code" bindTarget="qms5050_8d_maintain_ds" readOnly="true" width="150"/> -->
+                <!-- <a:textField name="relation_num" bindTarget="qms5050_8d_maintain_ds" prompt="QMS5050.RELATION_NUMBER" width="150"/> -->
+                <!-- </a:hBox> -->
+                <!--                 <a:hBox labelWidth="100">
+                    <a:dateTimePicker name="ica_require_date" bindTarget="qms5050_8d_maintain_ds" dayRenderer="qms5050_rendererDay" renderer="Aurora.formatDateTime" width="150"/>
+                    <a:datePicker name="pca_require_date" bindTarget="qms5050_8d_maintain_ds" dayRenderer="qms5050_rendererDay" width="150"/>
+                </a:hBox>
+                <a:hBox labelWidth="100"> 
+                    <a:textField name="display_po_number" bindTarget="qms5050_8d_maintain_ds" prompt="采购订单" width="150"/>
+                    <a:textField name="asn_number" bindTarget="qms5050_8d_maintain_ds" prompt="送货单" width="150"/>
+                    <a:textField name="lots_num" bindTarget="qms5050_8d_maintain_ds" prompt="批次号" width="150"/>
+                </a:hBox> -->
+                <!-- <a:hBox labelWidth="100"> -->
+                <!-- <a:lov name="display_po_number" bindTarget="qms5050_8d_maintain_ds" prompt="采购订单" width="150"/> -->
+                <!-- <a:textField name="display_po_number" bindTarget="qms5050_8d_maintain_ds" prompt="采购订单" width="150"/>
+                    <a:textField name="asn_number" bindTarget="qms5050_8d_maintain_ds" prompt="送货单" width="150"/>
+                    <a:textField name="lots_num" bindTarget="qms5050_8d_maintain_ds" prompt="批次号" width="150"/>
+                </a:hBox> -->
+                <!--                 <a:hBox labelWidth="100">
+                    <a:textField name="comments" bindTarget="qms5050_8d_maintain_ds" width="924"/>
+                </a:hBox> -->
+            </a:fieldSet>
+            <a:fieldSet title="QMS_8D.ISSUE_DESC_TITLE">
+                <!-- <a:hBox labelWidth="100"> -->
+                <!-- <a:textField name="customer_name" bindTarget="qms5050_8d_maintain_ds" prompt="客户名称" width="150"/> -->
+                <!-- <a:textField name="complaints" bindTarget="qms5050_8d_maintain_ds" prompt="投诉事件" width="150"/> -->
+                <!-- <a:textField name="complaint_location" bindTarget="qms5050_8d_maintain_ds" prompt="投诉位置" width="150"/> -->
+                <!-- <a:textField name="order_num" bindTarget="qms5050_8d_maintain_ds" prompt="订单号" width="150"/> -->
+                <!-- </a:hBox> -->
+                <a:hBox labelWidth="100">
+                    <a:lov name="item_code" bindTarget="qms5050_8d_maintain_ds" prompt="物料编码" width="150"/>
+                    <a:textField name="item_name" bindTarget="qms5050_8d_maintain_ds" prompt="物料描述" readOnly="true" width="150"/>
+                    <!-- <a:textField name="shipments" bindTarget="qms5050_8d_maintain_ds" prompt="出货事件" width="150"/> -->
+                    <!-- <a:textField name="shipping_qty" bindTarget="qms5050_8d_maintain_ds" prompt="出货数量" width="150"/> -->
+                    <a:numberField name="sampling_quantity" allowDecimals="false" bindTarget="qms5050_8d_maintain_ds" prompt="抽样数量" width="150"/>
+                    <a:numberField name="bad_quantity" allowDecimals="false" bindTarget="qms5050_8d_maintain_ds" prompt="不良数量" width="150"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:numberField name="adverse_rate" allowDecimals="true" bindTarget="qms5050_8d_maintain_ds" decimalPrecision="2" prompt="抽检不良率(%)" width="150"/>
+                    <a:comboBox name="issue_type_display" bindTarget="qms5050_8d_maintain_ds" prompt="QMS_8D.ISSUE_TYPE_DISPLAY" width="150"/>
+                    <a:comboBox name="importance_degree_display" bindTarget="qms5050_8d_maintain_ds" prompt="QMS_8D.IMPORTANCE_DEGREE" width="150"/>
+                    <a:comboBox name="urgency_degree_display" bindTarget="qms5050_8d_maintain_ds" prompt="QMS_8D.URGENCY_DEGREE" width="150"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:checkBox name="repeat_happen_flag" bindTarget="qms5050_8d_maintain_ds" prompt="是否重复发生"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textArea name="issue_desc" bindTarget="qms5050_8d_maintain_ds" height="150" width="920"/>
+                </a:hBox>
+            </a:fieldSet>
+        </a:screenBody>
+        <script><![CDATA[
+        	init();
+        ]]></script>
+    </a:view>
+</a:screen>

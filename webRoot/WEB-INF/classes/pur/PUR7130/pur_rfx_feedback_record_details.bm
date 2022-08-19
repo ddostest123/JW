@@ -1,0 +1,354 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: IsaacF  
+    $Date: 2013-6-27 上午9:38:00  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        li.*,
+                        l.feedback_line_id feedback_line_id,
+                        l.feedback_header_id,
+                        l.abandoned_flag,
+                        l.quote_quantity,
+                        l.status_desc fd_line_status_desc,
+                        DECODE(check_shield_flag, 'Y', TO_CHAR(l.promised_date, 'yyyy-mm-dd'), DECODE(
+                        (SELECT
+                            COUNT(*) FROM dual WHERE li.round = l.rfx_round AND
+                            li.version                        = l.rfx_version
+                        ), 0, TO_CHAR(l.promised_date, 'yyyy-mm-dd'), '')) promised_date,
+                        DECODE(check_shield_flag, 'Y', TO_CHAR(l.feedback_expiry_date_from, 'yyyy-mm-dd'), DECODE(
+                        (SELECT
+                            COUNT(*) FROM dual WHERE li.round = l.rfx_round AND
+                            li.version                        = l.rfx_version
+                        ), 0, TO_CHAR(l.feedback_expiry_date_from, 'yyyy-mm-dd'), '')) feedback_expiry_date_from,
+                        DECODE(check_shield_flag, 'Y', TO_CHAR(l.feedback_expiry_date_to, 'yyyy-mm-dd'), DECODE(
+                        (SELECT
+                            COUNT(*) FROM dual WHERE li.round = l.rfx_round AND
+                            li.version                        = l.rfx_version
+                        ), 0, TO_CHAR(l.feedback_expiry_date_to, 'yyyy-mm-dd'), '')) feedback_expiry_date_to,
+                        l.valid_fb_quantity valid_fb_quantity,
+                        DECODE(check_shield_flag, 'Y', l.valid_fb_retail_price, DECODE(
+                        (SELECT
+                            COUNT(*) FROM dual WHERE li.round = l.rfx_round AND
+                            li.version                        = l.rfx_version
+                        ), 0, l.valid_fb_retail_price, '')) valid_fb_retail_price,
+                        DECODE(check_shield_flag, 'Y', l.valid_fb_wholesale_price, DECODE(
+                        (SELECT
+                            COUNT(*) FROM dual WHERE li.round = l.rfx_round AND
+                            li.version                        = l.rfx_version
+                        ), 0, l.valid_fb_wholesale_price, '')) valid_fb_wholesale_price,
+                        DECODE(check_shield_flag, 'Y', l.valid_fb_reason, DECODE(
+                        (SELECT
+                            COUNT(*) FROM dual WHERE li.round = l.rfx_round AND
+                            li.version                        = l.rfx_version
+                        ), 0, l.valid_fb_reason, '')) valid_fb_reason,
+                        l.valid_bargain_by,
+                        l.valid_bargain_by_desc,
+                        l.valid_bargain_quantity,
+                        l.valid_bargain_retail_price,
+                        l.valid_bargain_wholesale_price,
+                        l.valid_bargain_reason,
+                        l.suggested_note,
+                        TO_CHAR(l.feedback_time, 'yyyy-mm-dd hh24:mi:ss') feedback_time,
+                        l.bargained_time,
+                        DECODE(li.cancel_flag, 'Y', li.finish_in_round, DECODE(li.rfx_finished_flag, 'Y', li.finish_in_round, NULL)) rfx_filing_round,
+                        DECODE(li.cancel_flag, 'Y', li.finish_in_version, DECODE(li.rfx_finished_flag, 'Y', li.finish_in_round, NULL)) rfx_filing_version,
+                        DECODE(li.rfx_finished_flag, 'Y', l.suggested_flag, 'N') suggested_flag_fn,
+                        (SELECT
+                            COUNT(*)
+                        FROM
+                            fnd_atm_attachment_multi am
+                        WHERE
+                            am.table_name     = 'PUR_RFX_LN_ITEMS' AND
+                            am.table_pk_value = TO_CHAR(li.rfx_line_item_id)
+                        ) AS item_atm_counts,
+                        (SELECT
+                            COUNT(*)
+                        FROM
+                            fnd_atm_attachment_multi am
+                        WHERE
+                            am.table_name     = 'PUR_RFX_FEEDBACK_LINES' AND
+                            am.table_pk_value = TO_CHAR(l.feedback_line_id)
+                        ) AS feedback_atm_counts,
+                        trans_cost_flag,
+                        trans_cost,
+                        l.tax_included_flag,
+                        l.tax_type_id,
+                        l.tax_type_code,
+                        l.tax_type_rate,
+                        l.allotted_quantity,
+                        (NVL(l.valid_fb_retail_price, 0) * NVL(l.allotted_quantity, 0)) AS valid_fb_total_price
+                    FROM
+                        (SELECT
+                            rh.rfx_header_id,
+                            rh.round,
+                            rh.version,
+                            li.rfx_line_item_id,
+                            li.inv_organization_id,
+                            (SELECT
+                                io.description
+                            FROM
+                                inv_organizations_vl io
+                            WHERE
+                                io.inv_organization_id = li.inv_organization_id
+                            ) inv_organization_desc,
+                            li.item_category_id,
+                            (SELECT
+                                ic.category_name
+                            FROM
+                                mtl_categories_user_defined_vl ic
+                            WHERE
+                                ic.category_udf_id = li.item_category_id
+                            ) item_category_desc,
+                            li.item_id,
+                            li.item_id AS require_item_id,
+                            NVL(
+                            (SELECT
+                                m.display_item_code
+                            FROM
+                                mtl_system_items_vl m
+                            WHERE
+                                m.item_id = li.item_id
+                            ), li.item_code) AS require_item_code,
+                            NVL(
+                            (SELECT m.item_name FROM mtl_system_items_vl m WHERE m.item_id = li.item_id
+                            ), li.item_code) AS require_item_name,
+                            (SELECT
+                                imv.partner_item_id
+                            FROM
+                                mtl_item_mapping_vendor_v imv
+                            WHERE
+                                imv.item_id                = li.item_id AND
+                                imv.partner_business_group = ${/session/@business_group}
+                            ) AS supply_item_id,
+                            (SELECT
+                                imv.partner_item_code
+                            FROM
+                                mtl_item_mapping_vendor_v imv
+                            WHERE
+                                imv.item_id                = li.item_id AND
+                                imv.partner_business_group = ${/session/@business_group}
+                            ) AS supply_item_code,
+                            (SELECT
+                                imv.partner_item_name
+                            FROM
+                                mtl_item_mapping_vendor_v imv
+                            WHERE
+                                imv.item_id                = li.item_id AND
+                                imv.partner_business_group = ${/session/@business_group}
+                            ) AS supply_item_name,
+                            li.item_code,
+                            li.item_desc,
+                            li.item_note,
+                            li.item_parameter_config,
+                            li.uom_code,
+                            (SELECT
+                                uc.uom_desc
+                            FROM
+                                fnd_uom_codes_vl uc
+                            WHERE
+                                uc.uom_code       = li.uom_code AND
+                                uc.business_group = rh.owner_business_group
+                            ) uom_desc,
+                            li.quantity,
+                            TO_CHAR(li.need_by_date, 'yyyy-mm-dd') need_by_date,
+                            li.feedback_range,
+                            li.cancel_flag,
+                            li.rfx_finished_flag,
+                            li.finish_in_version,
+                            li.finish_in_round,
+                            pur_rfx_pkg.get_rfx_category_and_cut_off(rh.rfx_header_id) check_shield_flag,
+                            (SELECT
+                                quote_header_id
+                            FROM
+                                pur_rfx_quote_headers rqh
+                            WHERE
+                                rqh.rfx_line_item_id = li.rfx_line_item_id
+                            ) quote_header_id,
+                            li.line_num,
+                            li.samples_requested,
+                            li.kw_customer
+                        FROM
+                            pur_rfx_headers rh,
+                            pur_rfx_ln_items li
+                        WHERE
+                            li.rfx_header_id = rh.rfx_header_id AND
+                            rh.rfx_header_id = ${@rfx_header_id}
+                        ) li,
+                        (SELECT
+                            h.vendor_id,
+                            h.status header_status,
+                            h.rfx_round,
+                            h.rfx_version,
+                            h.rfx_header_id,
+                            l.rfx_line_item_id,
+                            l.feedback_line_id,
+                            l.feedback_header_id,
+                            l.abandoned_flag,
+                            (SELECT
+                                io.description
+                            FROM
+                                inv_organizations_vl io
+                            WHERE
+                                io.inv_organization_id = l.inv_organization_id
+                            ) inv_organization_desc,
+                            l.status,
+                            (SELECT
+                                scv.code_value_name
+                            FROM
+                                sys_code_values_vl scv,
+                                sys_codes_vl sc
+                            WHERE
+                                sc.code_id     = scv.code_id AND
+                                scv.code_value = l.status AND
+                                sc.code        = 'PUR_RFX_FEEDBACK_LINE_STATUS'
+                            ) status_desc,
+                            l.promised_date,
+                            l.feedback_expiry_date_from,
+                            l.feedback_expiry_date_to,
+                            l.current_fb_by,
+                            (SELECT u.user_desc FROM sys_user_v u WHERE u.user_id = l.current_fb_by
+                            ) current_fb_by_desc,
+                            l.current_fb_quantity,
+                            l.current_fb_retail_price,
+                            l.current_fb_wholesale_price,
+                            l.current_fb_reason,
+                            l.current_bargain_by,
+                            (SELECT u.user_desc FROM sys_user_v u WHERE u.user_id = l.current_bargain_by
+                            ) current_bargain_by_desc,
+                            l.current_bargain_quantity,
+                            l.current_bargain_retail_price,
+                            l.current_bargain_whlsale_price,
+                            l.current_bargain_reason,
+                            l.valid_fb_by,
+                            (SELECT u.user_desc FROM sys_user_v u WHERE u.user_id = l.valid_fb_by
+                            ) valid_fb_by_desc,
+                            l.valid_fb_quantity,
+                            l.valid_fb_retail_price,
+                            l.valid_fb_wholesale_price,
+                            l.valid_fb_reason,
+                            l.valid_bargain_by,
+                            (SELECT u.user_desc FROM sys_user_v u WHERE u.user_id = l.valid_bargain_by
+                            ) valid_bargain_by_desc,
+                            l.valid_bargain_quantity,
+                            l.valid_bargain_retail_price,
+                            l.valid_bargain_wholesale_price,
+                            l.valid_bargain_reason,
+                            l.suggested_flag,
+                            l.suggested_note,
+                            l.feedback_time,
+                            TO_CHAR(l.bargained_time, 'yyyy-mm-dd hh24:mi:ss') bargained_time,
+                            h.coop_company_id,
+                            (SELECT
+                                rh.trans_cost_flag
+                            FROM
+                                pur_rfx_headers rh
+                            WHERE
+                                rh.rfx_header_id = h.rfx_header_id
+                            ) trans_cost_flag,
+                            l.trans_cost,
+                            l.tax_included_flag,
+                            l.tax_type_id,
+                            l.tax_type_code,
+                            l.tax_type_rate,
+                            l.allotted_quantity,
+                            l.quote_quantity,
+                            (NVL(l.valid_fb_retail_price, 0) * NVL(l.allotted_quantity, 0)) AS valid_fb_total_price,
+                            l.place_of_product,
+                            l.spec,
+                            l.pur_cycle,
+                            l.warranty_period,
+                            l.sup_comments
+                        FROM
+                            pur_rfx_feedback_lines l,
+                            pur_rfx_feedback_headers h
+                        WHERE
+                            h.feedback_header_id  = l.feedback_header_id AND
+                            h.rfx_header_id       = ${@rfx_header_id} AND
+                            h.coop_business_group = ${/session/@business_group} AND
+                            h.coop_company_id     = ${@coop_company_id} AND
+                            h.feedback_header_id  =
+                            (SELECT
+                                MAX(rfh.feedback_header_id)
+                            FROM
+                                pur_rfx_feedback_headers rfh,
+                                pur_rfx_feedback_lines rfl
+                            WHERE
+                                rfh.rfx_header_id       = h.rfx_header_id AND
+                                rfh.feedback_header_id  = rfl.feedback_header_id AND
+                                rfl.rfx_line_item_id    = l.RFX_LINE_ITEM_ID AND
+                                rfh.coop_business_group = h.coop_business_group AND
+                                rfh.coop_company_id     = h.coop_company_id
+                            )
+                        ) l
+                    WHERE
+                        li.rfx_header_id    = l.rfx_header_id(+) AND
+                        li.rfx_line_item_id = l.rfx_line_item_id(+) AND
+                        (
+                            (
+                                li.rfx_finished_flag = 'Y' AND
+                                EXISTS
+                                (SELECT
+                                    1
+                                FROM
+                                    pur_rfx_feedback_lines prfl,
+                                    pur_rfx_feedback_headers prfh
+                                WHERE
+                                    prfh.feedback_header_id  = prfl.feedback_header_id AND
+                                    prfh.rfx_header_id       = ${@rfx_header_id} AND
+                                    prfh.coop_business_group = ${/session/@business_group} AND
+                                    prfh.coop_company_id     = ${@coop_company_id} AND
+                                    prfl.rfx_line_item_id    = li.rfx_line_item_id
+                                )
+                            )
+                            OR
+                            li.rfx_finished_flag = 'N'
+                        )
+                        AND
+                        (
+                            li.cancel_flag = 'N' OR
+                            (
+                                li.cancel_flag = 'Y' AND
+                                EXISTS
+                                (SELECT
+                                    1
+                                FROM
+                                    pur_rfx_feedback_lines prfl,
+                                    pur_rfx_feedback_headers prfh
+                                WHERE
+                                    prfh.feedback_header_id  = prfl.feedback_header_id AND
+                                    prfh.rfx_header_id       = ${@rfx_header_id} AND
+                                    prfh.coop_business_group = ${/session/@business_group} AND
+                                    prfh.coop_company_id     = ${@coop_company_id} AND
+                                    prfl.rfx_line_item_id    = li.rfx_line_item_id
+                                )
+                            )
+                        )
+                    ) t #WHERE_CLAUSE#
+                ORDER BY
+                    line_num
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="rfx_header_id" queryExpression="rfx_header_id = ${@rfx_header_id}"/>
+        <bm:query-field name="round" queryExpression="round = ${@round}"/>
+        <bm:query-field name="version" queryExpression="version = ${@version}"/>
+    </bm:query-fields>
+    <flex-segmentBm applTableAliasName="l" headerIdPath="@rfx_header_id" headerTableName="PUR_RFX_HEADERS" lineTableName="PUR_RFX_FEEDBACK_LINES" templateFieldName="template_id" type="grid_expanded_bm_query"/>
+    <bm:features>
+        <s:bm-script><![CDATA[
+        	var cx = Packages.aurora.javascript.Context.getCurrentContext();
+			Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+        	Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_grid_expanded_bm.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

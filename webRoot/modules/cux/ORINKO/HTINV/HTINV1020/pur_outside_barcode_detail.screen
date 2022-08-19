@@ -1,0 +1,354 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="v.pur_line_id=${/parameter/@pur_line_id}" model="cux.ORINKO.HTINV.HTINV1020.pur_line_query" rootPath="pur_line"/>
+    </a:init-procedure>
+    <a:view package="aurora.ui.std" template="default">
+        <a:link id="htinv1020_outside_barcode_print_link" url="${/request/@context_path}/modules/cux/ORINKO/HTINV/HTINV1020/pur_outside_barcode_print.screen"/>
+        <a:link id="htinv1020_control_print_link" url="${/request/@context_path}/modules/cux/ORINKO/HTINV/HTINV1020/pur_outside_barcode_list_print.svc"/>
+        <a:link id="htinv1020_pack_barcode_detail_link" url="${/request/@context_path}/modules/cux/ORINKO/HTINV/HTINV1020/pur_pack_barcode_detail.screen"/>
+        <script><![CDATA[
+            function htinv1020_barcode_query() {
+                var record = $('htinv1020_line_ds').getCurrentRecord();
+                var barcode = record.get('barcode');
+                var barcode_from = record.get('barcode_from');
+                var barcode_to = record.get('barcode_to');
+                var print_flag = record.get('print_flag');
+                var ds = $('htinv1020_barcode_ds');
+                if (!Ext.isEmpty(barcode) || !Ext.isEmpty(print_flag)||!Ext.isEmpty(barcode_from)||!Ext.isEmpty(barcode_to)) {
+                    ds.setQueryParameter('barcode_from', barcode_from);
+                    ds.setQueryParameter('barcode_to', barcode_to);
+                    ds.setQueryParameter('print_flag', print_flag);
+                } else {
+                    ds.setQueryParameter('barcode_from', '');
+                    ds.setQueryParameter('barcode_to', '');
+                    ds.setQueryParameter('print_flag', '');
+                }
+                ds.query();
+            }
+            
+            function htinv1020_barcode_add(dataSet, record, index) {
+                records = dataSet.getAll();
+                var line_num = 0;
+                if (records.length > 1) {
+                    for (var t = 0;t < records.length;t++) {
+                        if (line_num < records[t].get('line_num')) {
+                            line_num = records[t].get('line_num');
+                        }
+                    }
+                }
+                record.set('line_num', line_num + 1);
+                /* if(record.get('ton_pack_flag')=='Y'){
+                    record.set('ton_pack_flag_desc','是');
+                }else{
+                    record.set('ton_pack_flag_desc','否');
+                } */
+            }
+            
+            function htinv1020_barcode_update(ds, record, name, value, oldValue) {
+                if (name == 'packet_quantity') {
+                    var line_record = $('htinv1020_line_ds').getAt(0);
+                    var uom_weight = line_record.get('uom_weight');
+                    var temp = 0;
+                    if (!Aurora.isEmpty(value) && !Aurora.isEmpty(uom_weight)) {
+                        temp = (value * uom_weight).toFixed(8);
+                        record.set('packet_weight', temp);
+                    }
+                }
+            }
+            
+            function BIZ_INV5003_detail_submit() {
+                var line_ds = $('htinv1020_line_ds');
+                if (!line_ds.validate()) {
+                    return;
+                }
+            
+                var line_record = line_ds.getAt(0);
+                if (line_record.dirty) {
+                    Aurora.showMessage('${l:PROMPT}', '请先保存数据！');
+                    return;
+                }
+            
+                var barcode_records = $('htinv1020_barcode_ds').getAll();
+                for (var i = 0;i < barcode_records.length;i++) {
+                    if (barcode_records[i].dirty) {
+                        Aurora.showMessage('${l:PROMPT}', '请先保存数据！');
+                        return;
+                    }
+                }
+            
+                Aurora.showConfirm('${l:PROMPT}', '确认提交？', function() {
+                    Aurora.Masker.mask($('htinv1020_pur_query_win').wrap, '正在加载...');
+                    Aurora.request({
+                        url: '${/request/@context_path}/autocrud/cux.ORINKO.HTINV.HTINV1020.pur_line_query/execute',
+                        para: {
+                            pur_header_id: '${/parameter/@pur_header_id}',
+                            pur_line_id: '${/parameter/@pur_line_id}'
+                        },
+                        success: function() {
+                            Aurora.Masker.unmask($('htinv1020_pur_query_win').wrap);
+                            Aurora.showMessage('${l:PROMPT}', '提交成功!', function() {
+                                new Aurora.Window({
+                                    id: 'BIZ_INV5003_pur_detail',
+                                    title: '外箱条码查看',
+                                    url: $('biz_inv5003_barcode_query_readonly_link').getUrl() + '?pur_line_id=' + '${/parameter/@pur_line_id}' + '&pur_header_id=' + '${/parameter/@pur_header_id}',
+                                    fullScreen: true
+                                });
+                                htinv1020_barcode_query_win_close();
+                            });
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask($('htinv1020_pur_query_win').wrap);
+                            return;
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask($('htinv1020_pur_query_win').wrap);
+                            return;
+                        }
+                    });
+                });
+            }
+             
+            
+            function htinv1020_barcode_query_win_close() {
+                $('htinv1020_pur_query_win').close();
+            }
+            
+             
+            
+            
+            function htinv1020_barcode_print() {
+                if(!$('htinv1020_barcode_ds').getAll().length){
+                    return;
+                }
+                Aurora.Masker.mask($('htinv1020_pur_query_win').wrap, '正在加载...');
+                var print_type_1, print_type_2 = 0;
+                var records = $('htinv1020_barcode_ds').getSelected();
+                if (records.length == 0) {
+                    Aurora.Masker.unmask($('htinv1020_pur_query_win').wrap);
+                    Aurora.showErrorMessage('${l:PROMPT}','${l:AT_LEAST_CHOICE_ONE}');
+                    return;
+                }
+                var datas = [];
+                var print_flag='Y';
+                var ton_pack_flag='N';
+                for (i = 0;i < records.length;i++) {
+                    //MES未回传成功的不能打印
+                    if(records[i].get('single_packet_sync_count')!=records[i].get('single_packet_count')){
+                        print_flag='N';
+                        break;
+                    }
+                    //外箱条码为空的不能打印
+                     
+                    if (records[i].isNew) {
+                        Aurora.showMessage('${l:PROMPT}', '请先提交数据！');
+                        Aurora.Masker.unmask($('htinv1020_pur_query_win').wrap);
+                        return;
+                    }
+                    var data = {
+                        pur_line_id: records[i].get('pur_line_id'),
+                        pur_outside_barcode_id: records[i].get('pur_outside_barcode_id'),
+                        print_quantity: records[i].get('print_quantity')
+                    };
+                    datas.push(data);
+                    
+                }
+                
+                if(print_flag=='N'){
+                    Aurora.Masker.unmask($('htinv1020_pur_query_win').wrap);
+                    Aurora.showErrorMessage('${l:PROMPT}','MES未回传成功的条码不能打印！');
+                    return;
+                }
+                
+                 
+            
+                Aurora.request({
+                    url: $('htinv1020_control_print_link').getUrl(),
+                    para: datas,
+                    success: function() {
+                        Aurora.Masker.unmask($('htinv1020_pur_query_win').wrap);
+                            window.open($('htinv1020_outside_barcode_print_link').getUrl()); 
+                    },
+                    failure: function() {
+                        Aurora.Masker.unmask($('htinv1020_pur_query_win').wrap);
+                        return;
+                    },
+                    error: function() {
+                        Aurora.Masker.unmask($('htinv1020_pur_query_win').wrap);
+                        return;
+                    }
+                });
+            }
+            
+            function htinv1020_detail_close() {
+                $('htinv1020_pur_query_win').close();
+            }
+             
+            function htinv1020_pack_barcode_detail(pur_outside_barcode_id,pur_header_id,pur_line_id){
+                var url=$('htinv1020_pack_barcode_detail_link').getUrl()+'?pur_outside_barcode_id='+pur_outside_barcode_id+'&pur_line_id='+pur_line_id+'&pur_header_id='+pur_header_id;
+                new Aurora.Window({
+                  id:'htinv1020_pack_barcode_detail_win',
+                  url:url,
+                  title:'${l:HT_PUR_SINGLE_PACK_BARCODE.PACK_BARCODE_VIEW}',
+                  fullScreen:true  
+                }).on('close',function(){
+                    $('htinv1020_barcode_ds').query();
+                });
+            }
+             function htinv1020_barcode_render(value, record, name) {
+                if (name == 'pack_barcode_status') {
+                    if (record.isNew) {
+                        return '';
+                    } else {
+                        /* var packet_count = record.get('packet_count');
+                        if (packet_count > 0) {
+                            return '<a href="javascript:htinv1020_pack_barcode_detail(' + record.get('pur_outside_barcode_id') + ',' + record.get('pur_header_id') + ',' + record.get('pur_line_id') + ');">${l:PROMPT.VIEW}</a>';
+                        } else {
+                            return '';
+                        } */
+                        
+                         return '<a href="javascript:htinv1020_pack_barcode_detail(' + record.get('pur_outside_barcode_id') + ',' + record.get('pur_header_id') + ',' + record.get('pur_line_id') + ');">${l:PROMPT.VIEW}</a>';
+                    }
+                }
+                
+                if(name=='barcode'){
+                    if(record.get('ton_pack_flag')=='Y'){
+                        return '';
+                    }else{
+                        return value;
+                    }
+                }
+                if(name=='line_num'){
+                    if(record.get('ton_pack_flag')=='Y'){
+                        return '';
+                    }else{
+                        return value;
+                    }
+                }
+                
+                if(name=='response_status_display'){
+                     return '<span>${/model/pur_line/record/@import_status_desc}</span>';
+                }
+            }
+            
+            
+             
+            function htinv1020_barcode_load(ds){
+                 var rec=$('htinv1020_line_ds').getCurrentRecord();
+                 if(!ds.getAll().length){
+                     rec.set('outside_box_quantity',0);
+                 }else{
+                     var length=ds.getAll().length;
+                     for(var u=0;u<ds.getAll().length;u++){
+                         if(ds.getAt(u).get('ton_pack_flag')=='Y'){
+                             length=length-1;
+                         }
+                     }
+                     rec.set('outside_box_quantity',length);
+                 }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="htinv1020_barcode_ton_pack_list_ds" lookupCode="YES_NO"/>
+            <a:dataSet id="htinv1020_barcode_print_flag_ds">
+                <a:datas>
+                    <a:record name="已打印" value="Y"/>
+                    <a:record name="未打印" value="N"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="htinv1020_line_ds" model="cux.ORINKO.HTINV.HTINV1020.pur_line_query">
+                <a:datas dataSource="/model/pur_line"/>
+                <a:fields>
+                    <a:field name="outside_box_quantity" readOnly="true"/>
+                    <a:field name="uom_weight"/>
+                    <a:field name="line_num_from"/>
+                    <a:field name="line_num_to"/>
+                    <a:field name="print_flag"/>
+                    <a:field name="print_flag_desc" displayField="name" options="htinv1020_barcode_print_flag_ds" returnField="print_flag" valueField="value"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="htinv1020_barcode_ds" autoCount="true" autoQuery="true" bindName="BIZ_INV5003_barcode" bindTarget="htinv1020_line_ds" fetchAll="true" model="cux.ORINKO.HTINV.HTINV1020.pur_outside_barcode" queryUrl="${/request/@context_path}/autocrud/cux.ORINKO.HTINV.HTINV1020.pur_outside_barcode/query?pur_line_id=${/parameter/@pur_line_id}" selectable="true">
+                <a:fields>
+                    <a:field name="packet_quantity" required="true"/>
+                    <a:field name="uom_desc" autoComplete="true" autoCompleteField="uom_desc" defaultValue="${/model/pur_line/record/@uom_desc}" lovGridHeight="300" lovHeight="450" lovService="public.fnd_uom_codes_lov?business_group=${/model/pur_line/record/@owner_business_group}" lovWidth="550" title="MTL_SYSTEM_VENDOR_ITEMS.PRIMARY_UOM">
+                        <a:mapping>
+                            <a:map from="uom_code" to="uom_code"/>
+                            <a:map from="uom_desc" to="uom_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="uom_code" defaultValue="${/model/pur_line/record/@uom_code}"/>
+                    <a:field name="box_weight" defaultValue="${/model/pur_line/record/@box_weight}"/>
+                    <a:field name="packet_weight" defaultValue="${/model/pur_line/record/@packet_weight}" required="true"/>
+                    <a:field name="environmental_batch" defaultValue="${/model/pur_line/record/@environmental_batch}"/>
+                    <a:field name="production_batch" defaultValue="${/model/pur_line/record/@production_batch}"/>
+                    <a:field name="pur_header_id" defaultValue="${/parameter/@pur_header_id}" required="true"/>
+                    <a:field name="pur_line_id" defaultValue="${/parameter/@pur_line_id}" required="true"/>
+                    <a:field name="print_quantity" defaultValue="1" required="true"/>
+                    <a:field name="ton_pack_flag_desc" displayField="code_value_name" options="htinv1020_barcode_ton_pack_list_ds" returnField="ton_pack_flag" valueField="code_value"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="htinv1020_barcode_add"/>
+                    <a:event name="update" handler="htinv1020_barcode_update"/>
+                    <a:event name="load" handler="htinv1020_barcode_load"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:gridButton bind="htinv1020_barcode_grid" className="item-rbtn-blue button-excel" type="excel" width="100"/>
+                <a:toolbarButton click="htinv1020_barcode_print" text="HT_PUR_SINGLE_PACK_BARCODE.BARCODE_PRINT" width="100"/>
+                <a:toolbarButton click="htinv1020_detail_close" text="PROMPT.RETURN" width="100"/>
+            </a:screenTopToolbar>
+            <a:form style="margin-top:5px;width:100%" title="HT_PUR_SINGLE_PACK_BARCODE.ORDER_LINE_INFO">
+                <a:hBox labelWidth="120">
+                    <a:textField name="po_number" bindTarget="htinv1020_line_ds" prompt="ACP_CSGN_BILL_LINES.PO_NUM" readOnly="true"/>
+                    <a:textField name="line_num" bindTarget="htinv1020_line_ds" prompt="PUR_LINES_ALL.LINE_NUM" readOnly="true"/>
+                    <a:textField name="item_code" bindTarget="htinv1020_line_ds" prompt="MTL_SYSTEM_ITEM.ITEM_CODE" readOnly="true"/>
+                    <a:textField name="item_description" bindTarget="htinv1020_line_ds" prompt="MTL_SYSTEM_ITEM.ITEM_NAME" readOnly="true"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:textField name="supply_item_code" bindTarget="htinv1020_line_ds" prompt="MTL_SYSTEM_ITEMS.CLIENT_ITEM_CODE" readOnly="true"/>
+                    <a:textField name="supply_item_name" bindTarget="htinv1020_line_ds" prompt="MTL_SYSTEM_ITEMS.CLIENT_ITEM_NAME" readOnly="true"/>
+                    <a:textField name="inv_organization_name" bindTarget="htinv1020_line_ds" prompt="HT_PUR_SINGLE_PACK_BARCODE.INV_ORGANIZATION_CODE" readOnly="true"/>
+                    <a:textField name="inv_warehouse_name" bindTarget="htinv1020_line_ds" prompt="HT_PUR_SINGLE_PACK_BARCODE.INV_WAREHOUSE_CODE" readOnly="true"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:numberField name="outside_box_quantity" allowDecimals="false" allowNegative="false" bindTarget="htinv1020_line_ds" prompt="HT_PUR_SINGLE_PACK_BARCODE.OUTSIDE_BOX_QUANTITY" renderer="Aurora.formatNumber"/>
+                    <a:numberField name="uom_weight" allowDecimals="true" allowNegative="false" bindTarget="htinv1020_line_ds" decimalPrecision="8" prompt="HT_PUR_SINGLE_PACK_BARCODE.PACK_NET_WEIGHT" renderer="Aurora.formatNumber"/>
+                    <a:numberField name="quantity" bindTarget="htinv1020_line_ds" prompt="PUR_LINE_LOCATIONS_ALL.QUANTITY" readOnly="true" renderer="Aurora.formatNumber"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <!-- <a:textField name="barcode" bindTarget="htinv1020_line_ds" prompt="HT_PUR_SINGLE_PACK_BARCODE.OUTSIDE_BARCODE_NUM"/> -->
+                    <a:textField name="barcode_from" bindTarget="htinv1020_line_ds" prompt="外箱条码从"/>
+                    <a:textField name="barcode_to" bindTarget="htinv1020_line_ds" prompt="外箱条码至"/>
+                    <a:comboBox name="print_flag_desc" bindTarget="htinv1020_line_ds" prompt="打印状态"/>
+                    <a:button click="htinv1020_barcode_query" text="HAP_QUERY"/>
+                </a:hBox>
+            </a:form>
+            <a:grid id="htinv1020_barcode_grid" bindTarget="htinv1020_barcode_ds" height="300" marginWidth="40" navBar="true" width="1209">
+                <a:columns>
+                    <a:column name="line_num" align="center" prompt="HT_PUR_SINGLE_PACK_BARCODE.BOX_NUM" renderer="htinv1020_barcode_render" width="40"/>
+                    <a:column name="packet_quantity" align="right" prompt="INV_ASN_LINES.PACKET_QUANTITY" renderer="Aurora.formatNumber" width="100"/>
+                    <a:column name="barcode" align="left" prompt="HT_PUR_SINGLE_PACK_BARCODE.OUTSIDE_BARCODE_NUM" renderer="htinv1020_barcode_render" width="130"/>
+                    <a:column name="pack_barcode_status" align="center" prompt="HT_PUR_SINGLE_PACK_BARCODE.PACK_BARCODE_MANAGE" renderer="htinv1020_barcode_render" width="75"/>
+                    <a:column name="ton_pack_flag_desc" align="center" prompt="HT_PUR_SINGLE_PACK_BARCODE.TON_PACK_FLAG" width="90"/>
+                    <a:column name="production_batch" align="left" prompt="HT_PUR_SINGLE_PACK_BARCODE.PRODUCTION_BATCH" width="100"/>
+                    <a:column name="packet_weight" align="right" prompt="HT_PUR_SINGLE_PACK_BARCODE.PACK_NET_WEIGHT" width="100"/>
+                    <a:column name="uom_desc" align="center" prompt="FND_UOM_CODES.UOM" width="80"/>
+                    <a:column name="printed_desc" align="center" prompt="打印状态" width="70"/>
+                    <a:column name="print_times" align="right" prompt="PUR_OUTSIDE_BARCODE.PRINT_TIMES" width="70"/>
+                    <a:column name="print_date" align="center" prompt="最新打印时间" width="120"/>
+                    <a:column name="box_weight" align="right" prompt="外包装重量（KG）" width="100"/>
+                    <a:column name="country_of_origin" prompt="原产地" width="100"/>
+                    <a:column name="final_order_number" prompt="成品订单号" width="100"/>
+                    <a:column name="final_item_code" prompt="成品料号" width="100"/>
+                    <a:column name="item_version" prompt="客户物料版本号" width="100"/>
+                    <a:column name="environmental_batch" align="left" prompt="HT_PUR_SINGLE_PACK_BARCODE.ENVIRONMENTAL_BATCH" width="100"/>
+                </a:columns>
+                <a:editors>
+                    <a:numberField id="htinv1020_barcode_print_qty_nf" allowDecimals="false" allowNegative="false"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

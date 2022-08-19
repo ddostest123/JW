@@ -1,0 +1,639 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao  
+    $Date: 2014-10-10 下午04:38:31  
+    $Revision: 1.0  
+    $Purpose: 送货单创建，送货单临时头数据查询BM
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query model="public.get_system_info" rootPath="shtn_inv5020_current_date_rp"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="shtn_inv5020_asn_create_save_link" url="${/request/@context_path}/modules/cux/SHTN/inv/SHTN_INV5020/inv_asn_create_save.svc"/>
+        <a:link id="shtn_inv5020_asn_create_submit_link" url="${/request/@context_path}/modules/cux/SHTN/inv/SHTN_INV5020/inv_asn_create_submit.svc"/>
+        <a:link id="shtn_inv5020_asn_create_create_link" url="${/request/@context_path}/modules/cux/SHTN/inv/SHTN_INV5020/inv_asn_create_create.svc"/>
+        <a:link id="shtn_inv5020_asn_create_edit_lines_link" url="${/request/@context_path}/modules/cux/SHTN/inv/SHTN_INV5020/inv_asn_edit_lines.screen"/>
+        <a:link id="shtn_inv5020_asn_create_attachment_file_upload_link" url="${/request/@context_path}/attachment_file_upload.screen"/>
+        <a:link id="shtn_inv5020_asn_line_bom_maintain_link" url="${/request/@context_path}/modules/cux/SHTN/inv/SHTN_INV5020/pur_po_boms.screen"/>
+        <a:link id="shtn_inv5020_label_line_maintain_link" url="${/request/@context_path}/modules/cux/SHTN/inv/SHTN_INV5020/shtn_inv_label_lines_temp.screen"/>
+        <a:link id="shtn_inv5020_asn_create_line_save_link" model="cux.SHTN.inv.SHTN_INV5020.inv_asn_lines_temp" modelaction="batch_update"/>
+        <script><![CDATA[
+            // 返回
+            
+            function shtn_inv5020_inv_asn_header_go_back() {
+                $('shtn_inv5020_asn_create_window').close();
+            }
+            
+            function invGoBack(flag){
+             	if (flag == 'Y') {
+                    $('shtn_inv5020_asn_create_window').close();
+                    if (typeof shtn_inv5020_asn_headers_back == 'function'){
+                        shtn_inv5020_asn_headers_back();
+                    }
+                    if (typeof shtn_inv5020_delete_selected_query == 'function'){
+                        shtn_inv5020_delete_selected_query();
+                    }
+                } else {
+                    
+            		$('shtn_inv5020_asn_create_window').close();
+                 	if (typeof shtn_inv5020_asn_headers_query == 'function'){
+                        shtn_inv5020_asn_headers_query();
+                    }
+                }
+            }
+            
+            // 保存当前临时数据
+            
+            function shtn_inv5020_inv_asn_header_save() {
+                shtn_inv5020_inv_asn_header_update('10');
+            }
+            
+            // 生成送货单
+            
+            function shtn_inv5020_inv_asn_header_create() {
+                shtn_inv5020_inv_asn_header_update('20');
+            }
+            
+            // 生成并提交送货单
+            
+            function shtn_inv5020_inv_asn_header_submit() {
+                shtn_inv5020_inv_asn_header_update('30');
+            }
+            
+            // 保存动作
+            
+            function shtn_inv5020_inv_asn_header_update(p_operate) {
+            
+                var headers_ds = $('shtn_inv5020_asn_create_header_ds');
+                if (!headers_ds.validate()) {
+                    return false;
+                }
+                var header_record = headers_ds.getCurrentRecord();
+            
+                if (Aurora.isEmpty(header_record.get('ship_date'))) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:INV_ASN_HEADERS_TEMP.SHIP_DATE_NOT_NULL}');
+                    return false;
+                }
+            
+                if (Aurora.isEmpty(header_record.get('expected_date'))) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:INV_ASN_HEADERS_TEMP.EXPECTED_DATE_NOT_NULL}');
+                    return false;
+                }
+            
+                var datas;
+            
+                datas = {
+                    asn_header_id: header_record.get('asn_header_id'),
+                    ship_date: header_record.get('ship_date'),
+                    expected_date: header_record.get('expected_date'),
+                    header_desc: header_record.get('header_desc')
+                };
+            
+                var list_ds = $('shtn_inv5020_asn_create_line_ds');
+                if (!list_ds.validate()) {
+                    return false;
+                }
+                var records = list_ds.getAll();
+            
+                var lines = [];
+                //判断拆分行是否保存
+                for (var i = 0;i < records.length;i++) {
+                    if(records[i].isNew){
+                        Aurora.showMessage('${l:PROMPT}', '请先保存拆分行信息！'); 
+			            return false;  
+                    }
+                    lines.push(records[i].data);
+                }
+                datas['lines'] = lines;
+            
+                $('shtn_inv5020_inv_asn_header_create_btn').disable();
+                $('shtn_inv5020_inv_asn_header_submit_btn').disable();
+                Aurora.Masker.mask($('shtn_inv5020_asn_create_window').wrap, '${l:PROMPT.SUBMITING}');
+                Aurora.request({
+                    url: $('shtn_inv5020_asn_create_save_link').getUrl(),
+                    para: datas,
+                    success: function(res) {
+                        //动作类型,10保存，20生成送货单，30提交送货单
+                        if (p_operate == '10') {
+                            $('shtn_inv5020_inv_asn_header_create_btn').enable();
+                            $('shtn_inv5020_inv_asn_header_submit_btn').enable();
+                            Aurora.Masker.unmask($('shtn_inv5020_asn_create_window').wrap);
+                            list_ds.query();
+            
+                        } else if (p_operate == '20') {
+                            shtn_inv5020_inv_asn_create();
+            
+                        } else if (p_operate == '30') {
+                            shtn_inv5020_inv_asn_submit();
+                        }
+                    },
+                    failure: function(res) {
+                        $('shtn_inv5020_inv_asn_header_create_btn').enable();
+                        $('shtn_inv5020_inv_asn_header_submit_btn').enable();
+                        Aurora.Masker.unmask($('shtn_inv5020_asn_create_window').wrap);
+                    },
+                    error: function(res) {
+                        $('shtn_inv5020_inv_asn_header_create_btn').enable();
+                        $('shtn_inv5020_inv_asn_header_submit_btn').enable();
+                        Aurora.Masker.unmask($('shtn_inv5020_asn_create_window').wrap);
+                    },
+                    scope: this
+                });
+            }
+            
+            // 生成动作
+            
+            function shtn_inv5020_inv_asn_create() {
+                //校验行上的发运数量等信息
+                var lines_ds = $('shtn_inv5020_asn_create_line_ds');
+                if (!lines_ds.validate()) {
+                    $('shtn_inv5020_inv_asn_header_create_btn').enable();
+                    $('shtn_inv5020_inv_asn_header_submit_btn').enable();
+                    Aurora.Masker.unmask($('shtn_inv5020_asn_create_window').wrap);
+                    return false;
+                }
+                var headers_ds = $('shtn_inv5020_asn_create_header_ds');
+                var header_record = headers_ds.getCurrentRecord();
+                var datas;
+                datas = {
+                    asn_header_id: header_record.get('asn_header_id'),
+                    asn_type_code: header_record.get('asn_type_code')
+                };
+                Aurora.request({
+                    url: $('shtn_inv5020_asn_create_create_link').getUrl(),
+                    para: datas,
+                    success: function(res) {
+                        $('shtn_inv5020_inv_asn_header_create_btn').enable();
+                        $('shtn_inv5020_inv_asn_header_submit_btn').enable();
+                        Aurora.Masker.unmask($('shtn_inv5020_asn_create_window').wrap);
+                        Aurora.showConfirm('${l:PROMPT}', '${l:INV5010.ASN_HAS_BEEN_GENERATED_EDIT_OR_NOT}', function() {
+                            new Aurora.Window({
+                                id: 'shtn_inv5020_asn_edit_lines_link_window',
+                                title: '${l:INV5010.EDIT_LINE_INFO}',
+                                url: $('shtn_inv5020_asn_create_edit_lines_link').getUrl() + '?asn_header_id=' + header_record.get('asn_header_id'),
+                                fullScreen: true
+                            }).on('beforeclose', function() {
+                                // 判断是否还存在未提交的预览送货单
+                                invGoBack(res.result.last_flag);
+                            });
+            
+                        }, function() {
+                            invGoBack(res.result.last_flag);
+                        }, 300, 150);
+                    },
+                    failure: function(res) {
+                        $('shtn_inv5020_inv_asn_header_create_btn').enable();
+                        $('shtn_inv5020_inv_asn_header_submit_btn').enable();
+                        Aurora.Masker.unmask($('shtn_inv5020_asn_create_window').wrap);
+                    },
+                    error: function(res) {
+                        $('shtn_inv5020_inv_asn_header_create_btn').enable();
+                        $('shtn_inv5020_inv_asn_header_submit_btn').enable();
+                        Aurora.Masker.unmask($('shtn_inv5020_asn_create_window').wrap);
+                    },
+                    scope: this
+                });
+            }
+            
+            // 提交动作
+            
+            function shtn_inv5020_inv_asn_submit() {
+                //校验行上的发运数量等信息
+                var lines_ds = $('shtn_inv5020_asn_create_line_ds');
+                if (!lines_ds.validate()) {
+                    $('shtn_inv5020_inv_asn_header_create_btn').enable();
+                    $('shtn_inv5020_inv_asn_header_submit_btn').enable();
+                    Aurora.Masker.unmask($('shtn_inv5020_asn_create_window').wrap);
+                    return false;
+                }
+                var headers_ds = $('shtn_inv5020_asn_create_header_ds');
+                var header_record = headers_ds.getCurrentRecord();
+                var datas;
+                datas = {
+                    asn_header_id: header_record.get('asn_header_id'),
+                    asn_type_code: header_record.get('asn_type_code')
+                };
+                Aurora.request({
+                    url: $('shtn_inv5020_asn_create_submit_link').getUrl(),
+                    para: datas,
+                    success: function(res) {
+                        $('shtn_inv5020_inv_asn_header_create_btn').enable();
+                        $('shtn_inv5020_inv_asn_header_submit_btn').enable();
+                        Aurora.Masker.unmask($('shtn_inv5020_asn_create_window').wrap);
+                        // 判断是否还存在未提交的预览送货单
+                        invGoBack(res.result.last_flag);
+                    },
+                    failure: function(res) {
+                        $('shtn_inv5020_inv_asn_header_create_btn').enable();
+                        $('shtn_inv5020_inv_asn_header_submit_btn').enable();
+                        Aurora.Masker.unmask($('shtn_inv5020_asn_create_window').wrap);
+                    },
+                    error: function(res) {
+                        $('shtn_inv5020_inv_asn_header_create_btn').enable();
+                        $('shtn_inv5020_inv_asn_header_submit_btn').enable();
+                        Aurora.Masker.unmask($('shtn_inv5020_asn_create_window').wrap);
+                    },
+                    scope: this
+                });
+            }
+            
+            function shtn_inv5020_asnCreateHeaderDsValidator(record, name, value) {
+                var current_date = Aurora.formatDate(new Date());
+                value = Aurora.formatDate(value);
+            
+                //送货日期
+                /* if (name == 'ship_date') {
+                    if (value > current_date) {
+                        return '${l:INV5010.DELIVERY_DATE_CAN_NOT_LATER_THAN_SYSDATE}';
+                    }
+                } */
+            
+                //预计到货日期
+                if (name == 'expected_date') {
+                    if (value < Aurora.formatDate(record.get('ship_date'))) {
+                        return '${l:INV5010_EXPECT_DATE_COMPRE_ERROR}';
+                    }
+                }
+                return true;
+            }
+            
+            function shtn_inv5020_asnCreateGridRenderer(value, record, name) {
+                if (name == 'operate') {
+                    if (record.get('copy_flag') == 'Y') {
+                        if (!Aurora.isEmpty(record.get('asn_line_id'))) {
+                            return '<a href="javascript:shtn_inv5020_asnCreateGridRendererRemove(' + record.id + ')">${l:PROMPT.DELETE}</a>';
+                        } else {
+                            return '<a href="javascript:shtn_inv5020_asnCreateGridRendererClear(' + record.id + ')">${l:PROMPT.DELETE}</a>';
+                        }
+                    } else {
+                        return '<a href="javascript:shtn_inv5020_asnCreateGridRendererSplit(' + record.id + ')">${l:INV5010.ASN_SPLIT}</a>';
+                    }
+                }
+                
+                if(name == 'line_attachment'){
+                    if (!Aurora.isEmpty(record.get('asn_line_id'))) {
+                    	return '<a href="javascript:shtn_inv5020_line_attachment_upload_function(' + record.get('asn_line_id') + ')">${l:ATM.UPLOAD_ATTACHMENT}</a>';
+                    }
+                }
+            }
+            
+            function shtn_inv5020_line_attachment_upload_function(asn_line_id) {
+                new Aurora.Window({
+                    id: 'shtn_inv5020_asn_create_attachment_file_upload_link_window',
+                    title: '${l:HAP_UPLOAD_TITLE}',
+                    url: $('shtn_inv5020_asn_create_attachment_file_upload_link').getUrl() + '?pkvalue=' + asn_line_id + '&table_name=INV_ASN_LINES_TEMP',
+                    width: 500,
+                    height: 500
+                });
+            }
+            
+            function shtn_inv5020_asnCreateGridRendererRemove(record_id) {
+                var record = $('shtn_inv5020_asn_create_line_ds').findById(record_id);
+                $('shtn_inv5020_asn_create_line_ds').remove(record);
+            }
+            
+            function shtn_inv5020_asnCreateGridRendererClear(record_id) {
+                var record = $('shtn_inv5020_asn_create_line_ds').findById(record_id);
+                $('shtn_inv5020_asn_create_line_ds').remove(record);
+            }
+            
+            function shtn_inv5020_asnCreateGridRendererSplit(record_id) {
+                var max_as_line_num = 0;
+                var records = $('shtn_inv5020_asn_create_line_ds').getAll();
+                for (var i = 0;i < records.length;i++) {
+                    max_as_line_num = max_as_line_num > records[i].get('asn_line_num') ? max_as_line_num : records[i].get('asn_line_num');
+                }
+                var old_record = $('shtn_inv5020_asn_create_line_ds').findById(record_id);
+                var new_record = $('shtn_inv5020_asn_create_line_ds').create({
+                    'asn_header_id': old_record.get('asn_header_id'),
+                    'asn_line_id': old_record.get('asn_line_id'),
+                    'asn_line_num': max_as_line_num + 1,
+                    'require_item_id': old_record.get('require_item_id'),
+                    'require_item_code': old_record.get('require_item_code'),
+                    'require_item_name': old_record.get('require_item_name'),
+                    'ean_code': old_record.get('ean_code'),
+                    'supply_item_code': old_record.get('supply_item_code'),
+                    'supply_item_name': old_record.get('supply_item_name'),
+                    'segment1': old_record.get('segment1'),
+                    'line_num': old_record.get('line_num'),
+                    'shipment_num': old_record.get('shipment_num'),
+                    'release_num': old_record.get('release_num'),
+                    'revision_num': old_record.get('revision_num'),
+                    'unit_meas_lookup_code': old_record.get('unit_meas_lookup_code'),
+                    'unit_price': old_record.get('unit_price'),
+                    'quantity': old_record.get('quantity'),
+                    'ship_quantity': old_record.get('ship_quantity'),
+                    'need_by_date': old_record.get('need_by_date'),
+                    'request_arrival_date': old_record.get('request_arrival_date'),
+                    'contacts_info': old_record.get('contacts_info'),
+                    'promised_date': old_record.get('promised_date'),
+                    'lots_num': old_record.get('lots_num'),
+                    'lots_validity_date': old_record.get('lots_validity_date'),
+                    'invoice_num': old_record.get('invoice_num'),
+                    'serial_num': old_record.get('serial_num'),
+                    'line_desc': old_record.get('line_desc'),
+                    'comments': old_record.get('comments'),
+                    'heat_number': old_record.get('heat_number'),
+                    'reel_number': old_record.get('reel_number'),
+                    'package_number': old_record.get('package_number'),
+                    'deliver_weight': old_record.get('deliver_weight'),
+                    'package_uom_code': old_record.get('package_uom_code'),
+                    'vendor_item_count': old_record.get('vendor_item_count'),
+                    'used_item_code': old_record.get('used_item_code'),
+                    'copy_flag': 'Y'
+                });
+            }
+            
+            //加载事件
+            
+            function shtn_inv5020_asnCreateLine_loadFun(ds) {
+                var records = ds.getAll();
+                for (var i = 0;i < records.length;i++) {
+                    var record = records[i];
+            
+                    //发运数量为0时默认为待发货数量
+                    if (record.get('ship_quantity') == 0) {
+                        record.set('ship_quantity', record.get('default_shipped_quantity'));
+                    }
+            
+                    // if (record.get('serial_required_flag') == 'Y') {
+                    // record.getMeta().getField('serial_num').setRequired(true);
+                    // } else {
+                    // record.getMeta().getField('serial_num').setRequired(false);
+                    // }
+            
+                    // if (record.get('lot_required_flag') == 'Y') {
+                    // record.getMeta().getField('lots_num').setRequired(true);
+                    // record.getMeta().getField('lots_validity_date').setRequired(true);
+                    // } else {
+                    // record.getMeta().getField('lots_num').setRequired(false);
+                    // record.getMeta().getField('lots_validity_date').setRequired(false);
+                    // }
+                }
+            }
+            
+            function shtn_inv5020_asnCreateLineDsValidator(record, name, value) {
+                var quantity_enable_shipped = record.get('quantity_enable_shipped');
+                if (name == 'ship_quantity') {
+                    if (value == 0) {
+                        return '${l:INV5010.SHIPMENT_QUANTITY_CAN_NOT_BE_ZERO}';
+                    } else {
+                        if (value > quantity_enable_shipped) {
+                            return '${l:INV5010.SHIP_NOW_CAN_NOT_GREATER_THAN_AVAILABLE}';
+                        }
+                    }
+                }
+                return true;
+            }
+            
+            function shtn_inv5020_inv_asn_header_attachment() {
+                var headers_ds = $('shtn_inv5020_asn_create_header_ds');
+                var header_record = headers_ds.getCurrentRecord();
+                var asn_header_id = header_record.get('asn_header_id');
+                if (asn_header_id) {
+                    new Aurora.Window({
+                        id: 'shtn_inv5020_asn_create_attachment_file_upload_link_window',
+                        title: '${l:HAP_UPLOAD_TITLE}',
+                        url: $('shtn_inv5020_asn_create_attachment_file_upload_link').getUrl() + '?pkvalue=' + asn_header_id + '&table_name=INV_ASN_HEADERS',
+                        width: 500,
+                        height: 500
+                    });
+                }
+            }
+            
+            //外协bom分配页面
+            function shtn_inv5020_po_bom_maintain(asn_line_temp_id){
+            	new Aurora.Window({
+                    id: 'shtn_inv5020_asn_line_bom_maintain_win',
+                    title: '${l:INV_ASN_LINES_TEMP.PUR_PO_BOMS}',
+                    url: $('shtn_inv5020_asn_line_bom_maintain_link').getUrl() + '?asn_line_temp_id=' + asn_line_temp_id,
+                    width: 800,
+                    height: 420
+                }); 	   
+            }
+            
+            //外协核销数量分配
+            function shtn_inv5020_po_bom_renderer(value,record,name){
+                if(record.get('asn_pom_count') > 0){
+                 	return '<a href="javascript:shtn_inv5020_po_bom_maintain(' + value + ');">' + '${l:INV_ASN_LINES_TEMP.PUR_PO_BOMS}' + '</a>';   
+                } else {
+                 	return '';   
+                }
+            }
+            
+            //包装分配行明细
+            function shtn_inv5020_label_line_maintain(asn_line_temp_id){
+            	new Aurora.Window({
+                    id: 'shtn_inv5020_label_line_maintain_win',
+                    title: '${l:SHTN_INV_ASN_LINES.LABEL_LINE_INFO}',
+                    url: $('shtn_inv5020_label_line_maintain_link').getUrl() + '?asn_line_temp_id=' + asn_line_temp_id,
+                    width: 800,
+                    height: 420
+                }); 	    
+            }
+            
+            //包装分配行渲染
+            function shtn_inv5020_label_line_renderer(value,record,name){
+            	if(record.get('asn_pom_count') > 0){
+                 	return '<a href="javascript:shtn_inv5020_label_line_maintain(' + record.get('asn_line_id') + ');">' + '${l:SHTN_INV_ASN_LINES.LABEL_LINE_INFO}' + '</a>';   
+                } else {
+                 	return '';   
+                } 	   
+            }
+            
+            //包装lov点击事件，设置查询参数
+            function shtn_inv5020_asn_create_grid_cellclick_handler(grid,row,name,record){
+            	var ds =  $('shtn_inv5020_asn_create_line_ds'),
+            		item_id = record.get('require_item_id'),
+            		uom_code = record.get('unit_meas_lookup_code'),
+            		package_uom_code = ds.getField('package_uom_code');
+	
+           		package_uom_code.setLovPara('item_id',item_id); 
+           		package_uom_code.setLovPara('uom_code',uom_code);     
+            }
+            
+            //拆分行信息保存
+            function shtn_inv5020_asn_create_line_save(){
+            	var ds = $('shtn_inv5020_asn_create_line_ds'),
+            			records = ds.getAll();
+        	    if(ds.validate()){
+        	        var para = [];
+        	        for(var i = 0; i < records.length; i++){
+        	            records[i].set('_status', 'update');
+        	            para.push(records[i].data);
+        	        }
+        	        Aurora.Masker.mask($('shtn_inv5020_asn_create_window').wrap, '${l:PROMPT.SUBMITING}');
+        	        Aurora.request({
+	        	        url:$('shtn_inv5020_asn_create_line_save_link').getUrl(),
+	        	        para:para,
+	        	        success:function(){
+        	                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function(){
+	        	                ds.query();
+	        	                Aurora.Masker.unmask($('shtn_inv5020_asn_create_window').wrap);	
+        	                });
+	        	        },
+	        	        failure:function(){
+	        	        	Aurora.Masker.unmask($('shtn_inv5020_asn_create_window').wrap);	    
+	        	        },
+	        	        error:function(){
+	        	        	Aurora.Masker.unmask($('shtn_inv5020_asn_create_window').wrap);
+	        	        },
+	        	        scope:this
+	        	    });
+        	    } 	   
+            }
+            
+            //板块数量校检
+            function shtn_inv5020_asn_deliver_weight_edit(record,name){
+             	if(record.get('vendor_item_count') > 0){
+             	 	//设置可编辑
+             	 	 return 'shtn_inv5020_asn_deliver_weight_nf';
+             	} else {
+             		//设置不可编辑    
+             		 return '';
+             	}   
+            }
+            
+            //板块数量校检
+            function shtn_inv5020_asn_deliver_weight_validator(record,name,value){
+            	if(name == "deliver_weight"){
+			 	 	var vendor_item_count = record.get("vendor_item_count") || 0;  
+			 	 	if(vendor_item_count > 0){
+			 	 	 	if(!value){
+			 	 	 	 	return '${l:SHTN_INV_ASN.DELIVER_WEIGHT_NULL}';   
+			 	 	 	}   
+			 	 	}
+			 	 	return true;
+			 	}  
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="shtn_inv5020_asn_create_type_list_ds" autoQuery="true" fetchAll="true" model="public.asn_type_lov" queryUrl="${/request/@context_path}/autocrud/public.asn_type_lov/query?asn_create=asn_create"/>
+            <a:dataSet id="shtn_inv5020_asn_create_header_ds" autoPageSize="true" autoQuery="true" model="cux.SHTN.inv.SHTN_INV5020.inv_asn_headers_temp" queryUrl="${/request/@context_path}/autocrud/cux.SHTN.inv.SHTN_INV5020.inv_asn_headers_temp/query?asn_header_id=${/parameter/@asn_header_id}" selectable="true">
+                <a:fields>
+                    <a:field name="asn_header_id" readOnly="true"/>
+                    <a:field name="asn_number" readOnly="true"/>
+                    <a:field name="company_name" readOnly="true"/>
+                    <a:field name="vendor_name" readOnly="true"/>
+                    <a:field name="ship_to_organization_name" readOnly="true"/>
+                    <a:field name="location_name" readOnly="true"/>
+                    <a:field name="ship_date" required="true" requiredMessage="${l:INV_ASN_HEADERS_TEMP.SHIP_DATE_NOT_NULL}" validator="shtn_inv5020_asnCreateHeaderDsValidator"/>
+                    <a:field name="expected_date" required="true" requiredMessage="${l:INV_ASN_HEADERS_TEMP.EXPECTED_DATE_NOT_NULL}" validator="shtn_inv5020_asnCreateHeaderDsValidator"/>
+                    <a:field name="vendor_site_name" readOnly="true"/>
+                    <a:field name="data_source" readOnly="true"/>
+                    <a:field name="header_desc"/>
+                    <a:field name="asn_type_code"/>
+                    <a:field name="asn_type_name_display" displayField="asn_type_name" options="shtn_inv5020_asn_create_type_list_ds" returnField="asn_type_code" valueField="asn_type_code"/>
+                    <a:field name="is_immed_shipped_flag_display" readOnly="true"/>
+                    <a:field name="actual_receiver_name" readOnly="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="shtn_inv5020_asn_create_line_ds" autoQuery="true" fetchAll="true" model="cux.SHTN.inv.SHTN_INV5020.inv_asn_lines_temp" queryUrl="${/request/@context_path}/autocrud/cux.SHTN.inv.SHTN_INV5020.inv_asn_lines_temp/query?asn_header_id=${/parameter/@asn_header_id}" selectable="false">
+                <a:fields>
+                    <a:field name="asn_line_id"/>
+                    <a:field name="ship_quantity" required="true" requiredMessage="INV5010.SHIPMENT_QUANTITY_CAN_NOT_BE_BULL_OR_ZERO" validator="shtn_inv5020_asnCreateLineDsValidator"/>
+                    <a:field name="comments"/>
+                    <a:field name="serial_num" requiredMessage="INV5010.SERIAL_NUM_CAN_NOT_NULL"/>
+                    <a:field name="lots_num" requiredMessage="INV5010.BATCH_NUM_CAN_NOT_NULL"/>
+                    <a:field name="lots_validity_date" requiredMessage="INV5010.DATE_OF_EXPIRY_CAN_NOT_NULL"/>
+                    <a:field name="heat_number" required="true"/>
+                    <a:field name="reel_number" required="true"/>
+                    <a:field name="package_number" required="true"/>
+                    <a:field name="heat_repeat_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="package_uom_code" lovHeight="500" lovService="cux.SHTN.inv.SHTN_INV5020.shtn_fnd_package_uom_lov" lovWidth="490" title="SHTN_FND_PACKAGE_UOM.PACKAGE_CODE">
+                        <a:mapping>
+                            <a:map from="package_uom_code" to="package_uom_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="deliver_weight" validator="shtn_inv5020_asn_deliver_weight_validator"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="shtn_inv5020_asnCreateLine_loadFun"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <!-- <a:toolbarButton click="shtn_inv5020_inv_asn_header_save" style="margin-left:20px;" text="PROMPT.SAVE" width="100"/> -->
+                <a:toolbarButton id="shtn_inv5020_inv_asn_header_create_btn" click="shtn_inv5020_inv_asn_header_create" style="margin-left:20px;" text="INV5010.CREATE_ASN" width="100"/>
+                <a:toolbarButton id="shtn_inv5020_inv_asn_header_submit_btn" click="shtn_inv5020_inv_asn_header_submit" style="margin-left:20px;" text="INV5010.SUBMIT_ASN" width="100"/>
+                <a:toolbarButton click="shtn_inv5020_asn_create_line_save" style="margin-left:20px;" text="PROMPT.SAVE" width="100"/>
+                <a:gridButton bind="shtn_inv5020_asn_create_grid" className="item-rbtn-blue button-excel" type="excel" width="100"/>
+                <a:toolbarButton click="shtn_inv5020_inv_asn_header_attachment" style="margin-left:20px;" text="PROMPT.ATTACHMENT" width="100"/>
+                <a:toolbarButton click="shtn_inv5020_inv_asn_header_go_back" style="margin-left:20px;" text="HAP_BACK" width="100"/>
+            </a:screenTopToolbar>
+            <a:form marginWidth="70">
+                <a:hBox>
+                    <a:label name="asn_number" bindTarget="shtn_inv5020_asn_create_header_ds" prompt="INV_ASN_HEADERS.ASN_NUMBER" width="230"/>
+                    <a:label name="vendor_name" bindTarget="shtn_inv5020_asn_create_header_ds" prompt="PUR_VENDORS.VENDOR" width="230"/>
+                    <a:label name="vendor_site_name" bindTarget="shtn_inv5020_asn_create_header_ds" prompt="INV_ASN_HEADERS.SHIPMENT_LOCATION" width="230"/>
+                    <a:datePicker name="ship_date" bindTarget="shtn_inv5020_asn_create_header_ds" prompt="INV_ASN_HEADERS.SHIP_DATE" width="120"/>
+                </a:hBox>
+                <a:hBox>
+                    <a:label name="company_name" bindTarget="shtn_inv5020_asn_create_header_ds" prompt="INV_ASN_HEADERS_TEMP.COMPANY_ID" width="230"/>
+                    <a:label name="ship_to_organization_name" bindTarget="shtn_inv5020_asn_create_header_ds" prompt="INV_ASN_HEADERS_TEMP.SHIP_TO_ORGANIZATION_ID" width="230"/>
+                    <a:label name="location_name" bindTarget="shtn_inv5020_asn_create_header_ds" prompt="INV_ASN_HEADERS_TEMP.LOCATION_ID" width="220"/>
+                    <a:datePicker name="expected_date" bindTarget="shtn_inv5020_asn_create_header_ds" prompt="INV_ASN_HEADERS_TEMP.EXPECTED_DATE" width="120"/>
+                </a:hBox>
+                <a:hBox>
+                    <a:comboBox name="asn_type_name_display" bindTarget="shtn_inv5020_asn_create_header_ds" prompt="INV_ASN_HEADERS.ASN_TYPE" readOnly="true" width="230"/>
+                    <a:label name="is_immed_shipped_flag_display" bindTarget="shtn_inv5020_asn_create_header_ds" prompt="PUR_LINES_ALL.IS_IMMED_SHIPPED_FLAG" width="230"/>
+                    <a:label name="actual_receiver_name" bindTarget="shtn_inv5020_asn_create_header_ds" prompt="PUR_LINES_ALL.ACTUAL_RECEIVER_NAME" width="230"/>
+                </a:hBox>
+                <a:hBox>
+                    <a:textField name="header_desc" bindTarget="shtn_inv5020_asn_create_header_ds" prompt="INV_ASN_HEADERS.HEADER_DESC" width="850"/>
+                </a:hBox>
+            </a:form>
+            <a:grid id="shtn_inv5020_asn_create_grid" autoAppend="false" bindTarget="shtn_inv5020_asn_create_line_ds" marginHeight="330" marginWidth="70" navBar="false" style="margin-top:10px;">
+                <a:columns>
+                    <a:column name="operate" align="center" lock="true" prompt="PROMPT.OPERATE" renderer="shtn_inv5020_asnCreateGridRenderer" width="30"/>
+                    <a:column name="asn_line_num" align="center" lock="true" prompt="INV_ASN_LINES_TEMP.LINE_NUM" width="30"/>
+                    <a:column name="require_item_code" align="left" lock="true" prompt="INV_ASN_LINES_TEMP.ITEM_CODE" sortable="true" width="60"/>
+                    <a:column name="require_item_name" align="left" lock="true" prompt="INV_ASN_LINES_TEMP.ITEM_NAME" sortable="true" width="100"/>
+                    <a:column name="used_item_code" align="center" prompt="MTL2060.USED_ITEM_CODE" width="60"/>
+                    <!-- <a:column name="ean_code" align="left" lock="true" prompt="PUR_LINES_ALL.EAN_CODE" sortable="true" width="80"/>
+                    <a:column name="supply_item_code" align="left" lock="true" prompt="INV_ASN_LINES_TEMP.VENDOR_ITEM_CODE" sortable="true" width="60"/>
+                    <a:column name="supply_item_name" align="left" lock="true" prompt="INV_ASN_LINES_TEMP.VENDOR_ITEM_NAME" sortable="true" width="100"/> -->
+                    <a:column name="quantity" align="right" prompt="INV_ASN_LINES_TEMP.QUANTITY" renderer="Aurora.formatNumber" width="40"/>
+                    <a:column name="unit_meas_lookup_code" align="center" prompt="INV_ASN_LINES_TEMP.UNIT_MEAS_LOOKUP_CODE" width="50"/>
+                    <a:column name="quantity_enable_shipped" align="right" prompt="PUR_LINE_LOCATIONS_ALL.QUANTITY_ENABLE_SHIPPED" renderer="Aurora.formatNumber" width="40"/>
+                    <a:column name="ship_quantity" align="right" editor="shtn_inv5020_asn_ship_quantity_nf" prompt="PUR_LINE_LOCATIONS_ALL.SHIPPED_QUANTITY" width="50"/>
+                    <a:column name="deliver_weight" align="right" editorFunction="shtn_inv5020_asn_deliver_weight_edit" prompt="SHTN_INV_ASN_LINES.DELIVER_WEIGHT" renderer="Aurora.formatNumber" width="50"/>
+                    <a:column name="lots_num" align="center" editor="shtn_inv5020_asn_create_grid_tf" prompt="INV_ASN_LINES_TEMP.LOTS_NUM" width="50"/>
+                    <a:column name="lots_validity_date" align="center" editor="shtn_inv5020_asn_create_grid_dp" prompt="INV_ASN_LINES_TEMP.LOTS_VALIDITY_DATE" renderer="Aurora.formatDate" width="50"/>
+                    <a:column name="package_uom_code" editor="shtn_inv5020_asn_create_grid_lov" prompt="INV_ASN_LINES_TEMP.PACK" width="50"/>
+                    <!-- <a:column name="lpn_number" prompt="INV_ASN_LINES_TEMP.LPN_NUMBER" width="50"/> -->
+                    <!-- <a:column name="label_line_info" align="center" prompt="SHTN_INV_ASN_LINES.LABEL_LINE_INFO" renderer="shtn_inv5020_label_line_renderer" width="50"/> -->
+                    <a:column name="heat_number" editor="shtn_inv5020_asn_create_grid_tf" prompt="INV_ASN_LINES_TEMP.HEAT_NUMBER" width="50"/>
+                    <a:column name="heat_repeat_flag" align="center" prompt="INV_ASN_LINES_TEMP.HEAT_REPEAT_FLAG" width="60"/>
+                    <a:column name="reel_number" editor="shtn_inv5020_asn_create_grid_tf" prompt="INV_ASN_LINES_TEMP.REEL_NUMBER" width="50"/>
+                    <a:column name="package_number" editor="shtn_inv5020_asn_create_grid_tf" prompt="INV_ASN_LINES_TEMP.PACKAGE_NUMBER" width="50"/>
+                    <a:column name="asn_line_id" align="center" prompt="INV_ASN_LINES_TEMP.EXTERNAL_VERIFICATION" renderer="shtn_inv5020_po_bom_renderer" width="50"/>
+                    <a:column name="line_desc" align="left" prompt="PUR_LINES_ALL.PUR_LINE_DESC" width="100"/>
+                    <a:column name="comments" align="left" editor="shtn_inv5020_asn_create_grid_tf" prompt="INV_ASN_LINES_TEMP.VENDOR_COMMENTS" width="100"/>
+                    <a:column name="need_by_date" align="center" prompt="INV_ASN_LINES_TEMP.NEED_BY_DATE" width="80"/>
+                    <a:column name="request_arrival_date" align="center" prompt="INV_ASN_LINES_TEMP.PROMISED_DATE" renderer="Aurora.formatDate" width="80"/>
+                    <a:column name="contacts_info" align="center" prompt="PUR_LINES_ALL.CONTACTS_INFO" width="80"/>
+                    <a:column name="promised_date" align="center" prompt="INV_ASN_LINES_TEMP.PROMISED_DATE" width="80"/>
+                    <a:column name="segment1" align="center" prompt="INV_ASN_LINES_TEMP.SEGMENT1" width="80"/>
+                    <a:column name="release_num" align="center" prompt="INV_ASN_LINES_TEMP.RELEASE_NUM" width="40"/>
+                    <a:column name="line_num" align="center" prompt="INV_ASN_LINES_TEMP.LINE_NUM" width="30"/>
+                    <a:column name="shipment_num" align="center" prompt="INV_ASN_LINES_TEMP.SHIPMENT_NUM" width="40"/>
+                    <a:column name="revision_num" align="center" prompt="INV_ASN_LINES_TEMP.REVISION_NUM" width="40"/>
+                    <a:column name="line_attachment" align="center" prompt="PROMPT.ATTACHMENT" renderer="shtn_inv5020_asnCreateGridRenderer" width="60"/>
+                </a:columns>
+                <a:editors>
+                    <a:textField id="shtn_inv5020_asn_create_grid_tf"/>
+                    <a:datePicker id="shtn_inv5020_asn_create_grid_dp"/>
+                    <a:lov id="shtn_inv5020_asn_create_grid_lov"/>
+                    <a:numberField id="shtn_inv5020_asn_ship_quantity_nf" allowDecimals="true" allowFormat="true" allowNegative="false" decimalPrecision="4"/>
+                    <a:numberField id="shtn_inv5020_asn_deliver_weight_nf" allowDecimals="false" allowFormat="true"/>
+                </a:editors>
+                <a:events>
+                    <a:event name="cellclick" handler="shtn_inv5020_asn_create_grid_cellclick_handler"/>
+                </a:events>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

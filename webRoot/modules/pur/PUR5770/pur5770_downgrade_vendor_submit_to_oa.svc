@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: WangQiaosen  
+    $Date: 2013-3-11 下午1:27:02  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:service xmlns:t="aurora.application.action" xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <a:model-execute model="pur.PUR5770.pur_downgrade_vendors"/>
+        <a:model-query fetchAll="true" model="pur.PUR5770.pur_downgrade_details" rootPath="headers"/>
+        <a:model-query fetchAll="true" model="pur.PUR5240.pur_rfx_geturl_to_oa" rootPath="url"/>
+        <a:model-query fetchAll="true" model="pur.PUR5770.pur_downgrade_gettcode_to_oa" rootPath="tcode"/>
+        <a:rest-invoker acceptLanguage="zh-CN,zh;q=0.8" cacheControl="no-cache" contentType="application/json;charset=UTF-8" raiseExceptionOnError="true" requestMethod="GET" returnPath="/soapResponse/USER" url="${/model/url/record/@get_user_url}"/>
+        <p:set field="/parameter/@userName" sourceField="/soapResponse/USER/@userName"/>
+        <s:server-script><![CDATA[
+            var logger = $logger('server-script');
+            
+            function log(msg) {
+                logger.info(msg);
+            }
+            var para = $ctx.parameter;
+            log($ctx.model.getChild('headers').toXML);
+            var dataList = $ctx.model.getChild('headers').getChildren();
+            var data = [];
+            
+            for (var i = 0;i < dataList.length;i++) {
+                data.push(dataList[i]);
+            }
+            log(dataList.length);
+            var tableListAll = new CompositeMap('tableListAll');
+            var record = new CompositeMap('record');
+            var tableList = new CompositeMap('TableList');
+            var loginName = new CompositeMap('loginName');
+            loginName.setText(para.userName);
+            var tCode = new CompositeMap('tCode');
+            var tcodeValue = $ctx.model.getChild('tcode').getChild('record').quote_code;
+            tCode.setText(tcodeValue);
+            var title = new CompositeMap('title');
+            var title_text = '供应商资格取消申请单-';
+            var downgrade_code = data[0].downgrade_code;
+            var display_vendor_code = data[0].display_vendor_code;
+            title_text = title_text + downgrade_code + '-' + display_vendor_code;
+            title.setText(title_text);
+            tableList.addChild(loginName);
+            tableList.addChild(tCode);
+            tableList.addChild(title);
+            var table1 = new CompositeMap('Table');
+            table1['isson'] = '1';
+            tableList.addChild(table1);
+            var nameList = {
+                "申请表编号": downgrade_code,
+                "申请日期": data[0].creation_date,
+                "供应商代码": display_vendor_code,
+                "供应商名称": data[0].vendor_desc,
+                "是否纳入黑名单": data[0].black_list_flag_oa,
+                "供应商资格取消原因综述": data[0].downgrade_reason,
+                "供应物料": data[0].category_names
+            }
+            for (var tempName in nameList) {
+                var field = new CompositeMap('Field');
+                field.name = tempName;
+                if (nameList[tempName]) {
+                    field.value = nameList[tempName];
+                } else {
+                    field.value = '';
+                }
+                table1.addChild(field);
+            }
+            
+            
+            record.setText(tableList.toXML());
+            log(tableList.toXML());
+            tableListAll.addChild(record);
+            var url = $ctx.model.getChild('url').getChild('record').post_url + '&key=BD2B0CCCBC954FA6';
+            try {
+                var is = Packages.com.hand.jw_webservice.HttpUtils.urlPost(url, tableList.toXML(), 'text/xml;charset=utf8', "POST", "UTF-8", "", "");
+                var ret = Packages.com.hand.jw_webservice.IOUtilsEx.newString(is, "UTF-8");
+                log(ret);
+                ret = JSON.parse(ret);
+                if (ret.status == 'S') {
+                    $ctx.put('/soapResponse/RESPONSE/@status', ret.status);
+                } else if (ret.status == 'E') {
+                    $ctx.put('/soapResponse/RESPONSE/@status', ret.status);
+                    $ctx.put('/soapResponse/RESPONSE/@message', ret.message);
+                }
+            } catch (e) {
+                log(e)
+            }
+        ]]></s:server-script>
+        <p:echo/>
+        <t:test field="/soapResponse/RESPONSE/@status" message="${/soapResponse/RESPONSE/@message}" operator="!=" value="S"/>
+    </a:init-procedure>
+    <a:service-output output="/parameter"/>
+</a:service>

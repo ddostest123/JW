@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:service xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <s:server-script import="itf_construct_node.js"><![CDATA[
+            //系统及接口信息
+            var eitf_system_info = new ModelService('eitf.ws.RETRANSFER.eitf_system_info_query').queryAsMap().getChildren();
+            var soapResponse = new CompositeMap('soapResponse');
+            
+            for (var i = 0;i < eitf_system_info.length;i++) {
+                $ctx.parameter.business_group = eitf_system_info[i].business_group;
+                $ctx.parameter.external_system_code = eitf_system_info[i].external_system_code;
+                $ctx.parameter.interface_category_code = eitf_system_info[i].interface_category_code;
+                $ctx.parameter.interface_code = eitf_system_info[i].interface_code;
+            
+            
+                //接口数据初始化
+                $bm('eitf.ws.public.eitf_export_init').execute();
+            
+            
+            
+                var record = constructRecordNode('record', soapResponse, eitf_system_info[i].url);
+            
+                //构造请求头
+                var request = constructNode('REQUEST', record);
+                //参数：request节点、key、ip、接口类别代码、接口代码、批次号、段号、总段数
+                var header = constructHeaderNode(request, 'JFLSDJFSDJFLDFJWEOJFOJDFLDJJDSJD', '172.0.0.1', $ctx.parameter.interface_category_code, $ctx.parameter.interface_code, $ctx.parameter.batch_num, $ctx.parameter.seg_num, $ctx.parameter.total_seg_count);
+                // var header = constructNode('HEADER',request);
+                // var key = constructNode('KEY',header,'JFLSDJFSDJFLDFJWEOJFOJDFLDJJDSJD');
+                // var ip = constructNode('IP',header,'172.0.0.1');
+                // var interface_category_code = constructNode('INTERFACE_CATEGORY_CODE',header,$ctx.parameter.interface_category_code);
+                // var interface_code = constructNode('INTERFACE_CODE',header,$ctx.parameter.interface_code);
+                // var batch_num = constructNode('BATCH_NUM',header,$ctx.parameter.batch_num);
+                // var seg_num = constructNode('SEG_NUM',header,$ctx.parameter.seg_num);
+                // var total_seg_count = constructNode('TOTAL_SEG_COUNT',header,$ctx.parameter.total_seg_count);
+            
+                //构造请求内容
+                var context = constructNode('CONTEXT', request);
+                //构造送货单节点
+                var inv_asn_header = constructNode('INV_ASN_HEADER', context);
+                var inv_asn_line = constructNode('INV_ASN_LINE', context);
+            
+                constructDataRecord('eitf.ws.INV_ASN.eitf_inv_asn_header_query', inv_asn_header);
+                constructDataRecord('eitf.ws.INV_ASN.eitf_inv_asn_line_query', inv_asn_line);
+            
+                //实例数据等待发送
+                $bm('eitf.ws.public.eitf_instance_pack').execute();
+            }
+            
+            $ctx.addChild(soapResponse);
+        ]]></s:server-script>
+        <a:batch-apply sourcepath="/soapResponse">
+            <p:echo/>
+            <p:echo message="url = ${@current_parameter/@url}"/>
+            <!-- <t:test xmlns:t="aurora.application.action"/> -->
+            <a:ws-invoker inputPath="@current_parameter/REQUEST" raiseExceptionOnError="false" returnPath="@current_parameter/RESPONSE" url="${@current_parameter/@url}"/>
+            <a:model-execute model="eitf.ws.public.eitf_instance_send"/>
+            <!-- <p:catch Exception="*" destination="/parameter/error_info" nextStep="batch-apply"/> -->
+        </a:batch-apply>
+    </a:init-procedure>
+</a:service>

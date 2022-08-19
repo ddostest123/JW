@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: libin  
+    $Date: 2014-10-27 下午16:16:58  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<p:procedure xmlns:s="aurora.plugin.script" xmlns:a="http://www.aurora-framework.org/application" xmlns:rs="aurora.database.rsconsumer" xmlns:p="uncertain.proc" trace="true">
+    <a:model-query defaultWhereClause="nvl(t1.job_fresh_flag,&apos;Y&apos;) in (&apos;N&apos;,&apos;M&apos;) and t1.status IN (&apos;RELEASED&apos;,&apos;DELETED&apos;)" model="blt.BLT1010.blt_bulletin_list_no_auth" rootPath="blt_data"/>
+    <a:model-query fetchAll="true" model="blt.blt_fresh_bg_login" rootPath="fnd_template"/>
+    <!-- <a:model-query fetchAll="true" model="blt.BLT1010.blt_login_template" rootPath="blt_template_news"/> -->
+    <s:server-script><![CDATA[
+        /* importClass(Packages.loginTemplateControl.GenerateTemplateScreen);
+        importClass(java.io.File);
+        importPackage(java.lang);
+        importClass(javax.servlet.http.HttpServlet);
+        importClass(javax.servlet.http.HttpServletRequest);
+        
+        var p = $ctx.parameter;
+        var record = $ctx.model.getChild("blt_data").getChildren();
+        var length = record.length;
+        var Trecord = $ctx.model.getChild("fnd_template").getChildren();
+        var Tlength = Trecord.length;
+        var gObject = {
+            bltListUrl: 'modules/blt/login_bg_news.screen',
+            customization: 'customization'
+        };
+        
+        //获取项目根路径
+        var file = String(Thread.currentThread().getContextClassLoader().getResource(""));
+        if (file.indexOf('file:') > -1) {
+            file = file.replace('file:', '');
+        }
+        if (file.indexOf('WEB-INF') > -1) {
+            file = file.substring(0, file.indexOf('WEB-INF'));
+        }
+        file = file.replace(/\//g, '\\');
+        
+        //实例化
+        var instance = new GenerateTemplateScreen(null);
+        instance.initPath(file.toString());
+        
+        /***
+         ****修改集团二级页面下的公告
+         ****需要修改集团二级页面的login静态页面
+         ****重新查询login页面下的三种类型的公告
+         ****当有公告新发布，已发布公告修改保存，已发布公告删除是触发
+         ***/
+        for (i = 0;i < Tlength;i++) {
+            if ( !! Trecord[i].system_create_website) {
+                modifyBgLoginScreen(Trecord[i]);
+            }
+        }
+        
+        /***
+         ****修改集团级的公告列表（集团二级登录页面下，公告处点击更多）
+         ****需要修改集团级的公告列表的静态页面modules/blt/login_bg_news.screen
+         ****更具刷新类型进行操作
+         ****N,公告类型为released，则新增
+         ****N,公告类型为deleted，则删除
+         ****M,修改
+         ***/
+        for (var i = 0;i < length;i++) {
+            if ( !! record[i].business_group) {
+                //集团级的对外公告公告
+                blt_screen_modify(record[i]);
+            }
+            update_job_flag(record[i].bulletin_id);
+        }
+        
+        function blt_screen_modify(data) {
+            //修改集团二级页面的公告列表
+            modifyBgNewsScreen(data);
+        }
+        
+        function modifyBgNewsScreen(data) {
+            instance.loadTemplate(gObject.bltListUrl);
+            var html = '<li code="' + data.business_group_md5 + '">';
+            html += '<div class="left num-show-field"><div class="num-field"></div></div>';
+            html += '<div class="left bulletin-detial">';
+            html += '<div class="news-title out-line-set" onclick="loginBgNewsDetail(' + data.bulletin_id + ')">' + data.bulletin_title + '</div>';
+            html += '<div class="news-release-infor">';
+            html += '<span class="left out-line-set left-align-f">' + data.created_by_desc + ' 发布于 ' + data.release_date_desc + '</span>';
+            html += '<span class="right out-line-set right-align-f">' + data.last_updated_by_desc + ' 最后修改于 ' + data.last_update_date_desc + '</span>';
+            html += '</div></div>';
+            html += '</li>';
+            if (data.job_fresh_flag == 'N' && data.status == 'RELEASED') {
+                //新发布的公告，新增操作,替换配置项
+                instance.replace('/<a:newsReplace>*</a:newsReplace>/', '<a:newsReplace>replace</a:newsReplace>' + html);
+            } else if (data.job_fresh_flag == 'M' && data.status == 'RELEASED') {
+                //发布的公告重新修改保存后,替换原来的在静态页面里的内容
+                var replaceHtml = '<li code="' + data.business_group_md5 + '">';
+                replaceHtml += '<div class="left num-show-field"><div class="num-field"></div></div>';
+                replaceHtml += '<div class="left bulletin-detial">';
+                replaceHtml += '<div class="news-title out-line-set" onclick="loginBgNewsDetail(' + data.bulletin_id + ')">';
+                //替换
+                instance.replace('/' + replaceHtml + '*' + '</li>/', html);
+            } else if (data.job_fresh_flag == 'N' && data.status == 'DELETED') {
+                //发布的公告删除后,替换原来的在静态页面里的内容为空
+                var replaceHtml = '<li code="' + data.business_group_md5 + '">';
+                replaceHtml += '<div class="left num-show-field"><div class="num-field"></div></div>';
+                replaceHtml += '<div class="left bulletin-detial">';
+                replaceHtml += '<div class="news-title out-line-set" onclick="loginBgNewsDetail(' + data.bulletin_id + ')">';
+                //替换
+                instance.replace('/' + replaceHtml + '*' + '</li>/', '');
+            }
+            //保存到screen文件
+            var name = (gObject.bltListUrl).toString();
+            instance.exportTemplate(name);
+            return;
+        }
+        
+        function modifyBgLoginScreen(data) {
+            var bm = $bm('blt.blt_fnd_bg_template');
+            var query = bm.queryAsMap({
+                'business_group': data.business_group
+            });
+            var news = query.getChildren();
+            var screen = data.system_create_website;
+            var startL = screen.indexOf(gObject.customization);
+            if (startL >= 0) {
+                var loginPath = screen.substr(startL);
+                instance.loadTemplate(loginPath);
+                var array = "";
+                for (var i = 0;i < news.length;i++) {
+                    array += "['" + news[i].type + "','" + news[i].bulletin_title + "','" + news[i].release_date + "','" + news[i].href + "']";
+                    if (i != news.length - 1) {
+                        array += ",";
+                    }
+                }
+                instance.replace("/{new@*@new}/", "{new@[" + array + "]@new}");
+                //保存到screen文件
+                name = (loginPath).toString();
+                instance.exportTemplate(name);
+            }
+        }
+        
+        function update_job_flag(bulletin_id) {
+            var param = {
+                bulletin_id: bulletin_id
+            };
+            var blt_bm = new ModelService('blt.BLT1010.blt_bulletin_list_no_auth');
+            blt_bm.update(param);
+        } */
+    ]]></s:server-script>
+</p:procedure>

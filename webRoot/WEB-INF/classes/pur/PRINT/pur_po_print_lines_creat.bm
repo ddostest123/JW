@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+	           SELECT t1.*,rownum rn,nvl(t1.unit_price,0) * nvl(t1.quantity,0) as line_amount
+					  FROM (SELECT pla.pur_header_id,
+					               pla.pur_line_id,
+					               pll.pur_line_location_id,
+					               pla.line_num,
+					               pll.shipment_num,
+					               pla.item_id,
+					               pla.item_code,
+			                        (SELECT
+			                            iwv.description
+			                        FROM
+			                            inv_warehouses_vl iwv
+			                        WHERE
+			                            iwv.warehouse_id = pll.warehouse_id
+			                        ) warehouse_name,
+					               pla.item_description,
+					               (SELECT msi.comments FROM mtl_system_items msi WHERE msi.item_id = pla.item_id) item_comments,
+					               DECODE(fnd_config_cnt_get_pkg.get_bg_item_value_po_05(p_business_group => pha.owner_business_group), 'Y', 
+					               (pla.unit_price * (1 + NVL(
+			                        (SELECT
+			                            tc.bg_tax_type_rate
+			                        FROM
+			                            fnd_tax_type_codes_bg tc
+			                        WHERE
+			                            tc.tax_type_id    = NVL(pll.tax_code_id, pla.tax_code_id) AND
+			                            tc.business_group = pha.owner_business_group
+			                        )/100,0))), pla.original_unit_price) AS unit_price,
+					               (CASE
+				                         WHEN pla.is_returned_flag = 'Y' THEN
+				                          pll.quantity * -1
+				                         ELSE
+				                          pll.quantity
+				                       END) AS quantity,
+					               pla.unit_meas_lookup_code,
+					               to_char(pll.need_by_date,
+					                       'YYYY-MM-DD') need_by_date,
+					               nvl(decode(pha.type_lookup_code,'ZTH','Y',''),' ') return_flag,
+					               nvl(nvl(pla.ean_code,
+					                   (SELECT msi.used_item_code FROM mtl_system_items msi WHERE msi.item_id = pla.item_id)),' ') ean_code,
+					               decode(pla.is_returned_flag,'N',' ',pla.is_returned_flag) is_returned_flag,
+					               (SELECT ps.project_name FROM pur_lines_subjects ps WHERE ps.pur_line_id = pla.pur_line_id) project_name,
+							       (SELECT ps.sale_order_number FROM pur_lines_subjects ps WHERE ps.pur_line_id = pla.pur_line_id) sale_order_number,
+							       (SELECT ps.sale_order_line_num FROM pur_lines_subjects ps WHERE ps.pur_line_id = pla.pur_line_id) sale_order_line_num,
+					               (  SELECT iov.description FROM inv_organizations_vl iov WHERE iov.inv_organization_id = pll.ship_to_organization_id) inv_organization_desc
+					          FROM pur_headers_all        pha,
+					               pur_lines_all          pla,
+					               pur_line_locations_all pll
+					         WHERE pla.pur_line_id = pll.pur_line_id
+					               AND pha.pur_header_id = pla.pur_header_id
+					               AND pha.cancel_flag   = 'N'
+					               AND pla.cancel_flag   = 'N'
+					               AND pll.cancel_flag   = 'N'
+					               AND pll.frozen_flag   = 'N'
+					               order by pla.line_num asc) t1
+                             #WHERE_CLAUSE#
+                             order by lpad(t1.line_num,30,'0') asc
+        ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter name="pur_header_id" expression="t1.pur_header_id=${@pur_header_id}"/>
+    </bm:data-filters>
+</bm:model>

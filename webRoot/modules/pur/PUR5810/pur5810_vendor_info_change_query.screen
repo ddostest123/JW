@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: zengweiqun 8550
+    $Date: 2017-11-21 上午10:09:37  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:view>
+        <a:link id="pur5810_vendor_infoChange_edit_link" url="${/request/@context_path}/modules/pur/PUR5810/pur5810_vendor_info_change_edit.screen"/>
+        <a:link id="pur5810_vendor_infoChange_create_link" url="${/request/@context_path}/modules/pur/PUR5810/pur5810_vendor_info_change_create.screen"/>
+        <a:link id="pur5810_operation_record_link" url="${/request/@context_path}/modules/pur/public/con_operation_record.screen"/>
+        <a:link id="pur5180_vendor_infoChange_init_link" model="pur.PUR5810.pur_vendor_change_init" modelaction="execute"/>
+        <a:link id="pur5810_vendor_infoChange_import_again_link" model="pur.PUR5810.pur_vendor_change_init" modelaction="batch_update"/>
+        <script><![CDATA[
+            function pur5810_vendor_infoChange_query() {
+                $('pur5810_vendor_infoChange_result_ds').query();
+            }
+            
+            function pur5810_vendor_info_change_create() {
+                
+                var choose_ds = $('pur5810_vendor_infoChange_choose_ds');
+            
+                if (choose_ds.validate()) {
+            
+            		debugger;
+            
+                    //锁定
+                    Aurora.Masker.mask(Ext.getBody(), '${l:LOADING}');
+                    
+                    var vendor_id = choose_ds.getCurrentRecord().get('vendor_id');
+                    
+                    var url;
+                    if(vendor_id == undefined){
+                        url = $('pur5180_vendor_infoChange_init_link').getUrl();
+                    }else{
+                        url = $('pur5180_vendor_infoChange_init_link').getUrl() +'?vendor_id='+vendor_id;
+                    }
+                    
+                    //初始化第0版数据
+                    Aurora.request({
+                        url: url,
+                        success: function(rec) {
+                            Aurora.Masker.unmask(Ext.getBody());
+            
+                            var version = rec.result.version;
+                            var vendor_id = rec.result.vendor_id;
+                            var old_hd_id = rec.result.old_hd_id;
+            
+                            new Aurora.Window({
+                                id: 'pur5810_vendor_info_change_win',
+                                url: $('pur5810_vendor_infoChange_create_link').getUrl() + '?status=NEW&version=' + version + '&vendor_id=' + vendor_id + '&old_hd_id=' + old_hd_id,
+                                fullScreen: true
+                            });
+            
+                            $('pur5810_vendor_info_change_win').on('close', function() {
+                                $('pur5810_vendor_infoChange_result_ds').query();
+                            });
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            return;
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            return;
+                        }
+                    });
+                }
+            
+            }
+            
+            function pur5810_vendorChangeHeaderOpen(pk_id, vendor_id, version, old_hd_id) {
+                new Aurora.Window({
+                    id: 'pur5810_vendor_info_change_win',
+                    url: $('pur5810_vendor_infoChange_edit_link').getUrl() + '?status=NEW&hd_id=' + pk_id + '&version=' + version + '&vendor_id=' + vendor_id + '&old_hd_id=' + old_hd_id,
+                    fullScreen: true
+                });
+            }
+            
+            function pur5810_open_operationRecord(pk_id) {
+                new Aurora.Window({
+                    id: 'con_operation_record_win',
+                    url: $('pur5810_operation_record_link').getUrl() + '?operation_table_id=' + pk_id + '&operation_table=pur_vendor_infochange_hd',
+                    title: '操作记录',
+                    height: 450,
+                    width: 600
+                });
+            }
+            
+            function pur5810_vendorChangeHeaderRendererFun(value, record, name) {
+                var version = record.get('version') - 1; //版本为更改前的版本
+                var pk_id = record.get('pk_id');
+                if (name == 'application_code') {
+                    return '<a href="javascript:pur5810_vendorChangeHeaderOpen(' + pk_id + ',' + record.get('vendor_id') + ',' + version + ',' + record.get('old_hd_id') + ')">' + value + '</a>';
+                } else if (name == 'operation_record') {
+                    return '<a href="javascript:pur5810_open_operationRecord(' + pk_id + ')">${l:PORMPT.OPERATION_RECORD}</a>';
+                }
+            }
+            
+            function pur5810_vendor_info_change_import_again() {
+                var ds = $('pur5810_vendor_infoChange_result_ds');
+                var records = ds.getSelected();
+                if (records.length < 1) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:AT_LEAST_CHOICE_ONE}');
+                    return false;
+                } else {
+                    Aurora.showConfirm('${l:PROMPT}', '确认重新导入？', function() {
+                        var datas = [];
+                        for (var i = 0;i < records.length;i++) {
+			               if (records[i].get('import_status') != 'FAILED') {
+			                    Aurora.showMessage('${l:PROMPT}', '只有导入失败的记录才允许重新导入！');
+			                    return false;
+			               }
+                            
+                            var data = {
+                                'pk_id': records[i].get('pk_id'),
+                                '_status': 'update'
+                            };
+                            datas.push(data);
+                        }
+            
+                        Aurora.Masker.mask(Ext.getBody(),'${l:LOADING}');
+                        Aurora.request({
+                            url: $('pur5810_vendor_infoChange_import_again_link').getUrl(),
+                            para: datas,
+                            success: function(res) {
+                                ds.query();
+                                Aurora.Masker.unmask(Ext.getBody());
+                            },
+                            failure: function(res) {
+                                Aurora.Masker.unmask(Ext.getBody());
+                            },
+                            error: function(res) {
+                                Aurora.Masker.unmask(Ext.getBody());
+                            },
+                            scope: this
+                        });
+            
+                    });
+                }
+           }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="pur5810_vendor_change_stauts_ds" lookupCode="PUR_VENDOR_CHANGE_STATUS"/>
+            <a:dataSet id="pur5810_vendor_infoChange_query_ds">
+                <a:fields>
+                    <a:field name="status"/>
+                    <a:field name="status_desc" displayField="code_value_name" options="pur5810_vendor_change_stauts_ds" returnField="status" valueField="code_value"/>
+                    <a:field name="vendor_name" autoComplete="true" autoCompleteField="vendor_code_name" lovGridHeight="360" lovHeight="500" lovService="pur.PUR5710.pur5710_vendor_lov" lovWidth="600" title="PUR5170.VENDOR_QUERY">
+                        <a:mapping>
+                            <a:map from="coop_company_id" to="vendor_id"/>
+                            <a:map from="vendor_name" to="vendor_name"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="pur5810_vendor_infoChange_result_ds" autoCount="true" autoPageSize="true" model="pur.PUR5810.pur_vendor_change_init" queryDataSet="pur5810_vendor_infoChange_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="old_hd_id"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="pur5810_vendor_infoChange_choose_ds" autoCreate="true" loadData="true">
+                <a:fields>
+                    <a:field name="vendor_name" autoComplete="true" autoCompleteField="vendor_code_name" lovGridHeight="360" lovHeight="500" lovService="pur.PUR5710.pur5710_vendor_lov" lovWidth="600" title="PUR5170.VENDOR_QUERY">
+                        <a:mapping>
+                            <a:map from="coop_company_id" to="vendor_id"/>
+                            <a:map from="vendor_name" to="vendor_name"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:defaultScreen>
+            <a:screenTopToolbar>
+                <a:toolbarButton id="pur5810_vendor_infoChange_create_btn" click="pur5810_vendor_info_change_create" text="PROMPT.CREATE" width="100"/>
+                <a:label id="pur5810_vendor_infoChange_vendorName_label" style="width:80px;float:left;margin-right:0px;margin-top:-2px;line-height:44px;margin-left:5px;"/>
+                <a:lov name="vendor_name" id="pur5810_vendor_infoChange_vendorName" bindTarget="pur5810_vendor_infoChange_choose_ds" prompt="PUR_RCV_TRX_HEADERS.VENDOR_ID" style="float:left;margin-right:0px;margin-top:2px;line-height:44px;margin-left:5px;"/>
+                <a:toolbarButton id="pur5810_vendor_infoChange_import_again_btn" click="pur5810_vendor_info_change_import_again" text="重新导入" width="100"/>
+            </a:screenTopToolbar>
+            <a:queryForm id="pur5810_vendor_infoChange_query_form" bindTarget="pur5810_vendor_infoChange_query_ds" queryHook="pur5810_vendor_infoChange_query" resultTarget="pur5810_vendor_infoChange_result_ds" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:hBox labelWidth="110">
+                        <a:textField name="application_code" bindTarget="pur5810_vendor_infoChange_query_ds" prompt="PUR5720.RECOMMEND_HDS_CODE" width="150">
+                            <a:events>
+                                <a:event name="enterdown" handler="pur5810_vendor_infoChange_query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:comboBox name="status_desc" bindTarget="pur5810_vendor_infoChange_query_ds" prompt="PUR5710.STATUS_DESC" width="150">
+                            <a:events>
+                                <a:event name="enterdown" handler="pur5810_vendor_infoChange_query"/>
+                            </a:events>
+                        </a:comboBox>
+                        <a:lov name="vendor_name" bindTarget="pur5810_vendor_infoChange_query_ds" prompt="PUR_RCV_TRX_HEADERS.VENDOR_ID" width="150">
+                            <a:events>
+                                <a:event name="enterdown" handler="pur5810_vendor_infoChange_query"/>
+                            </a:events>
+                        </a:lov>
+                    </a:hBox>
+                </a:formToolBar>
+                <a:formBody>
+                    <a:hBox labelWidth="110">
+                        <a:datePicker name="creation_date_from" bindTarget="pur5810_vendor_infoChange_query_ds" prompt="PROMPT.CREATION_DATE_FROM" width="150">
+                            <a:events>
+                                <a:event name="enterdown" handler="pur5810_vendor_infoChange_query"/>
+                            </a:events>
+                        </a:datePicker>
+                        <a:datePicker name="creation_date_to" bindTarget="pur5810_vendor_infoChange_query_ds" prompt="PROMPT.CREATION_DATE_TO" width="150">
+                            <a:events>
+                                <a:event name="enterdown" handler="pur5810_vendor_infoChange_query"/>
+                            </a:events>
+                        </a:datePicker>
+                    </a:hBox>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="pur5810_vendor_infoChange_result_grid" autoAppend="false" bindTarget="pur5810_vendor_infoChange_result_ds" marginHeight="200" marginWidth="15" navBar="true" width="1000">
+                <a:columns>
+                    <a:column name="status_desc" prompt="PUR5710.STATUS_DESC" width="60"/>
+                    <a:column name="application_code" prompt="PUR5720.RECOMMEND_HDS_CODE" renderer="pur5810_vendorChangeHeaderRendererFun"/>
+                    <a:column name="vendor_code" prompt="PUR_VENDORS.VENDOR_CODE"/>
+                    <a:column name="vendor_name" prompt="FND_COMPANIES.VENDOR_NAME" width="150"/>
+                    <a:column name="creation_date_fmt" align="center" prompt="PUR5710.CREATION_DATE" renderer="Aurora.formatDate" width="150"/>
+                    <a:column name="import_status_display" prompt="导入状态" width="60"/>
+                    <a:column name="import_message" prompt="导入信息" width="100"/>
+                    <a:column name="operation_record" align="center" prompt="PORMPT.OPERATION_RECORD" renderer="pur5810_vendorChangeHeaderRendererFun" width="70"/>
+                </a:columns>
+            </a:grid>
+        </a:defaultScreen>
+        <script><![CDATA[
+             var business_group = '${/session/@business_group}';
+             
+             // if (business_group == 'BG00000101') {
+             	 var ds = $('pur5810_vendor_infoChange_choose_ds');
+             	 var rec = ds.getCurrentRecord();
+             	 rec.getField('vendor_name').setRequired(true);
+             	 
+             	 document.getElementById('pur5810_vendor_infoChange_vendorName_label').innerHTML = '请选择供应商:';
+             // } 
+             // else {
+                 // document.getElementById('pur5810_vendor_infoChange_vendorName').style.display = "none";
+             // }
+         ]]></script>
+    </a:view>
+</a:screen>

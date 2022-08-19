@@ -1,0 +1,684 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao $ 
+    $Date: 2014-11-18 下午03:14:06 $  
+    $Revision: 1.0 $ 
+    $Purpose: 非寄销开票单创建(供)，入口页面 $
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure/>
+    <a:view>
+        <a:link id="acp5210_bill_detail_link" url="${/request/@context_path}/modules/acp/ACP5210/acp_bill_detail.screen"/>
+        <a:link id="acp5210_bill_base_to_order_clear_update_link" model="acp.ACP5210.acp_bill_details" modelaction="batch_update"/>
+        <script><![CDATA[
+        
+        	//浮点数相乘
+            function acp5210_multiply(para1,para2){
+                var m = 0;
+                var s1 = para1.toString();
+                var s2 = para2.toString();
+                try{m+=s1.split(".")[1].length}catch(e){}
+                try{m+=s2.split(".")[1].length}catch(e){}
+                return Number(s1.replace(".",""))*Number(s2.replace(".",""))/Math.pow(10,m);
+            }
+            //取精度
+            function acp5210_js_round(para1,para2){
+                return Math.round(acp5210_multiply(para1,Math.pow(10,para2)))/Math.pow(10,para2);
+            }
+            
+            function acp5210_bill_base_to_order_purchaseOrderQuery_updateFun(ds, record, name, value, oldvalue) {
+                if (name == 'company_id') {
+                    record.set('business_unit_name', '');
+                    record.set('business_unit_id', '');
+                    record.set('vendor_site_id', '');
+                    record.set('vendor_site_code', '');
+                    if (Ext.isEmpty(value)) {
+                        record.getField('business_unit_name').setReadOnly(true);
+                        record.getField('business_unit_name').setLovPara('company_id', -1);
+                        record.getField('vendor_site_code').setReadOnly(true);
+                        record.getField('vendor_site_code').setLovPara('company_id', -1);
+                    } else {
+                        record.getField('business_unit_name').setReadOnly(false);
+                        record.getField('business_unit_name').setLovPara('company_id', value);
+                        record.getField('vendor_site_code').setReadOnly(false);
+                        record.getField('vendor_site_code').setLovPara('company_id', value);
+                    }
+                }
+            }
+            
+            //执行查询操作
+            
+            function acp5210_bill_base_to_order_query_ds() {
+                $('acp5210_bill_base_to_order_result_ds').query();
+            }
+            
+            function acp5210_bill_create_base_to_order_back() {
+                $('acp5210_bill_req_create_base_to_order_link_window').close();
+            }
+            
+            //校验开票单头是否已存在
+            
+            function acp5210_bill_base_to_order_checkHeaderExists(record) {
+                var header_record = $('acp5210_bill_headers_ds').getCurrentRecord();
+                if (header_record.get('company_id') == record.get('company_id') && header_record.get('vendor_id') == record.get('vendor_id') && header_record.get('vendor_site_id') == record.get('vendor_site_id') && header_record.get('currency_code') == record.get('currency_code') && header_record.get('tax_code_id') == record.get('tax_code_id') && header_record.get('rate_type') == record.get('rate_type') && header_record.get('rate_date') == record.get('rate_date') && header_record.get('rate') == record.get('rate') && header_record.get('terms_id') == record.get('terms_id')) {
+                    return true;
+                }
+                return false;
+            }
+            
+            //校验开票单行是否已存在
+            
+            function acp5210_bill_base_to_order_checkBillLineExists(record) {
+                var line_records = $('acp5210_bill_lines_ds').getAll();
+                var flag = false;
+                for (var i = 0;i < line_records.length;i++) {
+                    if (line_records[i].get('item_id') == record.get('item_id') && line_records[i].get('unit_meas_lookup_code') == record.get('unit_meas_lookup_code') && line_records[i].get('unit_price') == record.get('unit_price')) {
+                        flag = true;
+                        return flag;
+                    }
+                }
+                return flag;
+            }
+            
+            //获取同物料、单位、单价的数量之和
+            
+            function acp5210_bill_base_to_order_getBillLineSumQuantity(record) {
+                var ord_records = $('acp5210_bill_select_ds').getAll();
+                var sum_quantity = 0;
+                for (var i = 0;i < ord_records.length;i++) {
+                    if (ord_records[i].get('item_id') == record.get('item_id') && ord_records[i].get('unit_meas_lookup_code') == record.get('unit_meas_lookup_code') && ord_records[i].get('unit_price') == record.get('unit_price')) {
+                        sum_quantity = sum_quantity + (ord_records[i].get('quantity') * 1);
+                    }
+                }
+                sum_quantity = sum_quantity.toFixed(4);
+                return sum_quantity;
+            }
+            
+            //获取同物料、单位、单价的金额之和
+            
+            function acp5210_bill_base_to_order_getBillLineSumAmount(record) {
+                var ord_records = $('acp5210_bill_select_ds').getAll();
+                var result = {};
+                var quantity = 0;
+                var unit_price = 0;
+                var sum_amount = 0;
+                var display_sum_amount = 0;
+                for (var i = 0;i < ord_records.length;i++) {
+                    if (ord_records[i].get('item_id') == record.get('item_id') && ord_records[i].get('unit_meas_lookup_code') == record.get('unit_meas_lookup_code') && ord_records[i].get('unit_price') == record.get('unit_price')) {
+                        quantity = ord_records[i].get('quantity') * 1;
+                        unit_price = ord_records[i].get('unit_price') * 1;
+                        sum_amount = sum_amount + (quantity * unit_price);
+                        if (ord_records[i].get('unit_price') == '***') {
+                            display_sum_amount = '***';
+                        } else {
+                            display_sum_amount = sum_amount;
+                        }
+                    }
+                }
+                sum_amount = sum_amount.toFixed(2);
+                if (display_sum_amount != '***') {
+                    display_sum_amount = display_sum_amount.toFixed(2);
+                }
+                result.sum_amount = sum_amount;
+                result.display_sum_amount = display_sum_amount;
+                return result;
+            }
+            
+            //获取勾选数据的金额之和
+            
+            function acp5210_bill_base_to_order_getBillSumAmount() {
+                var ord_records = $('acp5210_bill_select_ds').getAll();
+                var result = {};
+                var quantity = 0;
+                var unit_price = 0;
+                var sum_amount = 0;
+                var display_sum_amount = 0;
+                for (var i = 0;i < ord_records.length;i++) {
+                    quantity = ord_records[i].get('quantity') * 1;
+                    unit_price = ord_records[i].get('unit_price') * 1;
+                    sum_amount = sum_amount + (quantity * unit_price);
+                    if (ord_records[i].get('unit_price') == '***') {
+                        display_sum_amount = '***';
+                    } else {
+                        display_sum_amount = sum_amount;
+                    }
+                }
+                sum_amount = sum_amount.toFixed(2);
+                if (display_sum_amount != '***') {
+                    display_sum_amount = display_sum_amount.toFixed(2);
+                }
+                result.sum_amount = sum_amount;
+                result.display_sum_amount = display_sum_amount;
+                return result;
+            }
+            
+            //获取勾选数据的开票金额之和
+            function acp5210_getSumInvoiceAmount() { 
+                var ord_records = $('acp5210_bill_select_ds').getAll();
+                var result = {};
+                var display_none = false;
+                var tax_total_amount = 0;
+                var display_tax_total_amount = 0;
+                var quantity = 0;
+                var unit_price = 0;
+                var line_amount = 0;
+                var sum_line_amount = 0;
+                var sum_tax_amount = 0;
+                for (var i = 0;i < ord_records.length;i++) {
+                    quantity = ord_records[i].get('quantity');
+                    quantity = quantity * 1;
+                    unit_price = ord_records[i].get('unit_price');
+                    unit_price = unit_price * 1;
+                    line_amount = acp5210_js_round(acp5210_multiply(quantity,unit_price),2);
+                    line_amount = line_amount * 1;
+                    sum_line_amount = sum_line_amount + line_amount;
+                    if (ord_records[i].get('display_unit_price') == '***') {
+	                    display_none = true;
+	                }
+                }
+                sum_tax_amount = acp5210_getSumInvoiceTaxAmount().tax_amount;
+                sum_tax_amount = sum_tax_amount * 1;
+                tax_total_amount = acp5210_js_round((sum_line_amount + sum_tax_amount),2);
+                
+                if(display_none){
+                    display_tax_total_amount = '***';
+                }else{
+                    display_tax_total_amount = tax_total_amount;
+                }
+
+                result.tax_total_amount = tax_total_amount;
+                result.display_tax_total_amount = display_tax_total_amount;
+                return result;
+            }
+            
+            //获取勾选数据的开票金额税额之和
+            function acp5210_getSumInvoiceTaxAmount() {
+                var ord_records = $('acp5210_bill_select_ds').getAll();
+                var result = {};
+                var display_none = false;
+                var tax_amount = 0;
+                var display_tax_amount = 0;
+                var quantity = 0;
+                var unit_price = 0;
+                var line_tax_amount = 0;
+                for (var i = 0;i < ord_records.length;i++) {
+                    var tax_rate = ord_records[0].get('tax_rate') / 100;
+                    tax_rate = tax_rate * 1;
+                    quantity = ord_records[i].get('quantity');
+                    quantity = quantity * 1;
+                    unit_price = ord_records[i].get('unit_price');
+                    unit_price = unit_price * 1;
+                    line_tax_amount = acp5210_js_round(acp5210_multiply(tax_rate,acp5210_multiply(quantity,unit_price)),2);
+                    line_tax_amount = line_tax_amount * 1;
+                    tax_amount = tax_amount + line_tax_amount;
+                    if (ord_records[i].get('display_unit_price') == '***') {
+	                    display_none = true;
+	                }
+                }
+                
+                tax_amount = acp5210_js_round(tax_amount,2);
+                
+                if(display_none){
+                    display_tax_amount = '***';
+                }else{
+                    display_tax_amount = tax_amount;
+                }
+                
+                result.tax_amount = tax_amount;
+                result.display_tax_amount = display_tax_amount;
+                return result;
+            }
+            
+            //创建开票单
+            
+            function acp5210_bill_base_to_order_create_view_bill(ord_records) {
+                var header_ds = $('acp5210_bill_headers_ds');
+                var line_ds = $('acp5210_bill_lines_ds');
+                var detail_ds = $('acp5210_bill_detail_ds');
+            
+                //开票单头
+                var now = new Date();
+                var month = now.getMonth() + 1;
+                month = month > 9 ? month : '0' + month;
+                var day = now.getDate();
+                day = day > 9 ? day : '0' + day;
+                var date = now.getFullYear() + '-' + month + '-' + day; //STRING类型
+                ord_records[0].set('creation_date', date); //创建日期
+                ord_records[0].set('bill_amount', acp5210_bill_base_to_order_getBillSumAmount().sum_amount); //开票金额
+                ord_records[0].set('display_bill_amount', acp5210_bill_base_to_order_getBillSumAmount().display_sum_amount); //开票金额,展示
+                //系统计算发票含税总额，以及税额
+                ord_records[0].set('tax_total_amount', acp5210_getSumInvoiceAmount().tax_total_amount); //含税总额（系统）
+                ord_records[0].set('display_tax_total_amount', acp5210_getSumInvoiceAmount().display_tax_total_amount); //含税总额（系统），展示
+                ord_records[0].set('tax_amount', acp5210_getSumInvoiceTaxAmount().tax_amount); //税额（系统）
+                ord_records[0].set('display_tax_amount', acp5210_getSumInvoiceTaxAmount().display_tax_amount); //税额（系统），展示
+                header_ds.create(ord_records[0].data);
+            
+                //校验
+                for (var i = 0;i < ord_records.length;i++) {
+                    if (!acp5210_bill_base_to_order_checkHeaderExists(ord_records[i])) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:ACP_BILL.SELECTED_RECORDS_BE_SAME}');
+                        return false;
+                    }
+                }
+            
+                //开票行
+                var bill_line_num = 1;
+                var new_line = false;
+                ord_records[0].set('bill_line_num', bill_line_num);
+                ord_records[0].set('sum_quantity', acp5210_bill_base_to_order_getBillLineSumQuantity(ord_records[0]));
+                ord_records[0].set('sum_amount', acp5210_bill_base_to_order_getBillLineSumAmount(ord_records[0]).sum_amount);
+                ord_records[0].set('display_sum_amount', acp5210_bill_base_to_order_getBillLineSumAmount(ord_records[0]).display_sum_amount);
+                line_ds.create(ord_records[0].data);
+                detail_ds.create(ord_records[0].data);
+                for (var k = 1;k < ord_records.length;k++) {
+                    if (!acp5210_bill_base_to_order_checkBillLineExists(ord_records[k])) {
+                        bill_line_num++;
+                        ord_records[k].set('bill_line_num', bill_line_num);
+                        ord_records[k].set('sum_quantity', acp5210_bill_base_to_order_getBillLineSumQuantity(ord_records[k]));
+                        ord_records[k].set('sum_amount', acp5210_bill_base_to_order_getBillLineSumAmount(ord_records[k]).sum_amount);
+                        ord_records[k].set('display_sum_amount', acp5210_bill_base_to_order_getBillLineSumAmount(ord_records[k]).display_sum_amount);
+                        line_ds.create(ord_records[k].data);
+                        new_line = true;
+                    }
+                    //明细行
+                    detail_ds.create(ord_records[k].data);
+                }
+                return true;
+            }
+            
+            // 创建
+            
+            function acp5210_bill_create_base_to_order() {
+                var header_ds = $('acp5210_bill_headers_ds');
+                var line_ds = $('acp5210_bill_lines_ds');
+                var detail_ds = $('acp5210_bill_detail_ds');
+                var records = $('acp5210_bill_select_ds').getAll();
+                if (records.length < 1) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:ACP_BILL.PLEASE_SELECT_AT_LEASE_ONE_RECORD}', null, 300, 120);
+                    return false;
+                } else {
+                    header_ds.removeAll();
+                    line_ds.removeAll();
+                    detail_ds.removeAll();
+            
+                    //添加开票单头、行、明细行
+                    var flag = acp5210_bill_base_to_order_create_view_bill(records);
+                    if (flag) {
+                        //打开预览页面
+                        new Aurora.Window({
+                            id: 'acp5210_bill_detail_link_window',
+                            url: $('acp5210_bill_detail_link').getUrl() + '?base_to=ORDER',
+                            title: '${l:ACP_BILL.BILL_CREATE}',
+                            fullScreen: true
+                        });
+                    }
+                }
+            }
+            
+            // 页面执行重新查询时所做的操作
+            
+            function acp5210_bill_base_to_order_create_result_ds_grid_render(grid) {
+                var ds = $('acp5210_bill_base_to_order_result_ds');
+                var records = ds.getAll();
+                var list_ds = $('acp5210_bill_select_ds');
+                var list_records = list_ds.getAll();
+                for (var i = 0;i < records.length;i++) {
+                    var select_record = list_ds.find('pur_line_location_id', records[i].get('pur_line_location_id'));
+                    if (!Aurora.isEmpty(select_record)) {
+                        ds.select(records[i]);
+                    }
+                }
+            }
+            
+            function acp5210_bill_base_to_order_create_result_ds_select(ds, record) {
+                var list_ds = $('acp5210_bill_select_ds');
+                var pur_line_location_id = record.get('pur_line_location_id');
+                var result_record = list_ds.find('pur_line_location_id', pur_line_location_id);
+                if (Aurora.isEmpty(result_record) && record.get('clear_flag') == "N") {
+                    $('acp5210_bill_select_ds').create(record.data);
+                }
+            }
+            
+            function acp5210_bill_base_to_order_create_result_ds_unselect(ds, record) {
+                var list_ds = $('acp5210_bill_select_ds');
+                var pur_line_location_id = record.get('pur_line_location_id');
+                var result_record = list_ds.find('pur_line_location_id', pur_line_location_id);
+                if (!Aurora.isEmpty(result_record)) {
+                    list_ds.remove(result_record);
+                }
+            }
+            
+            function acp5210_bill_base_to_order_result_ds_update(dataSet, record, name, value, oldvalue) {
+                if (name == "quantity") {
+                    var quantity_value = record.get('quantity_order') - record.get('quantity_billed');
+                    if (value > quantity_value) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:ACP_BILL.ENABLE_QUANTITY_CHECK_MESSAGE}');
+                        record.set('quantity', oldvalue);
+                        return false;
+                    }
+                }
+            }
+            
+            function acp5210_bill_create_bese_to_order_update_clear(clear_flag) {
+                var list_records = $('acp5210_bill_base_to_order_result_ds').getSelected();
+                Aurora.showConfirm('${l:PROMPT}', '${l:ACP_BILL.SURE_ABOUT_THIS_OPERATION}', function() {
+                    var datas = [];
+                    for (var i = 0;i < list_records.length;i++) {
+                        var data = {};
+                        data._status = 'update';
+                        data.base_to = 'ORDER';
+                        data.line_location_id = list_records[i].get('pur_line_location_id');
+                        data.clear_flag = clear_flag;
+                        datas.push(data);
+                    }
+                    Aurora.Masker.mask($('acp5210_bill_req_create_base_to_order_link_window').wrap, '${l:LOADING}');
+                    Aurora.request({
+                        url: $('acp5210_bill_base_to_order_clear_update_link').getUrl(),
+                        para: datas,
+                        success: function(res) {
+                            Aurora.Masker.unmask($('acp5210_bill_req_create_base_to_order_link_window').wrap);
+                            $('acp5210_bill_select_ds').removeAll();
+                            acp5210_bill_base_to_order_query_ds();
+                        },
+                        failure: function(res) {
+                            Aurora.Masker.unmask($('acp5210_bill_req_create_base_to_order_link_window').wrap);
+                        },
+                        error: function(res) {
+                            Aurora.Masker.unmask($('acp5210_bill_req_create_base_to_order_link_window').wrap);
+                        },
+                        scope: this
+                    });
+                });
+            }
+            
+            function acp5210_bill_create_base_to_order_clear() {
+                var records = $('acp5210_bill_base_to_order_result_ds').getSelected();
+                var count = 0;
+                for (var i = 0;i < records.length;i++) {
+                    if (records[i].get('clear_flag') == 'N') {
+                        count++;
+                    }
+                }
+                if (count == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:ACP_BILL.AT_LEAST_CHOICE_ONE_UNCLEAR_DATE}', null, 300, 120);
+                    return false;
+                } else {
+                    acp5210_bill_create_bese_to_order_update_clear('Y');
+                }
+            }
+            
+            function acp5210_bill_create_base_to_order_unclear() {
+                var records = $('acp5210_bill_base_to_order_result_ds').getSelected();
+                var count = 0;
+                for (var i = 0;i < records.length;i++) {
+                    if (records[i].get('clear_flag') == 'Y') {
+                        count++;
+                    }
+                }
+                if (count == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:ACP_BILL.AT_LEAST_CHOICE_ONE_CLEAR_DATE}', null, 300, 120);
+                    return false;
+                } else {
+                    acp5210_bill_create_bese_to_order_update_clear('N');
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="acp5210_bill_base_to_order_userAuthorityCompany_ds" fetchAll="true" loadData="true" model="public.fnd_user_authority_company_query"/>
+            <a:dataSet id="acp5210_bill_base_to_order_pur_order_type_options" fetchAll="true" loadData="true" model="pur.public.pur_purchase_order_type"/>
+            <a:dataSet id="acp5210_bill_base_to_order_srm_status_ds" lookupCode="SRM_STATUS"/>
+            <a:dataSet id="acp5210_bill_base_to_order_closed_code_ds" lookupCode="CLOSED_CODE"/>
+            <a:dataSet id="acp5210_bill_base_to_order_yes_no_ds" lookupCode="YES_NO"/>
+            <a:dataSet id="acp5210_bill_base_to_order_headeErpStatus" lookupCode="PUR_HEADER_ERP_STATUS"/>
+            <a:dataSet id="acp5210_bill_base_to_order_lineLocationStatus" lookupCode="PUR_LINE_LOCATION_STATUS"/>
+            <a:dataSet id="acp5210_bill_base_to_order_po_urgent_status_ds" lookupCode="PUR_PO_URGENT_STATUS"/>
+            <a:dataSet id="acp5210_bill_base_to_order_query_ds">
+                <a:fields>
+                    <a:field name="company_name" displayField="company_full_name" options="acp5210_bill_base_to_order_userAuthorityCompany_ds" returnField="company_id" valueField="company_id"/>
+                    <a:field name="business_unit_name" autoComplete="true" autoCompleteField="business_unit_name" lovHeight="470" lovService="public.fnd_client_business_unit_by_supply_lov?company_id=-1" lovWidth="550" prompt="FND_BUSINESS_UNITS.BUSINESS_UNIT" readOnly="true" title="FND_BUSINESS_UNITS.BUSINESS_UNIT">
+                        <a:mapping>
+                            <a:map from="business_unit_id" to="business_unit_id"/>
+                            <a:map from="business_unit_name" to="business_unit_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="type_lookup_desc" displayField="description" options="acp5210_bill_base_to_order_pur_order_type_options" returnField="type_lookup_code" valueField="order_type_code"/>
+                    <a:field name="agent_name" autoComplete="true" autoCompleteField="agent_code" lovGridHeight="320" lovHeight="480" lovService="public.pur_buyers_lov" lovWidth="500" title="PUR_HEADERS_ALL.PUR_BUYER">
+                        <a:mapping>
+                            <a:map from="buyer_id" to="agent_id"/>
+                            <a:map from="buyer_code" to="agent_code"/>
+                            <a:map from="description" to="agent_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="item_description" autoComplete="true" autoCompleteField="item_code" lovGridHeight="320" lovHeight="470" lovUrl="${/request/@context_path}/modules/public/mtl_system_item_and_partners_lov.screen?partner_way=REQUIRE" lovWidth="1000" title="MTL_SYSTEM_ITEMS.ITEM">
+                        <a:mapping>
+                            <a:map from="item_id" to="item_id"/>
+                            <a:map from="item_code" to="item_code"/>
+                            <a:map from="item_name" to="item_description"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="vendor_name" autoComplete="true" autoCompleteField="vendor_code" lovGridHeight="330" lovHeight="450" lovService="pur.PUR7010.pur_vendors_by_user_authority_lov" lovWidth="500" title="PUR_VENDORS.VENDOR">
+                        <a:mapping>
+                            <a:map from="vendor_id" to="vendor_id"/>
+                            <a:map from="vendor_code" to="vendor_code"/>
+                            <a:map from="vendor_name" to="vendor_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="vendor_site_code" autoComplete="true" autoCompleteField="vendor_site_code" lovGridHeight="330" lovHeight="470" lovService="public.pur_vendor_site_lov_by_client_company?vendor_id=-1" lovWidth="530" readOnly="true" title="PUR_HEADERS_ALL.VENDOR_SITE">
+                        <a:mapping>
+                            <a:map from="vendor_site_id" to="vendor_site_id"/>
+                            <a:map from="vendor_site_code" to="vendor_site_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="pur_organization_name" autoComplete="true" autoCompleteField="pur_organization_code_name" lovHeight="480" lovService="public.pur_organization_lov" lovWidth="500" prompt="PUR_ORGANIZATIONS.PUR_ORGANIZATION" title="PUR_ORGANIZATIONS.PUR_ORGANIZATION">
+                        <a:mapping>
+                            <a:map from="pur_organization_id" to="pur_organization_id"/>
+                            <a:map from="pur_organization_name" to="pur_organization_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="erp_status_desc" displayField="code_value_name" options="acp5210_bill_base_to_order_headeErpStatus" returnField="erp_status" valueField="code_value"/>
+                    <a:field name="clear_flag" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="acp5210_bill_base_to_order_purchaseOrderQuery_updateFun"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="acp5210_bill_base_to_order_result_ds" autoCount="true" autoPageSize="true" model="acp.ACP5210.base_to_order_pur_purchase_order_query" queryDataSet="acp5210_bill_base_to_order_query_ds" queryUrl="${/request/@context_path}/autocrud/acp.ACP5210.base_to_order_pur_purchase_order_query/query?type_lookup_code=${/parameter/@type_lookup_code}&amp;consigned_flag=${/parameter/@consigned_flag}" selectable="true">
+                <a:fields>
+                    <a:field name="quantity" required="true" requiredMessage="ACP_BILL.BILL_QUANTITY_NOT_NULL"/>
+                    <a:field name="clear_flag" checkedValue="Y" uncheckedValue="N"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="acp5210_bill_base_to_order_result_ds_update"/>
+                    <a:event name="select" handler="acp5210_bill_base_to_order_create_result_ds_select"/>
+                    <a:event name="unselect" handler="acp5210_bill_base_to_order_create_result_ds_unselect"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="acp5210_bill_headers_ds" fetchAll="true"/>
+            <a:dataSet id="acp5210_bill_lines_ds" fetchAll="true"/>
+            <a:dataSet id="acp5210_bill_detail_ds" fetchAll="true"/>
+            <a:dataSet id="acp5210_bill_select_ds"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="acp5210_bill_create_base_to_order" text="ACP_BILL.CREATION_PREVIEW" width="100"/>
+                <a:toolbarButton click="acp5210_bill_create_base_to_order_back" text="HAP_BACK" width="100"/>
+                <a:gridButton bind="acp5210_bill_base_to_order_result_ds_grid" type="excel" width="100"/>
+                <a:toolbarButton click="acp5210_bill_create_base_to_order_clear" text="HAP_CLEAR" width="100"/>
+                <a:toolbarButton click="acp5210_bill_create_base_to_order_unclear" text="ACP_BILL.REVOCATION_CLEAR" width="100"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="acp5210_bill_base_to_order_query_ds" resultTarget="acp5210_bill_base_to_order_result_ds" style="border:none">
+                <a:formToolBar>
+                    <a:hBox labelWidth="120">
+                        <a:textField name="display_po_number" prompt="PUR_HEADERS_ALL.SEGMENT1">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5210_bill_base_to_order_query_ds"/>
+                            </a:events>
+                        </a:textField>
+                        <a:textField name="type_lookup_desc" prompt="PUR_HEADERS_ALL.ORDER_TYPE_ID">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5210_bill_base_to_order_query_ds"/>
+                            </a:events>
+                        </a:textField>
+                        <a:comboBox name="company_name" prompt="PUR_HEADERS_ALL.COMPANY">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5210_bill_base_to_order_query_ds"/>
+                            </a:events>
+                        </a:comboBox>
+                        <a:label width="80"/>
+                        <a:checkBox name="clear_flag" label="ACP_BILL.QUERY_UNCLEAR_DATA">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5210_bill_base_to_order_query_ds"/>
+                            </a:events>
+                        </a:checkBox>
+                    </a:hBox>
+                </a:formToolBar>
+                <a:formBody style="margin-left:2px">
+                    <a:hBox labelWidth="120">
+                        <a:comboBox name="erp_status_desc" prompt="PUR_HEADERS_ALL.ERP_STATUS">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5210_bill_base_to_order_query_ds"/>
+                            </a:events>
+                        </a:comboBox>
+                        <a:lov name="business_unit_name">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5210_bill_base_to_order_query_ds"/>
+                            </a:events>
+                        </a:lov>
+                        <a:lov name="pur_organization_name">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5210_bill_base_to_order_query_ds"/>
+                            </a:events>
+                        </a:lov>
+                    </a:hBox>
+                    <a:hBox labelWidth="120">
+                        <a:textField name="display_release_num" prompt="PUR_HEADERS_ALL.RELEASE_NUM">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5210_bill_base_to_order_query_ds"/>
+                            </a:events>
+                        </a:textField>
+                        <a:textField name="line_num" prompt="PUR_LINES_ALL.LINE_NUM">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5210_bill_base_to_order_query_ds"/>
+                            </a:events>
+                        </a:textField>
+                        <a:textField name="shipment_num" prompt="PUR_LINE_LOCATIONS_ALL.SHIPMENT_NUM">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5210_bill_base_to_order_query_ds"/>
+                            </a:events>
+                        </a:textField>
+                    </a:hBox>
+                    <a:hBox labelWidth="120">
+                        <a:lov name="vendor_name" prompt="PUR_HEADERS_ALL.VENDOR_ID">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5210_bill_base_to_order_query_ds"/>
+                            </a:events>
+                        </a:lov>
+                        <a:lov name="vendor_site_code" prompt="PUR_HEADERS_ALL.VENDOR_SITE">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5210_bill_base_to_order_query_ds"/>
+                            </a:events>
+                        </a:lov>
+                        <a:lov name="item_description" prompt="MTL_SYSTEM_ITEMS.ITEM">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5210_bill_base_to_order_query_ds"/>
+                            </a:events>
+                        </a:lov>
+                    </a:hBox>
+                    <a:hBox labelWidth="120">
+                        <a:lov name="agent_name" prompt="PUR_HEADERS_ALL.PUR_BUYER">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5210_bill_base_to_order_query_ds"/>
+                            </a:events>
+                        </a:lov>
+                        <a:comboBox name="closed_code_desc" prompt="PUR_LINES_ALL.CLOSED_FLAG">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5210_bill_base_to_order_query_ds"/>
+                            </a:events>
+                        </a:comboBox>
+                    </a:hBox>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="acp5210_bill_base_to_order_result_ds_grid" autoAppend="false" bindTarget="acp5210_bill_base_to_order_result_ds" marginHeight="220" marginWidth="65" navBar="true">
+                <a:columns>
+                    <!-- <a:column name="srm_name_desc" align="center" lock="true" prompt="PUR_HEADERS_ALL.STATUS" renderer="pur7010_purchaseOrderRendererFun" width="50"/> -->
+                    <a:column name="company_name" align="left" lock="true" prompt="PUR_HEADERS_ALL.COMPANY" sortable="true" width="60"/>
+                    <a:column name="display_po_number" align="center" lock="true" prompt="PUR_HEADERS_ALL.SEGMENT1" sortable="true" width="60"/>
+                    <a:column name="vendor_code" align="center" lock="true" prompt="PUR_HEADERS_ALL.VENDOR_CODE" sortable="true" width="80"/>
+                    <a:column name="vendor_name" align="left" lock="true" prompt="PUR_HEADERS_ALL.VENDOR_NAME" sortable="true" width="80"/>
+                    <a:column name="revision_num" align="center" prompt="PUR_HEADERS_ALL.REVISION_NUM" width="25"/>
+                    <a:column name="display_release_num" align="center" prompt="PUR_HEADERS_ALL.RELEASE_NUM" sortable="true" width="40"/>
+                    <a:column name="line_num" align="center" prompt="PUR_LINES_ALL.LINE_NUM" sortable="true" width="25"/>
+                    <a:column name="shipment_num" align="center" prompt="PUR_LINE_LOCATIONS_ALL.SHIPMENT_NUM" sortable="true" width="40"/>
+                    <a:column name="item_code" align="center" prompt="MTL_SYSTEM_ITEMS.ITEM_CODE" sortable="true" width="80"/>
+                    <a:column name="item_description" align="left" prompt="MTL_SYSTEM_ITEMS.ITEM_NAME" sortable="true" width="120"/>
+                    <a:column name="ean_code" align="left" prompt="PUR_LINES_ALL.EAN_CODE" sortable="true" width="80"/>
+                    <!--  <a:column name="item_specs" align="left" prompt="MTL_SYSTEM_VENDOR_ITEMS.ITEM_SPECS" width="100"/>
+                    <a:column name="item_model" align="left" prompt="MTL_SYSTEM_VENDOR_ITEMS.ITEM_MODEL" width="100"/> -->
+                    <a:column name="quantity" align="right" editor="acp5210_bill_base_to_order_result_ds_grid_numberField" prompt="ACP_BILL_DETAILS.AVAILABLE_QUANTITY" sortable="true" width="40"/>
+                    <a:column name="tax_name" align="right" prompt="PUR_LINES_ALL.TAX_RATE" sortable="true" width="60"/>
+                    <a:column name="quantity_order" align="right" prompt="PUR_LINES_ALL.QUANTITY" sortable="true" width="40"/>
+                    <a:column name="quantity_billed" align="right" prompt="PUR_LINE_LOCATIONS_ALL.QUANTITY_BILLED" width="40"/>
+                    <a:column name="quantity_received" align="right" prompt="PUR_LINE_LOCATIONS_ALL.QUANTITY_RECEIVED" width="40"/>
+                    <a:column name="deliver_quantity" align="right" prompt="PUR_LINE_LOCATIONS_ALL.DELIVER_QUANTITY" width="40"/>
+                    <a:column name="quantity_shipped" align="right" prompt="PUR_LINE_LOCATIONS_ALL.QUANTITY_SHIPPED" width="40"/>
+                    <a:column name="unit_meas_lookup_code" align="center" prompt="PUR_LINES_ALL.UNIT_MEAS_LOOKUP_CODE" width="40"/>
+                    <a:column name="unit_price" align="right" prompt="PUR_LINES_ALL.UNIT_PRICE" sortable="true" width="40"/>
+                    <a:column name="currency_code_display" align="center" prompt="PUR_HEADERS_ALL.CURRENCY_CODE" width="40"/>
+                    <a:column name="line_amount" align="right" prompt="PUR_LINES_ALL.LINE_AMOUNT" width="60"/>
+                    <!-- <a:column name="need_by_date_desc" align="center" prompt="PUR_LINE_LOCATIONS_ALL.NEED_BY_DATE" renderer="Aurora.formatDate" sortable="true" width="80"/>
+                    <a:column name="promised_date_desc" align="center" prompt="PUR_LINE_LOCATIONS_ALL.PROMISED_DATE" renderer="Aurora.formatDate" sortable="true" width="80"/>
+                    <a:column name="request_arrival_date_desc" align="center" prompt="PUR_LINE_LOCATIONS_ALL.REQUEST_ARRIVAL_DATE" renderer="Aurora.formatDate" sortable="true" width="80"/>
+                    <a:column name="consigned_flag_dis" align="center" prompt="PUR_LINE_LOCATIONS_ALL.CONSIGNED_FLAG" width="30"/> -->
+                    <!-- <a:column name="c_attribute1" align="left" prompt="PUR_LINE_LOCATIONS_ALL.S_ATTRIBUTE2" width="80"/>
+                    <a:column name="c_attribute2" align="left" prompt="PUR_LINE_LOCATIONS_ALL.S_ATTRIBUTE3" sortable="true" width="80"/> -->
+                    <!-- <a:column name="c_attribute3" align="left" prompt="PUR_LINE_LOCATIONS_ALL.S_ATTRIBUTE4" width="80"/>
+                    <a:column name="item_specs" align="left" prompt="MTL_SYSTEM_VENDOR_ITEMS.ITEM_SPECS" width="100"/>
+                    <a:column name="item_model" align="left" prompt="MTL_SYSTEM_VENDOR_ITEMS.ITEM_MODEL" width="100"/>
+                    <a:column name="erp_status_desc" align="center" prompt="PUR_HEADERS_ALL.ERP_STATUS" width="50"/>
+                    <a:column name="line_location_status_desc" align="center" prompt="PUR_LINE_LOCATIONS_ALL.LINE_LOCATION_STATUS" width="50"/>
+                    <a:column name="closed_code_dis" align="center" prompt="PUR_LINE_LOCATIONS_ALL.CLOSED_FLAG" width="50"/>
+                    <a:column name="cancel_flag_dis" align="center" prompt="PUR_LINE_LOCATIONS_ALL.CANCEL_FLAG" width="50"/>
+                    <a:column name="line_type_name" align="center" prompt="PUR_LINES_ALL.LINE_TYPE_ID" width="50"/>
+                    <a:column name="category_name" align="center" prompt="PUR_LINES_ALL.CATEGORY_NAME" width="80"/> -->
+                    <!-- <a:column name="job_num" align="center" prompt="PUR_LINES_ALL.JOB_NUM" width="50"/> -->
+                    <!-- BOM -->
+                    <!-- <a:column align="center" prompt="PUR_LINES_ALL.OUTSOURCING_BOM" renderer="pur7010_poBomRender" width="50"/>
+                    <a:column name="feedback_info" align="center" prompt="PUR_LINE_LOCATIONS_ALL.VENDOR_DESC" width="80"/>
+                    <a:column name="is_returned_flag_desc" align="center" prompt="PUR_LINES_ALL.IS_RETURNED_FLAG" width="60"/>
+                    <a:column name="is_free_flag_desc" align="center" prompt="PUR_LINES_ALL.IS_FREE_FLAG" width="60"/>
+                    <a:column name="is_immed_shipped_flag_desc" align="center" prompt="PUR_LINES_ALL.IS_IMMED_SHIPPED_FLAG" width="60"/>
+                    <a:column name="actual_receiver_name" align="center" prompt="PUR_LINES_ALL.ACTUAL_RECEIVER_NAME" width="80"/>
+                    <a:column name="ship_to_location_address" align="center" prompt="PUR_LINES_ALL.SHIP_TO_LOCATION_ADDRESS" width="80"/>
+                    <a:column name="contacts_info" align="center" prompt="PUR_LINES_ALL.CONTACTS_INFO" width="80"/> -->
+                    <a:column name="type_lookup_desc" align="center" prompt="PUR_HEADERS_ALL.ORDER_TYPE_ID" width="80"/>
+                    <a:column name="vendor_site_name" align="center" prompt="PUR_HEADERS_ALL.VENDOR_SITE" width="80"/>
+                    <a:column name="agent_name" align="center" prompt="PUR_HEADERS_ALL.PUR_BUYER" width="50"/>
+                    <a:column name="ship_to_organization_name" align="center" prompt="PUR_HEADERS_ALL.SHIP_TO_ORGANIZATION_ID" width="50"/>
+                    <a:column name="ship_to_location_name" align="center" prompt="PUR_HEADERS_ALL.SHIP_TO_LOCATION_ID" width="50"/>
+                    <a:column name="warehouse_name" align="center" prompt="PUR_LINE_LOCATIONS_ALL.WAREHOUSE_ID" width="60"/>
+                    <a:column name="inv_location_name" align="center" prompt="PUR_LINE_LOCATIONS_ALL.INV_LOCATION_ID" width="60"/>
+                    <a:column name="bill_to_location_name" align="center" prompt="PUR_HEADERS_ALL.BILL_TO_LOCATION_ID" width="50"/>
+                    <a:column name="business_unit_name" align="center" prompt="FND_BUSINESS_UNITS.BUSINESS_UNIT" sortable="true" width="100"/>
+                    <!-- <a:column name="secondary_unit_price" align="center" prompt="PUR_LINES_ALL.SECONDARY_UNIT_OF_MEASURE" renderer="Aurora.formatNumber" width="50"/>
+                    <a:column name="secondary_quantity" align="right" prompt="PUR_LINES_ALL.SECONDARY_QUANTITY" width="50"/>
+                    <a:column align="center" prompt="PUR_HEADERS_ALL.OPERATION_RECORD" renderer="pur7010_recordRender" width="50"/> -->
+                    <a:column name="creation_date_desc" align="center" prompt="PUR_HEADERS_ALL.CREATION_DATE" sortable="true" width="120"/>
+                    <a:column name="release_date_desc" align="center" prompt="PUR_HEADERS_ALL.RELEASE_DATE" sortable="true" width="120"/>
+                    <a:column name="confirm_date_desc" align="center" prompt="PUR_HEADERS_ALL.CONFIRM_DATE" sortable="true" width="120"/>
+                    <!-- <a:column name="reply_date_desc" align="center" prompt="PUR_HEADERS_ALL.REPLY_DATE" sortable="true" width="120"/>
+                    <a:column name="reply_over_flag_dis" align="center" prompt="PUR_HEADERS_ALL.REPLY_OVER_FLAG" width="70"/>
+                    <a:column name="urgent_status_desc" align="center" prompt="PUR_LINE_LOCATIONS_ALL.URGENT_STATUS" width="70"/>
+                    <a:column name="urgent_date_desc" align="center" prompt="PUR_LINE_LOCATIONS_ALL.URGENT_DATE" width="70"/>
+                    <a:column name="data_source" align="center" prompt="PUR_HEADERS_ALL.DATA_SOURCE" width="60"/> -->
+                    <a:column name="clear_flag" align="center" prompt="HAP_CLEAR" sortable="true" width="30"/>
+                </a:columns>
+                <a:editors>
+                    <a:numberField id="acp5210_bill_base_to_order_result_ds_grid_numberField" allowDecimals="true" allowFormat="false" allowNegative="false" decimalPrecision="4"/>
+                </a:editors>
+                <a:events>
+                    <a:event name="render" handler="acp5210_bill_base_to_order_create_result_ds_grid_render"/>
+                </a:events>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

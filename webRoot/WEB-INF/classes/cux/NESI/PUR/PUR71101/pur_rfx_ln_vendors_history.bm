@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: IsaacF  
+    $Date: 2013-6-27 下午10:59:14  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    lv.rfx_line_vendor_id,
+                    lv.rfx_header_id,
+                    rh.round,
+                    rh.version,
+                    lv.coop_business_group,
+                    lv.coop_company_id,
+                    lv.vendor_id,
+                    (SELECT
+                        fc.company_code
+                    FROM
+                        fnd_companies fc
+                    WHERE
+                        fc.company_id = lv.coop_company_id
+                    ) vendor_code,
+                    (SELECT
+                        fc.company_full_name
+                    FROM
+                        fnd_companies_vl fc
+                    WHERE
+                        fc.company_id = lv.coop_company_id
+                    ) vendor_desc,
+                    lv.vendor_site_id,
+                    lv.vendor_address,
+                    lv.vendor_contact_id,
+                    lv.contact_person,
+                    lv.contact_mobile,
+                    lv.e_mail,
+                    lv.feedback_status,
+                    (SELECT
+                        s.code_value_name
+                    FROM
+                        sys_code_values_v s
+                    WHERE
+                        s.code       = 'PUR_RFX_VENDOR_FEEDBACK_STATUS' AND
+                        s.code_value = lv.feedback_status
+                    ) feedback_status_desc,
+                    lv.proposed_flag,
+                    lv.sms_schicken_flag,
+                    lv.comments,
+                    (SELECT
+                        NVL(SUM(NVL(fl.valid_fb_retail_price, 0)), 0)
+                    FROM
+                        pur_rfx_feedback_lines fl,
+                        pur_rfx_ln_items li,
+                        pur_rfx_feedback_headers fh
+                    WHERE
+                        fh.feedback_header_id = fl.feedback_header_id AND
+                        fh.cancel_flag        = 'N' AND
+                        fl.cancel_flag        = 'N' AND
+                        li.rfx_line_item_id   = fl.rfx_line_item_id AND
+                        li.rfx_header_id      = rh.rfx_header_id AND
+                        li.cancel_flag        = 'N' AND
+                        fh.rfx_round          = rh.round AND
+                        fh.rfx_version        = rh.version AND
+                        fh.rfx_header_id      = rh.rfx_header_id AND
+                        fh.coop_company_id    = lv.coop_company_id
+                    ) total_price,
+                    bid_score_pkg.get_bidding_score(-
+                    (SELECT
+                        fh.feedback_header_id
+                    FROM
+                        pur_rfx_feedback_headers fh
+                    WHERE
+                        fh.rfx_header_id   = rh.rfx_header_id AND
+                        fh.coop_company_id = lv.coop_company_id AND
+                        fh.rfx_round       = rh.round AND
+                        fh.rfx_version     = rh.version
+                    ), ${/session/@user_id}) AS bidding_score,
+                    (SELECT
+                        NVL(SUM(NVL(fl.fb_total_retail_amount, 0)), 0)
+                    FROM
+                        pur_rfx_feedback_lines fl,
+                        pur_rfx_ln_items li,
+                        pur_rfx_feedback_headers fh
+                    WHERE
+                        fh.feedback_header_id = fl.feedback_header_id AND
+                        fh.cancel_flag        = 'N' AND
+                        fl.cancel_flag        = 'N' AND
+                        fh.rfx_header_id      = rh.rfx_header_id AND
+                        fh.coop_company_id    = lv.coop_company_id AND
+                        li.rfx_header_id      = rh.rfx_header_id AND
+                        li.rfx_line_item_id   = fl.rfx_line_item_id AND
+                        fh.rfx_round          = rh.round AND
+                        fh.rfx_version        = rh.version AND
+                        li.cancel_flag        = 'N'
+                    ) total_amount,
+                    (SELECT
+                        fh.feedback_header_id
+                    FROM
+                        pur_rfx_feedback_headers fh
+                    WHERE
+                        fh.rfx_header_id   = rh.rfx_header_id AND
+                        fh.coop_company_id = lv.coop_company_id AND
+                        fh.rfx_round       = rh.round AND
+                        fh.rfx_version     = rh.version
+                    ) AS feedback_header_id,
+                    DECODE(lv.read_flag,'Y','已读','未读') AS read_flag,
+                    (SELECT
+                        COUNT(*)
+                    FROM
+                        fnd_atm_attachment_multi am
+                    WHERE
+                        am.table_name = 'PUR_RFX_FEEDBACK_HEADER' AND
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            pur_rfx_feedback_headers fh
+                        WHERE
+                            fh.rfx_header_id               = rh.rfx_header_id AND
+                            fh.coop_company_id             = lv.coop_company_id AND
+                            fh.rfx_round                   = rh.round AND
+                            fh.rfx_version                 = rh.version AND
+                            TO_CHAR(fh.feedback_header_id) = am.table_pk_value
+                        )
+                    ) AS atm_counts
+                FROM
+                    pur_rfx_ln_vendors_hist lv,
+                    pur_rfx_headers_hist rh
+                WHERE
+                    lv.history_header_id = ${/parameter/@history_header_id} AND
+                    lv.history_header_id = rh.history_header_id AND
+                    (
+                        lv.feedback_status = 'PARTICIPATED' OR
+                        rh.rfx_method      = 'INVITE'
+                    )
+            ]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter inputPath="/parameter/@rfx_header_id"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

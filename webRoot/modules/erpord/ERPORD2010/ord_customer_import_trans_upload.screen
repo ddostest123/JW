@@ -1,0 +1,400 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:c="aurora.application.action" xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure outputPath="/parameter">
+        <a:model-query model="erppublic.get_fnd_interface_header_id" rootPath="erpord_2010_header_id"/>
+        <a:model-query defaultWhereClause="template_code=&apos;Com_Customers&apos;" model="erpsys.public.sys_attachment_template" rootPath="erpord2010_attachment_template_root"/>
+        <a:import-excel header_id="${/parameter/@header_id}" separator="," status_field="/parameter/@ImportSuccess" template_code="ORD_CUSTOMER_IMPORT" user_id="${/session/@user_id}"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="erpord2010_gld_initialize_error_log_link" url="${/request/@context_path}/modules/erpord/ERPORD2010/ord_initialize_error_log.screen"/>
+        <a:link id="erpord2010_initialize_link" url="${/request/@context_path}/modules/erpord/ERPORD2010/ord_customer_main.screen"/>
+        <a:link id="erpord_2010_import_submit_link" url="${/request/@context_path}/modules/erpord/ERPORD2010/ord_customer_import_submit.svc"/>
+        <a:link id="erpord_2010_import_save_data_link" url="${/request/@context_path}/modules/erpord/ERPORD2010/ord_customer_import_save.svc"/>
+        <a:link id="erpord_2010_customer_import_check" model="erpord.ERPORD2010.ord_customer_import_check" modelaction="execute"/>
+        <a:link id="erpord2010_atm_download_link" url="${/request/@context_path}/atm_download.svc"/>
+        <script><![CDATA[
+            function erpord2010_saveClick() {
+                if (document.getElementById('erpord2010_importFile').value) {
+                    var fileName = document.getElementById('erpord2010_importFile').value;
+                    var fileType = fileName.substr(fileName.lastIndexOf("."));
+                    if (fileType != '.xls' && fileType != '.xlsx') {
+                        alert('${l:ERPINV.MESSAGE4}');
+                    } else {
+                        document.getElementById('erpord2010_importForm').submit();
+                    }
+                }
+            }
+            
+            function erpord2010_download_file(value, record, name) {
+                return value + '<img src="${/request/@context_path}/images/excel_16.png"><a href="javascript:erpord2010_downloadFile();">${l:ORD.TEMPLATE_FILE}</a>' + '。';
+            }
+            
+            function erpord2010_submit() {
+                var ds = $('erpord_2010_import_result_ds');
+                var records = $('erpord_2010_import_result_ds').getAll();
+                if (records.length == 0 || !ds.validate()) {
+                    return;
+                }
+                var param = {};
+                param['header_id'] = '${/parameter/@header_id}';
+                if ($('erpord_2010_import_result_ds').isModified()) {
+                    Aurora.showMessage('${l:MASCLOUD.PROMPT}', '${l:ERPINV.MESSAGE5}');
+                } else {
+                    Aurora.Masker.mask(Ext.getBody(), '${l:MASCLOUD.SUBMITTING}');
+                    Aurora.request({
+                        url: $('erpord_2010_import_submit_link').getUrl(),
+                        para: param,
+                        success: function(res) {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            if (res.result.error_flag == 'Y') {
+                                erpord2010_error();
+                            } else {
+                                Aurora.go($('erpord2010_initialize_link').getUrl());
+                            }
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            /* function createEditor(record) {
+             var obj = {};
+             var gid = 'gld2040_upload_grid';
+             var dataindex = 'reference_display';
+             obj.html = ['<table cellpadding="0" cellspacing="1" border="0" class="cmp_table" style="border:none;background-color:#ccc">', '<tr>', '<td class="label" style="width:120px;">', '(' + record.get('reference_name') + ')', '</td>', '<td dataindex="' + dataindex + '" recordid="' + record.id + '" atype="grid-cell">', '<div style="width: 150px;float:left" id="' + gid + '_' + dataindex + '_' + record.id + '" class="grid-cell cell-editor" ><span>' + (record.get(dataindex) || "") + '</span></div>', '</td>', '</tr>', '</table>'].join('');
+             obj.height = 52;
+             return obj;
+             } */
+            
+            /* function inv2010_upload_onCreateRow(grid, row, record, map, columns) {
+             var field = record.getField('reference_display');
+             var value = record.get('reference');
+             field.setReadOnly(false);
+             field.setRequired(true);
+             if (value != null && value != '') {
+             var obj = createEditor(record);
+             grid.createCompositeRow('account_code', map, obj, 6, record, columns);
+             } else {
+             field.setReadOnly(true);
+             field.setRequired(false);
+             }
+             } */
+            
+            function erpord2010_error() {
+                new Aurora.Window({
+                    id: 'erpord2010_error_log_window',
+                    url: $('erpord2010_gld_initialize_error_log_link').getUrl() + '?header_id=' + '${/parameter/@header_id}',
+                    title: '${l:ERPINV.ERROR_MESSAGE}',
+                    height: 350,
+                    width: 540
+                });
+            }
+            
+            function erpord2010_back() {
+                Aurora.go($('erpord2010_initialize_link').getUrl());
+            }
+            
+            function erpord_2010_import_ds_update(ds, record, name, value, oldvalue) {
+                if (name == "company_id") {
+                    var metadata = record.getMeta();
+                    var f1 = metadata.getField('customer_type_desc');
+                    // var customer_type_id = '${/parameter/@customer_type_id}';
+                    if (!record.get('company_id') || record.get('company_id') == '') {
+                        f1.setLovService('');
+                    } else {
+                        f1.setLovService('erpord.ERPORD1010.fnd_business_partner_types?enabled_flag=Y');
+                        f1.setLovPara('company_id', record.get('company_id') || '');
+                        // f1.setLovPara('customer_type_id', customer_type_id);
+                    }
+                }
+                if (name == 'province_id') {
+                    record.set('city', '');
+                    record.set('district', '');
+                    record.set('city_id', '');
+                    record.set('district_id', '');
+                    if (!Ext.isEmpty(value)) {
+                        record.getField('city').setLovPara('province_id', value);
+                    } else {
+                        record.getField('city').setLovService('');
+                    }
+                    record.getMeta().getField('district').setLovService('');
+                }
+            
+                if (name == 'city_id') {
+                    record.set('district', '');
+                    record.set('district_id', '');
+                    var address_province_id = record.get('province_id');
+                    if (!Ext.isEmpty(value)) {
+                        record.getField('district').setLovPara('province_id', address_province_id);
+                        record.getField('district').setLovPara('city_id', value);
+                    } else {
+                        record.getField('district').setLovService('');
+                    }
+                }
+            
+                if (name == 'contact_province_id') {
+                    record.set('contact_city', '');
+                    record.set('contact_district', '');
+                    record.set('contact_city_id', '');
+                    record.set('contact_district_id', '');
+                    if (!Ext.isEmpty(value)) {
+                        record.getField('contact_city').setLovPara('province_id', value);
+                    } else {
+                        record.getField('contact_city').setLovService('');
+                    }
+                    record.getMeta().getField('contact_district').setLovService('');
+                }
+            
+                if (name == 'contact_city_id') {
+                    record.set('contact_district', '');
+                    record.set('contact_district_id', '');
+                    var contact_address_province_id = record.get('contact_province_id');
+                    if (!Ext.isEmpty(value)) {
+                        record.getField('contact_district').setLovPara('province_id', contact_address_province_id);
+                        record.getField('contact_district').setLovPara('city_id', value);
+                    } else {
+                        record.getField('contact_district').setLovService('');
+                    }
+                }
+            }
+            
+            function erpord2010_check() {
+                var url = $('erpord_2010_customer_import_check').getUrl();
+                if ($('erpord_2010_import_result_ds').isModified()) {
+                    Aurora.showMessage('${l:MASCLOUD.PROMPT}', '${l:ERPINV.MESSAGE5}');
+                } else {
+                    if (!$('erpord_2010_import_result_ds').validate()) {
+                        return;
+                    }
+                    Aurora.Masker.mask(Ext.getBody(), '${l:MASCLOUD.CHECKING}');
+                    Aurora.request({
+                        url: url,
+                        para: {
+                            'header_id': '${/parameter/@header_id}'
+                        },
+                        success: function(res) {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            if (res.result.error_flag == 'Y') {
+                                erpord2010_error();
+                            } else {
+                                Aurora.showMessage('${l:MASCLOUD.PROMPT}', '${l:ERPINV.MESSAGE6}');
+                            }
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        }
+                    });
+                }
+            }
+            
+            function erpord_2010_import_number_ef(record, name) {
+                if (record.isNew) {
+                    return 'erpord_2010_import_number';
+                }
+                return '';
+            }
+            
+            function erpord2010_import_partner_code_validator(record, name, value) {
+                var partner_code = record.get('partner_code');
+                var regex = /^[\dA-Z\-]+$/;
+                if (!regex.test(partner_code)) {
+                    return '${l:ERPINV.MESSAGE26}';
+                }
+                return true;
+            }
+            
+            function erpord2010_downloadFile() {
+                var template_code = "Com_Customers";
+                var attachment_id = '${/model/erpord2010_attachment_template_root/record/@attachment_id}';
+                if (Aurora.isEmpty(attachment_id)) {
+                    return;
+                }
+            
+                var url = $('erpord2010_atm_download_link').getUrl() + '?attachment_id=' + attachment_id + '&table_name=ERPSYS_ATTACHMENT_TEMPLATE&table_pk_value=' + '${/model/erpord2010_attachment_template_root/record/@template_id}';
+                window.location.href = url;
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="erpord_2010_assign_company_ds" loadData="true" model="public.fnd_company_list"/>
+            <a:dataSet id="erpord_2010_import_result_ds" autoPageSize="true" model="erpord.ERPORD2010.ord_customer_import" queryUrl="${/request/@context_path}/autocrud/erpord.ERPORD2010.ord_customer_import/query?header_id=${/parameter/@header_id}" selectable="true">
+                <a:fields>
+                    <a:field name="company_id" defaultValue="${/session/@default_company_id}"/>
+                    <a:field name="company_code" defaultValue="${/session/@default_company_code}" displayField="company_full_name" options="erpord_2010_assign_company_ds" required="true" returnField="company_id" valueField="company_id"/>
+                    <a:field name="line_number" required="true"/>
+                    <a:field name="session_id" defaultValue="${/parameter/@header_id}"/>
+                    <a:field name="partner_code" prompt="客户代码" required="true" typeCase="upper" validator="erpord2010_import_partner_code_validator"/>
+                    <a:field name="vender_customer_flag" checkedValue="Y" defaultValue="N" prompt="既是供应商又是客户" uncheckedValue="N"/>
+                    <a:field name="partner_name" prompt="客户名称" required="true"/>
+                    <a:field name="province" autoComplete="true" autoCompleteField="province_code_name" autoCompleteSize="1" lovGridHeight="350" lovHeight="500" lovService="erpsys.public.sys_region_province_lov" lovWidth="450" prompt="省" title="省信息">
+                        <a:mapping>
+                            <a:map from="province_name" to="province"/>
+                            <a:map from="province_id" to="province_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="city" autoComplete="true" autoCompleteField="city_code_name" autoCompleteSize="1" lovGridHeight="350" lovHeight="500" lovService="erpsys.public.sys_region_city_lov" lovWidth="450" prompt="市" title="市信息">
+                        <a:mapping>
+                            <a:map from="city_name" to="city"/>
+                            <a:map from="city_id" to="city_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="district" autoComplete="true" autoCompleteField="district_code_name" autoCompleteSize="1" lovGridHeight="350" lovHeight="500" lovService="erpsys.public.sys_region_district_lov" lovWidth="500" prompt="县" title="县信息">
+                        <a:mapping>
+                            <a:map from="district_name" to="district"/>
+                            <a:map from="district_id" to="district_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="detail_address" prompt="客户通讯地址"/>
+                    <a:field name="legal_representative" prompt="法人代表"/>
+                    <a:field name="tax_number" prompt="税务登记号"/>
+                    <a:field name="bank_name" prompt="开户银行"/>
+                    <a:field name="bank_account" prompt="银行账号"/>
+                    <a:field name="homepage" prompt="公司主页"/>
+                    <a:field name="enabled_flag" checkedValue="Y" defaultValue="N" prompt="启用" uncheckedValue="N"/>
+                    <a:field name="default_flag" checkedValue="Y" defaultValue="N" prompt="设为默认联系人" uncheckedValue="N"/>
+                    <a:field name="contact_name" prompt="联系人"/>
+                    <a:field name="contact_province" autoComplete="true" autoCompleteField="province_code_name" autoCompleteSize="1" lovGridHeight="350" lovHeight="500" lovService="erpsys.public.sys_region_province_lov" lovWidth="450" prompt="省" title="省信息">
+                        <a:mapping>
+                            <a:map from="province_name" to="contact_province"/>
+                            <a:map from="province_id" to="contact_province_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="contact_city" autoComplete="true" autoCompleteField="city_code_name" autoCompleteSize="1" lovGridHeight="350" lovHeight="500" lovService="erpsys.public.sys_region_city_lov" lovWidth="450" prompt="市" title="市信息">
+                        <a:mapping>
+                            <a:map from="city_name" to="contact_city"/>
+                            <a:map from="city_id" to="contact_city_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="contact_district" autoComplete="true" autoCompleteField="district_code_name" autoCompleteSize="1" lovGridHeight="350" lovHeight="500" lovService="erpsys.public.sys_region_district_lov" lovWidth="500" prompt="县" title="县信息">
+                        <a:mapping>
+                            <a:map from="district_name" to="contact_district"/>
+                            <a:map from="district_id" to="contact_district_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="contact_address" prompt="FND_ADDRESSES.ADDRESS"/>
+                    <a:field name="post_code" prompt="邮政编码"/>
+                    <a:field name="phone_number" prompt="电话号码"/>
+                    <a:field name="mobile_phone" prompt="手机号码"/>
+                    <a:field name="fax_number" prompt="传真号码"/>
+                    <a:field name="email" prompt="E_mail"/>
+                    <a:field name="sys_customer_desc" autoComplete="true" autoCompleteField="code_name" autoCompleteSize="1" lovGridHeight="350" lovHeight="500" lovService="erpsys.ERPSYS2010.sys_customer_basics?enabled_flag=Y" lovWidth="500" prompt="系统级大客户" title="系统级大客户">
+                        <a:mapping>
+                            <a:map from="code_name" to="sys_customer_desc"/>
+                            <a:map from="customer_code" to="sys_customer_code"/>
+                            <a:map from="customer_id" to="sys_customer_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="customer_type_desc" autoComplete="true" autoCompleteField="code_name" autoCompleteSize="1" lovGridHeight="350" lovHeight="500" lovLabelWidth="100" lovService="erpord.ERPORD1010.fnd_business_partner_types?enabled_flag=Y" lovWidth="550" prompt="客户类型" title="客户类型">
+                        <a:mapping>
+                            <a:map from="code_name" to="customer_type_desc"/>
+                            <a:map from="partner_type_code" to="partner_type_code"/>
+                            <a:map from="partner_type_id" to="partner_type_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="goods_issue_flag" checkedValue="Y" defaultValue="N" prompt="发出商品客户" uncheckedValue="N"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="erpord_2010_import_ds_update"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenTopToolbar>
+            <a:screenTitle/>
+            <a:toolbarButton className="item-rbtn-blue template" click="erpord2010_downloadFile" style="margin-left:20px;" text="ERPHAP_TEMPLATE" width="100"/>
+            <a:toolbarButton className="item-rbtn-blue import" click="erpord2010_saveClick" text="PROMPT.IMPORT" width="100"/>
+            <a:toolbarButton className="item-rbtn-blue verify" click="erpord2010_check" text="PROMPT.VERIFY" width="100"/>
+            <a:toolbarButton className="item-rbtn-blue submit" click="erpord2010_submit" text="PROMPT.SUBMIT" width="100"/>
+            <a:toolbarButton className="item-rbtn-blue error" click="erpord2010_error" text="PROMPT.ERROR" width="100"/>
+            <a:toolbarButton className="item-rbtn-blue back" click="erpord2010_back" text="PROMPT.BACK" width="100"/>
+        </a:screenTopToolbar>
+        <a:hBox style="margin-top:10px">
+            <form name="upload" id="erpord2010_importForm" action="${/request/@context_path}/modules/erpord/ERPORD2010/ord_customer_import_trans_upload.screen?header_id=${/model/erpord_2010_header_id/record/@header_id}" enctype="multipart/form-data" method="post">
+                <label style="margin-left:10px;margin-top:10px;"><![CDATA[选择要引入的数据文件：]]></label>
+                <input name="CONTENT" id="erpord2010_importFile" type="file"/>
+            </form>
+        </a:hBox>
+        <a:grid id="erpord_2010_import_result_grid" bindTarget="erpord_2010_import_result_ds" height="380" marginHeight="99" marginWidth="40" navBar="true" style="border:none" width="900">
+            <a:toolBar>
+                <a:button type="add"/>
+                <a:button type="save"/>
+                <a:button type="delete"/>
+                <a:button type="excel"/>
+            </a:toolBar>
+            <a:columns>
+                <a:column name="line_number" align="right" editorFunction="erpord_2010_import_number_ef" lock="true" prompt="行号" width="40"/>
+                <a:column name="company_code" editor="erpord_2010_import_cmb" lock="true" prompt="公司" width="50"/>
+                <a:column name="partner_code" align="center" editor="erpord_2010_import_text_f1" lock="true" width="80"/>
+                <a:column name="vender_customer_flag" editor="erpord_2010_import_ckb" lock="true" width="50"/>
+                <a:column name="partner_name" editor="erpord_2010_import_text_f1" lock="true" width="80"/>
+                <a:column name="customer_type_desc" editor="erpord_2010_import_lov" width="100"/>
+                <a:column name="province" editor="erpord_2010_import_lov" width="80"/>
+                <a:column name="city" editor="erpord_2010_import_lov" width="80"/>
+                <a:column name="district" editor="erpord_2010_import_lov" width="80"/>
+                <a:column name="detail_address" editor="erpord_2010_import_text_f1" width="100"/>
+                <a:column name="legal_representative" editor="erpord_2010_import_text_f1" width="80"/>
+                <a:column name="tax_number" editor="erpord_2010_import_text_f1" width="70"/>
+                <a:column name="bank_name" editor="erpord_2010_import_text_f1" width="100"/>
+                <a:column name="bank_account" editor="erpord_2010_import_text_f1" width="100"/>
+                <a:column name="homepage" editor="erpord_2010_import_text_f1" width="100"/>
+                <!--  <a:column name="goods_issue_flag" editor="erpord_2010_import_ckb" width="100"/> -->
+                <a:column name="enabled_flag" editor="erpord_2010_import_ckb" width="100"/>
+                <a:column name="contact_name" editor="erpord_2010_import_text_f1" width="100"/>
+                <a:column name="default_flag" editor="erpord_2010_import_ckb" width="100"/>
+                <a:column name="contact_province" editor="erpord_2010_import_lov" prompt="通讯地址（省）" width="100"/>
+                <a:column name="contact_city" editor="erpord_2010_import_lov" prompt="通讯地址（市）" width="100"/>
+                <a:column name="contact_district" editor="erpord_2010_import_lov" prompt="通讯地址（县）" width="100"/>
+                <a:column name="contact_address" editor="erpord_2010_import_text_f1" prompt="通讯地址（详细地址）" width="100"/>
+                <a:column name="post_code" editor="erpord_2010_import_text_f1" width="100"/>
+                <a:column name="phone_number" editor="erpord_2010_import_text_f1" width="100"/>
+                <a:column name="mobile_phone" editor="erpord_2010_import_text_f1" width="100"/>
+                <a:column name="fax_number" editor="erpord_2010_import_text_f1" width="100"/>
+                <a:column name="email" editor="erpord_2010_import_text_f1" width="100"/>
+            </a:columns>
+            <a:editors>
+                <a:numberField id="erpord_2010_import_number" allowDecimals="false" allowNegative="false"/>
+                <a:lov id="erpord_2010_import_lov"/>
+                <a:textField id="erpord_2010_import_text_f1"/>
+                <a:checkBox id="erpord_2010_import_ckb"/>
+                <a:comboBox id="erpord_2010_import_cmb"/>
+            </a:editors>
+        </a:grid>
+        <script><![CDATA[
+            function erpord_2010_import_init() {
+                //alert('saving...');
+                var url = $('erpord_2010_import_save_data_link').getUrl();
+                Aurora.Masker.mask(Ext.getBody(), '${l:MASCLOUD.IMPORTING}');
+                Aurora.request({
+                    url: url,
+                    para: {
+                        'header_id': '${/parameter/@header_id}'
+                    },
+                    success: function(res) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        var error_flag = res.result.error_flag;
+                        if (error_flag == 'Y') {
+                            erpord2010_error();
+                        }
+                        $('erpord_2010_import_result_ds').query();
+                    },
+                    error: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    failure: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    scope: this
+                });
+            }
+            
+            erpord_2010_import_init();
+        ]]></script>
+    </a:view>
+</a:screen>

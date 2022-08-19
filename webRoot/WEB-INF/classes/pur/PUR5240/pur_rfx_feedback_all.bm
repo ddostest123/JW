@@ -1,0 +1,505 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="false">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*,
+                    ROUND((((fl_conversion_rate*untax_price) - (pl_conversion_rate*vendor_min_tax_amount)) / (pl_conversion_rate*vendor_min_tax_amount) *100),2) AS vendor_range,
+                    decode(round(pl_conversion_rate*no_tax_amount,5),0,null,(ROUND(((fl_conversion_rate*untax_price - round(pl_conversion_rate*no_tax_amount,5))/round(pl_conversion_rate*no_tax_amount,5) *100),2))) AS blank_range,
+                    (case when instr(v.business_unit_name,'SMT') >1 or instr(v.business_unit_name,'FPC') >1 then '-3584636066630250512'
+				            when instr(v.business_unit_name,'MPCB') >1 then '5632296991663803479'
+				        else decode(v.is_cen_pur,'是','6279013407969068076','5055236107270702743') end) production_line,
+                    NVL(DECODE(NVL(v.c_attribute4,'N'),'N',
+                    (SELECT
+                        ROUND(MIN(pl.no_tax_amount),4)
+                    FROM
+                        pack_agreement_lines pl
+                    WHERE
+                        pl.item_id = v.item_id
+                    ),
+                    (SELECT
+                        ROUND(MIN(pl.no_tax_amount),4)
+                    FROM
+                        mtl_system_items ms,
+                        pack_agreement_lines pl
+                    WHERE
+                        ms.c_attribute4 = v.c_attribute4 AND
+                        pl.item_id      = ms.item_id
+                    ) ),v.untax_price) AS min_amount,
+                    (SELECT
+                        f.flex_value
+                    FROM
+                        fnd_flex_values_v f,
+                        fnd_flex_value_sets fs
+                    WHERE
+                        fs.flex_value_set_code = 'KW_CHEMICAL_FLAG' AND
+                        f.flex_value_set_id    = fs.flex_value_set_id AND
+                        f.flex_desc            = '是'
+                    ) yse_value,
+                    (SELECT
+                        f.flex_value
+                    FROM
+                        fnd_flex_values_v f,
+                        fnd_flex_value_sets fs
+                    WHERE
+                        fs.flex_value_set_code = 'KW_CHEMICAL_FLAG' AND
+                        f.flex_value_set_id    = fs.flex_value_set_id AND
+                        f.flex_desc            = '否'
+                    ) no_value
+                FROM
+                    (SELECT
+                        (SELECT
+                            ic.category_name
+                        FROM
+                            mtl_categories_user_defined_vl ic
+                        WHERE
+                            ic.category_udf_id = li.item_category_id
+                        ) item_category_desc,
+                        NVL(li.item_code, '-') AS item_code,
+                        li.item_desc,
+                        rh.rfx_category,
+                        (SELECT
+                            fv.uom_desc
+                        FROM
+                            fnd_uom_codes_vl fv
+                        WHERE
+                            fv.uom_code       = li.uom_code AND
+                            fv.business_group = rh.owner_business_group
+                        ) uom_desc,
+                        li.line_num,
+                        fh.coop_company_id,
+                        (SELECT
+                            fc.company_code
+                        FROM
+                            fnd_companies fc
+                        WHERE
+                            fc.company_id = fh.coop_company_id
+                        ) vendor_code,
+                        (SELECT
+                            fc.company_full_name
+                        FROM
+                            fnd_companies_vl fc
+                        WHERE
+                            fc.company_id = fh.coop_company_id
+                        ) vendor_desc,
+                        (SELECT
+                            quote_header_id
+                        FROM
+                            pur_rfx_quote_headers rqh
+                        WHERE
+                            rqh.rfx_line_item_id = li.rfx_line_item_id AND
+                            rownum               =1
+                        ) quote_header_id,
+                        fl.abandoned_flag,
+                        to_char(NVL(lq.ladder_price,fl.valid_fb_retail_price)) AS valid_fb_retail_price,
+                        (
+                            CASE
+                                WHEN NVL(lq.ladder_price,fl.valid_fb_retail_price) <=
+                                    (SELECT
+                                        MIN(fll.valid_fb_retail_price)
+                                    FROM
+                                        pur_rfx_feedback_headers fhh,
+                                        pur_rfx_feedback_lines fll
+                                    WHERE
+                                        fhh.feedback_header_id = fll.feedback_header_id AND
+                                        fhh.rfx_header_id      = rh.rfx_header_id AND
+                                        fhh.rfx_round          = rh.round AND
+                                        fhh.rfx_version        = rh.version AND
+                                        fll.RFX_LINE_ITEM_ID   = li.RFX_LINE_ITEM_ID
+                                    )
+                                THEN 'Y'
+                                ELSE 'N'
+                            END) lowest_flag,
+                        NVL(TO_CHAR(pur_rfx_feedback_pkg.get_last_round_price(fh.rfx_header_id, fh.owner_business_group, fh.coop_company_id, li.item_id, ${/session/@user_id}),'fm99999999990.9999'),'无') AS last_valid_fb_retail_price,
+                        pur_rfx_feedback_pkg.get_floating_percentage(fh.rfx_header_id, fl.valid_fb_retail_price, fh.owner_business_group, fh.coop_company_id, li.item_id, ${/session/@user_id}) AS floating_percentage,
+                        rh.rfx_header_id,
+                        fh.feedback_header_id,
+                        fl.feedback_line_id,
+                        fl.suggested_note,
+                        fl.suggested_flag,
+                        NVL(fl.price_batch_quantity,1) AS price_batch_quantity,
+                        TO_CHAR(fl.feedback_expiry_date_from, 'yyyy-mm-dd') feedback_expiry_date_from,
+                        TO_CHAR(fl.feedback_expiry_date_to, 'yyyy-mm-dd') feedback_expiry_date_to,
+                        fl.allotted_quantity,
+                        DECODE(rh.is_quot_quantity_flag,'Y',(
+                            CASE
+                                WHEN fl.quote_quantity IS NOT NULL AND
+                                    fl.quote_quantity  != 0
+                                THEN TO_CHAR(ROUND((fl.allotted_quantity / fl.quote_quantity), 4) * 100)
+                                ELSE '-'
+                            END),(
+                            CASE
+                                WHEN li.quantity IS NOT NULL AND
+                                    li.quantity  != 0
+                                THEN TO_CHAR(ROUND((fl.allotted_quantity / li.quantity), 4) * 100)
+                                ELSE '-'
+                            END)) AS allotted_percentage,
+                        TO_CHAR(li.need_by_date, 'yyyy-mm-dd') need_by_date,
+                        li.feedback_range,
+                        li.item_note,
+                        li.item_parameter_config,
+                        li.quantity,
+                        (SELECT
+                            io.description
+                        FROM
+                            inv_organizations_vl io
+                        WHERE
+                            io.inv_organization_id = li.inv_organization_id
+                        ) inv_organization_desc,
+                        (SELECT
+                            io.es_inv_org_id
+                        FROM
+                            inv_organizations_vl io
+                        WHERE
+                            io.inv_organization_id = li.inv_organization_id
+                        ) es_inv_org_id,
+                        li.item_id,
+                        li.req_number,
+                        li.req_line_num,
+                        li.work_num,
+                        li.rfx_line_item_id,
+                        li.bom_num,
+                        li.suggested_operation,
+                        li.cost_price,
+                        CASE
+                            WHEN NVL(fl.valid_fb_retail_price, 0) > NVL(li.cost_price, 0)
+                            THEN (
+                                    CASE
+                                        WHEN li.cost_price IS NOT NULL AND
+                                            li.cost_price  != 0
+                                        THEN TO_CHAR(ROUND((NVL(fl.valid_fb_retail_price, 0) - NVL(li.cost_price, 0)) / li.cost_price,4) * 100)
+                                        ELSE '-'
+                                    END)
+                            ELSE '-'
+                        END AS super_cost,
+                        (NVL(li.cost_total_price, (
+                        (SELECT
+                            SUM(fll.allotted_quantity)
+                        FROM
+                            pur_rfx_feedback_lines fll
+                        WHERE
+                            fll.rfx_line_item_id = li.rfx_line_item_id
+                        ) * li.cost_price))) AS cost_total_price,
+                        (SELECT
+                            COUNT(1)
+                        FROM
+                            pur_rfx_feedback_lines l,
+                            pur_rfx_feedback_headers h,
+                            pur_rfx_ln_items rl
+                        WHERE
+                            h.feedback_header_id    = l.feedback_header_id AND
+                            l.rfx_line_item_id      = rl.rfx_line_item_id AND
+                            rl.cancel_flag          = 'N' AND
+                            rl.rfx_finished_flag    = 'N' AND
+                            l.cancel_flag           = 'N' AND
+                            rl.rfx_line_item_id     = li.rfx_line_item_id AND
+                            h.rfx_round             =rl.current_round AND
+                            h.rfx_version           =rl.current_version AND
+                            l.valid_fb_retail_price > 0
+                        ) AS vendor_price_count,
+                        NVL(li.ladder_inquiry_flag,'Y') ladder_inquiry_flag,
+                        TO_CHAR(fl.promised_date, 'yyyy-mm-dd') promised_date,
+                        fl.delivery_cycle,
+                        fl.valid_fb_reason,
+                        fl.valid_fb_wholesale_price,
+                        fl.min_purchase,
+                        fl.min_package,
+                        fl.feedback_time,
+                        rh.trans_cost_flag,
+                        fl.trans_cost,
+                        (pur_rfx_feedback_pkg.get_last_bid_price(p_rfx_header_id => rh.rfx_header_id, p_item_id => fl.item_id, p_business_group => ${/session/@business_group}, p_user_id => ${/session/@user_id}) )AS last_bid_price,
+                        (SELECT
+                            COUNT(*)
+                        FROM
+                            fnd_atm_attachment_multi am
+                        WHERE
+                            am.table_name     = 'PUR_RFX_LN_ITEMS' AND
+                            am.table_pk_value = TO_CHAR(li.rfx_line_item_id)
+                        ) AS atm_counts1,
+                        (SELECT
+                            COUNT(*)
+                        FROM
+                            fnd_atm_attachment_multi am
+                        WHERE
+                            am.table_name     = 'PUR_RFX_FEEDBACK_LINES' AND
+                            am.table_pk_value = TO_CHAR(fl.feedback_line_id)
+                        ) AS atm_counts,
+                        fl.tax_included_flag,
+                        fl.tax_type_id,
+                        fl.tax_type_code,
+                        NVL(fl.tax_type_code,rh.tax_type_code) tax_type_code_desc,
+                        fl.tax_type_rate,
+                        fl.quote_quantity,
+                        rh.rfx_number,
+                        (SELECT
+                            bu.business_unit_name
+                        FROM
+                            fnd_business_units_vl bu
+                        WHERE
+                            bu.business_unit_id = rh.owner_business_unit_id
+                        ) business_unit_name,
+                        (SELECT
+                            su.user_name
+                        FROM
+                            sys_user su
+                        WHERE
+                            su.user_id = ${/session/@user_id}
+                        ) user_name,
+                        TO_CHAR(rh.creation_date,'yyyy-mm-dd') creation_date_desc,
+                        rh.currency_code,
+                        DECODE(lv.is_cen_pur,'Y','是','否') is_cen_pur,
+                        (SELECT
+                            scv.code_value_name
+                        FROM
+                            sys_code_values_vl scv,
+                            sys_codes_vl sc
+                        WHERE
+                            sc.code_id     = scv.code_id AND
+                            scv.code_value = rh.rfx_method AND
+                            sc.code        = 'PUR_RFX_METHOD'
+                        ) rfx_method_desc,
+                        DECODE(lv.source_type,'CONSIGNMENT','是','否') source_type_desc,
+                        to_char(NVL(lq.ladder_price * (100 -
+                        (SELECT
+                            to_number(v.tax_type_rate)
+                        FROM
+                            fnd_tax_type_codes_bg_v v
+                        WHERE
+                            v.enabled_flag    = 'Y' AND
+                            v.bg_enabled_flag = 'Y' AND
+                            v.tax_type_id     = fl.tax_type_id
+                        )) / 100,fl.untax_price)) AS untax_price,
+                        (SELECT
+	                        t.uom_code
+	                    FROM
+	                        fnd_uom_codes_vl t 
+	                    WHERE
+	                        t.uom_name           = li.pur_uom_desc 
+	                    ) pur_uom_desc,
+                        lv.vendor_site AS vendor_site_code,
+                        (SELECT
+                            i2.category_name
+                        FROM
+                            mtl_categories_user_defined_vl i,
+                            mtl_categories_user_defined_vl i2
+                        WHERE
+                            i.category_udf_id = fl.item_category_id AND
+                            i2.category_code  = SUBSTR(i.category_code, 0, 4)
+                        ) i2_category_name,
+                        (SELECT
+                            i1.category_name
+                        FROM
+                            mtl_categories_user_defined_vl i,
+                            mtl_categories_user_defined_vl i1
+                        WHERE
+                            fl.item_category_id = i.category_udf_id AND
+                            i1.category_code    = SUBSTR(i.category_code, 0, 2)
+                        ) i1_category_name,
+                        (SELECT
+                            l.terms_name
+                        FROM
+                            pur_vendor_sites l
+                        WHERE
+                            l.org_id       = rh.owner_business_unit_id AND
+                            pv.vendor_id   = l.vendor_id AND
+                            lv.vendor_site = l.display_site_code
+                        ) terms_name,
+                        pv.display_vendor_code,
+                        to_char(ROUND(pl.no_tax_amount,5)) AS min_tax_amount,
+                        pl.currency_code AS blank_currency_code,
+                        decode(pl.currency_code,'CNY',1,(select e.conversion_rate from apps.gl_daily_rates_v@ebslink e where e.to_currency = 'CNY' and trunc(sysdate) = e.conversion_date and e.from_currency = pl.currency_code)) pl_conversion_rate,
+                        decode(fl.currency_code,'CNY',1,(select e.conversion_rate from apps.gl_daily_rates_v@ebslink e where e.to_currency = 'CNY' and trunc(sysdate) = e.conversion_date and e.from_currency = fl.currency_code)) fl_conversion_rate,
+                        (SELECT
+                            h.vendor_site_name
+                        FROM
+                            pack_agreement_headers h
+                        WHERE
+                            h.es_header_id = pl.es_header_id
+                        ) blank_site_name,
+						pl.no_tax_amount,
+                        to_char((SELECT
+                            *
+                        FROM
+                            (SELECT
+                                ROUND(l.no_tax_amount,5) no_tax_amount
+                            FROM
+                                pack_agreement_lines l,
+                                pack_agreement_headers h
+                            WHERE
+                                l.item_id               = fl.item_id AND
+                                h.es_header_id          = l.es_header_id AND
+                                h.vendor_id             = pv.vendor_id AND
+                                l.erp_last_update_date IS NOT NULL
+                            ORDER BY
+                                l.erp_last_update_date DESC
+                            ) vl
+                        WHERE nvl( vl.no_tax_amount,0) <> 0
+                          and  rownum = 1
+                        )) AS vendor_min_tax_amount,
+                        (select listagg(fa.file_path, '<>') within group(order by fa.attachment_id)
+						  from fnd_atm_attachment fa, fnd_atm_attachment_multi fm
+						 where fm.attachment_id = fa.attachment_id
+						   and fm.table_name = 'PUR_RFX_FEEDBACK_HEADER'
+						   and fm.table_pk_value <> 'undefined'
+						   and fm.table_pk_value = to_char(fh.feedback_header_id)) file_path_list,
+						(select listagg(fa.file_name, '<>') within group(order by fa.attachment_id)
+						  from fnd_atm_attachment fa, fnd_atm_attachment_multi fm
+						 where fm.attachment_id = fa.attachment_id
+						   and fm.table_name = 'PUR_RFX_FEEDBACK_HEADER'
+						   and fm.table_pk_value <> 'undefined'
+						   and fm.table_pk_value = to_char(fh.feedback_header_id)) file_name_list,
+                        (SELECT
+                            ROUND(COUNT(l.quantity) /3,4)
+                        FROM
+                            pur_lines_all l
+                        WHERE
+                            l.item_id = li.item_id AND
+                            l.erp_creation_date BETWEEN add_months(TRUNC(sysdate,'mm'),-3) AND TRUNC(sysdate,'mm')
+                        ) month_quantity_avg,
+                        (SELECT
+                            msi.c_attribute4
+                        FROM
+                            mtl_system_items msi
+                        WHERE
+                            msi.item_id = li.item_id
+                        ) c_attribute4,
+                        fl.test_type --测试架类型
+                        ,fl.test_point_two_five --探针0.25mm
+                        ,fl.test_point_zero_nine --探针0.09mm
+                        ,fl.test_point_two --探针0.2mm
+                        ,fl.test_point_fifteen --探针0.15mm
+                        ,fl.test_point_twelve --探针0.12mm
+                        ,fl.test_point_one --探针0.1mm
+                        ,fl.test_needle_double_zero --00针
+                        ,fl.test_needle_zero_pound --0#针
+                        ,fl.test_needle_one_pound --1#针
+                        ,fl.test_needle_two_pound --2#针
+                        ,fl.test_cylinder --气缸
+                        ,fl.test_float --点数
+                        ,fl.test_pcs --pcs数
+                        ,fl.mini_pound --最小探针
+                        ,(SELECT
+                            scv.code_value_name
+                        FROM
+                            sys_code_values_vl scv,
+                            sys_codes_vl sc
+                        WHERE
+                            sc.code_id     = scv.code_id AND
+                            scv.code_value = fl.mini_pound AND
+                            sc.code        = 'TEST_MIN_POUND'
+                        ) mini_pound_desc
+	                    ,fl.test_shelf_length --测试架长
+	                    ,fl.test_shelf_width --测试架宽 
+	                    ,fl.horn_plate_pcs --牛角板PCS数
+	                    ,fl.counter_pcs --计数器PCS数
+	                    ,fl.test_ccd --CCD对位
+                        ,nvl(lq.ladder_from,li.quantity) AS ladder_quantity
+                    FROM
+                        pur_rfx_headers rh,
+                        pur_rfx_ln_items li,
+                        pur_rfx_feedback_headers fh,
+                        pur_rfx_feedback_lines fl,
+                        pur_rfx_ln_vendors lv,
+                        pur_vendors_vl pv,
+                        pack_agreement_lines pl,
+                        pur_rfx_ladder_quotation lq
+                    WHERE
+                        rh.rfx_header_id      = li.rfx_header_id AND
+                        li.cancel_flag        = 'N' AND
+                        li.rfx_finished_flag  = 'N' AND
+                        fl.cancel_flag        = 'N' AND
+                        fh.feedback_header_id = fl.feedback_header_id AND
+                        fh.rfx_header_id      = rh.rfx_header_id AND
+                        fh.rfx_round =
+			               (select max(fh1.rfx_round)
+			                  from pur_rfx_feedback_headers fh1,
+			                       pur_rfx_feedback_lines   fl1
+			                 where fh1.feedback_header_id = fl1.feedback_header_id
+			                   and fl1.rfx_line_item_id = li.rfx_line_item_id) and
+                        fh.rfx_round          = rh.round AND
+                        fh.rfx_version        = rh.version AND
+                        fl.rfx_line_item_id   = li.rfx_line_item_id AND
+                        rh.rfx_header_id      = ${@rfx_header_id} AND
+                        rh.rfx_header_id      = lv.rfx_header_id AND
+                        lv.coop_company_id    = fh.coop_company_id AND
+                        pv.coop_company_id(+)    = lv.coop_company_id AND
+                        pl.item_id(+)         = li.item_id AND
+                        (
+                            pl.item_id             IS NULL OR
+                            pl.erp_last_update_date =
+                            (SELECT
+                                MAX(pll.erp_last_update_date)
+                            FROM
+                                pack_agreement_lines pll
+                            WHERE
+                                pll.item_id(+) = li.item_id
+                            GROUP BY
+                                pll.item_id
+                            )
+                        )
+                        AND
+                        lq.feedback_line_id(+) = fl.feedback_line_id
+                    ) v #WHERE_CLAUSE#
+                ORDER BY
+                    v.line_num
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+        	declare 
+        	
+        	v_suggested_flag  varchar2(1);
+        	v_feedback_line_id number;
+        	v_suggested_operation varchar2(30);
+              BEGIN
+              
+              v_suggested_flag :=${@suggested_flag} ;
+              
+              v_suggested_operation:=${@suggested_operation};
+              
+               pur_rfx_feedback_pkg.save_rfx_fb_ln_suggest(p_feedback_line_id =>${@feedback_line_id},
+                                   p_suggested_flag    =>${@suggested_flag},
+                                   p_suggested_note    =>${@suggested_note},
+                                   p_allotted_quantity =>${@allotted_quantity},
+                                   p_price_batch_quantity=>${@price_batch_quantity},
+                                   p_user_id           =>${/session/@user_id});
+              
+              if v_suggested_operation ='SELECTED' then 
+              
+               		if v_suggested_flag <>'Y' then
+               
+               			 return;
+               	 
+               	 		else
+               	 
+             	 		v_feedback_line_id := ${@feedback_line_id};
+             	 		  pur_rfx_pkg.save_suggested_operation(p_rfx_line_item_id=>${@rfx_line_item_id},
+                					 p_suggested_fb_line_id => v_feedback_line_id,
+                                     p_suggested_operation =>${@suggested_operation},
+                                     p_cost_price    	=>${@cost_price},
+                                     p_cost_total_price   =>${@cost_total_price},
+                                     p_need_by_date		  =>to_date(${@need_by_date},'YYYY-MM-DD'),
+                                     p_user_id            =>${/session/@user_id});
+               	 
+               		end if;
+              else 
+               		v_feedback_line_id:=null;
+                	  pur_rfx_pkg.save_suggested_operation(p_rfx_line_item_id=>${@rfx_line_item_id},
+                					 p_suggested_fb_line_id => v_feedback_line_id,
+                                     p_suggested_operation =>${@suggested_operation},
+                                     p_cost_price    	=>${@cost_price},
+                                     p_cost_total_price   =>${@cost_total_price},
+                                     p_need_by_date		  =>to_date(${@need_by_date},'YYYY-MM-DD'),
+                                     p_user_id            =>${/session/@user_id});
+              
+              end if;
+              
+            
+                                     
+              
+              END;
+		      ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: zoulonghui  
+    $Date: 2017-11-3 下午4:13:34  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="rfx_header_id desc">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*
+                FROM
+                    (SELECT                    	
+                        rh.rfx_header_id,
+                        rh.rfx_number,
+                        rh.owner_business_group,
+                        rh.owner_company_id,
+                        rh.owner_business_unit_id,
+                        (SELECT
+                            bu.business_unit_name
+                        FROM
+                            fnd_business_units_vl bu
+                        WHERE
+                            bu.business_unit_id = rh.owner_business_unit_id
+                        ) business_unit_name,                        
+                        rh.title,
+                        rh.rfx_method,                        
+                        rh.auction_direction,                        
+                        rh.payment_method_id,
+                        (SELECT
+                            pm.description
+                        FROM
+                            csh_payment_methods_vl pm
+                        WHERE
+                            pm.payment_method_id = rh.payment_method_id
+                        ) payment_method_desc,
+                        rh.currency_code,
+                        (SELECT
+                            gc.currency_name
+                        FROM
+                            gld_currency_vl gc
+                        WHERE
+                            gc.currency_code = rh.currency_code
+                        ) currency_desc,
+                        rh.exchange_rate,
+                        rh.tax_type_id,
+                        (SELECT
+                            ttc.description
+                        FROM
+                            fnd_tax_type_codes_vl ttc
+                        WHERE
+                            ttc.tax_type_id = rh.tax_type_id
+                        ) tax_type_desc,
+                        rh.tax_type_rate,                        
+                        TO_CHAR(rh.issued_date, 'yyyy-mm-dd') issued_date_desc,
+                        rh.round,
+                        rh.version,
+                        TO_CHAR(rh.feedback_start_time, 'yyyy-mm-dd hh24:mi:ss') feedback_start_time,
+                        TO_CHAR(rh.feedback_end_time, 'yyyy-mm-dd hh24:mi:ss') feedback_end_time,
+                        rh.terminated_time,
+                        TO_CHAR(rh.terminated_time, 'yyyy-mm-dd hh24:mi:ss') terminated_time_desc,                      
+                        
+                        rh.cancel_flag,
+                        rh.closed_flag,
+                        rh.data_source,
+                        rh.source_from,
+                        rh.comments,
+                        rh.flex_appl_relevance_id,
+                        rh.creation_date,
+                        TO_CHAR(rh.creation_date, 'yyyy-mm-dd hh24:mi:ss') creation_date_desc,
+                        (
+                            CASE
+                                WHEN ${/session/@user_id} = rh.created_by
+                                THEN rh.created_by
+                                ELSE rh.deliver_id
+                            END) created_by_or_receiver,
+                        rh.created_by,
+                        (SELECT u.description FROM sys_user u WHERE u.user_id = rh.created_by
+                        ) created_by_desc,
+                        rh.tax_included_flag,
+                        (SELECT
+                            s.code_value_name
+                        FROM
+                            sys_code_values_v s
+                        WHERE
+                            s.code       = 'YES_OR_NO' AND
+                            s.code_value = NVL(rh.tax_included_flag, 'N')
+                        ) tax_included_flag_desc,
+                        rh.sealed_bid_flag,
+                        (SELECT
+                            s.code_value_name
+                        FROM
+                            sys_code_values_v s
+                        WHERE
+                            s.code       = 'YES_OR_NO' AND
+                            s.code_value = NVL(rh.sealed_bid_flag, 'N')
+                        ) sealed_bid_flag_desc,
+                        (SELECT
+                            COUNT(*)
+                        FROM
+                            pur_rfx_feedback_headers rfh
+                        WHERE
+                            rfh.rfx_header_id = rh.rfx_header_id AND
+                            rfh.rfx_round     = rh.round
+                        ) feedback_vendor_count,
+                        NULL AS operation_code,
+                        /* rh.status, */
+                        (
+                        SELECT
+                            scv.code_value_name
+                        FROM
+                            sys_code_values_vl scv,
+                            sys_codes_vl sc
+                        WHERE
+                            sc.code_id     = scv.code_id AND
+                            scv.code_value = (pur_rfx_pkg.get_rfx_actual_status(rh.rfx_header_id,${/session/@user_id})) AND
+                            sc.code        = 'PUR_RFX_STATUS'
+                        ) status_desc,
+                        (pur_rfx_pkg.get_rfx_actual_status(rh.rfx_header_id,${/session/@user_id})) AS status,
+                        rh.deliver_id useless_id,
+                        rh.prequal_flag,
+                        rh.expert_score_flag,
+                        (SELECT
+                            TO_CHAR(bph.closing_date,'yyyy-mm-dd hh24:mi:ss')
+                        FROM
+                            bid_prequal_headers bph
+                        WHERE
+                            bph.entrustment_header_id=-rh.rfx_header_id
+                        ) AS prequal_closing_date,
+                        pur_rfx_pkg.get_quote_response(rh.rfx_header_id,${/session/@user_id}) AS quote_response,
+			public_tools_pkg.get_attachment_show_flag('RFX',
+                                                         rh.rfx_header_id) AS atm_show_flag,
+	               (SELECT COUNT(*)
+					  FROM fnd_atm_attachment_multi aam
+					 WHERE aam.table_name = 'PUR_RFX_HEADERS'
+					       AND EXISTS (SELECT 1
+					          FROM fnd_atm_lines fal
+					         WHERE fal.source_table_name = 'PUR_RFX_HEADERS'
+					               AND fal.atm_line_id = aam.table_pk_value
+					               AND fal.source_pk_value = to_char(rh.rfx_header_id))
+					       AND rownum = 1) AS atm_counts,
+		   (SELECT COUNT(*)
+			  FROM fnd_atm_attachment_multi aam
+			 WHERE aam.table_name = 'BID_PREQUAL_HEADERS'
+			       AND aam.table_pk_value = to_char(-rh.rfx_header_id)
+			       AND rownum = 1) AS prequal_atm_counts,
+                        (
+                            CASE
+                                WHEN NVL(rh.sealed_bid_flag,'N')= 'Y' AND
+                                    (SELECT
+                                            nvl(rp.open_flag,'N')
+                                        FROM
+                                            pur_rfx_password rp
+                                        WHERE
+                                            rp.rfx_header_id = rh.rfx_header_id AND
+                                            rp.open_user_id  = ${/session/@user_id}
+                                    )
+                                    = 'N'
+                                THEN 'Y'
+                                ELSE 'N'
+                            END ) AS password_flag                                  
+                    FROM
+                        pur_rfx_headers rh,
+                        pur_organizations_vl pov
+                    WHERE
+                        rh.pur_organization_id                                                    = pov.pur_organization_id(+) AND
+                        pur_rfx_pkg.get_rfx_actual_status(rh.rfx_header_id,${/session/@user_id}) IN ('NEW','SCORED','REJECTED','SUBMITTED','ISSUED','PREQUAL','PREQUAL_OFF','CUT_OFF','WAITED_ROUND','DEPARTMENT_APPROVE','APPROVED','DEP_REJECTED') AND
+                        rh.firsttrail_comments                                                   = ${/session/@business_group}  /* 供应商bg过滤-rh.firsttrail_comments存放owner_business_group字段 */
+                    ) v #WHERE_CLAUSE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="rfx_number" queryExpression="rfx_number like &apos;%&apos;||${@rfx_number}||&apos;%&apos;"/>
+        <bm:query-field name="title" queryExpression="title like &apos;%&apos;||${@title}||&apos;%&apos;"/>
+        <bm:query-field name="owner_business_unit_id" queryExpression="owner_business_unit_id = ${@owner_business_unit_id}"/>
+        <bm:query-field name="status" queryExpression="status = ${@status}"/>
+        <bm:query-field name="currency_code" queryExpression="currency_code = ${@currency_code}"/>
+        <bm:query-field name="creation_date_from" queryExpression="v.creation_date &gt;= to_date(${@creation_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="creation_date_to" queryExpression="v.creation_date &lt; to_date(${@creation_date_to},&apos;yyyy-mm-dd&apos;)+1"/>
+        <bm:query-field name="feedback_expiry_date_from" queryExpression="v.feedback_expiry_date_from &gt;= to_date(${@feedback_expiry_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="feedback_expiry_date_to" queryExpression="v.feedback_expiry_date_to &lt; to_date(${@feedback_expiry_date_to},&apos;yyyy-mm-dd&apos;)+1"/>
+    </bm:query-fields>
+</bm:model>

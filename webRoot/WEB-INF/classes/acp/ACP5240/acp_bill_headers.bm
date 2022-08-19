@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao $ 
+    $Date: 2014-11-26 下午03:14:06 $  
+    $Revision: 1.0 $ 
+    $Purpose: 非寄销开票单查询，开票单头信息查询页面 $
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="v.creation_date DESC">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        h.header_id,
+                        NVL(h.differ_total_amount,0) differ_total_amount, --差异金额
+                        h.header_id invoice_header_id,                    --打印发票id
+                        h.owner_business_group,
+                        h.owner_company_id,
+                        h.coop_business_group,
+                        h.coop_company_id,
+                        h.bill_number,
+                        h.confirm_date,
+                        (SELECT
+                            io.business_unit_id
+                        FROM
+                            acp_bill_details d,
+                            inv_organizations io
+                        WHERE
+                            d.organization_id = io.inv_organization_id AND
+                            d.header_id       = h.header_id AND
+                            rownum            = 1
+                        ) AS business_unit_id,
+                        (SELECT
+                            buv.business_unit_name
+                        FROM
+                            acp_bill_details d,
+                            inv_organizations io,
+                            fnd_business_units_vl buv
+                        WHERE
+                            d.organization_id   = io.inv_organization_id AND
+                            io.business_unit_id = buv.business_unit_id AND
+                            d.header_id         = h.header_id AND
+                            rownum              = 1
+                        ) AS business_unit_name,
+                        (SELECT
+                            d.organization_id
+                        FROM
+                            acp_bill_details d
+                        WHERE
+                            d.header_id = h.header_id AND
+                            rownum      = 1
+                        ) AS inv_organization_id,
+                        h.company_id,
+                        h.company_name,
+                        h.vendor_id,
+                        (SELECT
+                            NVL(pvv.coop_company_id, -1)
+                        FROM
+                            pur_vendors_v pvv
+                        WHERE
+                            pvv.vendor_id = h.vendor_id
+                        ) AS vendor_company_id,
+                        h.vendor_code,
+                        h.invoice_num,
+                        h.invoice_date,
+                        (SELECT
+                            TRUNC(h.tax_total_amount / (1+ac.tax_rate/100),4)
+                        FROM
+                            acp_bill_lines ac
+                        WHERE
+                            ac.header_id = h.header_id AND
+                            rownum       = 1
+                        ) tax_amount,
+                        h.tax_total_amount,
+                        h.gl_date,
+                        (select loan_month
+						  from (select *
+						          from (select substr(d.receipt_date, 4, 5) loan_month, count(1) a
+						                  from acp_bill_details d
+						                 where d.header_id = h.header_id
+						                 group by substr(d.receipt_date, 4, 5))
+						         order by a desc) v where rownum =1) loan_month,
+                        h.ebs_status,
+                        h.quantity_total,
+                        h.vendor_name,
+                        h.vendor_site_id,
+                        (SELECT
+                            NVL(pvs.display_site_code, pvs.vendor_site_code)
+                        FROM
+                            pur_vendor_sites_vl pvs
+                        WHERE
+                            pvs.vendor_site_id = h.vendor_site_id
+                        ) AS vendor_site_code,
+                        (SELECT
+                            pvs.site_name
+                        FROM
+                            pur_vendor_sites_vl pvs
+                        WHERE
+                            pvs.vendor_site_id = h.vendor_site_id
+                        ) AS vendor_site_name,
+                        h.currency_code,
+                        fnd_document_control_pkg.get_reality_value(p_rule_code => 'PRICE_SECRECY', p_role_id => ${/session/@role_id}, p_foundation_code => 'AP_BILL', p_document_id => h.header_id, p_control_area => 'INTERNAL', p_business_group => ${/session/@business_group}, p_value => h.amount) AS amount,
+                        h.status,
+                        (SELECT
+                            code_value_name
+                        FROM
+                            sys_code_values_v
+                        WHERE
+                            code       = 'BILL_STATUS' AND
+                            code_value = h.status
+                        ) AS status_display,
+                        h.creation_date,
+                        TO_CHAR(h.creation_date, 'yyyy-mm-dd hh24:mi:ss') AS creation_date_fmt,
+                        h.release_date,
+                        TO_CHAR(h.release_date, 'yyyy-mm-dd hh24:mi:ss') AS release_date_fmt,
+                        h.created_by created_by_id,
+                        (SELECT description FROM sys_user u WHERE u.user_id = h.created_by
+                        ) AS created_by_desc,
+                        h.vendor_desc,
+                        h.header_desc,
+                        h.pur_buyer_id,
+                        (SELECT
+                            pbv.buyer_desc
+                        FROM
+                            pur_buyers_vl pbv
+                        WHERE
+                            pbv.buyer_id = h.pur_buyer_id
+                        ) pur_buyer_name,
+                        h.pur_organization_id,
+                        (SELECT
+                            pov.description
+                        FROM
+                            pur_organizations_vl pov
+                        WHERE
+                            pov.pur_organization_id = h.pur_organization_id
+                        ) pur_organization_name,
+                        h.vendor_create_flag,
+                        NULL AS useless_id_1,
+                        NULL AS useless_id_2,
+                        NULL AS useless_id_3,
+                        NULL AS useless_id_4,
+                        NULL AS useless_id_5,
+                        NULL AS useless_id_6,
+                        NULL AS useless_id_7,
+                        NULL AS useless_id_8,
+                        NULL AS useless_id_9
+                    FROM
+                        acp_bill_headers h
+                    WHERE
+                        h.status != 'NEW' AND
+                        (
+                            EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                fnd_config_center_bg_item_dtl ccbid
+                            WHERE
+                                ccbid.config_classify_code    = 'PO' AND
+                                ccbid.config_item_code        = 'PO_02' AND
+                                ccbid.config_item_detail_code = 'PO_02_05' AND
+                                ccbid.business_group          = h.owner_business_group AND
+                                ccbid.bg_config_item_value    = 'Y'
+                            ) OR
+                            NOT EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                fnd_config_center_bg_item_dtl ccbid
+                            WHERE
+                                ccbid.config_classify_code    = 'PO' AND
+                                ccbid.config_item_code        = 'PO_02' AND
+                                ccbid.config_item_detail_code = 'PO_02_05' AND
+                                ccbid.business_group          = h.owner_business_group
+                            )
+                        )
+                    ) v #AUTHORIY_FROM# #WHERE_CLAUSE# #AUTHORIY_WHERE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter expression="1=1"/>
+        <bm:data-filter expression="v.owner_business_group = ${/session/@business_group}"/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field name="header_id" queryExpression="v.header_id = ${@bill_header_id}"/>
+        <bm:query-field name="vendor_id" queryExpression="v.vendor_id = ${@vendor_id}"/>
+        <bm:query-field name="status" queryExpression="v.status = ${@status}"/>
+        <bm:query-field name="pur_buyer_id" queryExpression="exists (select 1 from acp_bill_details ad,pur_headers_all pha where ad.header_id = v.header_id and pha.pur_header_id = ad.po_header_id and pha.agent_id = ${@pur_buyer_id})"/>
+        <bm:query-field name="pur_organization_id" queryExpression="exists(select 1 from acp_bill_details ad,pur_headers_all pha where ad.header_id = v.header_id and pha.pur_header_id = ad.po_header_id and pha.pur_organization_id = ${@pur_organization_id})"/>
+        <bm:query-field name="bill_number" queryExpression="v.bill_number like &apos;%&apos;||trim(${@bill_number})||&apos;%&apos;"/>
+        <bm:query-field name="creation_date_from" queryExpression="v.creation_date &gt;= to_date(${@creation_date_from},&apos;yyyy-mm-dd hh24:mi:ss&apos;)"/>
+        <bm:query-field name="creation_date_to" queryExpression="v.creation_date &lt;= to_date(${@creation_date_to},&apos;yyyy-mm-dd hh24:mi:ss&apos;)+1"/>
+        <bm:query-field name="release_date_from" queryExpression="v.release_date &gt;= to_date(${@release_date_from},&apos;yyyy-mm-dd hh24:mi:ss&apos;)"/>
+        <bm:query-field name="release_date_to" queryExpression="v.release_date &lt;= to_date(${@release_date_to},&apos;yyyy-mm-dd hh24:mi:ss&apos;)+1"/>
+        <bm:query-field name="confirm_date_from" queryExpression="v.confirm_date &gt;= to_date(${@confirm_date_from},&apos;yyyy-mm-dd hh24:mi:ss&apos;)"/>
+        <bm:query-field name="confirm_date_to" queryExpression="v.confirm_date &lt;= to_date(${@confirm_date_to},&apos;yyyy-mm-dd hh24:mi:ss&apos;)+1"/>
+        <bm:query-field name="business_unit_id" queryExpression="v.business_unit_id = ${@business_unit_id}"/>
+        <bm:query-field name="receipt_num" queryExpression="exists(select 1 from acp_bill_details d where d.header_id = v.header_id and d.receipt_num like &apos;%&apos;||trim(${@receipt_num})||&apos;%&apos;)"/>
+        <bm:query-field name="po_number" queryExpression="(EXISTS( SELECT 1 FROM acp_bill_lines l, acp_bill_details d, pur_headers_all ah WHERE l.header_id = v.header_id AND l.line_id = d.line_id AND d.po_header_id = ah.pur_header_id AND ah.display_po_number like &apos;%&apos;||trim(${@po_number})||&apos;%&apos;))"/>
+    </bm:query-fields>
+    <authority foundation_code="AP_BILL">
+        <authority-segment source_alias="v" source_name="owner_company_id" type="COMPANY"/>
+        <authority-segment source_alias="v" source_name="business_unit_id" type="BUSINESS_UNIT"/>
+        <authority-segment source_alias="v" source_name="inv_organization_id" type="INV_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="created_by_id" type="CREATER"/>
+        <authority-segment source_alias="v" source_name="vendor_company_id" type="VENDOR"/>
+        <authority-segment source_alias="v" source_name="vendor_site_id" type="VENDOR_SITE"/>
+        <authority-segment source_alias="v" source_name="useless_id_1" type="RECEIVER"/>
+        <authority-segment source_alias="v" source_name="useless_id_2" type="CLIENT"/>
+        <authority-segment source_alias="v" source_name="useless_id_3" type="CLIENT_SITE"/>
+        <authority-segment source_alias="v" source_name="pur_buyer_id" type="PUR_BUYER"/>
+        <authority-segment source_alias="v" source_name="pur_organization_id" type="PUR_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id_5" type="SD_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id_6" type="PURHASE_MATERIAL"/>
+        <authority-segment source_alias="v" source_name="useless_id_7" type="SALES_PRODUCTION"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+        	var cx = Packages.aurora.javascript.Context.getCurrentContext();
+			Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+        	Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

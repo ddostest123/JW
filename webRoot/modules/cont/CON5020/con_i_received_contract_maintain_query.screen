@@ -1,0 +1,247 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author:Jehu 15294
+    $Date: 2018年3月29日 15:08:34
+    $Revision: 2.0  
+    $Purpose:我收到的合同 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" customizationEnabled="true">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;CONTRACT_TYPE&apos;" fetchAll="true" model="public.fnd_flex_value_v_lov" rootPath="contract_types"/>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;CONTRACT_STATUS&apos;" fetchAll="true" model="public.fnd_flex_value_v_lov" rootPath="contract_status"/>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;CONTRACT_PROPERTY&apos;" fetchAll="true" model="public.fnd_flex_value_v_lov" rootPath="contract_propertys"/>
+        <a:model-query defaultWhereClause="v.config_classify_code = &apos;CONTRACT&apos; AND v.config_item_code = &apos;CONTRACT_05&apos;" fetchAll="true" model="public.get_fnd_config_center_coop_bg_item_value" rootPath="bg_item_contract_05"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="con5020_contract_maintain_link" url="${/request/@context_path}/modules/cont/CON5020/con_i_received_contract_maintain.screen"/>
+        <a:link id="con5020_batch_verify_effect_link" url="${/request/@context_path}/modules/cont/CON5020/con_contract_verify_effect.svc"/>
+        <a:link id="con5020_reject_effect_link" url="${/request/@context_path}/modules/cont/CON5020/con_contract_reject_effect.screen"/>
+        <a:link id="con5020_contract_update_print_link" url="${/request/@context_path}/modules/cont/CON5010/con_contract_print_word.screen"/>
+        <a:link id="con5020_con_sign_link" url="${/request/@context_path}/modules/cont/CON5020/con_contract_sign.svc"/>
+        <a:link id="con5020_sign_contract_online_link" url="${/request/@context_path}/modules/cont/CON5020/con_contract_sign_online.screen"/>
+        <a:link id="con5020_verify_effect_link" url="${/request/@context_path}/autocrud/cont.CON5020.con_contract_verify_effect"/>
+        <a:link id="con5020_confirm_contract_link" url="${/request/@context_path}/autocrud/cont.CON5020.con_contract_confirm"/>
+        <script><![CDATA[
+        	//是否启用在线签章标志
+        	g_sign_online_flag = '${/model/bg_item_contract_05/record/@bg_config_item_value}';
+        	
+            function con5020_contract_query() {
+                $('con5020_contract_result_ds').query();
+            }
+            
+            function where_con_num_detail(contract_header_id) {
+                new Aurora.Window({
+                    id: 'con5020_where_con_num_detail_win',
+                    url: $('con5020_contract_maintain_link').getUrl() + '?contract_header_id=' + contract_header_id,
+                    params: null,
+                    title: '',
+                    fullScreen: true
+                });
+            }
+            
+            function where_con_num_renderer(value, record, name) {
+                var contract_header_id = record.get('contract_header_id');
+                if (!record.isNew) {
+                    return '<a href="javascript:where_con_num_detail(\'' + contract_header_id + '\')">' + value + '</a>';
+                }
+            }
+            
+            //合同直接确认
+            
+            function con5020Confirm() {
+                var rs = $('con5020_contract_result_ds').getSelected();
+                if (rs.length < 1) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:CHOOSE_ONE_RECORD}');
+                    return;
+                }
+                var header_id = rs[0].get('contract_header_id');
+                Aurora.showConfirm('${l:PROMPT}', '${l:CON5020.CONFIRM_VERIFICATION_EFFECT}', function(cmp) {
+                    Aurora.request({
+                        url: $('con5020_confirm_contract_link').getUrl() + '/execute',
+                        para: {
+                        	contract_header_id: header_id
+                    	},
+                        success: function() {
+                            con5020_contract_query();
+                        },
+                        scope: this
+                    });
+                }, null, null, 85);
+            
+            }
+            
+            //通过在线签章确认
+            
+            function con5020SignOnline() {
+                var rs = $('con5020_contract_result_ds').getSelected();
+                if (rs.length != 1) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:CHOOSE_ONE_RECORD}');
+                    return;
+                }
+                var param = rs[0].data;
+                Aurora.showConfirm('${l:PROMPT}', '${l:CON5020.CONFIRM_SIGN}', function(cmp) {
+                    lock_current_window();
+                    Aurora.request({
+                        url: $('con5020_con_sign_link').getUrl(),
+                        para: param,
+                        success: function(res) {
+                            if (!res.result.attribute10) {
+                                Aurora.showMessage('${l:PROMPT}', '${l:CON5010.NO_DOC}');
+                            } else {
+                                // window.open(res.result.attribute10);
+                                // Aurora.post(res.result.attribute10);
+                                window.open(res.result.attribute10, param);
+                                unlock_current_window();
+                            }
+                        },
+                        error: function() {
+                            unlock_current_window();
+                            con5020_contract_query();
+                        },
+                        scope: this
+                    });
+                }, null, null, 85);
+            }
+            
+            //合同签署
+            function con5020SignFun() {
+                if('Y' == g_sign_online_flag){
+                    //通过在线签章确认
+                    con5020SignOnline();
+                }else{
+                    //直接确认
+                    con5020Confirm();
+                }
+            }
+            
+            //合同拒绝生效
+            
+            function con5020RejectEffectFun() {
+                var rs = $('con5020_contract_result_ds').getSelected();
+                if (rs.length != 1) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:CHOOSE_ONE_RECORD}');
+                    return;
+                }
+                Aurora.showConfirm('${l:PROMPT}', '${l:CON5020.CONFIRM_REJECT_EFFECT}', function(cmp) {
+                    new Aurora.Window({
+                        id: 'con5020_contract_reject_effect_window',
+                        url: $('con5020_reject_effect_link').getUrl(),
+                        params: null,
+                        title: '',
+                        height: 150,
+                        width: 456
+                    }).on('beforeclose', function() {
+                        con5020_contract_query();
+                    });
+                }, null, null, 85);
+            }
+            
+            function lock_current_window() {
+                Aurora.Masker.mask(Ext.getBody(), '${l:HLS.EXECUTING}');
+            }
+            
+            function unlock_current_window() {
+                Aurora.Masker.unmask(Ext.getBody());
+            }
+            
+            //在线签章
+            
+            function con5020_sign_contract_online(url) {
+                new Aurora.Window({
+                    id: 'con5020_sign_contract_online_win',
+                    url: $('con5020_sign_contract_online_link').getUrl(),
+                    params: {
+                        url: url
+                    },
+                    title: '',
+                    fullScreen: true
+                });
+            }
+            
+            //查看合同签章
+               // function con5020ViewSignedFun(){
+             // var record = $('con5020_contract_result_ds').getSelected();
+             // var url = record["0"].data.attribute11;
+             // if(!url){
+             // Aurora.showMessage('${l:PROMPT}', '${l:CON5020.NOT_SIGNED}');
+             // return;
+             // }else{
+             // window.open(url);
+             // }
+             // } 
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="con5020_contract_types">
+                <a:datas dataSource="/model/contract_types"/>
+            </a:dataSet>
+            <a:dataSet id="con5020_contract_query_ds">
+                <a:fields>
+                    <a:field name="contract_number"/>
+                    <a:field name="contract_desc"/>
+                    <a:field name="direction_name" lovGridHeight="320" lovHeight="450" lovService="cont.CON2010.con_contract_direction_lov" lovWidth="520" title="CON201.CON_BASIC_CLAUSE.CLAUSE_USAGE_NAME">
+                        <a:mapping>
+                            <a:map from="direction_name" to="direction_name"/>
+                            <a:map from="direction_id" to="direction_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="direction_id"/>
+                    <a:field name="contract_type_code"/>
+                    <a:field name="contract_type_name" displayField="flex_desc" options="con5020_contract_types" returnField="contract_type_code" valueField="flex_value"/>
+                    <a:field name="contract_object_name" autoComplete="true" lovGridHeight="320" lovHeight="450" lovService="qms.QMS5050.fnd_coop_companies_lov" lovWidth="500" title="CON_CONTRACT_HEADERS.CONTRACT_OBJECT_NAME">
+                        <a:mapping>
+                            <a:map from="coop_company_id" to="contract_object_id"/>
+                            <a:map from="coop_company_code" to="contract_object_code"/>
+                            <a:map from="coop_company_desc" to="contract_object_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="clause_template_name" lovGridHeight="320" lovHeight="450" lovService="cont.CON5010.con_contract_header_clause_template_lov" lovWidth="500" title="CON202.CON_CLAUSE_TEMPLET.DESCRIPTION">
+                        <a:mapping>
+                            <a:map from="description" to="clause_template_name"/>
+                            <a:map from="language" to="language"/>
+                            <a:map from="templet_id" to="clause_template_id"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="con5020_contract_result_ds" autoCount="false" autoQuery="true" fetchAll="true" model="cont.CON5020.con_contract_headers_received_query" queryDataSet="con5020_contract_query_ds" selectable="true" selectionModel="radio"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar marginWidth="50" style="margin-left:3px">
+                <!-- <a:gridButton click="con5020_contract_query" text="HLS.QUERY" width="100"/> -->
+                <a:gridButton bind="con5020_contract_grid" click="con5020SignFun" text="CON5020.SIGN" width="100"/>
+                <a:gridButton bind="con5020_contract_grid" click="con5020RejectEffectFun" text="CON5020.REJECT_EFFECT" width="100"/>
+                <!-- <a:gridButton bind="con5020_contract_grid" click="con5020ViewSignedFun" text="CON5020.VIEW_SIGNED" width="100"/> -->
+            </a:screenTopToolbar>
+            <a:queryForm id="con5020_query_form" bindTarget="con5020_contract_query_ds" marginWidth="50" resultTarget="con5020_contract_result_ds" style="margin-left:3px">
+                <a:formToolBar>
+                    <a:hBox labelWidth="100">
+                        <a:textField name="contract_number" bindTarget="con5020_contract_query_ds" prompt="CON_CONTRACT_HEADERS.CONTRACT_NUMBER"/>
+                        <a:textField name="contract_desc" bindTarget="con5020_contract_query_ds" prompt="CON_CONTRACT_HEADERS.CONTRACT_DESC"/>
+                        <!-- <a:lov name="contract_object_name" bindTarget="con5020_contract_query_ds" prompt="CON_CONTRACT_HEADERS.CONTRACT_OBJECT_NAME"/> -->
+                        <!-- <a:lov name="clause_template_name" bindTarget="con5020_contract_query_ds" prompt="CON_CONTRACT_HEADERS.CLAUSE_TEMPLATE_NAME"/> -->
+                        <!-- <a:lov name="direction_name" bindTarget="con5020_contract_query_ds" prompt="CON_CONTRACT_HEADERS.DIRECTION_NAME"/> -->
+                        <!-- <a:comboBox name="contract_type_name" bindTarget="con5020_contract_query_ds" prompt="CON_CONTRACT_HEADERS.CONTRACT_TYPE_NAME"/> -->
+                    </a:hBox>
+                </a:formToolBar>
+            </a:queryForm>
+            <a:grid id="con5020_contract_grid" bindTarget="con5020_contract_result_ds" marginHeight="180" marginWidth="50" navBar="true">
+                <a:columns>
+                    <a:column name="contract_number" align="center" prompt="CON_CONTRACT_HEADERS.CONTRACT_NUMBER" renderer="where_con_num_renderer" width="80"/>
+                    <a:column name="status_desc" prompt="CON_CONTRACT_HEADERS.STATUS" width="40"/>
+                    <a:column name="contract_desc" prompt="CON_CONTRACT_HEADERS.CONTRACT_DESC" width="100"/>
+                    <a:column name="contract_object_name" prompt="CON_CONTRACT_HEADERS.CONTRACT_OBJECT_NAME" width="100"/>
+                    <a:column name="contract_type_name" prompt="CON_CONTRACT_HEADERS.CONTRACT_TYPE_NAME" width="50"/>
+                    <!-- <a:column name="contract_property_name" prompt="CON_CONTRACT_HEADERS.CONTRACT_PROPERTY_NAME" width="50"/> -->
+                    <!-- <a:column name="direction_name" prompt="CON_CONTRACT_HEADERS.DIRECTION_NAME" width="100"/> -->
+                    <a:column name="clause_template_name" prompt="CON_CONTRACT_HEADERS.CLAUSE_TEMPLATE_NAME" width="100"/>
+                    <a:column name="company_short_name" prompt="CON_CONTRACT_HEADERS.COMPANY_SHORT_NAME" width="100"/>
+                    <a:column name="project_code" prompt="CON_CONTRACT_HEADERS.PROJECT_CODE" width="50"/>
+                    <a:column name="master_contract_number" prompt="CON_CONTRACT_HEADERS.MASTER_CONTRACT_NUMBER" width="100"/>
+                    <a:column name="archive_code" prompt="CON_CONTRACT_HEADERS.ARCHIVE_CODE" width="50"/>
+                    <a:column name="created_by_name" prompt="CON_CONTRACT_HEADERS.CREATED_BY_NAME" width="60"/>
+                    <a:column name="creation_date" prompt="CON_CONTRACT_HEADERS.CREATION_DATE" renderer="Aurora.formatDate" width="50"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

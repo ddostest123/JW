@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao  
+    $Date: 2014-10-30 下午04:38:31  
+    $Revision: 1.0  
+    $Purpose: APP，登录后订单列表
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:fields>
+        <bm:field name="pur_header_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="PUR_HEADER_ID"/>
+        <bm:field name="po_num" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="PO_NUM"/>
+        <bm:field name="vendor_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="VENDOR_ID"/>
+        <bm:field name="vendor_name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="VENDOR_NAME"/>
+        <bm:field name="srm_status" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="SRM_STATUS"/>
+        <bm:field name="srm_status_name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="SRM_STATUS_NAME"/>
+        <bm:field name="total_amount" databaseType="NUMBER" datatype="java.lang.Double" physicalName="TOTAL_AMOUNT"/>
+        <bm:field name="release_date" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="RELEASE_DATE"/>
+        <bm:field name="release_time" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="RELEASE_TIME"/>
+        <bm:field name="release_day" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="RELEASE_DAY"/>
+        <bm:field name="urgent_status" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="URGENT_STATUS"/>
+        <bm:field name="currency_code" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="CURRENCY_CODE"/>
+        <bm:field name="currency_symbol" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="CURRENCY_SYMBOL"/>
+        <bm:field name="urgent_status_name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="URGENT_STATUS_NAME"/>
+    </bm:fields>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            	select * from (SELECT v.*,ceil(rownum/30) as page_num
+				  FROM (SELECT pha.pur_header_id,
+				               nvl(pha.display_po_number,
+				                   pha.segment1) AS po_num,
+				               pha.vendor_id,
+				               pha.vendor_name,
+				               pha.srm_status,
+				               (SELECT cvv.code_value_name
+				                  FROM sys_code_values_v cvv
+				                 WHERE cvv.code = 'SRM_STATUS'
+				                       AND cvv.code_value = pha.srm_status) AS srm_status_name,
+				               (SELECT round(SUM(nvl(l.unit_price,
+				                                     0) * nvl(l.quantity,
+				                                              0)),
+				                             2)
+				                  FROM pur_lines_all l
+				                 WHERE l.pur_header_id = pha.pur_header_id) AS total_amount,
+				               to_char(pha.release_date,
+				                       'yyyy-mm-dd') AS release_date,
+				               to_char(pha.release_date,
+				                       'hh24:mi') AS release_time,
+				               decode(to_char(pha.release_date - 1,
+				                              'd'),
+				                      '1',
+				                      '星期一',
+				                      '2',
+				                      '星期二',
+				                      '3',
+				                      '星期三',
+				                      '4',
+				                      '星期四',
+				                      '5',
+				                      '星期五',
+				                      '6',
+				                      '星期六',
+				                      '7',
+				                      '星期日') AS release_day,
+				               pha.urgent_status,
+				               nvl((SELECT cvv.code_value_name
+          						FROM sys_code_values_v cvv
+         						WHERE cvv.code = 'PUR_PO_URGENT_STATUS'
+               					AND cvv.code_value = pha.urgent_status),'可加急') AS urgent_status_name,
+				               pha.currency_code,
+				               (SELECT gcv.currency_symbol FROM gld_currency_vl gcv WHERE gcv.currency_code = pha.currency_code) currency_symbol
+				          FROM pur_headers_all pha
+				          #WHERE_CLAUSE# 
+				          order by release_date desc,release_time desc ) v
+				 WHERE v.po_num LIKE '%' || TRIM(${@po_num}) || '%'
+				 	   AND ((nvl(${@exclude_confirm_flag},
+				                 'N') = 'Y' AND v.srm_status = 'RELEASED') OR
+				       (nvl(${@exclude_confirm_flag},
+				                 'N') = 'N' AND 1 = 1))
+				       AND ((nvl(${@urgent_status},
+				                 'N') = 'Y' AND v.urgent_status = 'URGENT') OR
+				       (nvl(${@urgent_status},
+				                 'N') = 'N' AND 1 = 1))
+				       AND ((${@release_date_from} IS NOT NULL AND
+				       to_date(${@release_date_from},
+				                     'yyyy-mm-dd') <= to_date(v.release_date,
+				                                                    'yyyy-mm-dd')) OR (${@release_date_from} IS NULL AND 1 = 1))
+				       AND ((${@release_date_to} IS NOT NULL AND
+				       to_date(${@release_date_to},
+				                     'yyyy-mm-dd') >= to_date(v.release_date,
+				                                                    'yyyy-mm-dd')) OR (${@release_date_to} IS NULL AND 1 = 1))
+				  ) where ((${@page_num} is not null and ${@page_num}=page_num) or (${@page_num} is null and 1=1))
+				                                                   
+			]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter name="business_group"/>
+                <bm:parameter name="user_id"/>
+                <bm:parameter name="po_num"/>
+                <bm:parameter name="urgent_status"/>
+                <bm:parameter name="exclude_confirm_flag"/>
+                <bm:parameter name="release_date_from"/>
+                <bm:parameter name="release_date_to"/>
+                <bm:parameter name="page_num"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="to_ship" queryExpression=" pha.erp_status = &apos;OPEN&apos; AND pha.srm_status IN (&apos;RELEASED&apos;,&apos;CONFIRMED&apos;) AND EXISTS (SELECT 1 FROM pur_line_locations_all pll WHERE pll.pur_header_id = pha.pur_header_id AND (pll.quantity - nvl(pll.occupy_quantity,0) + nvl(pll.quantity_return_to_vendor,0)) &gt; 0)"/>
+        <!-- <bm:query-field name="page_num" queryExpression="page_num=2"/> -->
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="1=1"/>
+        <bm:data-filter expression="pha.last_version = &apos;Y&apos; AND pha.owner_business_group = ${@business_group} AND EXISTS (SELECT 1 FROM fnd_user_authority fua WHERE fua.authority_type = &apos;VENDOR&apos; AND fua.assign_id = pha.vendor_id AND fua.user_id = ${@user_id})"/>
+    </bm:data-filters>
+</bm:model>

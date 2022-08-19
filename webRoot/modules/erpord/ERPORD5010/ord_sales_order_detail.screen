@@ -1,0 +1,1079 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: zhenweiyin  
+    $Date: 2012-10-15 下午12:25:46  
+    $Revision: 1.0  
+    $Purpose: 
+    $modify: xuls
+    $ 基本上所有逻辑和设置初始值都改动。  以及所有空间例如LOV COMBOX和提交的过程写法
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query model="erppublic.get_default_information" rootPath="erpord5010_def_info"/>
+        <a:model-query defaultWhereClause="employee_id=(select fu.employee_id from erpfnd_users fu where fu.user_id = ${/session/@user_id})" model="erpfnd.ERPFND1030.fnd_employees" rootPath="erpord5010_get_salesmen_employee"/>
+        <a:model-query defaultWhereClause="t1.doc_type=&apos;ORD_SALES_ORDER&apos;" model="erpfnd.ERPFND1090.fnd_coding_rule_docs" rootPath="erpord5010_get_manual_flag"/>
+        <a:model-query model="db.erpfnd_precision_pkg.get_price_precision" rootPath="erpord5010_get_price_precision"/>
+        <a:model-query fetchAll="true" model="erpord.ERPORD5010.ord_sales_order_headers" rootPath="erpinit_headers"/>
+        <a:model-query defaultWhereClause="t1.company_id = ${@company_id}" model="erpfnd.ERPFND1010.fnd_companies" rootPath="erpord5010_fnd_tax"/>
+        <a:model-query fetchAll="true" model="erpord.ERPORD5010.ord_sales_order_lines" rootPath="erpord5010_init_lines"/>
+        <a:model-query defaultWhereClause="t1.enabled_flag = &apos;Y&apos; and t1.warehouse_type in(&apos;NORMAL&apos;,&apos;SCRAP&apos;)" fetchAll="true" model="erpinv.ERPINV5310.inv_sales_warehouses_lov" rootPath="erpord5010_warehouse_list"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="erpord5010_order_submit_link" model="db.erpord_sales_order_pkg.submit_ord_sales" modelaction="execute"/>
+        <a:link id="erpord5010_get_item_info_link" model="db.erpord_sales_order_pkg.get_item_info" modelaction="execute"/>
+        <a:link id="erpord5010_order_delete_link" model="db.erpord_sales_order_pkg.del_ord_sales_header" modelaction="delete"/>
+        <a:link id="erpord5010_order_close_link" model="db.erpord_sales_order_pkg.close_ord_sales_header" modelaction="execute"/>
+        <script src="${/request/@context_path}/modules/erpord/ord.js" type="text/javascript"/>
+        <a:link id="erpord_5010_order_line_import_link" url="${/request/@context_path}/modules/erpord/ERPORD5010/ord_sales_order_lines_import_upload.screen"/>
+        <a:link id="erpord_5010_attachments_upload_link" url="${/request/@context_path}/uploadFile.screen"/>
+        <script><![CDATA[
+            var erpord5010_add_flag;
+            var import_flag = false;
+            var erpimportUrl;
+            
+            function erpord5010_new_init() {
+                var company_id = '${/parameter/@company_id}';
+                var order_head_record = $('erpord5010_order_header_new_ds').getAt(0);
+                order_head_record.set('manual_flag', 'N');
+            
+                var manual_record = $('erpord5010_get_manual_ds').getAt(0);
+                var manual_flag;
+                order_head_record.set('company_id', company_id);
+                if (typeof(manual_record) == 'undefined') {
+                    manual_flag = 'Y';
+                    order_head_record.set('manual_flag', 'Y');
+                } else {
+                    manual_flag = manual_record.get('manual_flag');
+                }
+                //判断是否为发出商品，确定选用的lov
+                /* var goods_issue_flag = order_head_record.get('goods_issue_flag');
+                 var warehouses_ds = $('ord5010_warehouses_ds');
+                 if (typeof(goods_issue_flag) == 'undefined' || goods_issue_flag == 'N') {
+                 warehouses_ds.setQueryParameter('enabled_flag', 'Y');
+                 warehouses_ds.setQueryParameter('warehouse_type', null);
+                 warehouses_ds.setQueryParameter('warehouse_type_not', 'ISSUE');
+                 warehouses_ds.query();
+                 } else {
+                 warehouses_ds.setQueryParameter('enabled_flag', 'Y');
+                 warehouses_ds.setQueryParameter('warehouse_type', 'ISSUE');
+                 warehouses_ds.setQueryParameter('warehouse_type_not', null);
+                 warehouses_ds.query();
+                 } */
+            
+                if ($('erpord5010_get_salesmen_employee_ds').getAll().length != 0) {
+                    var employee_record = $('erpord5010_get_salesmen_employee_ds').getAt(0);
+                    order_head_record.set('salesmen_employee_name', employee_record.get('employee_name'));
+                    order_head_record.set('salesmen_employee_id', employee_record.get('employee_id'));
+                }
+                var base_sys_record = $('erpord5010_get_sys_ds').getAt(0);
+                order_head_record.set('currency_code', base_sys_record.get('functional_currency_code'));
+                //order_head_record.set('currency_code_name', base_sys_record.get('functional_currency_code_name'));
+                if (typeof(order_head_record.get('order_date')) == 'undefined' || order_head_record.get('order_date') == '') {
+                    order_head_record.set('order_date', Aurora.formatDate('${/model/erpord5010_def_info/record/@current_date}'));
+                }
+                if (manual_flag == 'Y') {
+                    order_head_record.getField('order_number').setReadOnly(false);
+                    order_head_record.getField('order_number').setRequired(true);
+                } else {
+                    if (${/parameter/@sales_order_id} <= 0) {
+                        order_head_record.set('order_number', '${l:ERPINV_NUM_WAITING_FOR_CREATE}');
+                        $('erpord5010_attachments_upload_btn').disable();
+                        erpord5010_add_flag = false;
+                    }
+                }
+            
+            
+                var order_line_ds = $('erpord5010_order_line_ds');
+                if ($('erpord5010_order_header_new_ds').getAt(0).isNew) {
+                    $('erpord5010_order_line_close_btn').disable();
+                    $('erpord5010_order_line_open_btn').disable();
+                }
+            
+                if (order_line_ds.getAll().length > 0) {
+                    order_head_record.getField('currency_code').setReadOnly(true);
+                    order_head_record.getField('return_order_flag').setReadOnly(true);
+                    order_head_record.getField('customer_name').setReadOnly(true);
+                }
+            
+                if ('${/model/erpord5010_fnd_tax/record/@tax_nature}' == 'SMALL_SCALE_TAXPAYERS') {
+                    $('erpord5010_result_gd').hideColumn('tax_rate');
+                    $('erpord5010_result_gd').hideColumn('tax_included_flag');
+                }
+            }
+            
+            //获取当前格式化日期
+            
+            function erpord5010_getNowFormatDate() {
+                var day = new Date();
+                var Year = 0;
+                var Month = 0;
+                var Day = 0;
+                var CurrentDate = "";
+                //初始化时间
+                Year = day.getFullYear(); //ie火狐下都可以
+                Month = day.getMonth() + 1;
+                Day = day.getDate();
+            
+                CurrentDate += Year + "-";
+            
+                if (Month >= 10) {
+                    CurrentDate += Month + "-";
+                } else {
+                    CurrentDate += "0" + Month + "-";
+                }
+                if (Day >= 10) {
+                    CurrentDate += Day;
+                } else {
+                    CurrentDate += "0" + Day;
+                }
+                return CurrentDate;
+            }
+            
+            function erpord5010_order_line_update(dataSet, record, name, value, oldvalue) {
+                var amount;
+                if (name == "trade_quantity") {
+                    amount = erpord5010_get_amount(record);
+                    if (!isNaN(amount)) {
+                        record.set('amount', amount);
+                    }
+                    var trad_uom = record.get('trade_uom_name');
+                    var quantity_uom = record.get('primary_uom_name');
+                    if (trad_uom == quantity_uom) {
+                        record.set('primary_quantity', value);
+                    }
+                } else if (name == "trade_uom_name") {
+                    //在此修改单位不清除数量
+                    //record.set('trade_quantity', null);
+                    //record.set('primary_quantity', null);
+                    var trad_uom_tmp = record.get('trade_uom_name');
+                    var quantity_uom_tmp = record.get('primary_uom_name');
+                    if (trad_uom_tmp == quantity_uom_tmp) {
+                        record.set('primary_quantity', record.get('trade_quantity'));
+                    }
+                } else if (name == "price") {
+                    amount = erpord5010_get_amount(record);
+                    if (!isNaN(amount)) {
+                        record.set('amount', amount);
+                    }
+                } else if (name == "tax_rate") {
+                    amount = erpord5010_get_amount(record);
+                    if (!isNaN(amount)) {
+                        record.set('amount', amount);
+                    }
+                } else if (name == 'tax_included_flag') {
+                    amount = erpord5010_get_amount(record);
+                    if (!isNaN(amount)) {
+                        record.set('amount', amount);
+                    }
+                } else if (name == "gift_flag") {
+                    if (value == 'Y') {
+                        record.set('price', 0);
+                        record.set('tax_rate', 0);
+                        record.set('tax_included_flag', 'N');
+                        record.getField('price').setReadOnly(true);
+                        record.getField('tax_rate').setReadOnly(true);
+                        record.getField('tax_included_flag').setReadOnly(true);
+                    } else {
+                        record.getField('price').setReadOnly(false);
+                        record.getField('tax_rate').setReadOnly(false);
+                        record.getField('tax_included_flag').setReadOnly(false);
+                    }
+                } else if (name == 'item_id') {
+                    record.set('trade_quantity', '');
+                    record.set('primary_quantity', '');
+                }
+            
+            }
+            
+            //头更新事件
+            
+            function erpord5010_order_header_update(dataSet, record, name, value, oldvalue) {
+            
+                $('erpord5010_currency_ds').setQueryParameter('company_id', value);
+                var metadata = record.getMeta();
+                var f1 = metadata.getField('customer_name');
+                if (!record.get('company_id') || record.get('company_id') == '') {
+                    f1.setLovService('');
+                } else {
+                    f1.setLovService('erpord.ERPORD5010.ord_sales_order_customer');
+                    f1.setLovPara('company_id', record.get('company_id') || '');
+                    f1.setLovPara('enabled_flag', 'Y');
+                    //f1.setLovPara('customer_id', customer_id);
+                }
+                if (name == 'goods_issue_flag') {
+                    goods_issue_flag = value;
+                    var warehouses_ds = $('erpord5010_warehouses_ds');
+                    var order_line_ds = $('erpord5010_order_line_ds');
+                    var order_line_records = order_line_ds.getAll();
+                    /* for (var i = 0;i < order_line_records.length;i++) {}
+                     if (typeof(goods_issue_flag) == 'undefined' || goods_issue_flag == 'N') {
+                     warehouses_ds.setQueryParameter('enabled_flag', 'Y');
+                     warehouses_ds.setQueryParameter('warehouse_type', null);
+                     warehouses_ds.setQueryParameter('warehouse_type_not', 'ISSUE');
+                     warehouses_ds.query();
+                     //record.getMeta().getField('gi_warehouse_name').setLovService('ord.ORD5010.inv_warehouses_lov');
+                     } else {
+                     warehouses_ds.setQueryParameter('enabled_flag', 'Y');
+                     warehouses_ds.setQueryParameter('warehouse_type', 'ISSUE');
+                     warehouses_ds.setQueryParameter('warehouse_type_not', null);
+                     warehouses_ds.query();
+                     //record.getMeta().getField('gi_warehouse_name').setLovService('ord.ORD5010.inv_warehouses_issue_lov');
+                     } */
+                } else if (name == 'gi_warehouse_id') {
+                    var lines = $('erpord5010_order_line_ds');
+                    var house_name = record.get('gi_warehouse_name');
+                    var rs = lines.getAll();
+                    for (var i = 0;i < rs.length;i++) {
+                        rs[i].set('gi_warehouse_id', value);
+                        rs[i].set('gi_warehouse_name', house_name);
+                    }
+                    record.set('gi_warehouse_id', $('erpord5010_order_header_new_ds').getAt(0).get('gi_warehouse_id'));
+                    record.set('gi_warehouse_name', $('erpord5010_order_header_new_ds').getAt(0).get('gi_warehouse_name'));
+                } else if (name == 'currency_code') {
+                    var line_arr = $('erpord5010_order_line_ds').data;
+                    if (line_arr.length > 0) {
+                        for (var j = 0;j < line_arr.length;j++) {
+                            var record_line = line_arr[j];
+                            var lov = record_line.getMeta().getField('item_code_name');
+                            erpord5010_item_commit(lov, record_line, record_line);
+                        }
+                    }
+                }
+            }
+            
+            function erpord5010_get_amount(record) {
+                var amount;
+                var quantity = record.get('trade_quantity');
+                var price = record.get('price');
+                var flag = record.get('tax_included_flag');
+                if (!flag) {
+                    flag = 'N';
+                }
+                if (!((typeof(quantity) == 'undefined' && quantity == '') || (typeof(price) == 'undefined' && price == ''))) {
+                    if (flag == 'N') {
+                        var tax_rate = record.get('tax_rate');
+                        amount = quantity * price * (1 + tax_rate / 100);
+                    } else {
+                        amount = quantity * price;
+                    }
+                }
+                return amount;
+            }
+            
+            //行增加事件
+            
+            function erpord5010_order_line_add(ds, record, index) {
+                var company_id = record.get('company_id');
+            
+                var metadata = record.getMeta();
+                var f1 = metadata.getField('item_code_name_specs');
+                f1.setLovService('erpord.ERPORD5010.inv_items_basics_lov');
+                f1.setLovPara('company_id', record.get('company_id') || '');
+                f1.setLovPara('enabled_flag', 'Y');
+            
+                if (name == 'trade_uom_name') {
+                    $('erpord5010_trade_uom_ds').setQueryParameter('company_id', company_id);
+                    $('erpord5010_trade_uom_ds').setQueryParameter('enabled_flag', 'Y');
+                    $('erpord5010_trade_uom_ds').query();
+                }
+                var line_record = $('erpord5010_order_line_ds').getCurrentRecord();
+                var head_record = $('erpord5010_order_header_new_ds').getCurrentRecord();
+                var header_record = $('erpord5010_order_header_new_ds').getAt(0);
+                var customer_name = header_record.get('customer_name');
+                var customer_name_field = header_record.getField('customer_name');
+                if (Aurora.isEmpty(customer_name)) {
+                    Aurora.showMessage('提示', '请先选择客户，再维护销售信息！');
+                    return false;
+                }
+                if (!customer_name_field.isReadOnly()) {
+                    customer_name_field.setReadOnly(true);
+                }
+            
+                var base_sys_record = $('erpord5010_get_sys_ds').getAt(0);
+                if ('${/model/erpord5010_fnd_tax/record/@tax_nature}' == 'SMALL_SCALE_TAXPAYERS') {
+                    record.set('tax_included_flag', base_sys_record.get('tax_included_flag'));
+                } else {
+                    record.set('tax_included_flag', 'Y');
+                }
+                if ('${/model/erpord5010_fnd_tax/record/@tax_nature}' == 'SMALL_SCALE_TAXPAYERS') {
+                    record.set('tax_rate', 0);
+                } else {
+                    record.set('tax_rate', base_sys_record.get('tax_rate'));
+                }
+                record.set('gi_warehouse_id', $('erpord5010_order_header_new_ds').getAt(0).get('gi_warehouse_id'));
+                record.set('gi_warehouse_name', $('erpord5010_order_header_new_ds').getAt(0).get('gi_warehouse_name'));
+                record.set('line_number', (index + 1) * 10);
+                line_record.getField('item_code_name_specs').setLovPara('customer_id', head_record.getObject().customer_id);
+            }
+            
+            function erpord5010_item_footRender(records, name) {
+                return '<font size=2>合计</font>';
+            }
+            
+            function erpord5010_amount_footRender(records, name) {
+                var sum = 0;
+                for (var i = 0;i < records.length;i++) {
+                    var r = records[i].get(name);
+                    var n = parseFloat(r);
+                    if (!isNaN(n)) {
+                        sum += n;
+                    }
+                }
+                //$('ord5010_order_header_new_ds').getCurrentRecord.set('total_amount', sum);
+                return '<label style="font-weight:bold">' + Aurora.formatNumber(sum, '${/model/erpord5010_order_line_ds/record/@value}') + '</label>';
+            }
+            
+            function erpord5010_order_save() {
+                var record = $('erpord5010_order_header_new_ds').getAt(0);
+                var dataSet = $('erpord5010_order_line_ds');
+                //ord5010_check_return_order(record, dataSet);
+                $('erpord5010_order_header_new_ds').submit();
+                var lines = $('erpord5010_order_line_ds');
+                if (lines.getAll().length > 0) {
+                    record.getField('currency_code').setReadOnly(true);
+                    record.getField('customer_name').setReadOnly(true);
+                }
+            }
+            
+            function erpord5010_get_delivery_quantity(record) {
+                var received = record.get('delivery_trade_quantity');
+                if (typeof(received) == 'undefined' || received == '') {
+                    return true;
+                } else {
+                    return false;
+                }
+            }
+            
+            function erpord5010_order_line_delete() {
+                var select_arr = $('erpord5010_order_line_ds').getSelected();
+                if (select_arr.length == 0) {
+                    Aurora.showMessage('${l:ERPFND1010.MESSAGE}', '${l:ERPORD5010.NEED_SELECT_FORDEL}');
+                    return;
+                } else {
+                    var sales_order_id = $('erpord5010_order_header_new_ds').getAt(0).get('sales_order_id');
+                    $('erpord5010_order_line_ds').setSubmitParameter('sales_order_id', sales_order_id);
+                    for (var i = 0;i < select_arr.length;i++) {
+                        if (erpord5010_get_delivery_quantity(select_arr[i])) {
+                            select_arr[i].set('_status', 'delete');
+                        } else {
+                            Aurora.showMessage('${l:ERPHAP_PROMPT}', 'ERPORD5010.ORDER_USERD_CANNOT_MODIFY');
+                            return;
+                        }
+                    }
+                    Aurora.showConfirm('${l:ERPHAP_PROMPT}', '${l:ERPORD5010.CONFIRM_ORDERLINE_DEL}', function() {
+                        $('erpord5010_order_line_ds').submitSelected();
+                    });
+                }
+            }
+            
+            function erpord5010_order_line_close() {
+                var select_arr = $('erpord5010_order_line_ds').getSelected();
+                if (select_arr.length == 0) {
+                    Aurora.showMessage('${l:HAP_PROMPT}', '${l:ERPORD5010.NEED_SELECT_FORCLOSE}');
+                    return;
+                } else {
+                    if (!select_arr[0].get('sales_order_line_id')) {
+                        Aurora.showMessage('${l:HAP_PROMPT}', '请先保存后再做此操作');
+                        return;
+                    }
+            
+            
+                    Aurora.showConfirm('${l:HAP_PROMPT}', '${l:ERPORD5010.CONFIRM_ORDERLINE_CLOSE}', function() {
+                        for (var i = 0;i < select_arr.length;i++) {
+                            select_arr[i].set('operator_flag', 'close');
+                            select_arr[i].getField('closed_flag').setReadOnly(false);
+                            select_arr[i].set('closed_flag', 'Y');
+                            select_arr[i].getField('closed_flag').setReadOnly(true);
+                        }
+                        $('erpord5010_order_line_ds').submitSelected();
+                        /* for (var i = 0;i < select_arr.length;i++) {
+                         select_arr[i].set('closed_flag', 'Y');
+                         } */
+                    });
+                }
+            }
+            
+            function erpord5010_order_line_open() {
+                var select_arr = $('erpord5010_order_line_ds').getSelected();
+                if (select_arr.length == 0) {
+                    Aurora.showMessage('${l:ERPHAP_PROMPT}', '${l:ERPORD5010.NEED_SELECT_FOROPEN}');
+                    return;
+                } else {
+                    if (!select_arr[0].get('sales_order_line_id')) {
+                        Aurora.showMessage('${l:ERPHAP_PROMPT}', '请先保存后再做此操作');
+                        return;
+                    }
+                    /* var sales_order_id = $('ord5010_order_header_new_ds').getAt(0).get('sales_order_id');
+                     $('ord5010_order_line_ds').setSubmitParameter('sales_order_id',sales_order_id); */
+            
+                    Aurora.showConfirm('${l:ERPHAP_PROMPT}', '${l:ERPORD5010.CONFIRM_ORDERLINE_OPEN}', function() {
+                        for (var i = 0;i < select_arr.length;i++) {
+                            select_arr[i].set('operator_flag', 'open');
+                            select_arr[i].getField('closed_flag').setReadOnly(false);
+                            select_arr[i].set('closed_flag', 'N');
+                            select_arr[i].getField('closed_flag').setReadOnly(true);
+                        }
+                        $('erpord5010_order_line_ds').submitSelected();
+                        /* for (var i = 0;i < select_arr.length;i++) {
+                         select_arr[i].set('closed_flag', 'N');
+                         } */
+                    });
+                }
+            }
+            
+            function erpord5010_order_line_beforecreate(dataSet) {
+                var select_arr = $('erpord5010_order_line_ds').getAll();
+                for (var i = 0;i < select_arr.length;i++) {
+                    if (erpord5010_get_delivery_quantity(select_arr[i])) {
+            
+                       } else {
+                        Aurora.showMessage('${l:HAP_PROMPT}', '${l:ERPORD5010.ORDER_USERD_CANNOT_MODIFY}');
+                        return false;
+                    }
+                }
+            }
+            
+            function erpord5010_order_save_add() {
+                erpord5010_add_flag = true;
+                var record = $('erpord5010_order_header_new_ds').getAt(0);
+                var dataSet = $('erpord5010_order_line_ds');
+                var line_records = dataSet.getAll();
+                // ord5010_check_return_order(record, dataSet);
+                $('erpord5010_order_header_new_ds').submit();
+            }
+            
+            function erpord5010_new_submitsuccess(dataSet, res) {
+                Aurora.Masker.unmask($('erpord5010_order_form_window').wrap);
+                erpord5010_sales_order_id_add = dataSet.getAt(0).get('sales_order_id');
+                var customer_id = $('erpord5010_order_header_new_ds').getAt(0).get('customer_id');
+                erpimportUrl = $('erpord_5010_order_line_import_link').getUrl() + '?order_header_id=' + erpord5010_sales_order_id_add + '&customer_id=' + customer_id;
+                if (erpord5010_add_flag) {
+                    erpord5010_add_flag = false;
+                    $('erpord5010_order_form_window').close();
+                    erpord5010_create_order();
+                } else {
+            
+                    if (!Aurora.isEmpty(res.result)) {
+                        //alert(res.result.message);
+                        if (Aurora.isEmpty(res.result.message)) {
+                            dataSet.getAt(0).set('status_name', '正常');
+                            dataSet.getAt(0).set('status', '');
+                            dataSet.getAt(0).set('status', 'VERIFIED');
+                        } else {
+                            dataSet.getAt(0).set('status_name', '错误');
+                            dataSet.getAt(0).set('status', '');
+                            dataSet.getAt(0).set('status', 'ERROR');
+                        }
+                    }
+                    /* if(${/parameter/@sales_order_id}<=0){
+                     var sales_order_id = $('ord5010_order_header_new_ds').getAt(0).get('sales_order_id');
+                     var line_arrs = $('ord5010_order_line_ds').getAll();
+                     for (var i = 0;i < line_arrs.length;i++) {
+                     line_arrs[i].set('sales_order_id', sales_order_id);
+                     }
+                     } */
+                    if ($('erpord5010_order_line_ds').getAll().length) {
+                        dataSet.getAt(0).getField('return_order_flag').setReadOnly(true);
+                        $('erpord5010_order_line_close_btn').enable();
+                        $('erpord5010_order_line_open_btn').enable();
+                    }
+                }
+                $('erpord5010_attachments_upload_btn').enable();
+                if (erpimport_flag) {
+                    Aurora.go(erpimportUrl);
+                }
+            
+            }
+            
+            function erpord5010_new_order_delete() {
+                var select_arr = $('erpord5010_order_line_ds').getAll();
+                for (var i = 0;i < select_arr.length;i++) {
+                    if (erpord5010_get_delivery_quantity(select_arr[i])) {
+            
+                       } else {
+                        Aurora.showMessage('${l:HAP_PROMPT}', '${l:ERPORD5010.ORDER_USERD_CANNOT_MODIFY}');
+                        return false;
+                    }
+                }
+                Aurora.showConfirm('${l:HAP_PROMPT}', '${l:ERPORD5010.CONFIRM_DEL_SALEORDER}', function() {
+                    var head_record = $('ord5010_order_header_new_ds').getAt(0);
+                    if (head_record.isNew) {
+                        $('erpord5010_order_form_window').close();
+                    } else {
+                        var sales_order_id = head_record.get('sales_order_id');
+                        $A.request({
+                            url: $('erpord5010_order_delete_link').getUrl(),
+                            para: {
+                                'sales_order_id': sales_order_id
+                            },
+                            success: function() {
+                                $('erpord5010_order_form_window').close();
+                            }
+                        });
+                    }
+                });
+            }
+            
+            function erpord5010_new_order_submit() {
+                var head_record = $('erpord5010_order_header_new_ds').getAt(0);
+                if (head_record.isNew) {
+                    Aurora.showMessage('${l:HAP_PROMPT}', '${l:ERPORD5010.NEDD_SAVE_BEFORE_SUBMIT}');
+                    return;
+                }
+                if (head_record.get('status') == 'VERIFIED') {
+                    Aurora.showConfirm('${l:HAP_PROMPT}', '${l:ERPORD5010.CONFIRM_ORDER_SUBMIT}', function() {
+                        var record = $('erpord5010_order_header_new_ds').getAt(0);
+                        var dataSet = $('erpord5010_order_line_ds');
+                        //ord5010_check_return_order(record, dataSet);
+                        sales_order_id = head_record.get('sales_order_id');
+                        $A.request({
+                            url: $('erpord5010_order_submit_link').getUrl(),
+                            para: {
+                                'sales_order_id': sales_order_id
+                            },
+                            success: function() {
+                                var message = '提交成功!';
+                                Aurora.SideBar.enable = true;
+                                Aurora.SideBar.show({
+                                    msg: message,
+                                    duration: 6000
+                                });
+                                $('erpord5010_order_form_window').close();
+                            }
+                        });
+                    });
+                } else {
+                    Aurora.showMessage('${l:HAP_PROMPT}', '${l:ERPORD5010.ONLY_VERIFIED_CAN_SUBMIT}');
+                }
+            }
+            
+            function erpord5010_new_order_close() {
+                var head_record = $('erpord5010_order_header_new_ds').getAt(0);
+                if (head_record.isNew) {
+                    Aurora.showMessage('${l:HAP_PROMPT}', '${l:ERPORD5010.NEDD_SAVE_BEFORE_CLOSE}');
+                    return;
+                }
+                Aurora.showConfirm('${l:HAP_PROMPT}', '${l:ERPORD5010.CONFIRM_CLOSE_SALEORDER}', function() {
+                    sales_order_id = head_record.get('sales_order_id');
+                    $A.request({
+                        url: $('erpord5010_order_close_link').getUrl(),
+                        para: {
+                            'sales_order_id': sales_order_id
+                        },
+                        success: function() {
+                            // Aurora.showMessage('${l:HAP_PROMPT}', '${l:ORD2010.SUBMITSUCCESS}', function() {
+                            // $('ord5010_order_form_window').close();
+                            // });
+                            var url = $('erpord5010_order_follow_update_link').getUrl() + '?sales_order_id=' + $('erpord5010_order_header_new_ds').getAt(0).get('sales_order_id');
+                            $('erpord5010_order_form_window').close();
+                            new Aurora.Window({
+                                id: 'erpord5010_order_form_window',
+                                url: url,
+                                title: '${l:ERPORD5010.ORDER_MANTAIN_TITLE}',
+                                fullScreen: true
+                            });
+                            $('erpord5010_order_form_window').addListener('close', erpord5010_order_form_window_close);
+                        }
+                    });
+                });
+            }
+            
+            function erpord5010_check_return_order(record, dataSet) {
+                var return_flag = record.get('return_order_flag');
+                if (return_flag == 'Y') {
+                    erpord5010_get_negative(record, total_amount);
+                    var record_arr = dataSet.selectAll();
+                    for (var i = 0;i < record_arr.length;i++) {
+                        erpord5010_get_negative(record_arr[i], trade_quantity);
+                        erpord5010_get_negative(record_arr[i], amount);
+                    }
+                }
+            }
+            
+            function erpord5010_get_negative(record, field_name) {
+                var field_v = record.get(field_name);
+                field_v = -field_v;
+                record.set(field_name, field_v);
+            }
+            
+            function erpord_5010_lines_sucess_clear_fun(ds, res) {
+                var select_arr = ds.getSelected();
+                /* for (var i = 0;i < select_arr.length;i++) {
+                 var close_flag;
+                 if (select_arr[i].get('operator_flag') == 'close') {
+                 close_flag = 'Y';
+                 } else if (select_arr[i].get('operator_flag') == 'open') {
+                 close_flag = 'N';
+                 }
+                 select_arr[i].set('closed_flag', close_flag);
+                 select_arr[i].set('operator_flag', '');
+                 select_arr[i].commit();
+                 } */
+                if (typeof(res) != 'undefined') {
+                    var head_close_flag = $('erpord5010_order_header_new_ds').getAt(0).get('closed_flag');
+                    $('erpord5010_order_header_new_ds').getAt(0).set('closed_flag', res.result.head_close_flag);
+                    if (res.result.head_close_flag == 'Y') {
+                        var url = $('erpord5010_order_follow_update_link').getUrl() + '?sales_order_id=' + $('erpord5010_order_header_new_ds').getAt(0).get('sales_order_id');
+                        //$('ord5010_order_header_new_ds').getAt(0).set('closed_flag', res.result.head_close_flag);
+                        $('erpord5010_order_form_window').close();
+                        new Aurora.Window({
+                            id: 'erpord5010_order_form_window',
+                            url: url,
+                            title: '${l:ERPORD5010.ORDER_MANTAIN_TITLE}',
+                            fullScreen: true
+                        });
+                        $('erpord5010_order_form_window').addListener('close', erpord5010_order_form_window_close);
+                    }
+                }
+                //ds.query();
+            }
+            
+            function erpord5010_ord_head_init() {
+                var ds_init = $('erpord5010_order_header_new_ds');
+                if (${/parameter/@sales_order_id} == -1) {
+                    ds_init.create();
+            
+                } else {
+                    if (ds_init.getAt(0).get('line_nums') > 0) {
+                        ds_init.getAt(0).getField('return_order_flag').setReadOnly(true);
+                    }
+                }
+                erpord5010_new_init();
+            }
+            
+            function erpord5010_numField_fun(record, name) {
+                if (record.get('closed_flag') == 'Y') {
+                    return;
+                }
+                var trad_uom = record.get('trade_uom_name');
+                var quantity_uom = record.get('primary_uom_name');
+                if (trad_uom == quantity_uom) {
+                    return;
+                } else {
+                    return 'erpord5010_numField';
+                }
+            }
+            
+            function erpord5010_new_order_back() {
+                $('erpord5010_order_form_window').close();
+            }
+            
+            function erpord5010_order_line_remove(ds, rd, index) {
+                if ($('erpord5010_order_line_ds').getAll().length == 0) {
+                    var head_record = $('erpord5010_order_header_new_ds').getAt(0);
+                    head_record.set('status_name', '错误');
+                    head_record.set('status', 'ERROR');
+                    head_record.getField('currency_code').setReadOnly(false);
+                    head_record.getField('customer_name').setReadOnly(false);
+                }
+            
+            }
+            
+            function erpord5010_show_quantity_number(value, record, name) {
+                if (value < 0) {
+                    value = -value;
+                }
+                return Aurora.formatNumber(value, '${/model/erpord5010_order_line_ds/record/@value}');
+            
+            }
+            
+            function erpord5110_show_price_num(value, record, name) {
+                var precision = ${/model/erpord5010_get_price_precision/record/@value};
+                return show_price_num(value, precision);
+            } /*editorfun*/
+            
+            function erpord5010_show_positive_number(value, record, name) {
+                if (value < 0) {
+                    value = -value;
+                }
+                if (name == "amount" || name == "tax_rate") {
+                    value = Aurora.formatNumber(value, '${/model/erpord5010_order_line_ds/record/@value}');
+                }
+                if (name == "price") {
+                    var tx = new String(value);
+                    var tx1 = tx.split('.')[1];
+                    var precision = ${/model/erpord5010_get_price_precision/record/@value};
+                    if (typeof(tx1) == 'undefined') {
+                        return value;
+                    } else if (tx1.length < precision) {
+                        return Aurora.formatNumber(value, tx1.length);
+                    }
+                    return Aurora.formatNumber(value, precision);
+                }
+                return value;
+            }
+            
+            function erpord5010_noField_fun(record, name) {
+                if (record.get('closed_flag') == 'Y') {
+                    return;
+                }
+                return 'erpord5010_noField';
+            }
+            
+            function erpord5010_lov_fun(record, name) {
+                if (record.get('closed_flag') == 'Y') {
+                    return;
+                }
+                return 'erpord5010_lov';
+            }
+            
+            function erpord5010_com_ed_fun(record, name) {
+                if (record.get('closed_flag') == 'Y') {
+                    return;
+                }
+                return 'erpord5010_com_ed';
+            }
+            
+            function erpord5010_numField_func(record, name) {
+                if (record.get('closed_flag') == 'Y') {
+                    return;
+                }
+                return 'erpord5010_numField';
+            }
+            
+            function erpord5010_amount_num_ed_fun(record, name) {
+                if (record.get('closed_flag') == 'Y') {
+                    return;
+                }
+                return 'erpord5010_amount_num_ed';
+            }
+            
+            function erpord5010_priceField_fun(record, name) {
+                if (record.get('closed_flag') == 'Y') {
+                    return;
+                }
+                return 'erpord5010_priceField';
+            }
+            
+            function erpord5010_datePicker_fun(record, name) {
+                if (record.get('closed_flag') == 'Y') {
+                    return;
+                }
+                return 'erpord5010_datePicker';
+            }
+            
+            function erpord5010_textField_fun(record, name) {
+                if (record.get('closed_flag') == 'Y') {
+                    return;
+                }
+                return 'erpord5010_textField';
+            }
+            
+            function erpord5010_checkBox_fun(record, name) {
+                if (record.get('closed_flag') == 'Y') {
+                    record.getField(name).setReadOnly(true);
+                    return 'erpord5010_checkBox';
+                }
+                record.getField(name).setReadOnly(false);
+                return 'erpord5010_checkBox';
+            }
+            
+            function erpord5010_checkBox_fun_g(record, name) {
+                if (record.get('closed_flag') == 'Y') {
+                    record.getField(name).setReadOnly(true);
+                    return 'erpord5010_checkBox';
+                } else if (record.get('gift_flag') == 'Y') {
+                    return '';
+                }
+                record.getField(name).setReadOnly(false);
+                return 'erpord5010_checkBox';
+            } /*校验*/
+            
+            function erpord5010_line_num_vali_fun(record, name, value) {
+                var index = $('erpord5010_order_line_ds').indexOf(record);
+                var lins = $('erpord5010_order_line_ds').getAll();
+                for (var i = 0;i < lins.length && i != index;i++) {
+                    var lin_num = lins[i].get(name);
+                    if (value == lin_num) {
+                        return '行号不能重复';
+                    }
+                }
+                return true;
+            }
+            
+            function erpord5010_ds_submit_before(ds) {
+                Aurora.Masker.mask($('erpord5010_order_form_window').wrap, '正在提交...');
+            }
+            
+            function erpord5010_ds_submit_failed(ds, res) {
+                Aurora.Masker.unmask($('erpord5010_order_form_window').wrap);
+            }
+            
+            function erpord_5010_order_line_import() {
+            
+                // 确保订单头信息保存成功
+                var customer_id = $('erpord5010_order_header_new_ds').getAt(0).get('customer_id');
+                var dsHeader = $('erpord5010_order_header_new_ds');
+                var dsLines = $('erpord5010_order_line_ds');
+                var closed_flag = dsHeader.getAt(0).get('closed_flag');
+                if (closed_flag == 'Y') {
+                    Aurora.showMessage('${l:HAP_PROMPT}', '销售订单已关闭！');
+                    return;
+                }
+                if (!dsHeader.validate()) {
+                    return;
+                }
+                if (dsLines.getAll().length > 0) {
+                    Aurora.showMessage('${l:HAP_PROMPT}', '销售订单存在订单行不能导入，请手工删除订单行后再执行导入！');
+                    return;
+                }
+                var url;
+                //debugger;
+                if (erpord5010_add_flag == false) {
+                    erpimport_flag = true;
+                    erpord5010_order_save();
+                } else {
+                    var header_record = dsHeader.getAt(0);
+                    sales_order_header_id = header_record.get('sales_order_id');
+                    url = $('erpord_5010_order_line_import_link').getUrl() + '?order_header_id=' + sales_order_header_id + '&customer_id=' + customer_id;
+                    Aurora.go(url);
+                }
+            }
+            
+            function erpord5010_item_commit(lov, r1, r2) {
+                var url = $('erpord5010_get_item_info_link').getUrl();
+                var partner_id = $('erpord5010_order_header_new_ds').getAt(0).get('customer_id');
+                var head_currency_code = $('erpord5010_order_header_new_ds').getAt(0).get('currency_code');
+                var param = {};
+                param['item_id'] = r2.get('item_id');
+                param['partner_id'] = partner_id;
+                param['currency_code'] = head_currency_code;
+                Aurora.request({
+                    id: 'erpord5010_get_item_price_id',
+                    para: param,
+                    url: url,
+                    success: function(rs) {
+                        r1.set('tax_included_flag', rs.result.tax_included_flag);
+                        /* r1.set('trade_uom',rs.result.trade_uom);
+                         r1.set('trade_uom_name',rs.result.trade_uom_name);
+                         r1.set('tax_rate',rs.result.tax_rate);
+                         r1.set('price',rs.result.price);  */
+                    },
+                    scope: this
+                });
+            }
+            
+            function erpord5010_attachments_upload() {
+                var dsHeader = $('erpord5010_order_header_new_ds');
+                var dsLines = $('erpord5010_order_line_ds');
+                var header_record = dsHeader.getAt(0);
+                sales_order_id = header_record.get('sales_order_id');
+                new Aurora.Window({
+                    id: 'erpord_5010_upload_file_window',
+                    url: $('erpord_5010_attachments_upload_link').getUrl() + '?table_name=ERPORD5010_SALES_ORDER_HEADERS&header_id=' + sales_order_id,
+                    title: '附件上传',
+                    height: 400,
+                    width: 600
+                });
+            }
+            
+            //行点击事件
+            
+            function erpord5010_Gridcellclick(grid, row, name, record) {
+                // var metadata = record.getMeta();
+                var company_id = record.get('company_id');
+                var metadata = record.getMeta();
+                var f1 = metadata.getField('item_code_name_specs');
+            
+                f1.setLovService('erpord.ERPORD5010.inv_items_basics_lov');
+                f1.setLovPara('company_id', record.get('company_id') || '');
+                f1.setLovPara('enabled_flag', 'Y');
+                //f1.setLovPara('customer_id', customer_id);
+                if (name == 'trade_uom_name') {
+                    $('erpord5010_trade_uom_ds').setQueryParameter('company_id', company_id);
+                    $('erpord5010_trade_uom_ds').setQueryParameter('enabled_flag', 'Y');
+                    $('erpord5010_trade_uom_ds').query();
+                }
+            
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="erpord5010_warehouses_ds" model="erpinv.ERPINV5310.inv_sales_warehouses_lov">
+                <a:datas dataSource="/model/erpord5010_warehouse_list"/>
+            </a:dataSet>
+            <a:dataSet id="erpord5010_trade_uom_ds" fetchAll="true" model="erpord.ERPORD5010.inv_uom_codes_lov"/>
+            <a:dataSet id="erpord5010_get_price_precision_ds">
+                <a:datas dataSource="erpord5010_get_price_precision"/>
+            </a:dataSet>
+            <a:dataSet id="erpord5010_get_quantity_accuracy_ds">
+                <a:datas dataSource="erpord5010_order_line_ds"/>
+            </a:dataSet>
+            <a:dataSet id="erpord5010_get_sys_ds" loadData="true" model="erpord.ERPORD5010.fnd_company_base_currency"/>
+            <a:dataSet id="erpord5010_get_manual_ds">
+                <a:datas dataSource="erpord5010_get_manual_flag"/>
+            </a:dataSet>
+            <a:dataSet id="erpord5010_get_salesmen_employee_ds">
+                <a:datas dataSource="erpord5010_get_salesmen_employee"/>
+            </a:dataSet>
+            <a:dataSet id="erpord5010_label_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="order_label_name" defaultValue="销售订单"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="erpord5010_currency_ds" loadData="true" model="erpord.ERPORD5010.gld_currency_lov"/>
+            <!-- 头表 -->
+            <a:dataSet id="erpord5010_order_header_new_ds" model="erpord.ERPORD5010.ord_sales_order_headers" submitUrl="${/request/@context_path}/modules/erpord/ERPORD5010/ord_sales_order_form_submit.svc">
+                <a:datas dataSource="/model/erpinit_headers"/>
+                <a:fields>
+                    <a:field name="order_number" readOnly="true"/>
+                    <a:field name="customer_name" autoComplete="true" autoCompleteField="quick_value" autoCompleteSize="1" lovGridHeight="320" lovHeight="500" lovWidth="500" required="true" title="ERPORD.CUSTOMER_QUERY">
+                        <a:mapping>
+                            <a:map from="partner_description" to="customer_name"/>
+                            <a:map from="partner_id" to="customer_id"/>
+                            <a:map from="goods_issue_flag" to="goods_issue_flag"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="customer_id"/>
+                    <a:field name="currency_code" displayField="currency_code" options="erpord5010_currency_ds" required="true" returnField="currency_code" valueField="currency_code"/>
+                    <a:field name="order_date" required="true"/>
+                    <a:field name="gi_warehouse_name" displayField="warehouse_desc" options="erpord5010_warehouses_ds" returnField="gi_warehouse_id" title="ERPORD.WAREHOUSE_QUERY" valueField="warehouse_id"/>
+                    <a:field name="gi_warehouse_id"/>
+                    <a:field name="status" defaultValue="VERIFIED" readOnly="true"/>
+                    <a:field name="status_name" defaultValue="正常" readOnly="true"/>
+                    <a:field name="salesmen_employee_name" readOnly="true"/>
+                    <a:field name="salesmen_employee_id"/>
+                    <a:field name="return_order_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="goods_issue_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="closed_flag" checkedValue="Y" defaultValue="N" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="description"/>
+                    <a:field name="company_id" defaultValue="${/parameter/@company_id}"/>
+                    <a:field name="total_amount"/>
+                    <a:field name="manual_flag"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="erpord5010_order_header_update"/>
+                    <a:event name="submit" handler="erpord5010_ds_submit_before"/>
+                    <a:event name="ajaxfailed" handler="erpord5010_ds_submit_failed"/>
+                    <a:event name="submitsuccess" handler="erpord5010_new_submitsuccess"/>
+                    <a:event name="submitfailed" handler="erpord5010_ds_submit_failed"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 行表 -->
+            <a:dataSet id="erpord5010_order_line_ds" bindName="result_ds" bindTarget="erpord5010_order_header_new_ds" model="erpord.ERPORD5010.ord_sales_order_lines" queryUrl="${/request/@context_path}/autocrud/erpord.ERPORD5010.ord_sales_order_lines/query?sales_order_id=${/parameter/@sales_order_id}" selectable="true" selectionModel="multiple" submitUrl="${/request/@context_path}/modules/erpord/ERPORD5010/ord_sales_order_line_submit.svc">
+                <a:datas dataSource="/model/erpord5010_init_lines"/>
+                <a:fields>
+                    <a:field name="line_number" required="true" validator="erpord5010_line_num_vali_fun"/>
+                    <a:field name="item_id" required="true"/>
+                    <a:field name="item_code_name_specs" autoComplete="true" autoCompleteField="quick_value" autoCompleteSize="1" lovGridHeight="320" lovHeight="500" lovService="erpord.ERPORD5010.inv_items_basics_lov?enabled_flag=Y" lovWidth="500" required="true" title="ERPORD.ITEM_QUERY">
+                        <a:mapping>
+                            <a:map from="item_code_name_specs" to="item_code_name_specs"/>
+                            <a:map from="item_id" to="item_id"/>
+                            <a:map from="trade_uom" to="trade_uom"/>
+                            <a:map from="primary_uom" to="primary_uom"/>
+                            <a:map from="trade_uom_name" to="trade_uom_name"/>
+                            <a:map from="primary_uom_name" to="primary_uom_name"/>
+                            <a:map from="tax_rate" to="tax_rate"/>
+                            <a:map from="price" to="price"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="trade_quantity" required="true"/>
+                    <a:field name="trade_uom" required="true"/>
+                    <a:field name="trade_uom_name" displayField="uom_description" options="erpord5010_trade_uom_ds" required="true" title="ERPORD.UOM_QUERY">
+                        <a:mapping>
+                            <a:map from="uom_description" to="trade_uom_name"/>
+                            <a:map from="uom_code" to="trade_uom"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="primary_quantity" required="true"/>
+                    <a:field name="tax_included_flag" checkedValue="Y" uncheckedValue="N"/>
+                    <a:field name="amount" readOnly="true"/>
+                    <a:field name="gi_warehouse_id"/>
+                    <a:field name="gi_warehouse_name"/>
+                    <a:field name="closed_flag" checkedValue="Y" defaultValue="N" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="gift_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="company_id" defaultValue="${/parameter/@company_id}"/>
+                    <a:field name="price" required="true"/>
+                    <a:field name="tax_rate" datatype="java.lang.double" required="true"/>
+                    <a:field name="head_close_flag"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="erpord5010_order_line_update"/>
+                    <a:event name="add" handler="erpord5010_order_line_add"/>
+                    <a:event name="beforecreate" handler="erpord5010_order_line_beforecreate"/>
+                    <a:event name="remove" handler="erpord5010_order_line_remove"/>
+                    <a:event name="submitsuccess" handler="erpord_5010_lines_sucess_clear_fun"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:popupScreen>
+            <a:screenTopToolbar>
+                <a:toolbarButton id="erpord5010_order_save_add_btn" className="item-rbtn-blue saveNew" click="erpord5010_order_save_add" style="margin-left:20px;" text="ERPORD5010.SAVE_AND_ADD" width="100"/>
+                <a:toolbarButton id="erpord5010_order_save_btn" className="item-rbtn-blue button-save" click="erpord5010_order_save" text="ERPHAP_SAVE" width="100"/>
+                <a:toolbarButton className="item-rbtn-blue button-delete" click="erpord5010_new_order_delete" text="ERPHAP_DELETE" width="100"/>
+                <a:toolbarButton className="item-rbtn-blue submit" click="erpord5010_new_order_submit" text="HAP_SUBMIT" width="100"/>
+                <a:toolbarButton className="item-rbtn-blue closeOrder" click="erpord5010_new_order_close" text="ERPORD5010.ORDER_CLOSE" width="100"/>
+                <a:toolbarButton id="erpord5010_attachments_upload_btn" className="item-rbtn-blue template" click="erpord5010_attachments_upload" text="附件上传" width="100"/>
+                <a:toolbarButton className="item-rbtn-blue back" click="erpord5010_new_order_back" text="ERPGLD_ACCOUNTS.BACK" width="100"/>
+            </a:screenTopToolbar>
+            <!-- <a:div align="center">
+                <font size="5"><![CDATA[销售订单]]></font>
+            </a:div> -->
+            <a:hBox padding="0">
+                <a:textField name="order_number" bindTarget="erpord5010_order_header_new_ds" prompt="ERPORD_SALES_ORDER_HEADERS.ORDER_NUMBER" typeCase="upper" width="150"/>
+                <a:lov name="customer_name" bindTarget="erpord5010_order_header_new_ds" prompt="ERPORD_SALES_ORDER_HEADERS.CUSTOMER_DESCRIPTION" width="220"/>
+                <a:comboBox name="currency_code" bindTarget="erpord5010_order_header_new_ds" prompt="ERPORD_SALES_ORDER_HEADERS.CURRENCY_CODE" width="120"/>
+                <a:datePicker name="order_date" bindTarget="erpord5010_order_header_new_ds" prompt="ERPORD_SALES_ORDER_HEADERS.ORDER_DATE" renderer="Aurora.formatDate" width="150"/>
+            </a:hBox>
+            <a:hBox padding="0">
+                <a:comboBox name="gi_warehouse_name" bindTarget="erpord5010_order_header_new_ds" prompt="ERPORD_SALES_ORDER_LINES.GI_WAREHOUSE_NAME"/>
+                <a:textField name="status_name" bindTarget="erpord5010_order_header_new_ds" prompt="ERPORD_SALES_ORDER_HEADERS.STATUS" width="100"/>
+                <a:checkBox name="return_order_flag" bindTarget="erpord5010_order_header_new_ds" prompt="ERPORD_SALES_ORDER_HEADERS.RETURN_ORDER_FLAG" width="30"/>
+                <!-- <a:checkBox name="goods_issue_flag" bindTarget="erpord5010_order_header_new_ds" prompt="ERPORD_SALES_ORDER_HEADERS.GOODS_ISSUE_FLAG" width="30"/> -->
+                <a:checkBox name="closed_flag" bindTarget="erpord5010_order_header_new_ds" prompt="ERPORD_SALES_ORDER_LINES.CLOSED_FLAG" width="32"/>
+                <a:textField name="salesmen_employee_name" bindTarget="erpord5010_order_header_new_ds" prompt="ERPORD_SALES_ORDER_HEADERS.SALESMEN_EMPLOYEE_ID" width="150"/>
+            </a:hBox>
+            <a:hBox padding="0">
+                <a:textField name="description" bindTarget="erpord5010_order_header_new_ds" maxLength="1000" prompt="ERPORD_SALES_ORDER_LINES.DESCRIPTION" width="870"/>
+            </a:hBox>
+            <a:grid id="erpord5010_result_gd" bindTarget="erpord5010_order_line_ds" height="300" marginHeight="190" marginWidth="40" submask="false" width="1690">
+                <a:toolBar>
+                    <a:button type="add"/>
+                    <a:button icon="${/request/@context_path}/images/remove.gif" text="ERPHAP_DELETE" type="delete"/>
+                    <a:button id="erpord5010_order_line_close_btn" click="erpord5010_order_line_close" icon="${/request/@context_path}/images/remove.gif" text="ERPORD5010.LINE_CLOSE"/>
+                    <a:button id="erpord5010_order_line_open_btn" click="erpord5010_order_line_open" icon="${/request/@context_path}/images/add.gif" text="ERPORD5010.LINE_OPEN"/>
+                    <a:button click="erpord_5010_order_line_import" icon="${/request/@context_path}/images/addbm.png" text="ERPHAP_IMPORT"/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="line_number" align="right" editorFunction="erpord5010_noField_fun" lock="true" prompt="行号" width="50"/>
+                    <a:column name="item_code_name_specs" editorFunction="erpord5010_lov_fun" footerRenderer="erpord5010_item_footRender" lock="true" prompt="ERPORD_SALES_ORDER_LINES.ITEM_DESCRIPTION" width="250"/>
+                    <a:column name="trade_quantity" align="right" editorFunction="erpord5010_numField_func" prompt="ERPORD_SALES_ORDER_LINES.TRADE_QUANTITY" width="120"/>
+                    <a:column name="trade_uom_name" editorFunction="erpord5010_com_ed_fun" prompt="ERPORD_SALES_ORDER_LINES.TRADE_UOM" width="100"/>
+                    <a:column name="primary_quantity" align="right" editorFunction="erpord5010_numField_fun" prompt="ERPORD_SALES_ORDER_LINES.PRIMARY_QUANTITY" width="120"/>
+                    <a:column name="primary_uom_name" prompt="ERPORD_SALES_ORDER_LINES.PRIMARY_UOM" width="80"/>
+                    <a:column name="gift_flag" editorFunction="erpord5010_checkBox_fun" prompt="ERPORD_SALES_ORDER_LINES.GIFT_FLAG" width="50"/>
+                    <a:column name="require_date" editorFunction="erpord5010_datePicker_fun" prompt="ERPORD_SALES_ORDER_LINES.REQUIRE_DATE" renderer="Aurora.formatDate" width="120"/>
+                    <a:column name="tax_included_flag" editorFunction="erpord5010_checkBox_fun_g" prompt="ERPORD_SALES_ORDER_LINES.TAX_INCLUDED_FLAG" width="50"/>
+                    <a:column name="price" align="right" editorFunction="erpord5010_priceField_fun" prompt="ERPORD_SALES_ORDER_LINES.PRICE" renderer="erpord5110_show_price_num" width="120"/>
+                    <a:column name="tax_rate" align="right" editorFunction="erpord5010_amount_num_ed_fun" prompt="ERPORD.TAX_RATE" renderer="erpord5010_show_positive_number" width="80"/>
+                    <a:column name="amount" align="right" footerRenderer="erpord5010_amount_footRender" prompt="ERPORD_SALES_ORDER_LINES.AMOUNT" renderer="erpord5010_show_positive_number" width="150"/>
+                    <!-- <a:column name="gi_warehouse_name" prompt="ORD_SALES_ORDER_LINES.GI_WAREHOUSE_NAME" width="120"/> -->
+                    <a:column name="description" editorFunction="erpord5010_textField_fun" prompt="ERPORD_SALES_ORDER_LINES.DESCRIPTION" width="300"/>
+                    <a:column name="closed_flag" align="center" editor="erpord5010_checkBox" prompt="ERPORD_SALES_ORDER_LINES.CLOSED_FLAG" width="50"/>
+                </a:columns>
+                <a:editors>
+                    <a:comboBox id="erpord5010_com_ed"/>
+                    <a:numberField id="erpord5010_noField" allowDecimals="false" allowFormat="false" allowNegative="false"/>
+                    <a:lov id="erpord5010_lov">
+                        <a:events>
+                            <a:event name="commit" handler="erpord5010_item_commit"/>
+                        </a:events>
+                    </a:lov>
+                    <a:numberField id="erpord5010_amount_num_ed" allowNegative="false"/>
+                    <a:numberField id="erpord5010_numField" allowNegative="false"/>
+                    <a:numberField id="erpord5010_priceField" allowNegative="false"/>
+                    <a:datePicker id="erpord5010_datePicker"/>
+                    <a:checkBox id="erpord5010_checkBox"/>
+                    <a:textField id="erpord5010_textField"/>
+                </a:editors>
+                <a:events>
+                    <a:event name="cellclick" handler="erpord5010_Gridcellclick"/>
+                </a:events>
+            </a:grid>
+        </a:popupScreen>
+        <script><![CDATA[
+        	Aurora.onReady(function (){
+        		erpord5010_ord_head_init();
+        	});	
+        ]]></script>
+    </a:view>
+</a:screen>

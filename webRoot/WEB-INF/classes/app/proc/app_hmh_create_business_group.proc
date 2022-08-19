@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<p:procedure xmlns:t="aurora.application.action" xmlns:as="aurora.service" xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <!-- 获取TOKENurl  -->
+        <a:model-query model="app.hmh.app_hmh_request_token" rootPath="token_url"/>
+        <!-- 获取valuePath ,任意传值，避免空指针异常 -->
+        <a:model-execute model="app.hmh.app_hmh_request_token"/>
+        <p:switch test="/parameter/@token_flag">
+            <p:case value="0">
+                <!-- token失效时，调用RESTFUL风格接口获取TOKEN -->
+                <a:rest-invoker acceptLanguage="zh-CN,zh;q=0.8" cacheControl="no-cache" contentType="application/json" raiseExceptionOnError="true" requestMethod="POST" returnPath="/parameter/RESPONSE" url="${/model/token_url/record/@token_url}" valuePath="/soapRequest/requestValue"/>
+                <a:model-insert model="app.hmh.app_hmh_check_token"/>
+            </p:case>
+            <p:case value="1">
+                <a:model-query model="app.hmh.app_hmh_check_token" rootPath="token_value"/>
+            </p:case>
+        </p:switch>
+        <s:server-script><![CDATA[
+            //日志函数
+            var logger = $logger('server-script');
+            
+            function log(msg) {
+                logger.info(msg);
+            }
+            //调用接口得到access_token
+            var token_flag = $ctx.get('/parameter/@token_flag');
+            log('TOKEN值::' + token_flag);
+            if (token_flag == 0) {
+                var access_token = $ctx.get('/parameter/RESPONSE/@access_token');
+                var token_type = $ctx.get('/parameter/RESPONSE/@token_type');
+                var p = $ctx.parameter;
+                p.authoration = token_type + access_token;
+                log('authoration值(0)::' + p.authoration);
+            }
+            //token未失效时得到access_token
+            if (token_flag == 1) {
+                var access_token = $ctx.get('/model/token_value/record/@access_token');
+                var token_type = $ctx.get('/model/token_value/record/@token_type');
+                var p = $ctx.parameter;
+                p.authoration = token_type + access_token;
+                log('authoration值(1)::' + p.authoration);
+            }
+            //创建实例
+            var param_instance = {
+                instance_type: 'BG',
+                p_business_group: ''
+            };
+            //创建实例头
+            $bm('app.hmh.app_hmh_create_instance_bg').execute(param_instance);
+        ]]></s:server-script>
+        <!-- 获取对应的接口url -->
+        <a:model-query defaultWhereClause="t1.enabled_flag = &apos;Y&apos; and t1.itf_code = &apos;CREATE_BUSINESS_GROUP&apos;" model="app.hmh.app_hmh_get_url" rootPath="create_business_group_url"/>
+        <s:server-script><![CDATA[
+            var instance_id = $ctx.current_parameter.instance_id;
+            p.instance_id = instance_id;
+            var param_body = {
+                instance_id: instance_id,
+                operation_type: 'INSERT'
+            };
+            //创建实例行
+            $bm('app.hmh.app_hmh_create_instance_lns_bg').execute(param_body);
+        ]]></s:server-script>
+        <!-- 获取对应的接口参数 -->
+        <a:model-execute model="app.hmh.app_hmh_create_business_group"/>
+        <p:echo/>
+        <!-- 调用RESTFUL风格接口 -->
+        <a:rest-invoker acceptLanguage="zh-CN,zh;q=0.8" authoration="${/parameter/@authoration}" cacheControl="no-cache" contentType="application/json" raiseExceptionOnError="true" requestMethod="POST" returnPath="/parameter/RESPONSE2" url="${/model/create_business_group_url/record/@itf_url}" valuePath="/soapRequest2/requestValue2"/>
+        <!-- 处理返回结果 -->
+        <a:batch-apply sourcepath="/parameter/RESPONSE2/rows">
+            <p:switch test="@current_parameter/@SUCCESS">
+                <!-- 创建成功 -->
+                <p:case value="true">
+                    <!-- 向HMH_SRM关系表插入数据 -->
+                    <a:model-update model="app.hmh.app_hmh_relation_update"/>
+                </p:case>
+            </p:switch>
+            <!-- 向接口表返回状态信息 -->
+            <a:model-update model="app.hmh.app_hmh_create_business_group"/>
+        </a:batch-apply>
+    </a:init-procedure>
+    <a:service-output output="/parameter"/>
+</p:procedure>

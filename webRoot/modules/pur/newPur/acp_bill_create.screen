@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: pccold  
+    $Date: 2015-8-18 下午3:34:58  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure/>
+    <a:view>
+        <a:link id="acp5260_bill_detail_link" url="${/request/@context_path}/modules/acp/ACP5260/acp_bill_detail.screen"/>
+        <script><![CDATA[
+            //日期比较
+            function acp5031_compareDate(start, end) {
+                if (start > end) {
+                    return false;
+                }
+                return true;
+            }
+            //日期校验
+            function acp5031_trx_dateValidator(record, name, value) {
+                if (name == 'trx_date_from' || name == 'trx_date_to') {
+                    var start = record.get('trx_date_from');
+                    var end = record.get('trx_date_to');
+            
+                    if ( !! end) {
+                        if (!acp5031_compareDate(start, end)) {
+                            return '${l:START_GREATER_THAN_END}';
+                        }
+                    }
+                    return true;
+                }
+            }
+            
+            //校验开票单头是否已存在
+            function acp5260_checkHeaderExists(record) {
+                var header_record = $('acp5260_bill_headers_ds').getCurrentRecord();
+                if (header_record.get('company_id') == record.get('company_id') && header_record.get('vendor_id') == record.get('vendor_id') && header_record.get('vendor_site_id') == record.get('vendor_site_id') && header_record.get('currency_code') == record.get('currency_code')) {
+                    return true;
+                }
+                return false;
+            }
+            
+            //校验开票单行是否已存在
+            function acp5260_checkBillLineExists(record) {
+                var line_records = $('acp5260_bill_lines_ds').getAll();
+                var flag = false;
+                for (var i = 0;i < line_records.length;i++) {
+                    if (line_records[i].get('item_id') == record.get('item_id') && line_records[i].get('unit_meas_lookup_code') == record.get('unit_meas_lookup_code') && line_records[i].get('unit_price') == record.get('unit_price')) {
+                        flag = true;
+                        return flag;
+                    }
+                }
+                return flag;
+            }
+            
+            //获取同物料、单位、单价的数量之和
+            function acp5260_getBillLineSumQuantity(record) { 
+                var trx_records = $('acp5260_bill_select_ds').getAll();
+                var sum_quantity = 0;
+                for (var i = 0;i < trx_records.length;i++) {
+                    if (trx_records[i].get('item_id') == record.get('item_id') && trx_records[i].get('unit_meas_lookup_code') == record.get('unit_meas_lookup_code') && trx_records[i].get('unit_price') == record.get('unit_price')) {
+                        sum_quantity = sum_quantity + (trx_records[i].get('trx_quantity') * 1);
+                    }
+                }
+                sum_quantity = sum_quantity.toFixed(4);
+                return sum_quantity;
+            }
+            
+            //获取同物料、单位、单价的金额之和
+            function acp5260_getBillLineSumAmount(record) {
+                var trx_records = $('acp5260_bill_select_ds').getAll();
+                var result = {};
+                var trx_quantity = 0;
+                var unit_price = 0;
+                var sum_amount = 0;
+                var display_sum_amount = 0;
+                for (var i = 0;i < trx_records.length;i++) {
+                    if (trx_records[i].get('item_id') == record.get('item_id') && trx_records[i].get('unit_meas_lookup_code') == record.get('unit_meas_lookup_code') && trx_records[i].get('unit_price') == record.get('unit_price')) {
+                        trx_quantity = trx_records[i].get('trx_quantity') * 1;
+                        unit_price = trx_records[i].get('unit_price') * 1;
+                        sum_amount = sum_amount + (trx_quantity * unit_price);
+	                    if(trx_records[i].get('display_unit_price') == '***'){
+	                        display_sum_amount = '***';
+	                    }else{
+	                        display_sum_amount = sum_amount;
+	                    }
+                    }
+                }
+                sum_amount = sum_amount.toFixed(2);
+                if(display_sum_amount != '***'){
+					display_sum_amount = display_sum_amount.toFixed(2);
+                }
+                result.sum_amount = sum_amount;
+                result.display_sum_amount = display_sum_amount;
+                return result;
+            }
+            
+            //获取勾选数据的金额之和
+            function acp5260_getBillSumAmount() {
+                var trx_records = $('acp5260_bill_select_ds').getAll();
+                var result = {};
+                var trx_quantity = 0;
+                var unit_price = 0;
+                var sum_amount = 0;
+                var display_sum_amount = 0;
+                for (var i = 0;i < trx_records.length;i++) {
+                	trx_quantity = trx_records[i].get('trx_quantity') * 1;
+                    unit_price = trx_records[i].get('unit_price') * 1;
+                	sum_amount = sum_amount + (trx_quantity * unit_price);
+                    if(trx_records[i].get('display_unit_price') == '***'){
+						display_sum_amount = '***';  
+                    }else{
+                        display_sum_amount = sum_amount;
+                    }
+                }
+                sum_amount = sum_amount.toFixed(2);
+                if(display_sum_amount != '***'){
+					display_sum_amount = display_sum_amount.toFixed(2);
+                }
+                result.sum_amount = sum_amount;
+                result.display_sum_amount = display_sum_amount;
+                return result;
+            }
+            
+            //创建开票单
+            function create_view_bill(trx_records) {
+                var header_ds = $('acp5260_bill_headers_ds');
+                var line_ds = $('acp5260_bill_lines_ds');
+                var detail_ds = $('acp5260_bill_detail_ds');
+            
+                //开票单头
+                var now = new Date();
+                var month = now.getMonth() + 1;
+                month = month > 9 ? month : '0' + month;
+                var day = now.getDate();
+                day = day > 9 ? day : '0' + day;
+                var date = now.getFullYear() + '-' + month + '-' + day; //STRING类型
+                trx_records[0].set('creation_date',date); //创建日期
+                trx_records[0].set('bill_amount',acp5260_getBillSumAmount().sum_amount); //开票金额
+                trx_records[0].set('display_bill_amount',acp5260_getBillSumAmount().display_sum_amount); //开票金额,展示
+                header_ds.create(trx_records[0].data);
+            
+                //校验
+                for (var i = 0;i < trx_records.length;i++) {
+                    if (!acp5260_checkHeaderExists(trx_records[i])) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:ACP_BILL.SELECTED_RECORDS_BE_SAME}');
+                        return false;
+                    }
+                }
+            
+                //开票行
+                var bill_line_num = 1;
+                var new_line = false;
+                trx_records[0].set('bill_line_num', bill_line_num);
+                trx_records[0].set('sum_quantity', acp5260_getBillLineSumQuantity(trx_records[0]));
+                trx_records[0].set('sum_amount', acp5260_getBillLineSumAmount(trx_records[0]).sum_amount);
+                trx_records[0].set('display_sum_amount', acp5260_getBillLineSumAmount(trx_records[0]).display_sum_amount);
+                line_ds.create(trx_records[0].data);
+                detail_ds.create(trx_records[0].data);
+                for (var k = 1;k < trx_records.length;k++) {
+                    if (!acp5260_checkBillLineExists(trx_records[k])) {
+                        bill_line_num++;
+                        trx_records[k].set('bill_line_num', bill_line_num);
+                        trx_records[k].set('sum_quantity', acp5260_getBillLineSumQuantity(trx_records[k]));
+                        trx_records[k].set('sum_amount', acp5260_getBillLineSumAmount(trx_records[k]).sum_amount);
+                        trx_records[k].set('display_sum_amount', acp5260_getBillLineSumAmount(trx_records[k]).display_sum_amount);
+                        line_ds.create(trx_records[k].data);
+                        new_line = true;
+                    }
+                    //明细行
+                    detail_ds.create(trx_records[k].data);
+                }
+                return true;
+            }
+            
+            // 创建
+            function createBill(ds) {
+                var header_ds = $('acp5260_bill_headers_ds');
+                var line_ds = $('acp5260_bill_lines_ds');
+                var detail_ds = $('acp5260_bill_detail_ds');
+                var records = ds.getAll();
+                if (records.length < 1) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:ACP_BILL.PLEASE_SELECT_AT_LEASE_ONE_RECORD}',null,300,120);
+                    return false;
+                } else {
+                    header_ds.removeAll();
+                    line_ds.removeAll();
+                    detail_ds.removeAll();
+            
+                    //添加开票单头、行、明细行
+                    var flag = create_view_bill(records);
+                    if (flag) {
+                        //打开预览页面
+                        new Aurora.Window({
+                            id: 'acp5260_bill_detail_link_window',
+                            url: $('acp5260_bill_detail_link').getUrl(),
+                            title: '${l:ACP_BILL.BILL_CREATE}',
+                            fullScreen: true
+                        });
+                    }
+                }
+            }
+            
+            Aurora.onReady(function() {
+            	var ds = $('acp5260_create_result_ds');
+            	var po_nums = decodeURI("${/parameter/@po_nums}");
+            	ds.setQueryParameter('po_nums', po_nums);
+            });
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="acp5260_bill_headers_ds"/>
+            <a:dataSet id="acp5260_bill_lines_ds"/>
+            <a:dataSet id="acp5260_bill_detail_ds"/>
+            <a:dataSet id="acp5260_bill_select_ds"/>
+            <a:dataSet id="acp5260_create_result_ds" autoQuery="false" fetchAll="true" model="pur.newPur.pur_rcv_trx_lines">
+                <a:events>
+                    <a:event name="load" handler="createBill"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:label style="display:none;"/>
+    </a:view>
+</a:screen>

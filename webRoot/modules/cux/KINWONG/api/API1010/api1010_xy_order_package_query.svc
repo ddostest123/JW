@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lianghuihao 
+    $Date: 2018年12月21日20:43:17  
+    $Revision: 1.0  
+    $Purpose: 订单信息查询
+-->
+<a:service xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <p:echo/>
+        <a:model-query fetchAll="true" model="cux.KINWONG.api.API1010.api1010_xy_message_handle_101" rootPath="packages"/>
+        <s:server-script import="request.js"><![CDATA[
+            var packages = $ctx.model.getChild('packages').getChildren();
+            var bm = new ModelService('cux.KINWONG.api.PUBLIC.api_get_request_all');
+            //接收传参
+            var track_info = [];
+            var packages_info = [];
+            $ctx.parameter.api_code = 'XY_ORDER_PACKAGE';
+            var res = bm.queryAsMap();
+            var arr = res.getChildren()[0];
+            println('parameter' + JSON.stringify(packages));
+            for (var b = 0;b < packages.length;b++) {
+                var packageId = packages[b].package_number;
+                var para_str = '{"token":"' + arr.ACCESS_TOKEN + '","packageId":"' + packageId + '"}'
+                var message;
+                var result = {};
+                println('parameter' + para_str);
+                if (para_str) {
+                    try {
+                        request({
+                            url: arr.API_URL,
+                            para: para_str,
+                            success: function(args) {
+                                var data = JSON.parse(args);
+                                if (data['success'] == true) {
+                                    data['result']['success'] = true;
+                                    result = data['result'];
+                                }
+                            },
+                            failure: function(args) {
+                                raise_app_error(args.error.message);
+                            }
+                        });
+                    } catch (e) {
+                        status = 'failure';
+                        message = e.message;
+                        result = null;
+                    } finally {
+                        if (message) {
+                            raise_app_error(message.substring(47));
+                        } else {
+                            result['deliveryTracks'] = [];
+                            var deliveryCode = result['deliveryCode'];
+                            xy_track_get(deliveryCode, result);
+                            packages_info.push(result);
+            
+                        }
+                    }
+                }
+            }
+            $ctx.parameter.response = JSON.stringify(packages_info);
+            log('track' + JSON.stringify(packages_info));
+            
+            function xy_track_get(deliveryCode, result) {
+                var message;
+                $ctx.parameter.api_code = 'XY_ORDER_TRACK_QUERY';
+                var res1 = bm.queryAsMap();
+                var arr1 = res1.getChildren()[0];
+                var track_str = '{"token":"' + arr1.ACCESS_TOKEN + '","sendNo":"' + deliveryCode + '"}';
+                request({
+                    url: arr1.API_URL,
+                    para: track_str,
+                    success: function(args) {
+                        var data = JSON.parse(args);
+                        if (data['success'] == true) {
+                            message = null;
+                            result.deliveryTracks.push(data.result);
+                            result['success'] == data['success'];
+                        } else {
+                            raise_app_error(args.resultMessage);
+                        }
+                    },
+                    failure: function(args) {
+                        raise_app_error(args.error.message);
+                    }
+                });
+            
+            }
+        ]]></s:server-script>
+    </a:init-procedure>
+    <a:service-output output="/parameter/"/>
+</a:service>

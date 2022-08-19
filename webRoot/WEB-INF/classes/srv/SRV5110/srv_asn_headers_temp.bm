@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao  
+    $Date: 2014-10-10 下午04:38:31  
+    $Revision: 1.0  
+    $Purpose: 代理送货，送货单临时头数据查询BM
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="asn_number desc">
+    <bm:query-fields>
+        <bm:query-field name="asn_header_id" queryExpression="asn_header_id = ${@asn_header_id}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="1=1"/>
+        <bm:data-filter expression="v.coop_business_group = ${/session/@business_group}"/>
+    </bm:data-filters>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT *
+				  FROM (SELECT t.asn_header_id,
+				               cps.coop_business_group,
+				               cps.coop_company_id,
+				               t.asn_number,
+				               (SELECT vsv.site_name FROM pur_vendor_sites_vl vsv WHERE vsv.vendor_site_id = t.vendor_site_id) AS vendor_site_name,
+				               (SELECT pvv.full_name FROM pur_vendors_v pvv WHERE pvv.vendor_id = t.vendor_id) AS vendor_name,
+				               (SELECT fcv.company_full_name FROM fnd_companies_vl fcv WHERE fcv.company_id = t.company_id) AS company_name,
+				               (SELECT iov.description
+				                  FROM inv_organizations_vl iov
+				                 WHERE iov.inv_organization_id = t.ship_to_organization_id) AS ship_to_organization_name,
+				               nvl(t.ship_to_location_address,
+				                   (SELECT fl.address_line_1 FROM fnd_locations fl WHERE fl.location_id = t.location_id)) AS location_name,
+				               nvl(to_char(t.ship_date,
+				                           'yyyy-mm-dd'),
+				                   to_char(SYSDATE,
+				                           'yyyy-mm-dd')) AS ship_date,
+				               nvl(to_char(t.expected_date,
+				                           'yyyy-mm-dd'),
+				                   to_char(SYSDATE,
+				                           'yyyy-mm-dd')) AS expected_date,
+				               nvl(to_char(t.transit_receive_date,
+				                           'yyyy-mm-dd'),
+				                   to_char(SYSDATE,
+				                           'yyyy-mm-dd')) AS transit_receive_date,
+				               nvl(to_char(t.transit_shipment_date,
+				                           'yyyy-mm-dd'),
+				                   to_char(SYSDATE,
+				                           'yyyy-mm-dd')) AS transit_shipment_date,
+				               t.comments AS header_desc,
+				               t.is_immed_shipped_flag,
+				               decode(nvl(t.is_immed_shipped_flag,
+				                          'N'),
+				                      'Y',
+				                      '是',
+				                      'N',
+				                      '否') AS is_immed_shipped_flag_display,
+				               t.actual_receiver_code,
+				               t.actual_receiver_name,
+				               t.ship_to_location_address,
+				               t.session_id,
+				               t.partner_name
+				          FROM inv_asn_headers_temp t,
+				               fnd_coop_partner_services_vl cps
+				         WHERE t.session_id = ${/session/@session_id}
+				           and t.coop_business_group = cps.owner_business_group) v 
+		               #WHERE_CLAUSE# 
+		               #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+                BEGIN
+                  srv_asn_agency_pkg.agency_modify_asn_header_temp(p_asn_header_id 			=> ${@asn_header_id},
+				                                   				   p_expected_date 			=> to_date(${@expected_date},'yyyy-mm-dd'),
+								                                   p_ship_date 				=> to_date(${@ship_date},'yyyy-mm-dd'),
+				                                   				   p_transit_receive_date 	=> to_date(${@transit_receive_date},'yyyy-mm-dd'),
+								                                   p_transit_shipment_date	=> to_date(${@transit_shipment_date},'yyyy-mm-dd'),
+								                                   p_comments 				=> ${@header_desc},
+								                                   p_session_id 			=> ${/session/@session_id},
+								                                   p_user_id 				=> ${/session/@user_id});
+               END;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+                BEGIN
+                  srv_asn_agency_pkg.agency_delete_asn_temp_by_id(p_asn_header_id 	=> ${@asn_header_id},
+				                                 				  p_user_id 		=> ${/session/@user_id});
+                END;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:parameters>
+                <bm:parameter name="last_flag" dataType="java.lang.String" input="false" output="true" outputPath="@last_flag"/>
+            </bm:parameters>
+            <bm:update-sql><![CDATA[
+                BEGIN
+	            	inv_asn_basic_pkg.get_asn_temp_flag(p_user_id 		=> ${/session/@user_id},
+						                                p_session_id	=> ${/session/@session_id},
+						                                x_flag 			=> ${@last_flag});
+                END;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

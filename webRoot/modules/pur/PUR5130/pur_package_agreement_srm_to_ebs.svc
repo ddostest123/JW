@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: zc  
+    $Date: 2018-9-4 下午2:10:14  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:service xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <p:method-invoke className="uncertain.composite.CompositeUtil" methodName="collapse">
+            <p:arguments>
+                <p:argument path="/parameter" type="uncertain.composite.CompositeMap"/>
+            </p:arguments>
+        </p:method-invoke>
+        <p:echo/>
+        <a:model-query fetchAll="true" model="cux.MKWE.pur.PUR8010.srm_to_ebs_url_query" rootPath="url"/>
+        <a:model-query fetchAll="true" model="pur.PUR5130.pur_agreement_apply_srm_to_ebs_query" rootPath="detail_line"/>
+        <s:server-script><![CDATA[
+            var logger = $logger('server-script');
+            
+            function log(msg) {
+                logger.info(msg);
+            }
+            var data = $ctx.model.getChild('detail_line').getChildren();
+            var soap_header = new CompositeMap('soapenv:Header');
+            var cux_header = new CompositeMap('cux:SOAHeader');
+            cux_header['xmlns:cux'] = 'http://xmlns.oracle.com/apps/cux/soaprovider/plsql/cux_srm_pvt/';
+            soap_header.addChild(cux_header);
+            var cux_lan = new CompositeMap('cux:NLSLanguage');
+            cux_lan.setText('SIMPLIFIED CHINESE');
+            cux_header.addChild(cux_lan);
+            var security_header = new CompositeMap('wsse:Security');
+            security_header['xmlns:wsse'] = 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd';
+            soap_header.addChild(security_header);
+            security_header['mustUnderstand'] = '1';
+            var Token = new CompositeMap('wsse:UsernameToken');
+            security_header.addChild(Token);
+            var user_name = new CompositeMap('wsse:Username');
+            user_name.setText('HANDSRM');
+            Token.addChild(user_name);
+            var password = new CompositeMap('wsse:Password');
+            password.setText('11223344');
+            Token.addChild(password);
+            
+            var soap_body = new CompositeMap('soapenv:Body');
+            var InputParameters = new CompositeMap('blan:InputParameters');
+            InputParameters['xmlns:blan'] = 'http://xmlns.oracle.com/apps/cux/soaprovider/plsql/cux_srm_pvt/blanket_imp/';
+            soap_body.addChild(InputParameters);
+            var P_BLANKET_IMP_TBL = new CompositeMap('blan:P_BLANKET_IMP_TBL');
+            InputParameters.addChild(P_BLANKET_IMP_TBL);
+            
+            
+            for (var i = 0;i < data.length;i++) {
+                var datas = {
+                    'blan:ORG_ID': data[i].org_id,
+                    'blan:OU_NAME': data[i].ou_code,
+                    'blan:VENDOR_ID': data[i].es_vendor_id,
+                    'blan:VENDOR_NAME': data[i].company_name,
+                    'blan:VENDOR_SITE_ID': data[i].es_site_id,
+                    'blan:VENDOR_SITE_CODE': data[i].display_site_code,
+                    'blan:CURRENCY_CODE': data[i].currency_code,
+                    'blan:HEADER_ATTRIBUTE2': data[i].tax_type_code,
+                    'blan:HEADER_ATTRIBUTE3': data[i].is_cen_pur_desc,
+                    'blan:HEADER_ATTRIBUTE4': 'Y',
+                    //'blan:HEADER_ATTRIBUTE5': data[i].source_type_desc,
+                    'blan:ITEM_ID': data[i].es_item_id,
+                    'blan:ITEM_CODE': data[i].item_code,
+                    'blan:ITEM_DESCRIPTION': data[i].item_desc,
+                    'blan:UNIT_PRICE': data[i].unit_price,
+                    'blan:UNIT_MEAS_LOOKUP_CODE': data[i].uom_code,
+                    'blan:END_DATE': data[i].expiration_date,
+                    'blan:SHIPMENT_QUANTITY': data[i].shipment_quantity,
+                    'blan:LINE_ATTRIBUTE1': data[i].line_attribute1,
+                    'blan:ATTRIBUTE1': data[i].buyer_desc
+                    
+                };
+            
+                var P_BLANKET_IMP_TBL_ITEM = new CompositeMap('blan:P_BLANKET_IMP_TBL_ITEM');
+                for (name in datas) {
+                    if (datas[name]) {
+                        var record = new CompositeMap(name);
+                        record.setText(datas[name]);
+                        P_BLANKET_IMP_TBL_ITEM.addChild(record);
+                    }
+                }
+                P_BLANKET_IMP_TBL.addChild(P_BLANKET_IMP_TBL_ITEM);
+            }
+            var soap_all = new CompositeMap('soap');
+            soap_all.addChild(soap_header);
+            soap_all.addChild(soap_body);
+            $ctx.addChild(soap_all);
+            log(soap_all.toXML());
+        ]]></s:server-script>
+        <a:ws-invoker inputHeaderPath="/soap/soapenv:Header" inputPath="/soap/soapenv:Body/blan:InputParameters" raiseExceptionOnError="false" returnPath="/soapResponse" url="${/model/url/record/@post_url}"/>
+        <p:echo/>
+        <p:method-invoke className="uncertain.composite.CompositeUtil" methodName="collapse">
+            <p:arguments>
+                <p:argument path="/soapResponse" type="uncertain.composite.CompositeMap"/>
+            </p:arguments>
+        </p:method-invoke>
+        <p:echo/>
+        <p:switch test="/soapResponse/@X_STATUS">
+            <p:case value="S">
+                <s:server-script><![CDATA[
+                    for (var i = 0;i < data.length;i++) {
+                        var rec = {
+                            'eitf_header_id': data[i].eitf_header_id,
+                            'eitf_line_id': data[i].eitf_line_id
+                        };
+                        $bm("pur.PUR5130.pur_agreement_apply_srm_to_ebs_query").insert(rec);
+                    }
+                ]]></s:server-script>
+            </p:case>
+        </p:switch>
+    </a:init-procedure>
+    <a:service-output output="/soapResponse"/>
+</a:service>

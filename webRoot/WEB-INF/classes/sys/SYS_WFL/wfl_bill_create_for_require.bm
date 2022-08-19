@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao  
+    $Date: 2016-5-5 下午03:38:31  
+    $Revision: 1.0  
+    $Purpose: 首页，采购方，待对账（非寄销事务数量）
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    COUNT(*) AS bill_create_count_non_csgn
+                FROM
+                    (SELECT
+                        th.owner_business_group AS business_group,
+                        (SELECT
+                            bu.company_id
+                        FROM
+                            fnd_business_units bu
+                        WHERE
+                            bu.business_unit_id = tl.business_unit_id
+                        ) AS company_id,
+                        tl.vendor_id, 
+                        (SELECT
+                            NVL(pvv.coop_company_id, -1)
+                        FROM
+                            pur_vendors_v pvv
+                        WHERE
+                            pvv.vendor_id = tl.vendor_id
+                        ) AS vendor_company_id,
+                        NVL(tl.clear_flag, 'N') AS clear_flag
+                    FROM
+                        pur_rcv_trx_lines tl,
+                        pur_rcv_trx_headers th,
+                        pur_rcv_trx_types tt
+                    WHERE
+                        tl.rcv_trx_header_id = th.rcv_trx_header_id AND
+                        tl.rcv_trx_type      = tt.rcv_trx_type AND
+                        tt.create_bill_flag  = 'Y' AND
+                        tl.stock_type       <> 'CONSIGNMENT' AND
+                        tl.bill_matched_flag = 'N' AND
+                        (
+                            EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                fnd_config_center_bg_item_dtl ccbid
+                            WHERE
+                                ccbid.config_classify_code    = 'PO' AND
+                                ccbid.config_item_code        = 'PO_02' AND
+                                ccbid.config_item_detail_code = 'PO_02_02' AND
+                                ccbid.business_group          = th.owner_business_group AND
+                                ccbid.bg_config_item_value    = 'Y'
+                            ) OR
+                            NOT EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                fnd_config_center_bg_item_dtl ccbid
+                            WHERE
+                                ccbid.config_classify_code    = 'PO' AND
+                                ccbid.config_item_code        = 'PO_02' AND
+                                ccbid.config_item_detail_code = 'PO_02_02' AND
+                                ccbid.business_group          = th.owner_business_group
+                            )
+                        )
+                    ) v,
+                    fnd_user_authority user_auth_0,
+                    fnd_user_authority user_auth_1
+                WHERE
+                    1                          = 1 AND
+                    v.business_group           = ${/session/@business_group} AND
+                    v.clear_flag               = 'N' AND
+                    user_auth_0.user_id        = ${/session/@user_id} AND
+                    user_auth_0.authority_type = 'COMPANY' AND
+                    user_auth_0.assign_id      = v.company_id AND
+                    user_auth_1.user_id        = ${/session/@user_id} AND
+                    user_auth_1.authority_type = 'VENDOR' AND
+                    user_auth_1.assign_id      = v.vendor_company_id
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

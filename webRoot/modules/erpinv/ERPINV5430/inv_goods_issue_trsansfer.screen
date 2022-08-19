@@ -1,0 +1,362 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: waiwaids  
+    $Date: 2012-11-7 下午6:19:31  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="t1.business_type_code=&apos;GI-F&apos;" model="erpinv.public.inv_get_transaction_type_by_bustype" rootPath="erpinv5430_transaction_type_init_ds"/>
+        <a:model-query defaultWhereClause="t1.business_type_code=&apos;GI-F&apos; and t1.transaction_type_code=&apos;GI-F&apos;" model="erpinv.public.inv_get_transaction_type_by_bustype" rootPath="erpinv5430_transaction_type_init_query"/>
+        <a:model-query model="erpinv.ERPINV5410.inv_get_period_name_date" rootPath="erpinv5430_period_date_init"/>
+        <!-- <a:model-query model="db.erpfnd_precision_pkg.get_quantity_precision" rootPath="erpinv5430_transfer_result_ds"/> -->
+    </a:init-procedure>
+    <a:view>
+        <a:link id="erpinv5430_get_period_name_link" model="db.erpgld_periods_pkg.get_open_inv_period" modelaction="query"/>
+        <a:link id="erpinv5430_new_transfer_link" url="${/request/@context_path}/modules/erpinv/ERPINV5430/inv_goods_issue_trsansfer.screen"/>
+        <a:link id="erpinv5430_get_item_quantities_link" model="erpinv.public.inv_get_item_quantities" modelaction="execute"/>
+        <script><![CDATA[
+            /*初始化*/
+            
+            function erpinv5430_head_init() {
+                var head_record = $('erpinv5430_transfer_head_ds').getCurrentRecord();
+                head_record.getField('document_number').setReadOnly(true);
+                head_record.set('document_number', '${l:ERPINV_NUM_WAITING_FOR_CREATE}');
+                if (typeof('${/model/erpinv5430_period_date_init/record/@end_date}') != 'undefined' && '${/model/erpinv5430_period_date_init/record/@end_date}' != '') {
+                    /* head_record.set('document_date', '${/model/erpinv5430_period_date_init/record/@end_date}'); */
+                    head_record.set('period_name', '${/model/erpinv5430_period_date_init/record/@period_name}');
+                    head_record.set('transaction_type_desc', '${/model/erpinv5430_transaction_type_init_query/record/@transaction_type_desc}');
+                    head_record.set('transaction_type', '${/model/erpinv5430_transaction_type_init_query/record/@transaction_type_code}');
+                } else {
+                    Aurora.showMessage('${l:HAP_PROMPT}', '没有打开的期间!');
+                }
+            }
+            /*
+             按钮
+             */
+            
+            function erpinv5430_nomal_add_btn() {
+                if ($('erpinv5430_transfer_head_ds').getAt(0).isNew) {
+                    Aurora.showConfirm('提示', '当前维护信息将丢失，确认新增吗？', function() {
+                        Aurora.go($('erpinv5430_new_transfer_link').getUrl());
+                    });
+                    return;
+                }
+                Aurora.go($('erpinv5430_new_transfer_link').getUrl());
+            }
+            
+            function erpinv5430_nomal_post_btn() {
+                if ($('erpinv5430_transfer_result_ds').getAll().length <= 0) {
+                    Aurora.showMessage('提示', '未维护行信息不得过账');
+                    return;
+                }
+                Aurora.showConfirm('提示', '是否确定过账', function() {
+                    Aurora.Masker.mask(Ext.getBody(), '正在过账...');
+                    $('erpinv5430_transfer_head_ds').submit();
+                });
+            }
+            
+            /*
+             事件，先头后行
+             */
+            //头更新事件
+            
+            function erpinv5430_head_update(ds, record, name, value, oldValue) {
+            
+               }
+            //提交成功事件（过账）
+            
+            function erpinv5410_head_submit_sucess(ds, res) {
+                Aurora.Masker.unmask(Ext.getBody());
+                $('erpinv5430_post_btn_id').disable();
+                $('erpinv5430_line_add_btn').disable();
+                $('erpinv5430_line_del_btn').disable();
+                ds.getAt(0).getField('transaction_type_desc').setReadOnly(true);
+                ds.getAt(0).getField('document_date').setReadOnly(true);
+                ds.getAt(0).getField('ord_order_num').setReadOnly(true);
+                ds.getAt(0).getField('return_flag').setReadOnly(true);
+                ds.getAt(0).getField('notes').setReadOnly(true);
+            
+                Aurora.SideBar.enable = true;
+                Aurora.SideBar.show({
+                    msg: '过账成功!',
+                    duration: 6000
+                });
+            }
+            
+            function erpinv5410_head_submitfailed(ds, res) {
+                Aurora.Masker.unmask(Ext.getBody());
+            }
+            //行更新事件
+            
+            function erpinv5430_line_update(ds, record, name, value, oldValue) {
+                var url = $('erpinv5430_get_item_quantities_link').getUrl();
+                if (name == 'item_id') {
+                    // record.getField('issue_warehouse_desc').setLovPara('item_id', value);
+                    // record.getField('gi_warehouse_desc').setLovPara('item_id', value);
+                    var record_head = $('erpinv5430_transfer_head_ds').getAt(0);
+                    var record_obj = record_head.getObject();
+                    $('erpinv5430_nomal_warehouse_onhand_ds').setQueryParameter('item_id', value);
+                    $('erpinv5430_gi_warehouse_onhand').setQueryParameter('item_id', value);
+                    $('erpinv5430_gi_warehouse_onhand').setQueryParameter('partner_id', record_obj.partner_id);
+                    $('erpinv5430_nomal_warehouse_onhand_ds').query();
+                    $('erpinv5430_gi_warehouse_onhand').query();
+                } else if (name == 'issue_warehouse_id') {
+                    record.getField('item_desc').setLovPara('warehouse_id_from', value);
+                    var para = {};
+                    var warehouse_id = value;
+                    var item_id = record.get('item_id');
+                    para = {
+                        'warehouse_id': warehouse_id,
+                        'item_id': item_id
+                    };
+                    Aurora.request({
+                        url: url,
+                        para: para,
+                        success: function(res) {
+                            var item_quantities = res.result.item_quantities;
+                            record.set('from_amount', item_quantities);
+                        }
+                    });
+                } else if (name == 'gi_warehouse_id') {
+                    record.getField('item_desc').setLovPara('warehouse_id_to', value);
+                    var para = {};
+                    var warehouse_id = value;
+                    var item_id = record.get('item_id');
+                    var partner_id = $('erpinv5430_transfer_head_ds').getAt(0).get('partner_id');
+                    para = {
+                        'warehouse_id': warehouse_id,
+                        'item_id': item_id,
+                        'customer_id': partner_id
+                    };
+                    Aurora.request({
+                        url: url,
+                        para: para,
+                        success: function(res) {
+                            var item_quantities = res.result.item_quantities;
+                            record.set('to_amount', item_quantities);
+                        }
+                    });
+                }
+            }
+            //行新增事件
+            
+            function erpinv5430_line_add(ds, record, index) {
+                var record_head = $('erpinv5430_transfer_head_ds').getAt(0);
+                company_id = record_head.get('company_id');
+                record.set('company_id',company_id);
+                record_head.getField('partner_desc').setReadOnly(true);
+            }
+            //行新增前事件
+            
+            function erpinv5430_before_add() { //头上信息没有填写完全 不能够新增行信息
+                if ($('erpinv5430_transfer_head_ds').validateSelf()) {
+                    return true;
+                }
+                return false;
+            }
+            //行删除事件
+            
+            function erpinv5430_line_remove(ds, record, index) {
+                var head_record = $('erpinv5430_transfer_head_ds').getCurrentRecord();
+                if (ds.getAll().length <= 0) {
+                    head_record.getField('partner_desc').setReadOnly(false);
+                }
+            }
+            /*
+             render
+             */
+            
+            function erpinv5430_quantity_ren_fun(value, record, name) {
+                return Aurora.formatNumber(value, '${/model/erpinv5430_transfer_result_ds/record/@value}');
+            }
+            /*
+             validator 校验
+             */
+            
+            function erpinv5430_document_date_vali_fun(record, name, value) {
+                var flag = true;
+                var company_id;
+    	        company_id = $('erpinv5430_transfer_head_ds').getAt(0).get('company_id');
+    	        if (company_id==undefined || company_id == ''){
+    	        Aurora.showMessage('提示','请先选择公司！');
+    	        return;
+    	        }
+                Aurora.request({
+                    url: $('erpinv5430_get_period_name_link').getUrl()  + '?date=' + Aurora.formatDate(value) + '&company_id='+company_id,
+                    success: function(res) {
+                        if (typeof(res.result.record.period_name) != 'undefined') {
+                            record.set('period_name', res.result.record.period_name);
+                        } else {
+                            record.set('period_name', '');
+                            flag = '当前日期对应的期间未打开';
+                        }
+                    },
+                    scope: this,
+                    sync: true
+                });
+                return flag;
+            }
+            
+            //转移数量校验
+            
+            function erpinv5430_transfer_quantity_vali(record, name, value) {
+                if (value == 0) {
+                    return '转移数量不允许为0';
+                }
+                return true;
+            }
+            
+            //动态编辑器
+            
+            function erpinv5430_lov_ed_fun(record, name) {
+                if (record.isNew) {
+                    return 'erpinv5430_lov_ed';
+                }
+                return;
+            }
+            
+            function erpinv5430_combo_ed_fun(record, name) {
+                if (record.isNew) {
+                    return 'erpinv5430_combo_ed';
+                }
+                return;
+            }
+            
+            function erpinv5430_amount_ed_fun(record, name) {
+                if (record.isNew) {
+                    return 'erpinv5430_amount_ed';
+                }
+                return;
+            }
+            
+            function erpinv5430_tf_ed_fun(record, name) {
+                if (record.isNew) {
+                    return 'erpinv5430_tf_ed';
+                }
+                return;
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="erpinv5430_transaction_type_ds" fetchAll="true">
+                <a:datas dataSource="/model/erpinv5430_transaction_type_init_ds"/>
+            </a:dataSet>
+            <a:dataSet id="erpinv5430_assign_company_ds" loadData="true" model="public.fnd_company_list"/>
+            <a:dataSet id="erpinv5430_nomal_warehouse_onhand_ds" autoQuery="true" fetchAll="true" model="erpinv.ERPINV5410.inv_nomal_warehouse_onhand_lov"/>
+            <a:dataSet id="erpinv5430_gi_warehouse_onhand" autoQuery="true" fetchAll="true" model="erpinv.ERPINV5430.inv_gi_warehouse_onhand_lov"/>
+            <a:dataSet id="erpinv5430_transfer_head_ds" autoCreate="true" model="erpinv.ERPINV5430.inv_doc_goods_issue_trs_hds" submitUrl="${/request/@context_path}/modules/erpinv/ERPINV5430/inv_goods_issue_transfer_submit.svc">
+                <a:fields>
+                    <a:field name="company_id" defaultValue="${/session/@default_company_id}"/>
+                    <a:field name="company_name" defaultValue="${/session/@default_company_name}" displayField="company_full_name" options="erpinv5430_assign_company_ds" required="true" returnField="company_id" valueField="company_id"/>
+                    <a:field name="document_number" required="true"/>
+                    <a:field name="transaction_type_desc" displayField="transaction_type_desc" options="erpinv5430_transaction_type_ds" required="true" returnField="transaction_type" valueField="transaction_type_code"/>
+                    <a:field name="document_date" required="true" validator="erpinv5430_document_date_vali_fun"/>
+                    <!-- <a:field name="period_name" readOnly="true" required="true"/> -->
+                    <a:field name="partner_desc" autoComplete="true" autoCompleteField="quick_value" autoCompleteSize="1" lovGridHeight="320" lovHeight="460" lovService="erpord.ERPORD5010.ord_sales_order_customer?enabled_flag=Y" lovWidth="500" required="true" title="客户">
+                        <a:mapping>
+                            <a:map from="partner_description" to="partner_desc"/>
+                            <a:map from="partner_id" to="partner_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="return_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="status" defaultValue="Verified"/>
+                    <a:field name="item_desc" autoComplete="true" autoCompleteField="item_desc" autoCompleteSize="1" lovGridHeight="320" lovHeight="460" lovService="erpinv.public.inv_items_query_lov?inventory_flag=Y" lovWidth="500"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="erpinv5430_head_update"/>
+                    <a:event name="submitsuccess" handler="erpinv5410_head_submit_sucess"/>
+                    <a:event name="submitfailed" handler="erpinv5410_head_submitfailed"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="erpinv5430_transfer_result_ds" bindName="result_ds" bindTarget="erpinv5430_transfer_head_ds" model="erpinv.ERPINV5430.inv_doc_goods_issue_trs_lns" selectable="true">
+                <a:fields>
+                    <a:field name="company_id"/>
+                    <a:field name="item_desc" autoComplete="true" autoCompleteField="item_desc" autoCompleteSize="1" lovGridHeight="320" lovHeight="460" lovService="erpinv.ERPINV5420.inv_item_out_nomal_onhand_lov" lovWidth="500" required="true" title="物品">
+                        <a:mapping>
+                            <a:map from="item_id" to="item_id"/>
+                            <a:map from="item_desc" to="item_desc"/>
+                            <a:map from="from_amount" to="from_amount"/>
+                            <a:map from="to_amount" to="to_amount"/>
+                            <a:map from="primary_uom_desc" to="primary_uom_desc"/>
+                            <a:map from="primary_uom" to="primary_uom"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="issue_warehouse_desc" displayField="warehouse_desc" options="erpinv5430_nomal_warehouse_onhand_ds" required="true" valueField="warehouse_id">
+                        <a:mapping>
+                            <a:map from="warehouse_id" to="issue_warehouse_id"/>
+                            <a:map from="warehouse_desc" to="issue_warehouse_desc"/>
+                            <a:map from="primary_quantity" to="from_amount"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="gi_warehouse_desc" displayField="warehouse_desc" options="erpinv5430_gi_warehouse_onhand" required="true" valueField="warehouse_id">
+                        <a:mapping>
+                            <a:map from="warehouse_id" to="gi_warehouse_id"/>
+                            <a:map from="warehouse_desc" to="gi_warehouse_desc"/>
+                            <a:map from="primary_quantity" to="to_amount"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="primary_quantity" required="true" validator="erpinv5430_transfer_quantity_vali"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="erpinv5430_line_update"/>
+                    <a:event name="add" handler="erpinv5430_line_add"/>
+                    <a:event name="beforecreate" handler="erpinv5430_before_add"/>
+                    <a:event name="remove" handler="erpinv5430_line_remove"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenTopToolbar>
+            <a:screenTitle/>
+            <a:toolbarButton className="item-rbtn-blue button-add" click="erpinv5430_nomal_add_btn" style="margin-left:20px;" text="HAP_NEW" width="100"/>
+            <a:toolbarButton id="erpinv5430_post_btn_id" className="item-rbtn-blue post" click="erpinv5430_nomal_post_btn" text="过账" width="100"/>
+        </a:screenTopToolbar>
+        <a:div align="center">
+            <font size="5"><![CDATA[发出商品出库(退库)单]]></font>
+        </a:div>
+        <a:form marginWidth="40">
+            <a:hBox labelWidth="90">
+                <a:comboBox name="company_name" bindTarget="erpinv5430_transfer_head_ds" prompt="公司"/>
+            </a:hBox>
+            <a:hBox labelWidth="90">
+                <a:comboBox name="transaction_type_desc" bindTarget="erpinv5430_transfer_head_ds" prompt="事务类型"/>
+                <a:textField name="document_number" bindTarget="erpinv5430_transfer_head_ds" prompt="事务编号"/>
+                <a:datePicker name="document_date" bindTarget="erpinv5430_transfer_head_ds" prompt="事务日期"/>
+                <!-- <a:textField name="period_name" bindTarget="inv5430_transfer_head_ds" prompt="期间日期" width="80"/> -->
+            </a:hBox>
+            <a:hBox labelWidth="90">
+                <a:lov name="partner_desc" bindTarget="erpinv5430_transfer_head_ds" prompt="发出商品客户"/>
+                <a:textField name="ord_order_num" bindTarget="erpinv5430_transfer_head_ds" prompt="销售订单号"/>
+                <a:checkBox name="return_flag" bindTarget="erpinv5430_transfer_head_ds" prompt="退库"/>
+            </a:hBox>
+            <a:hBox labelWidth="90">
+                <a:textField name="notes" bindTarget="erpinv5430_transfer_head_ds" prompt="备注" width="400"/>
+            </a:hBox>
+        </a:form>
+        <a:grid id="erpinv5430_outsource_transfer_result_gd" bindTarget="erpinv5430_transfer_result_ds" marginHeight="150" marginWidth="50" style="border:none" submask="false" width="560">
+            <a:toolBar>
+                <a:button id="erpinv5430_line_add_btn" type="add"/>
+                <a:button id="erpinv5430_line_del_btn" type="delete"/>
+            </a:toolBar>
+            <a:columns>
+                <a:column name="item_desc" editorFunction="erpinv5430_lov_ed_fun" prompt="ERPORD_SALES_ORDER_LINES.ITEM_DESCRIPTION" width="110"/>
+                <a:column name="issue_warehouse_desc" editorFunction="erpinv5430_combo_ed_fun" prompt="发出库房" width="75"/>
+                <a:column name="from_amount" align="right" prompt="发出库存数量" width="50"/>
+                <a:column name="gi_warehouse_desc" editorFunction="erpinv5430_combo_ed_fun" prompt="发出商品库房" width="75"/>
+                <a:column name="to_amount" align="right" prompt="发出商品库存数量" width="60"/>
+                <a:column name="primary_quantity" align="right" editorFunction="erpinv5430_amount_ed_fun" prompt="发出数量" width="50"/>
+                <a:column name="primary_uom_desc" prompt="主单位" width="40"/>
+                <a:column name="notes" editorFunction="erpinv5430_tf_ed_fun" prompt="备注" width="80"/>
+            </a:columns>
+            <a:editors>
+                <a:lov id="erpinv5430_lov_ed"/>
+                <a:comboBox id="erpinv5430_combo_ed"/>
+                <a:textField id="erpinv5430_tf_ed"/>
+                <a:numberField id="erpinv5430_amount_ed" allowNegative="false"/>
+            </a:editors>
+        </a:grid>
+        <script><![CDATA[
+        	erpinv5430_head_init();
+        ]]></script>
+    </a:view>
+</a:screen>

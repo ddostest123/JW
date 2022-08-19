@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao
+    $Date: 2014-12-1 下午04:05:01  
+    $Revision: 1.0  
+    $Purpose: 非寄销网上发票维护(供)，发票行信息查询BM
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        (SELECT DISTINCT
+                            (h.bill_number)
+                        FROM
+                            acp_bill_headers h
+                        WHERE
+                            h.header_id = d.header_id
+                        ) bill_number,
+                        d.detail_num,
+                        d.rcv_trx_line_id,
+                        d.transaction_name,
+                        ROUND((d.unit_price * d.transaction_quantity),4) AS detail_amount,
+                        d.transaction_quantity,
+                        (SELECT
+                            tl.from_asn_display_number
+                        FROM
+                            pur_rcv_trx_lines tl
+                        WHERE
+                            tl.rcv_trx_line_id = d.rcv_trx_line_id
+                        ) AS from_asn_display_number,
+                        (SELECT
+                            tl.from_asn_line_num
+                        FROM
+                            pur_rcv_trx_lines tl
+                        WHERE
+                            tl.rcv_trx_line_id = d.rcv_trx_line_id
+                        ) AS from_asn_line_num,
+                        d.organization_name,
+                        d.bill_type,
+                        d.pur_type,
+                        d.term_name,
+                        d.trade_method,
+                        d.receipt_date,
+                        d.no_tax_amount,
+                        d.tax_amount,
+                        (SELECT l.unit_price FROM acp_bill_lines l WHERE l.line_id = d.line_id
+                        ) unit_price,
+                        (SELECT l.tax_unit_price FROM acp_bill_lines l WHERE l.line_id = d.line_id
+                        ) tax_unit_price,
+                        (SELECT l.quantity FROM acp_bill_lines l WHERE l.line_id = d.line_id
+                        ) quantity,
+                        (SELECT
+                            l.remark
+                        FROM
+                            acp_bill_lines l
+                        WHERE
+                            l.line_id = d.line_id
+                        ) remark,
+                        d.billed_quantity,
+                        d.invoice_num,
+                        d.invoice_date,
+                        d.gl_date,
+                        d.com_subject,
+                        d.com_subject_desc,
+                        d.differ_amount,
+                        d.vendor_comments,
+                        d.primary_unit_meas_lookup_code,
+                        --added by wangmengling 15656 2018年3月02日 修改单位描述效果
+                        NVL(
+                        (SELECT
+                            vl.uom_code
+                            || '/'
+                            || vl.uom_desc
+                        FROM
+                            fnd_uom_codes_vl vl
+                        WHERE
+                            d.primary_unit_meas_lookup_code = vl.uom_code AND
+                            vl.business_group               =
+                            (SELECT
+                                h.owner_business_group
+                            FROM
+                                acp_bill_headers h
+                            WHERE
+                                h.header_id=d.header_id
+                            ) AND
+                            ROWNUM = 1
+                        ), d.primary_unit_meas_lookup_code) pri_meas_lookup_code_desc,
+                        d.primary_quantity,
+                        d.receipt_num,
+                        d.receipt_line_num,
+                        (SELECT
+                            ttv.description1
+                        FROM
+                            pur_rcv_trx_lines tl,
+                            pur_rcv_trx_types_vl ttv
+                        WHERE
+                            ttv.rcv_trx_type   = tl.rcv_trx_type AND
+                            tl.rcv_trx_line_id = d.rcv_trx_line_id
+                        ) AS rcv_trx_type_desc,
+                        (SELECT
+                            pla.line_desc
+                        FROM
+                            pur_lines_all pla
+                        WHERE
+                            pla.pur_line_id = d.po_line_id
+                        ) AS order_line_desc,
+                        l.invoice_line_id,
+                        l.invoice_header_id,
+                        l.invoice_line_num,
+                        l.segment1,
+                        l.line_num,
+                        l.shipment_num,
+                        l.release_num,
+                        l.distribution_num,
+                        l.item_code,
+                        l.item_name,
+                        (SELECT
+                            msi.used_item_code
+                        FROM
+                            mtl_system_items msi
+                        WHERE
+                            msi.item_id = l.item_id
+                        ) used_item_code,
+                        l.unit_meas_lookup_code,
+                        --added by wangmengling 15656 2018年3月02日 修改单位描述效果
+                        NVL(
+                        (SELECT
+                            vl.uom_code
+                            || '/'
+                            || vl.uom_desc
+                        FROM
+                            fnd_uom_codes_vl vl
+                        WHERE
+                            l.unit_meas_lookup_code = vl.uom_code AND
+                            vl.business_group       =
+                            (SELECT
+                                h.coop_business_group
+                            FROM
+                                acp_web_invoice_headers h
+                            WHERE
+                                h.invoice_header_id=l.invoice_header_id
+                            ) AND
+                            ROWNUM = 1
+                        ), l.unit_meas_lookup_code) unit_meas_lookup_code_desc,
+                        l.currency_code,
+                        fnd_document_control_pkg.get_reality_value(p_rule_code => 'PRICE_SECRECY', p_role_id => ${/session/@role_id}, p_foundation_code => 'AP_INVOICE', p_document_id => l.invoice_header_id, p_control_area => 'EXTERNAL', p_business_group => ${/session/@business_group}, p_value => l.invoice_price) AS invoice_price,
+                        l.bill_quantity,
+                        fnd_document_control_pkg.get_reality_value(p_rule_code => 'PRICE_SECRECY', p_role_id => ${/session/@role_id}, p_foundation_code => 'AP_INVOICE', p_document_id => l.invoice_header_id, p_control_area => 'EXTERNAL', p_business_group => ${/session/@business_group}, p_value => l.bill_amount) AS bill_amount,
+                        l.tax_rate,
+                        fnd_document_control_pkg.get_reality_value(p_rule_code => 'PRICE_SECRECY', p_role_id => ${/session/@role_id}, p_foundation_code => 'AP_INVOICE', p_document_id => l.invoice_header_id, p_control_area => 'EXTERNAL', p_business_group => ${/session/@business_group}, p_value => l.tax_invoice_price) AS tax_invoice_price,
+                        fnd_document_control_pkg.get_reality_value(p_rule_code => 'PRICE_SECRECY', p_role_id => ${/session/@role_id}, p_foundation_code => 'AP_INVOICE', p_document_id => l.invoice_header_id, p_control_area => 'EXTERNAL', p_business_group => ${/session/@business_group}, p_value => l.tax_bill_amount) AS tax_bill_amount,
+                        l.recept_num,
+                        l.recept_line_num,
+                        TO_CHAR(l.transaction_date, 'yyyy-mm-dd hh24:mi:ss') AS transaction_date,
+                        l.transaction_id,
+                        TO_CHAR(l.request_date, 'yyyy-mm-dd hh24:mi:ss') AS request_date,
+                        l.approve_return_flag,
+                        l.comments,
+                        (SELECT msi.item_specs FROM mtl_system_items msi WHERE msi.item_id=l.item_id
+                        ) AS item_specs,
+                        (SELECT msi.item_model FROM mtl_system_items msi WHERE msi.item_id=l.item_id
+                        ) AS item_model,
+                        l.item_id
+                    FROM
+                        acp_web_invoice_lines l,
+                        acp_bill_details d
+                    WHERE
+                        l.bill_detail_id = d.detail_id
+                    ) v #WHERE_CLAUSE#
+                ORDER BY
+                    v.invoice_line_num
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:query-sql><![CDATA[
+               BEGIN
+                  acp_web_invoice_pkg.submit_web_invoice(p_invoice_header_id 	=> ${@invoice_header_id},
+				                                         p_invoice_amount 	 	=> ${@invoice_amount},
+				                                         p_invoice_tax_amount	=> ${@invoice_tax_amount},
+				                                         p_tax_invoice_num 		=> ${@tax_invoice_num},
+				                                         p_express_company      => ${@express_company},
+                                                         p_express_order        => ${@express_order},
+                                                         p_contacts             => ${@contacts},
+				                                         p_vendor_comments 		=> ${@vendor_comments},
+				                                         p_user_id 				=> ${/session/@user_id});
+                                         
+               END;
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:query-sql><![CDATA[
+               BEGIN
+                  acp_web_invoice_pkg.cancel_web_invoice(p_invoice_header_id 	=> ${@invoice_header_id},
+				                                         p_invoice_amount 	 	=> ${@invoice_amount},
+				                                         p_invoice_tax_amount	=> ${@invoice_tax_amount},
+				                                         p_tax_invoice_num 		=> ${@tax_invoice_num},
+				                                         p_vendor_comments 		=> ${@vendor_comments},
+				                                         p_user_id 				=> ${/session/@user_id});
+                                         
+               END;
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:query-sql><![CDATA[
+               BEGIN
+                  acp_web_invoice_pkg.update_web_invoice(p_invoice_header_id 	=> ${@invoice_header_id},
+				                                         p_invoice_amount 	 	=> ${@invoice_amount},
+				                                         p_invoice_tax_amount	=> ${@invoice_tax_amount},
+				                                         p_tax_invoice_num 		=> ${@tax_invoice_num},
+				                                         p_express_company      => ${@express_company},
+				                                         p_express_order        => ${@express_order},
+				                                         p_contacts             => ${@contacts},
+				                                         p_vendor_comments 		=> ${@vendor_comments},
+				                                         p_user_id 				=> ${/session/@user_id});
+                                         
+               END;
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="invoice_header_id" queryExpression="v.invoice_header_id = ${@invoice_header_id}"/>
+    </bm:query-fields>
+</bm:model>

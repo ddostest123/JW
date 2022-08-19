@@ -1,0 +1,515 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: FelixDru  
+    $Date: 2014-07-22 下午03:48:40  
+    $Revision: 1.0  
+    $Purpose: 采购订单只读查看
+-->
+<a:screen xmlns:c="aurora.application.action" xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="pur.public.pur_po_modify_records_cfg" rootPath="pur7010_modifyRecordCfg"/>
+        <a:model-query defaultWhereClause="cbi.config_classify_code = &apos;PO&apos; AND cbi.config_item_code = &apos;PO_07&apos;" fetchAll="true" model="public.get_fnd_config_center_bg_item_value" rootPath="bg_item_po_07"/>
+        <a:model-query defaultWhereClause="cbi.config_classify_code = &apos;PO&apos; AND cbi.config_item_code = &apos;PO_13&apos;" fetchAll="true" model="public.get_fnd_config_center_bg_item_value_modify" rootPath="bg_item_po_13"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="pur_purchaseOrderViewRecord_link" url="${/request/@context_path}/modules/pur/public/pur_purchase_order_operate_record.screen"/>
+        <!-- <a:link id="pur7010_purchaseOrderSave_link" model="pur.PUR7010.pur_purchase_order_view_line_detail" modelaction="update"/> -->
+        <a:link id="pur7010_purchaseOrderSave_link" url="${/request/@context_path}/modules/pur/PUR7010/pur_po_edit_save.svc"/>
+        <a:link id="pur7010_lineDescBatchUpdate_link" url="${/request/@context_path}/modules/pur/PUR7010/pur_po_line_desc_batch_update.screen"/>
+        <!-- <a:link id="pur7010_poModifyRecords_link" url="${/request/@context_path}/modules/pur/public/pur_po_modify_records.screen"/> -->
+        <a:link id="pur7010_poModifyRecords_link" url="${/request/@context_path}/modules/pur/public/pur_po_oper_records.screen"/>
+        <a:link id="pur7010_pur_po_line_subject_view_link" url="${/request/@context_path}/modules/pur/PUR7010/pur_po_line_subject_view.screen"/>
+        <a:link id="pur7010_poBomDetail_link_new" url="${/request/@context_path}/modules/pur/public/pur_po_boms.screen"/>
+        <script><![CDATA[
+            var g_con_line_desc = '';
+            var g_con_vendor_desc = '';
+            //返回按钮定义
+            
+            function pur_purchaseOrderViewRecordClose_fun() {
+                $('pur_purchaseOrderViewLineDetail_window').close();
+            }
+            
+            //操作记录
+            
+            function pur_purchaseOrderViewRecordOpen() {
+                new Aurora.Window({
+                    id: 'pur_purchase_order_record_window',
+                    url: $('pur_purchaseOrderViewRecord_link').getUrl() + '?transaction_object=PUR_HEADERS_ALL' + '&pur_header_id=' + ${/parameter/@pur_header_id},
+                    title: '${l:PUR_HEADERS_ALL.OPERATION_RECORD}',
+                    height: 405,
+                    width: 685
+                });
+            }
+            
+            
+            function pur7010_purchaseOrderMoneyRenderFun(value, record, name) {
+                if (value == '***') {
+                    return value;
+                } else {
+            
+                    //暂估标识
+                    var provisional_estimate_flag = record.get('provisional_estimate_flag');
+            
+                    if (name == 'unit_price') {
+                        if (provisional_estimate_flag == 'Y') {
+                            return '<div style="color:#FF0000;font-weight:bold;">' + Aurora.formatNumber(value) + '</div>';
+                        } else {
+                            return Aurora.formatNumber(value);
+                        }
+                    } else {
+                        return Aurora.formatNumber(value);
+                    }
+                }
+            }
+            
+            
+            //checkUpload Attachment
+            
+            function pur7010_checkUploadAttachmentFun() {
+                var url = "${/request/@context_path}/check_uploadFile.screen?table_name=PUR_PO_ATTACHMENT&header_id=${/parameter/@pur_header_id}";
+                new Aurora.Window({
+                    url: url,
+                    title: '附件查看',
+                    id: 'fpur_7010_po_attm_window',
+                    width: 610,
+                    height: 500
+                });
+            }
+            //Upload Attachment
+            
+            function pur7010_UploadAttachmentFun() {
+                var url = "${/request/@context_path}/uploadFile.screen?table_name=PUR_PO_ATTACHMENT&header_id=${/parameter/@pur_header_id}";
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:ATM.UPLOAD_ATTACHMENT}',
+                    id: 'fpur_7010_po_attm_window',
+                    width: 610,
+                    height: 500
+                });
+            }
+            
+            function pur7010_purchaseOrderSaveFunction() {
+                var header_ds = $('pur_purchaseOrderViewHeaderDetail_ds');
+                var record = header_ds.getAt(0);
+            
+                var datas = {
+                    'pur_header_id': ${/parameter/@pur_header_id},
+                    'comments': record.get('comments')
+                };
+            
+                var lines_ds = $('pur_purchaseOrderViewLineDetail_ds');
+                var lines_records = lines_ds.getAll();
+                var lines_data = [];
+                for (var i = 0;i < lines_records.length;i++) {
+                    lines_data.push(lines_records[i].data);
+                }
+                datas['lines_data'] = lines_data;
+            
+                Aurora.request({
+                    url: $('pur7010_purchaseOrderSave_link').getUrl(),
+                    para: datas,
+                    success: function() {
+                        $('pur_purchaseOrderViewHeaderDetail_ds').query();
+                        $('pur_purchaseOrderViewLineDetail_ds').query();
+                        Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SAVE_SUCCESS}!');
+                    },
+                    failure: function(res) {},
+                    error: function(res) {},
+                    scope: this
+                });
+            }
+            
+            //版本切换
+            
+            function pur_switch_new() {
+                var pur_header_id = ${/parameter/@pur_header_id};
+                $('pur_purchaseOrderViewLineDetail_window').close();
+            
+                new Aurora.Window({
+                    id: 'pur_purchaseOrderViewLineDetail_window',
+                    url: $('pur7010_purchaseOrderViewDetail_simplify_link').getUrl() + '?pur_header_id=' + pur_header_id,
+                    title: '${l:PUR_HEADER_DETAIL_TITLE}',
+                    fullScreen: true
+                });
+            }
+            
+            function pur7010_batchUpdateLineDescFun() {
+                var pur_header_id = ${/parameter/@pur_header_id};
+                new Aurora.Window({
+                    id: 'pur7010_lineDescBatchUpdate_window',
+                    url: $('pur7010_lineDescBatchUpdate_link').getUrl() + '?pur_header_id=' + pur_header_id,
+                    title: '${l:PUR_HEADERS_ALL.BATCH_LINE_DESC}',
+                    width: 400,
+                    height: 300
+                });
+            }
+            
+            function pur7010_poModifyRecords_fun() {
+                new Aurora.Window({
+                    id: 'pur_poModifyRecord_window',
+                    url: $('pur7010_poModifyRecords_link').getUrl() + '?pur_header_id=' + ${/parameter/@pur_header_id},
+                    title: '${l:PUR_PO_MODIFY_RECORDS.TITLE}',
+                    height: 420,
+                    width: 680
+                });
+            }
+            
+            function pur7010_poModifyRecordsComingSoon_fun() {
+                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.COMING_SOON}...');
+            }
+            
+            function pur7010_purchaseOrderPrintDetail_fun() {
+                var record = $('pur_purchaseOrderViewHeaderDetail_ds').getCurrentRecord();
+                var datas = [];
+                datas.push(record.data);
+                Aurora.Masker.mask($('pur_purchaseOrderViewLineDetail_window').wrap, '${l:LOADING}');
+                Aurora.request({
+                    url: $('pur7010_po_print_insert_link').getUrl(),
+                    para: datas,
+                    success: function(res) {
+                        Aurora.Masker.unmask($('pur_purchaseOrderViewLineDetail_window').wrap);
+                        window.open($('pur7010_po_print_link').getUrl(), '_blank');
+                    },
+                    failure: function(res) {
+                        Aurora.Masker.unmask($('pur_purchaseOrderViewLineDetail_window').wrap);
+                    },
+                    error: function(res) {
+                        Aurora.Masker.unmask($('pur_purchaseOrderViewLineDetail_window').wrap);
+                    },
+                    scope: this
+                });
+            }
+            
+            function pur7010_purchaseOrderViewDetailLineOtherInfoRenderer(value, record, name) {
+                if (name == 'subject_assign') {
+                    if (!Aurora.isEmpty(record.get('pur_line_id'))) {
+                        return '<a href="javascript:pur7010_purchaseOrderViewDetailLineOtherInfoRendererOpen(' + record.get('pur_line_id') + ')">科目分配</a>';
+                    }
+                }
+            }
+            
+            function pur7010_purchaseOrderViewDetailLineOtherInfoRendererOpen(id) {
+                new Aurora.Window({
+                    id: 'pur7010_pur_po_line_subject_view_link_window',
+                    url: $('pur7010_pur_po_line_subject_view_link').getUrl() + '?pur_line_id=' + id,
+                    title: '科目分配',
+                    height: '340',
+                    width: '830'
+                });
+            }
+            
+            function pur7010_renderer_fn(value, record, name) {
+                var v_index = $('pur_purchaseOrderViewLineDetail_ds').indexOf(record);
+                var owner_business_group = record.get('owner_business_group');
+                var line_desc = record.get('line_desc');
+                if (owner_business_group) {
+                    if (value) {
+                        return '<div  onclick="pur7010_line_desc_edt_fn(' + record.get('pur_line_id') + ',' + v_index + ');" width="100%" height="100%">' + value + '</div>';
+                    } else {
+                        return '';
+                    }
+                } else {
+                    line_desc.setReadOnly(true);
+                }
+            }
+            
+            function pur7010_line_desc_edt_fn(id, index) {
+                var url = '${/request/@context_path}/modules/pur/PUR7010/pur_purchase_order_view_detail_edit.screen?pur_line_id=' + id;
+            
+                new Aurora.Window({
+                    url: url,
+                    id: 'pur7010_line_desc_edt_win',
+                    width: 700,
+                    height: 400
+                }).on('close', function() {
+                    if (g_con_line_desc) {
+                        $('pur_purchaseOrderViewLineDetail_ds').getAt(index).set('line_desc', g_con_line_desc);
+                        g_con_line_desc = '';
+                    }
+                });
+            }
+            
+            function pur7010_vendor_desc_renderer_fn(value, record, name) {
+                var v_index = $('pur_purchaseOrderViewLineDetail_ds').indexOf(record);
+                var owner_business_group = record.get('owner_business_group');
+                var vendor_desc = record.get('vendor_desc');
+                if (owner_business_group) {
+                    if (value) {
+                        return '<div  onclick="pur7010_vendor_desc_edt_fn(' + record.get('pur_line_id') + ',' + v_index + ');" width="100%" height="100%">' + value + '</div>';
+                    } else {
+                        return '';
+                    }
+                } else {
+                    vendor_desc.setReadOnly(true);
+                }
+            }
+            
+            function pur7010_vendor_desc_edt_fn(id, index) {
+                var url = '${/request/@context_path}/modules/pur/PUR7010/pur_purchase_vendor_desc.screen?pur_line_id=' + id;
+            
+                new Aurora.Window({
+                    url: url,
+                    id: 'pur7010_vendor_desc_edt_win',
+                    width: 700,
+                    height: 400
+                }).on('close', function() {
+                    if (g_con_vendor_desc) {
+                        $('pur_purchaseOrderViewLineDetail_ds').getAt(index).set('vendor_desc', g_con_vendor_desc);
+                        g_con_vendor_desc = '';
+                    }
+                });
+            }
+            
+            //外协BOM
+            
+            function pur7010_poBomRender_new(value, record, name) {
+                if (record.isNew) {
+                    return '';
+                }
+                return '<a href="javascript:pur7010_openPoBom_new(' + record.get('pur_line_location_id') + ')">${l:PUR_LINES_ALL.OUTSOURCING_BOM}</a>';
+            }
+            
+            function pur7010_openPoBom_new(id) {
+                new Aurora.Window({
+                    id: 'pur_public_po_bom_window',
+                    url: $('pur7010_poBomDetail_link_new').getUrl() + '?pur_line_location_id=' + id,
+                    title: '${l:PUR_LINES_ALL.OUTSOURCING_BOM}',
+                    height: 500,
+                    width: 700
+                });
+            }
+            
+            function pur7010_committed_delivery_date_render(value, record, name) {
+                if (record.get('po_11_item_value') == 'Y' && value > record.get('need_by_date')) {
+                    return '<div style="background:#FF0000;">' + value + '<div>';
+                } else if (Aurora.isEmpty(value)) {
+                    value = '';
+                }
+                return '<div>' + value + '<div>';
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="pur_purchaseOrderViewLineDetail_ds" autoCount="true" autoPageSize="true" autoQuery="true" model="pur.PUR7010.pur_purchase_order_view_line_detail" queryUrl="${/request/@context_path}/autocrud/pur.PUR7010.pur_purchase_order_view_line_detail/query?pur_header_id=${/parameter/@pur_header_id}">
+                <a:fields>
+                    <a:field name="pur_header_id"/>
+                    <a:field name="pur_line_location_id"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="pur_purchaseOrderViewHeaderDetail_ds" loadData="true" model="pur.PUR7010.pur_purchase_order_view_header_detail" queryUrl="${/request/@context_path}/autocrud/pur.PUR7010.pur_purchase_order_view_header_detail/query?pur_header_id=${/parameter/@pur_header_id}"/>
+            <a:dataSet id="pur_purchasePartner_ds" autoCount="true" autoPageSize="true" autoQuery="true" model="pur.public.pur_po_partners" queryUrl="${/request/@context_path}/autocrud/pur.public.pur_po_partners/query?pur_header_id=${/parameter/@pur_header_id}"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="pur_purchaseOrderViewRecordOpen" text="PUR_HEADERS_ALL.OPERATION_RECORD" width="100"/>
+                <a:toolbarButton click="pur7010_UploadAttachmentFun" text="ATM.UPLOAD_ATTACHMENT" width="100"/>
+                <a:toolbarButton click="pur7010_checkUploadAttachmentFun" text="PROMPT.VIEW_ATTACHMENT" width="100"/>
+                <a:toolbarButton click="pur7010_batchUpdateLineDescFun" text="PUR_HEADERS_ALL.BATCH_NOTE" width="100"/>
+                <a:toolbarButton click="pur7010_purchaseOrderSaveFunction" text="HAP_SAVE" width="100"/>
+                <a:toolbarButton click="pur_switch_new" text="PUR_HEADERS_ALL.SWITCH_NEW_VERSION" width="100"/>
+                <!-- <a:placeHolder id="pur7010_modifyRecords"/> -->
+                <a:toolbarButton click="pur7010_poModifyRecords_fun" text="PUR_PO_MODIFY_RECORDS.TITLE" width="100"/>
+                <a:toolbarButton click="pur_purchaseOrderViewRecordClose_fun" text="HAP_BACK" width="100"/>
+                <a:switch test="/model/bg_item_po_07/record/@bg_config_item_value">
+                    <a:case value="Y">
+                        <a:toolbarButton id="pur7010_purchaseOrderPrintDetail_btn" click="pur7010_purchaseOrderPrintDetail_fun" text="PROMPT.PRINT" width="100"/>
+                    </a:case>
+                </a:switch>
+            </a:screenTopToolbar>
+            <a:hBox labelWidth="100">
+                <a:textField name="display_po_number" bindTarget="pur_purchaseOrderViewHeaderDetail_ds" prompt="PUR_HEADERS_ALL.SEGMENT1" readOnly="true"/>
+                <a:textField name="currency_code" bindTarget="pur_purchaseOrderViewHeaderDetail_ds" prompt="PUR_HEADERS_ALL.CURRENCY_CODE" readOnly="true"/>
+                <!-- <a:textField name="display_release_num" bindTarget="pur_purchaseOrderViewHeaderDetail_ds" prompt="PUR_HEADERS_ALL.RELEASE_NUM" readOnly="true"/> -->
+                <!-- <a:textField name="revision_num" bindTarget="pur_purchaseOrderViewHeaderDetail_ds" prompt="PUR_HEADERS_ALL.REVISION_NUM" readOnly="true"/> -->
+                <a:textField name="pur_organization_name" bindTarget="pur_purchaseOrderViewHeaderDetail_ds" prompt="业务实体" readOnly="true"/>
+            </a:hBox>
+            <a:hBox labelWidth="100">
+                <a:textField name="agent_name" bindTarget="pur_purchaseOrderViewHeaderDetail_ds" prompt="PUR_HEADERS_ALL.PUR_BUYER" readOnly="true"/>
+                <a:textField name="sum_amount" bindTarget="pur_purchaseOrderViewHeaderDetail_ds" prompt="不含税总金额" readOnly="true" renderer="pur7010_purchaseOrderMoneyRenderFun"/>
+                <a:textField name="data_source" bindTarget="pur_purchaseOrderViewHeaderDetail_ds" prompt="PUR_HEADERS_ALL.DATA_SOURCE" readOnly="true"/>
+            </a:hBox>
+            <a:hBox labelWidth="100">
+                <!-- <a:textField name="company_name" bindTarget="pur_purchaseOrderViewHeaderDetail_ds" prompt="PUR_HEADERS_ALL.COMPANY" readOnly="true"/> -->
+                <a:textField name="type_lookup_desc" bindTarget="pur_purchaseOrderViewHeaderDetail_ds" prompt="PUR_HEADERS_ALL.ORDER_TYPE_ID" readOnly="true"/>
+                <!-- <a:textField name="ship_to_organization_name" bindTarget="pur_purchaseOrderViewHeaderDetail_ds" prompt="PUR_HEADERS_ALL.SHIP_TO_ORGANIZATION_ID" readOnly="true"/> -->
+                <!-- <a:textField name="ship_to_location_name" bindTarget="pur_purchaseOrderViewHeaderDetail_ds" prompt="PUR_HEADERS_ALL.SHIP_TO_LOCATION_ID" readOnly="true"/> -->
+                <!-- <a:textField name="bill_to_location_name" bindTarget="pur_purchaseOrderViewHeaderDetail_ds" prompt="PUR_HEADERS_ALL.BILL_TO_LOCATION_ID" readOnly="true"/> -->
+                <a:textField name="tax_sum_amount" bindTarget="pur_purchaseOrderViewHeaderDetail_ds" prompt="含税总金额" readOnly="true" renderer="pur7010_purchaseOrderMoneyRenderFun"/>
+            </a:hBox>
+            <a:hBox labelWidth="100">
+                <a:textField name="creation_date_desc" bindTarget="pur_purchaseOrderViewHeaderDetail_ds" prompt="PUR_HEADERS_ALL.CREATION_DATE" readOnly="true"/>
+                <!-- <a:textField name="release_date_desc" bindTarget="pur_purchaseOrderViewHeaderDetail_ds" prompt="PUR_HEADERS_ALL.RELEASE_DATE" readOnly="true"/> -->
+                <a:textField name="vendor_name" bindTarget="pur_purchaseOrderViewHeaderDetail_ds" prompt="PUR_HEADERS_ALL.VENDOR_ID" readOnly="true"/>
+                <a:textField name="vendor_site_name" bindTarget="pur_purchaseOrderViewHeaderDetail_ds" prompt="PUR_HEADERS_ALL.VENDOR_SITE" readOnly="true"/>
+            </a:hBox>
+            <a:hBox labelWidth="100">
+                <a:textArea name="comments" bindTarget="pur_purchaseOrderViewHeaderDetail_ds" height="20" prompt="PUR_HEADERS_ALL.COMMENTS" width="842"/>
+            </a:hBox>
+            <a:accordionPanel id="pur7010_purchaseOrderHeader_ds_accordionPanel" singleMode="false" width="955">
+                <a:accordions>
+                    <a:accordion prompt="PROMPT.OTHER_INFO" selected="false">
+                        <a:hBox labelWidth="100">
+                            <a:textField name="payment_terms" bindTarget="pur_purchaseOrderViewHeaderDetail_ds" prompt="付款条款" readOnly="true"/>
+                        </a:hBox>
+                    </a:accordion>
+                </a:accordions>
+            </a:accordionPanel>
+            <a:tabPanel marginHeight="240" marginWidth="30">
+                <a:tabs>
+                    <a:tab prompt="PROMPT.BASIC_INFOMATION" width="100">
+                        <a:grid id="pur_purchaseOrderViewDetail_grid" bindTarget="pur_purchaseOrderViewLineDetail_ds" marginHeight="300" marginWidth="55" navBar="true">
+                            <!--                             <a:toolBar>
+                                <a:button text="HAP_EXPORT" type="excel"/>
+                            </a:toolBar> -->
+                            <a:columns>
+                                <a:column name="line_num" align="center" lock="true" prompt="PUR_LINES_ALL.LINE_NUM" sortable="true" width="25"/>
+                                <a:column name="shipment_num" align="center" lock="true" prompt="PUR_LINE_LOCATIONS_ALL.SHIPMENT_NUM" sortable="true" width="30"/>
+                                <a:column name="closed_code" align="center" lock="true" prompt="发运行状态" sortable="true" width="30"/>
+					  <a:column name="item_code" align="center" lock="true" prompt="MTL_SYSTEM_ITEMS.ITEM_CODE" sortable="true" width="70"/>
+                                <a:column name="item_description" align="center" lock="true" prompt="MTL_SYSTEM_ITEMS.ITEM_NAME" width="150"/>
+                                <!-- <a:column name="item_category_desc_2" align="left" lock="true" prompt="二级品类名称" sortable="true" width="120"/> -->
+                                <a:placeHolder id="pur7010_modifyItemspecyRecords"/>
+                                <!-- <a:column name="ean_code" align="left" lock="true" prompt="PUR_LINES_ALL.EAN_CODE" sortable="true" width="80"/> -->
+                                <a:column name="quantity" align="right" lock="true" prompt="PUR_LINES_ALL.QUANTITY" sortable="true" width="30"/>
+                                <a:column name="pnl_quantity" align="right" lock="true" prompt="PNL数量" width="30"/>
+                                <a:column name="unit_meas_lookup_code" align="center" lock="true" prompt="PUR_LINES_ALL.UNIT_MEAS_LOOKUP_CODE" width="30"/>
+                                <!-- <a:column name="unit_price" align="right" prompt="PUR_LINES_ALL.UNIT_PRICE" renderer="pur7010_purchaseOrderMoneyRenderFun" sortable="true" width="35"/> -->
+                                <a:column name="original_unit_price" align="left" prompt="含税单价" renderer="pur7010_purchaseOrderMoneyRenderFun" width="40"/>
+                                <a:column name="original_amount" align="left" prompt="含税金额" renderer="pur7010_purchaseOrderMoneyRenderFun" width="45"/>
+                                <!-- <a:column name="line_amount" align="right" prompt="PROMPT.AMOUNT_NOT_TAX" renderer="pur7010_purchaseOrderMoneyRenderFun" width="35"/> -->
+                                <!-- <a:column name="tax_rate" align="left" prompt="PUR_LINES_ALL.TAX_RATE" renderer="pur7010_purchaseOrderMoneyRenderFun" width="25"/> -->
+                                <!-- <a:column name="currency_code" align="center" prompt="PUR_HEADERS_ALL.CURRENCY_CODE" width="50"/> -->
+                                <a:column name="committed_delivery_date" align="center" prompt="承诺交货日期" renderer="pur7010_committed_delivery_date_render" sortable="true" width="60"/>
+                                <a:column name="need_by_date" align="center" prompt="PUR_LINE_LOCATIONS_ALL.NEED_BY_DATE" sortable="true" width="50"/>
+                                <!-- <a:column name="ship_to_organization_name" align="center" prompt="PUR_HEADERS_ALL.SHIP_TO_ORGANIZATION_ID" width="46"/> -->
+                                <!-- <a:column name="warehouse_name" align="center" prompt="PUR_LINE_LOCATIONS_ALL.WAREHOUSE_ID" width="45"/> -->
+                                <a:column name="inv_location_name" align="center" prompt="PUR_LINE_LOCATIONS_ALL.INV_LOCATION_ID" width="60"/>
+                                <!-- <a:column name="quantity_received" align="right" prompt="PUR_LINE_LOCATIONS_ALL.QUANTITY_RECEIVED" width="40"/> -->
+                                <!-- <a:column name="quantity_shipped" align="right" prompt="PUR_LINE_LOCATIONS_ALL.QUANTITY_SHIPPED" width="40"/> -->
+                                <!-- <a:column name="no_quantity_received" align="right" prompt="未接收" width="40"/> -->
+                                <!-- <a:column name="item_specs" align="left" prompt="MTL_SYSTEM_VENDOR_ITEMS.ITEM_SPECS" width="60"/>
+                                <a:column name="item_model" align="left" prompt="MTL_SYSTEM_VENDOR_ITEMS.ITEM_MODEL" width="60"/> -->
+                                <!-- add -->
+                                <!-- <a:placeHolder id="pur7010_modifyItemspecnRecords"/> -->
+                                <a:column name="manufacturer_name" align="left" prompt="MTL_SYSTEM_VENDOR_ITEMS.MANUFACTURER_NAME" width="100"/>
+                                <a:column name="brand" align="left" prompt="MTL_SYSTEM_VENDOR_ITEMS.BRAND" width="100"/>
+                                <!-- <a:column name="parent_po_num" prompt="PUR7010.ASSOCIATED_PO_NUMBER" width="60"/> -->
+                                <a:column name="promised_date" align="center" prompt="PUR_LINE_LOCATIONS_ALL.PROMISED_DATE" sortable="true" width="50"/>
+                                <!-- <a:column name="request_arrival_date_desc" align="center" prompt="PUR_LINE_LOCATIONS_ALL.REQUEST_ARRIVAL_DATE" renderer="Aurora.formatDate" sortable="true" width="80"/> -->
+                                <a:column name="consigned_flag" align="center" prompt="PUR_LINE_LOCATIONS_ALL.CONSIGNED_FLAG" width="50"/>
+                                <!-- <a:column name="note_to_vendor" align="center" prompt="PUR_LINES_ALL.NOTE_TO_VENDOR" width="140"/> -->
+                                <a:column name="line_desc" editor="pur7010_purchaseOrderViewDetail_line_desc_tf" prompt="PUR_LINES_ALL.PUR_LINE_DESC" renderer="pur7010_renderer_fn" width="140"/>
+                                <!-- <a:column name="expected_arrival_date" align="center" prompt="预计到货日期" renderer="Aurora.formatDate" width="60"/> -->
+                                <!-- <a:column name="line_type_name" align="center" prompt="PUR_LINES_ALL.LINE_TYPE_ID" width="50"/>
+                                <a:column name="category_name" align="center" prompt="PUR_LINES_ALL.CATEGORY_NAME" width="50"/>
+                                <a:column name="secondary_unit_of_measure" align="center" prompt="PUR_LINES_ALL.SECONDARY_UNIT_OF_MEASURE" width="50"/>
+                                <a:column name="secondary_quantity" align="right" prompt="PUR_LINES_ALL.SECONDARY_QUANTITY" width="50"/>-->
+                                <a:column name="vendor_desc" align="center" prompt="PUR_LINE_LOCATIONS_ALL.VENDOR_DESC" width="80"/>
+                                <!-- <a:column name="c_attribute1" align="left" prompt="PUR_LINE_LOCATIONS_ALL.S_ATTRIBUTE2" width="80"/>
+                                <a:column name="c_attribute2" align="left" prompt="PUR_LINE_LOCATIONS_ALL.S_ATTRIBUTE3" width="80"/> -->
+                                <!--  <a:column name="c_attribute3" align="left" prompt="PUR_LINE_LOCATIONS_ALL.S_ATTRIBUTE4" width="80"/> -->
+                            </a:columns>
+                            <a:editors>
+                                <a:textField id="pur7010_purchaseOrderViewDetail_line_desc_tf"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab prompt="PROMPT.OTHER_INFO" width="100">
+                        <a:grid id="pur_purchaseOrderViewDetail_others_grid" bindTarget="pur_purchaseOrderViewLineDetail_ds" marginHeight="300" marginWidth="55" navBar="true">
+                            <!--                             <a:toolBar>
+                                <a:button text="HAP_EXPORT" type="excel"/>
+                            </a:toolBar> -->
+                            <a:columns>
+                                <a:column name="line_num" align="center" lock="true" prompt="PUR_LINES_ALL.LINE_NUM" sortable="true" width="25"/>
+                                <a:column name="shipment_num" align="center" lock="true" prompt="PUR_LINE_LOCATIONS_ALL.SHIPMENT_NUM" sortable="true" width="30"/>
+                                <a:column name="item_code" align="center" lock="true" prompt="MTL_SYSTEM_ITEMS.ITEM_CODE" sortable="true" width="90"/>
+                                <a:column name="item_description" align="center" lock="true" prompt="MTL_SYSTEM_ITEMS.ITEM_NAME" width="100"/>
+                                <a:column name="ean_code" align="left" lock="true" prompt="PUR_LINES_ALL.EAN_CODE" sortable="true" width="80"/>
+                                <!-- <a:column name="item_specs" align="left" lock="true" prompt="MTL_SYSTEM_VENDOR_ITEMS.ITEM_SPECS" width="60"/>
+                                <a:column name="item_model" align="left" lock="true" prompt="MTL_SYSTEM_VENDOR_ITEMS.ITEM_MODEL" width="60"/> -->
+                                <a:column name="quantity" align="right" lock="true" prompt="PUR_LINES_ALL.QUANTITY" sortable="true" width="30"/>
+                                <a:column name="unit_meas_lookup_code" align="center" lock="true" prompt="PUR_LINES_ALL.UNIT_MEAS_LOOKUP_CODE" width="30"/>
+                                <!--  <a:column name="unit_price" align="right" prompt="PUR_LINES_ALL.UNIT_PRICE" renderer="pur7010_purchaseOrderMoneyRenderFun" sortable="true" width="40"/>
+                                <a:column name="line_amount" align="right" prompt="PUR_LINES_ALL.LINE_AMOUNT" renderer="pur7010_purchaseOrderMoneyRenderFun" width="60"/>
+                                <a:column name="need_by_date" align="center" prompt="PUR_LINE_LOCATIONS_ALL.NEED_BY_DATE" sortable="true" width="80"/>
+                                <a:column name="promised_date" align="center" prompt="PUR_LINE_LOCATIONS_ALL.PROMISED_DATE" sortable="true" width="80"/>
+                                <a:column name="consigned_flag" align="center" prompt="PUR_LINE_LOCATIONS_ALL.CONSIGNED_FLAG" width="50"/>
+                                <a:column name="warehouse_name" align="center" prompt="PUR_LINE_LOCATIONS_ALL.WAREHOUSE_ID" width="60"/>
+                                <a:column name="inv_location_name" align="center" prompt="PUR_LINE_LOCATIONS_ALL.INV_LOCATION_ID" width="60"/> -->
+                                <a:column name="line_type_name" align="center" prompt="PUR_LINES_ALL.LINE_TYPE_ID" width="80"/>
+                                <a:column name="category_name" align="center" prompt="PUR_LINES_ALL.CATEGORY_NAME" width="80"/>
+                                <a:column name="used_item_code" align="center" prompt="MTL2060.USED_ITEM_CODE" width="80"/>
+                                <a:column name="rate" align="left" prompt="PUR_LINES_ALL.RATE" renderer="pur7010_purchaseOrderMoneyRenderFun" width="50"/>
+                                <a:column align="center" prompt="PUR_LINES_ALL.OUTSOURCING_BOM" renderer="pur7010_poBomRender_new" width="50"/>
+                                <a:column name="is_returned_flag_desc" align="center" prompt="PUR_LINES_ALL.IS_RETURNED_FLAG" width="60"/>
+                                <a:column name="is_free_flag_desc" align="center" prompt="PUR_LINES_ALL.IS_FREE_FLAG" width="60"/>
+                                <a:column name="is_immed_shipped_flag_desc" align="center" prompt="PUR_LINES_ALL.IS_IMMED_SHIPPED_FLAG" width="60"/>
+                                <a:column name="subject_assign" align="center" prompt="科目分配" renderer="pur7010_purchaseOrderViewDetailLineOtherInfoRenderer" width="60"/>
+                                <a:column name="actual_receiver_name" align="center" prompt="PUR_LINES_ALL.ACTUAL_RECEIVER_NAME" width="80"/>
+                                <a:column name="ship_to_location_address" align="center" prompt="PUR_LINES_ALL.SHIP_TO_LOCATION_ADDRESS" width="80"/>
+                                <a:column name="contacts_info" align="center" prompt="PUR_LINES_ALL.CONTACTS_INFO" width="80"/>
+                                <a:column name="is_sub_vendor_desc" align="center" prompt="PUR_LINES_ALL.IS_SUB_VENDOR_DESC" width="80"/>
+                                <a:column name="sub_vendor_desc" align="center" prompt="PUR_LINES_ALL.SUB_VENDOR_DESC" width="80"/>
+                                <a:column name="secondary_unit_of_measure" align="center" prompt="PUR_LINES_ALL.SECONDARY_UNIT_OF_MEASURE" width="80"/>
+                                <a:column name="secondary_quantity" align="right" prompt="PUR_LINES_ALL.SECONDARY_QUANTITY" width="80"/>
+                                <a:column name="vendor_desc" align="center" prompt="PUR_LINE_LOCATIONS_ALL.VENDOR_DESC" renderer="pur7010_vendor_desc_renderer_fn" width="80"/>
+                                <!--  <a:column name="c_attribute1" align="left" prompt="PUR_LINE_LOCATIONS_ALL.S_ATTRIBUTE2" width="80"/>
+                                <a:column name="c_attribute2" align="left" prompt="PUR_LINE_LOCATIONS_ALL.S_ATTRIBUTE3" width="80"/> -->
+                                <a:column name="c_attribute3" align="left" prompt="PUR_LINE_LOCATIONS_ALL.S_ATTRIBUTE4" width="80"/>
+                                <a:column name="user_hold_flag_desc" align="center" prompt="PUR_LINES_ALL.USER_HOLD_FLAG" width="60"/>
+                                <a:column name="frozen_flag_desc" align="center" prompt="PUR_LINE_LOCATIONS_ALL.FROZEN_FLAG" width="60"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab prompt="PUR_HEADERS_ALL.COOPERATOR" width="100">
+                        <a:grid id="pur_purchasePartner_grid" bindTarget="pur_purchasePartner_ds" marginHeight="300" marginWidth="55" navBar="true">
+                            <a:columns>
+                                <a:column name="partner_type_name" align="center" width="80"/>
+                                <a:column name="partner_code" align="center" width="100"/>
+                                <a:column name="partner_name" align="center" width="100"/>
+                                <a:column name="data_source" align="center" width="60"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+    </a:view>
+    <a:view-config>
+        <c:create-config targetId="pur7010_modifyItemspecyRecords">
+            <p:switch test="/model/bg_item_po_13/record/@bg_config_item_value">
+                <p:case value="Y">
+                    <c:process-config>
+                        <a:column name="item_specs" align="left" lock="true" prompt="MTL_SYSTEM_VENDOR_ITEMS.ITEM_SPECS" width="60"/>
+                        <a:column name="item_model" align="left" lock="true" prompt="MTL_SYSTEM_VENDOR_ITEMS.ITEM_MODEL" width="60"/>
+                    </c:process-config>
+                </p:case>
+            </p:switch>
+        </c:create-config>
+        <c:create-config targetId="pur7010_modifyItemspecnRecords">
+            <p:switch test="/model/bg_item_po_13/record/@bg_config_item_value">
+                <p:case value="N">
+                    <c:process-config>
+                        <a:column name="item_specs" align="left" prompt="MTL_SYSTEM_VENDOR_ITEMS.ITEM_SPECS" width="60"/>
+                        <a:column name="item_model" align="left" prompt="MTL_SYSTEM_VENDOR_ITEMS.ITEM_MODEL" width="60"/>
+                    </c:process-config>
+                </p:case>
+            </p:switch>
+        </c:create-config>
+    </a:view-config>
+    <!-- <a:view-config>
+        <c:create-config targetId="pur7010_modifyRecords">
+            <p:switch test="/model/pur7010_modifyRecordCfg/record/@modify_records_flag">
+                <p:case value="Y">
+                    <c:process-config>
+                        <a:toolbarButton click="pur7010_poModifyRecords_fun" text="PUR_PO_MODIFY_RECORDS.TITLE" width="100"/>
+                    </c:process-config>
+                </p:case>
+                <p:case value="*">
+                    <c:process-config>
+                        <a:toolbarButton click="pur7010_poModifyRecordsComingSoon_fun" text="PUR_PO_MODIFY_RECORDS.TITLE" width="100"/>
+                    </c:process-config>
+                </p:case>
+            </p:switch>
+        </c:create-config>
+    </a:view-config> -->
+</a:screen>

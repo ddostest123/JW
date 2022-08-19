@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:service xmlns:s="aurora.plugin.script" xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchALL="true" model="cux.NEWHOPE.PUR.PUR7041.pur_submit_sn" rootPath="sn_data"/>
+        <p:echo/>
+        <s:server-script import="request5.js"><![CDATA[
+            var logger = $logger('server-script');
+            
+            function log(msg) {
+                logger.info(msg);
+            }
+            
+            var records = $ctx.model.getChild('sn_data').getChildren();
+            //println(records[i].request_data);
+            for (var i = 0;i < records.length;i++) {
+                if (records[i].api_url) {
+                    request({
+                        serverUrl: records[i].sn_serverurl,
+                        appkey: records[i].sn_appkey,
+                        appscret: records[i].sn_appscreat,
+                        url: records[i].api_url,
+                        para: JSON.parse(records[i].request_data),
+                        success: function(args) {
+                            var jsonData = JSON.parse(args.toString());
+                            log(args.toString());
+                            println(args.toString());
+                            if (records[i].api_url == 'suning.govbus.order.add') {
+                                //提交成功的返回结果
+                                //{"sn_responseContent":{"sn_body":{"addOrder":{"orderId":"100000259408","skus":[{"orderItemId":"10000025940801","skuId":"121289049","num":7,"price":99.99,"arriveData":"2017-11-05 18:00:00"}],"amount":699.93,"freight":0.0}}}}
+                                //提交失败的返回结果
+                                //{"sn_responseContent":{"sn_error":{"error_code":"COMMON002","error_msg":"入参校验失败 {\"isSuccess\":false,\"returnMsg\":\"taxNo:纳税人识别号错误，检查输入参数！;\"}"}}}
+                                var param = $ctx.parameter;
+                                if (jsonData.sn_responseContent.hasOwnProperty('sn_body')) {
+                                    var orderId = jsonData.sn_responseContent.sn_body.addOrder.orderId;
+                                    var orderItemId = jsonData.sn_responseContent.sn_body.addOrder.skus[0].orderItemId;
+            
+                                    param.req_header_id = records[i].req_header_id;
+                                    param.req_line_id = records[i].req_line_id;
+                                    param.eb_order_id = orderId;
+                                    param.eb_order_item_id = orderItemId;
+            
+                                    //将参数传入bm
+                                    var bm = $bm('cux.NEWHOPE.PUR.PUR7041.pur_submit_sn');
+                                    bm.execute();
+            
+                                } else {
+                                    var error_msg = jsonData.sn_responseContent.sn_error.error_msg;
+                                    param.error_msg = error_msg;
+                                }
+                            }
+                        },
+                        failure: function(args) {
+                            raise_app_error(args.error.message);
+                        }
+                    });
+                }
+            }
+        ]]></s:server-script>
+        <p:echo/>
+    </a:init-procedure>
+    <a:service-output output="/parameter"/>
+</a:service>

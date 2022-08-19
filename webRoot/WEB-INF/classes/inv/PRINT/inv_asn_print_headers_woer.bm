@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao  
+    $Date: 2015-04-03 下午04:38:31  
+    $Revision: 1.0  
+    $Purpose: 送货单打印，送货单头信息查询BM
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="asn_number">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT a.*,
+               ceil(line_count / 15) pages,
+               ceil(line_count / 14) lijiababy_pages,
+               ceil(line_count / 6) tianneng_pages,
+               ceil(line_count / 12) sensong_pages
+          FROM (SELECT h.asn_header_id,
+                       h.display_asn_number AS asn_number,
+                       to_char(h.expected_date,
+                               'yyyy-mm-dd') AS expected_date_fmt,
+                       h.asn_barcode,
+                       h.asn_type_code,
+                       (SELECT atv.asn_type_name FROM inv_asn_types_vl atv WHERE atv.asn_type_code = h.asn_type_code) AS asn_type_name,
+                       to_char(SYSDATE,
+                               'yyyy-mm-dd hh24:mi:ss') AS print_date,
+                       nvl((SELECT ppp.partner_code
+                       FROM inv_asn_lines          l,
+                            pur_line_locations_all pll,
+                            pur_headers_all_v      ph,
+                            pur_po_partners        ppp
+                      WHERE pll.pur_header_id = ph.pur_header_id
+                            AND pll.pur_line_location_id = l.line_location_id
+                            AND l.asn_header_id = h.asn_header_id
+                            AND ppp.pur_header_id = ph.pur_header_id
+                            AND ppp.partner_type_code = 'WL'
+                            AND rownum = 1),
+                     (SELECT pvv.display_vendor_code FROM pur_vendors_v pvv WHERE pvv.vendor_id = h.vendor_id)) AS vendor_code,
+                 nvl((SELECT ppp.partner_name
+                       FROM inv_asn_lines          l,
+                            pur_line_locations_all pll,
+                            pur_headers_all_v      ph,
+                            pur_po_partners        ppp
+                      WHERE pll.pur_header_id = ph.pur_header_id
+                            AND pll.pur_line_location_id = l.line_location_id
+                            AND l.asn_header_id = h.asn_header_id
+                            AND ppp.pur_header_id = ph.pur_header_id
+                            AND ppp.partner_type_code = 'WL'
+                            AND rownum = 1),
+                     (SELECT pvv.full_name FROM pur_vendors_v pvv WHERE pvv.vendor_id = h.vendor_id)) AS vendor_name,
+                       nvl(h.ship_to_location_address,
+                           (SELECT fl.address_line_1 FROM fnd_locations fl WHERE fl.location_id = h.location_id)) AS location_name,
+                       (SELECT iov.description
+                          FROM inv_organizations_vl iov
+                         WHERE iov.inv_organization_id = h.ship_to_organization_id) AS ship_to_organization_name,
+                       (SELECT fcv.company_full_name FROM fnd_companies_vl fcv WHERE fcv.company_id = h.coop_company_id) AS company_name,
+                       (SELECT fcv.company_full_name FROM fnd_companies_vl fcv WHERE fcv.company_id = h.owner_company_id) AS coop_company_name,
+                       (SELECT vsv.site_name FROM pur_vendor_sites_vl vsv WHERE vsv.vendor_site_id = h.vendor_site_id) AS vendor_site_name,
+                       h.comments,
+                       to_char(h.ship_date,
+                               'yyyy-mm-dd') AS ship_date,
+                       to_char(h.expected_date,
+                               'yyyy-mm-dd') AS expected_date,
+                       (SELECT nvl(ph.display_po_number,
+                                   ph.segment1)
+                          FROM inv_asn_lines          l,
+                               pur_line_locations_all pll,
+                               pur_headers_all_v      ph
+                         WHERE pll.pur_header_id = ph.pur_header_id
+                               AND pll.pur_line_location_id = l.line_location_id
+                               AND l.asn_header_id = h.asn_header_id
+                               AND rownum = 1) AS po_number,
+                       h.service_create_flag,
+                       h.partner_name,
+                       h.actual_receiver_name,
+                       (SELECT COUNT(1)
+                          FROM inv_asn_print p
+                         WHERE p.asn_header_id = h.asn_header_id
+                               AND p.session_id = ${/session/@session_id}) AS line_count,
+                      (SELECT iwv.description
+                  FROM pur_line_locations_all plla,
+                       inv_asn_lines          ial,
+                       inv_warehouses_vl      iwv
+                 WHERE plla.pur_line_location_id = ial.line_location_id
+                 and plla.warehouse_id = iwv.warehouse_id
+                 and ial.asn_header_id = h.asn_header_id
+                 and rownum < 2) warehouse_desc,
+                 (replace((SELECT *
+                           FROM (SELECT  el.buyer_desc
+                                 FROM inv_asn_lines            l,
+                                      pur_distribution_all     p,
+                                      pur_buyers_es            e,
+                                      pur_buyers_vl            el,
+                                      pur_line_locations_all   la
+                                 WHERE h.asn_header_id = l.asn_header_id
+                                 AND l.line_location_id = la.pur_line_location_id
+                                 AND la.pur_header_id = p.pur_header_id
+                                 AND p.deliver_to_person_id = e.es_buyer_id
+                                 AND el.buyer_id = e.buyer_id
+                                 order by e.last_update_date DESC)
+                           WHERE rownum = 1),',',null))AS contact_name,
+                 (SELECT su.mobile_phone
+                  FROM sys_user su
+                  WHERE su.description = (replace((SELECT *
+                                                   FROM (SELECT  el.buyer_desc
+                                                         FROM inv_asn_lines            l,
+                                                              pur_distribution_all     p,
+                                                              pur_buyers_es            e,
+                                                              pur_buyers_vl            el,
+                                                              pur_line_locations_all   la
+                                                         WHERE h.asn_header_id = l.asn_header_id
+                                                         AND l.line_location_id = la.pur_line_location_id
+                                                         AND la.pur_header_id = p.pur_header_id
+                                                         AND p.deliver_to_person_id = e.es_buyer_id
+                                                         AND el.buyer_id = e.buyer_id
+                                                         order by e.last_update_date DESC)
+                                                   WHERE rownum = 1),',',null)))AS mobile_phone
+                  FROM inv_asn_headers   h
+                  WHERE h.asn_header_id = ${/parameter/@asn_header_id}) a
+            WHERE (inv_asn_print_pkg.check_asn_print_authority(${/session/@session_id},
+                                                               ${/session/@role_id},
+                                                               ${/session/@user_id}) = 0)
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

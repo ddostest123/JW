@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao 
+    $Date: 2014-11-25 下午06:24:06  
+    $Revision: 1.0  
+    $Purpose: 非寄销开票单查询(供)，开票单行信息查询BM
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="v.bill_line_num ASC">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT *
+				  FROM (SELECT l.line_id,
+				               l.header_id,
+				               l.bill_line_num,
+				               l.item_code,
+				               l.item_name,
+				               (SELECT msi.used_item_code FROM mtl_system_items msi WHERE msi.item_id = l.item_id) used_item_code,
+				               l.unit_meas_lookup_code,
+				               --added by wangmengling 15656 2018年3月02日 修改单位描述效果
+				               NVL(
+                        (SELECT
+                            vl.uom_code
+                            || '/'
+                            || vl.uom_desc
+                        FROM
+                            fnd_uom_codes_vl vl
+                        WHERE
+                            l.unit_meas_lookup_code        = vl.uom_code AND
+                            vl.business_group = (SELECT h.owner_business_group FROM acp_bill_headers h WHERE h.header_id=l.header_id) AND 
+                            ROWNUM = 1
+                        ), l.unit_meas_lookup_code) unit_meas_lookup_code_desc,
+				               l.quantity,
+				               fnd_document_control_pkg.get_reality_value(p_rule_code       => 'PRICE_SECRECY',
+				                                                          p_role_id         => ${/session/@role_id},
+				                                                          p_foundation_code => 'AP_BILL',
+				                                                          p_document_id     => l.header_id,
+				                                                          p_control_area    => 'EXTERNAL',
+				                                                          p_business_group  => ${/session/@business_group},
+				                                                          p_value           => l.original_unit_price) AS original_unit_price,
+				               fnd_document_control_pkg.get_reality_value(p_rule_code       => 'PRICE_SECRECY',
+				                                                          p_role_id         => ${/session/@role_id},
+				                                                          p_foundation_code => 'AP_BILL',
+				                                                          p_document_id     => l.header_id,
+				                                                          p_control_area    => 'EXTERNAL',
+				                                                          p_business_group  => ${/session/@business_group},
+				                                                          p_value           => l.unit_price) AS unit_price,
+				               fnd_document_control_pkg.get_reality_value(p_rule_code       => 'PRICE_SECRECY',
+				                                                          p_role_id         => ${/session/@role_id},
+				                                                          p_foundation_code => 'AP_BILL',
+				                                                          p_document_id     => l.header_id,
+				                                                          p_control_area    => 'EXTERNAL',
+				                                                          p_business_group  => ${/session/@business_group},
+				                                                          p_value           => round((l.unit_price * l.quantity),2)) AS line_amount,
+				               fnd_document_control_pkg.get_reality_value(p_rule_code       => 'PRICE_SECRECY',
+				                                                          p_role_id         => ${/session/@role_id},
+				                                                          p_foundation_code => 'AP_BILL',
+				                                                          p_document_id     => l.header_id,
+				                                                          p_control_area    => 'EXTERNAL',
+				                                                          p_business_group  => ${/session/@business_group},
+				                                                          p_value           => l.original_tax_unit_price) AS original_tax_unit_price,
+				               fnd_document_control_pkg.get_reality_value(p_rule_code       => 'PRICE_SECRECY',
+				                                                          p_role_id         => ${/session/@role_id},
+				                                                          p_foundation_code => 'AP_BILL',
+				                                                          p_document_id     => l.header_id,
+				                                                          p_control_area    => 'EXTERNAL',
+				                                                          p_business_group  => ${/session/@business_group},
+				                                                          p_value           => l.tax_unit_price) AS tax_unit_price,
+				               fnd_document_control_pkg.get_reality_value(p_rule_code       => 'PRICE_SECRECY',
+				                                                          p_role_id         => ${/session/@role_id},
+				                                                          p_foundation_code => 'AP_BILL',
+				                                                          p_document_id     => l.header_id,
+				                                                          p_control_area    => 'EXTERNAL',
+				                                                          p_business_group  => ${/session/@business_group},
+				                                                          p_value           => round((l.tax_unit_price * l.quantity),2)) AS tax_line_amount,
+				               (SELECT tc.bg_tax_type_rate
+				                  FROM fnd_tax_type_codes_bg tc,
+				                  	   acp_bill_headers h
+				                 WHERE tc.business_group = h.owner_business_group
+				                   AND h.header_id = l.header_id
+				                   AND tc.tax_type_id = l.tax_code_id) AS tax_rate,
+				               l.line_desc,
+				               l.vendor_desc,
+				               (SELECT pla.ean_code
+						          FROM acp_bill_details d,
+						               pur_lines_all    pla
+						         WHERE d.po_line_id = pla.pur_line_id
+						               AND d.line_id = l.line_id
+						               AND rownum = 1) AS ean_code
+				          FROM acp_bill_lines l) v 
+				#WHERE_CLAUSE# 
+            	#ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="bill_line_id" queryExpression="v.line_id = ${@bill_line_id}"/>
+        <bm:query-field name="bill_header_id" queryExpression="v.header_id = ${@bill_header_id}"/>
+    </bm:query-fields>
+</bm:model>

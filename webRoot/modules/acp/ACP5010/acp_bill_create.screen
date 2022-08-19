@@ -1,0 +1,408 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao $ 
+    $Date: 2013-1-30 下午03:14:06 $  
+    $Revision: 1.0 $ 
+    $Purpose: 非寄销开票单创建，入口页面 $
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure/>
+    <a:view>
+        <a:link id="acp5010_bill_detail_link" url="${/request/@context_path}/modules/acp/ACP5010/acp_bill_detail.screen"/>
+        <a:link id="acp5010_pur_detail_link" url="${/request/@context_path}/modules/acp/ACP5010/acp_bill_pur_detail.screen"/>
+        <script><![CDATA[
+            //取精度
+            function acp5010_js_round(para,precision){
+                return Math.round(para*Math.pow(10,precision))/Math.pow(10,precision);
+            }
+            //日期比较
+            function acp5010_compareDate(start, end) {
+                if (start > end) {
+                    return false;
+                }
+                return true;
+            }
+            
+            //日期校验
+            function acp5010_trx_dateValidator(record, name, value) {
+                if (name == 'trx_date_from' || name == 'trx_date_to') {
+                    var start = record.get('trx_date_from');
+                    var end = record.get('trx_date_to');
+            
+                    if ( !! end) {
+                        if (!acp5010_compareDate(start, end)) {
+                            return '${l:START_GREATER_THAN_END}';
+                        }
+                    }
+                    return true;
+                }
+            }
+            
+            function acp5010_bill_query() {
+                $('acp5010_result_ds').query();
+            }
+            
+            //校验开票单头是否已存在
+            function acp5010_checkHeaderExists(record) {
+                var header_record = $('acp5010_bill_headers_ds').getCurrentRecord();
+                if (header_record.get('company_id') == record.get('company_id') && header_record.get('vendor_id') == record.get('vendor_id') && header_record.get('vendor_site_id') == record.get('vendor_site_id') && header_record.get('currency_code') == record.get('currency_code')) {
+                    return true;
+                }
+                return false;
+            }
+            
+            //校验开票单行是否已存在
+            function acp5010_checkBillLineExists(record) {
+                var line_records = $('acp5010_bill_lines_ds').getAll();
+                var flag = false;
+                for (var i = 0;i < line_records.length;i++) {
+                    if (line_records[i].get('item_id') == record.get('item_id') && line_records[i].get('unit_meas_lookup_code') == record.get('unit_meas_lookup_code') && line_records[i].get('unit_price') == record.get('unit_price')) {
+                        flag = true;
+                        return flag;
+                    }
+                }
+                return flag;
+            }
+            
+            //获取同物料、单位、单价的数量之和
+            function acp5010_getBillLineSumQuantity(record) {
+                var trx_records = $('acp5010_bill_select_ds').getAll();
+                var sum_quantity = 0;
+                for (var i = 0;i < trx_records.length;i++) {
+                    if (trx_records[i].get('item_id') == record.get('item_id') && trx_records[i].get('unit_meas_lookup_code') == record.get('unit_meas_lookup_code') && trx_records[i].get('unit_price') == record.get('unit_price')) {
+                        sum_quantity = sum_quantity + (trx_records[i].get('trx_quantity') * 1);
+                    }
+                }
+                sum_quantity = acp5010_js_round(sum_quantity,4);
+                
+                return sum_quantity;
+            }
+            
+            //获取同物料、单位、单价的金额之和
+            function acp5010_getBillLineSumAmount(record) {
+                var trx_records = $('acp5010_bill_select_ds').getAll();
+                var result = {};
+                var trx_quantity = 0;
+                var unit_price = 0;
+                var sum_amount = 0;
+                var display_sum_amount = 0;
+                for (var i = 0;i < trx_records.length;i++) {
+                    if (trx_records[i].get('item_id') == record.get('item_id') && trx_records[i].get('unit_meas_lookup_code') == record.get('unit_meas_lookup_code') && trx_records[i].get('unit_price') == record.get('unit_price')) {
+                        trx_quantity = trx_records[i].get('trx_quantity') * 1;
+                        unit_price = trx_records[i].get('unit_price') * 1;
+                        sum_amount = sum_amount + (trx_quantity * unit_price);
+	                    if(trx_records[i].get('display_unit_price') == '***'){
+	                        display_sum_amount = '***';
+	                    }else{
+	                        display_sum_amount = sum_amount;
+	                    }
+                    }
+                }
+                sum_amount = acp5010_js_round(sum_amount,2);
+                if(display_sum_amount != '***'){
+                    display_sum_amount = acp5010_js_round(display_sum_amount,2);
+                }
+                result.sum_amount = sum_amount;
+                result.display_sum_amount = display_sum_amount;
+                return result;
+            }
+            
+            //获取勾选数据的金额之和
+            function acp5010_getBillSumAmount() {
+                var trx_records = $('acp5010_bill_select_ds').getAll();
+                var result = {};
+                var trx_quantity = 0;
+                var unit_price = 0;
+                var sum_amount = 0;
+                var display_sum_amount = 0;
+                for (var i = 0;i < trx_records.length;i++) {
+                	trx_quantity = trx_records[i].get('trx_quantity') * 1;
+                    unit_price = trx_records[i].get('unit_price') * 1;
+                	sum_amount = sum_amount + (trx_quantity * unit_price);
+                    if(trx_records[i].get('display_unit_price') == '***'){
+						display_sum_amount = '***';  
+                    }else{
+                        display_sum_amount = sum_amount;
+                    }
+                }
+                sum_amount = acp5010_js_round(sum_amount,2);
+                if(display_sum_amount != '***'){
+                    display_sum_amount = acp5010_js_round(display_sum_amount,2);
+                }
+                result.sum_amount = sum_amount;
+                result.display_sum_amount = display_sum_amount;
+                return result;
+            }
+            
+            //创建开票单
+            function acp5010_create_view_bill(trx_records) {
+                var header_ds = $('acp5010_bill_headers_ds');
+                var line_ds = $('acp5010_bill_lines_ds');
+                var detail_ds = $('acp5010_bill_detail_ds');
+            
+                //开票单头
+                var now = new Date();
+                var month = now.getMonth() + 1;
+                month = month > 9 ? month : '0' + month;
+                var day = now.getDate();
+                day = day > 9 ? day : '0' + day;
+                var date = now.getFullYear() + '-' + month + '-' + day; //STRING类型
+                trx_records[0].set('creation_date',date); //创建日期
+                trx_records[0].set('bill_amount',acp5010_getBillSumAmount().sum_amount); //开票金额
+                trx_records[0].set('display_bill_amount',acp5010_getBillSumAmount().display_sum_amount); //开票金额,展示
+                header_ds.create(trx_records[0].data);
+            
+                //校验
+                for (var i = 0;i < trx_records.length;i++) {
+                    if (!acp5010_checkHeaderExists(trx_records[i])) {
+                        Aurora.showMessage('${l:PROMPT}', '勾选的数据中【公司+供应商+供应商地点+币种】必须一致!',null,300,120);
+                        return false;
+                    }
+                }
+            
+                //开票行
+                var bill_line_num = 1;
+                var new_line = false;
+                trx_records[0].set('bill_line_num', bill_line_num);
+                trx_records[0].set('sum_quantity', acp5010_getBillLineSumQuantity(trx_records[0]));
+                trx_records[0].set('sum_amount', acp5010_getBillLineSumAmount(trx_records[0]).sum_amount);
+                trx_records[0].set('display_sum_amount', acp5010_getBillLineSumAmount(trx_records[0]).display_sum_amount);
+                line_ds.create(trx_records[0].data);
+                detail_ds.create(trx_records[0].data);
+                for (var k = 1;k < trx_records.length;k++) {
+                    if (!acp5010_checkBillLineExists(trx_records[k])) {
+                        bill_line_num++;
+                        trx_records[k].set('bill_line_num', bill_line_num);
+                        trx_records[k].set('sum_quantity', acp5010_getBillLineSumQuantity(trx_records[k]));
+                        trx_records[k].set('sum_amount', acp5010_getBillLineSumAmount(trx_records[k]).sum_amount);
+                        trx_records[k].set('display_sum_amount', acp5010_getBillLineSumAmount(trx_records[k]).display_sum_amount);
+                        line_ds.create(trx_records[k].data);
+                        new_line = true;
+                    }
+                    //明细行
+                    detail_ds.create(trx_records[k].data);
+                }
+                return true;
+            }
+            
+            // 创建
+            function acp5010_create() {
+                var header_ds = $('acp5010_bill_headers_ds');
+                var line_ds = $('acp5010_bill_lines_ds');
+                var detail_ds = $('acp5010_bill_detail_ds');
+                var records = $('acp5010_bill_select_ds').getAll();
+                if (records.length < 1) {
+                    Aurora.showMessage('${l:PROMPT}', '至少勾选一条数据创建预览开票单信息',null,300,120);
+                    return false;
+                } else {
+                    header_ds.removeAll();
+                    line_ds.removeAll();
+                    detail_ds.removeAll();
+            
+                    //添加开票单头、行、明细行
+                    var flag = acp5010_create_view_bill(records);
+                    if (flag) {
+                        //打开预览页面
+                        new Aurora.Window({
+                            id: 'acp5010_bill_detail_link_window',
+                            url: $('acp5010_bill_detail_link').getUrl(),
+                            title: '${l:ACP_BILL.BILL_CREATE}',
+                            fullScreen: true
+                        });
+                    }
+                }
+            }
+            
+            function acp5010_result_ds_select(ds, record) {
+                var list_ds = $('acp5010_bill_select_ds');
+                var rcv_trx_line_id = record.get('rcv_trx_line_id');
+                var result_record = list_ds.find('rcv_trx_line_id', rcv_trx_line_id);
+                if (Aurora.isEmpty(result_record)) {
+                    $('acp5010_bill_select_ds').create(record.data);
+                }
+            }
+            
+            function acp5010_result_ds_unselect(ds, record) {
+                var list_ds = $('acp5010_bill_select_ds');
+                var rcv_trx_line_id = record.get('rcv_trx_line_id');
+                var result_record = list_ds.find('rcv_trx_line_id', rcv_trx_line_id);
+                if (!Aurora.isEmpty(result_record)) {
+                    list_ds.remove(result_record);
+                }
+            }
+            
+            // 页面执行重新查询时所做的操作
+            function acp5010_result_ds_grid_render(grid) {
+                var ds = $('acp5010_result_ds');
+                var records = ds.getAll();
+                var list_ds = $('acp5010_bill_select_ds');
+                var list_records = list_ds.getAll();
+                for (var i = 0;i < records.length;i++) {
+                    var select_record = list_ds.find('rcv_trx_line_id', records[i].get('rcv_trx_line_id'));
+                    if (!Aurora.isEmpty(select_record)) {
+                        ds.select(records[i]);
+                    }
+                }
+            }
+            
+            function acp5010_gridRenderer(value, record, name){
+                if (name == 'display_unit_price' || name == 'display_amount') {
+                    if (value == '***') {
+                        return value;
+                    } else {
+                        return Aurora.formatNumber(value);
+                    }
+                }else if(name == 'details'){
+                    return '<a href="javascript:acp5010_pur_details(' + record.get('from_po_header_id') + ')">' + '明细' + '</>';
+                }
+            }
+            
+            function acp5010_pur_details(pur_header_id){
+                new Aurora.Window({
+                    id: 'acp5010_pur_details_window',
+                    url: $('acp5010_pur_detail_link').getUrl() + '?pur_header_id=' + pur_header_id,
+                    title: '采购订单明细',
+                    fullScreen: true
+                });
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="acp5010_bill_headers_ds"/>
+            <a:dataSet id="acp5010_bill_lines_ds"/>
+            <a:dataSet id="acp5010_bill_detail_ds"/>
+            <a:dataSet id="acp5010_bill_select_ds"/>
+            <a:dataSet id="acp5010_query_ds">
+                <a:fields>
+                    <a:field name="trx_date_from" validator="acp5010_trx_dateValidator"/>
+                    <a:field name="trx_date_to" validator="acp5010_trx_dateValidator"/>
+                    <a:field name="vendor_name" autoComplete="true" autoCompleteField="vendor_name" lovHeight="500" lovService="public.pur_vendors_by_user_authority_lov" lovWidth="500" title="供应商">
+                        <a:mapping>
+                            <a:map from="vendor_id" to="vendor_id"/>
+                            <a:map from="vendor_code" to="vendor_code"/>
+                            <a:map from="vendor_name" to="vendor_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="item_name" autoComplete="true" autoCompleteField="item_name" lovGridHeight="320" lovHeight="500" lovService="public.mtl_item_mapping_supply_lov" lovWidth="1000" title="物料">
+                        <a:mapping>
+                            <a:map from="item_id" to="item_id"/>
+                            <a:map from="item_name" to="item_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="currency_code" autoComplete="true" autoCompleteField="currency_code" lovHeight="490" lovService="public.pur_currency_code_lov" lovWidth="490" title="币种">
+                        <a:mapping>
+                            <a:map from="currency_code" to="currency_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="company_name" autoComplete="true" autoCompleteField="company_code" lovHeight="510" lovService="public.fnd_companies_lov" lovWidth="500" title="公司">
+                        <a:mapping>
+                            <a:map from="company_short_name" to="company_name"/>
+                            <a:map from="company_id" to="company_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="business_unit_name" autoComplete="true" autoCompleteField="business_unit_name" lovHeight="500" lovService="public.fnd_business_unit_lov" lovWidth="600" title="INV8010.BUSINESS_ENTITY">
+                        <a:mapping>
+                            <a:map from="business_unit_id" to="business_unit_id"/>
+                            <a:map from="business_unit_name" to="business_unit_name"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="acp5010_result_ds" autoCount="true" autoPageSize="true" autoQuery="false" fetchAll="false" model="acp.ACP5010.acp_bill_source" queryDataSet="acp5010_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="bill_source_id"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="select" handler="acp5010_result_ds_select"/>
+                    <a:event name="unselect" handler="acp5010_result_ds_unselect"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="acp5010_create" text="创建预览" width="100"/>
+                <a:gridButton bind="acp5010_grid" type="excel" width="100"/>
+            </a:screenTopToolbar>
+            <a:queryForm id="acp5010_query_form" bindTarget="acp5010_query_ds" resultTarget="acp5010_result_ds" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:hBox labelWidth="100">
+                        <a:textField name="receipt_num" bindTarget="acp5010_query_ds" prompt="接收编号">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5010_bill_query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:lov name="vendor_name" bindTarget="acp5010_query_ds" prompt="供应商">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5010_bill_query"/>
+                            </a:events>
+                        </a:lov>
+                        <a:lov name="business_unit_name" bindTarget="acp5010_query_ds" prompt="INV8010.BUSINESS_ENTITY">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5010_bill_query"/>
+                            </a:events>
+                        </a:lov>
+                    </a:hBox>
+                </a:formToolBar>
+                <a:formBody style="margin-left:-3px">
+                    <a:hBox labelWidth="100">
+                        <!--
+                        <a:textField name="trx_number" bindTarget="acp5010_query_ds" prompt="事务编号">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5010_bill_query"/>
+                            </a:events>
+                        </a:textField>
+                        -->
+                        <a:lov name="item_name" bindTarget="acp5010_query_ds" prompt="物料">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5010_bill_query"/>
+                            </a:events>
+                        </a:lov>
+                        <a:lov name="currency_code" bindTarget="acp5010_query_ds" prompt="ACP_BILL_SOURCE.CURRENCY_CODE">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5010_bill_query"/>
+                            </a:events>
+                        </a:lov>
+                    </a:hBox>
+                    <a:hBox labelWidth="100">
+                        <a:datePicker name="trx_date_from" bindTarget="acp5010_query_ds" prompt="事务日期从">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5010_bill_query"/>
+                            </a:events>
+                        </a:datePicker>
+                        <a:datePicker name="trx_date_to" bindTarget="acp5010_query_ds" prompt="事务日期至">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5010_bill_query"/>
+                            </a:events>
+                        </a:datePicker>
+                    </a:hBox>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="acp5010_grid" autoAppend="false" bindTarget="acp5010_result_ds" marginHeight="180" marginWidth="65" navBar="true">
+                <a:columns>
+                    <a:column name="receipt_num" align="left" prompt="接收编号" sortable="true" width="50"/>
+                    <a:column name="receipt_line_num" align="left" prompt="接收行号" sortable="true" width="30"/>
+                    <!--
+                    <a:column name="trx_number" align="left" prompt="事务编号" sortable="true" width="50"/>
+                    -->
+                    <a:column name="item_code" align="left" prompt="物品编码" sortable="true" width="100"/>
+                    <a:column name="item_name" align="left" prompt="物品描述" sortable="true" width="120"/>
+                    <a:column name="trx_quantity" align="right" prompt="可开票数量" sortable="true" width="60"/>
+                    <a:column name="unit_meas_lookup_code" align="left" prompt="开票单位" sortable="true" width="60"/>
+                    <a:column name="display_unit_price" align="right" prompt="开票单价" renderer="acp5010_gridRenderer" sortable="true" width="60"/>
+                    <a:column name="display_amount" align="right" prompt="开票金额" renderer="acp5010_gridRenderer" sortable="true" width="60"/>
+                    <a:column name="company_name" align="left" prompt="公司" sortable="true" width="120"/>
+                    <a:column name="business_unit_name" align="left" prompt="INV8010.BUSINESS_ENTITY" sortable="true" width="80"/>
+                    <a:column name="inv_organization_name" align="left" prompt="库存组织" sortable="true" width="80"/>
+                    <a:column name="vendor_name" align="left" prompt="供应商名称" sortable="true" width="150"/>
+                    <a:column name="vendor_site_name" align="left" prompt="供应商地点" sortable="true" width="80"/>
+                    <a:column name="currency_code" align="center" prompt="币种" sortable="true" width="60"/>
+                    <a:column name="rcv_trx_type_desc" align="center" prompt="事务类型" sortable="true" width="70"/>
+                    <a:column name="trx_date_fmt" align="center" prompt="事务日期" sortable="true" width="60"/>
+                    <a:column name="details" align="center" prompt="采购订单" renderer="acp5010_gridRenderer" width="80"/>
+                </a:columns>
+                <a:events>
+                    <a:event name="render" handler="acp5010_result_ds_grid_render"/>
+                </a:events>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

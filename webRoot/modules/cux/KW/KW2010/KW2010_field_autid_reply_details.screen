@@ -1,0 +1,331 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: 7211
+    $Date: 2015-1-05 下午13:46:29  
+    $Revision: 1.0  
+    $Purpose: 现场审核创建
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query model="qms.QMS5050.get_current_employee_name" rootPath="qms5050_current_user"/>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;EXAMINE_TYPE&apos;" fetchAll="true" model="qms.QMS5050.fnd_flex_value_sets_query" rootPath="kw2010_examine_type_data"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="kw2010_apply_save_link" url="${/request/@context_path}/modules/cux/KW/KW1010/kw1010_apply_save.svc"/>
+        <a:link id="kw2010_insert_link" model="cux.KW.KW2010.kw2010_field_autid_query" modelaction="insert"/>
+        <a:link id="kw2010_update_link" model="cux.KW.KW2010.kw2010_field_autid_query" modelaction="update"/>
+        <a:link id="kw2010_delete_link" model="cux.KW.KW2010.kw2010_field_autid_query" modelaction="delete"/>
+        <a:link id="kw2010_submit_link" model="cux.KW.KW2010.kw2010_field_autid_query" modelaction="execute"/>
+        <script><![CDATA[
+        	function init(){
+        	    var application_id = '${/parameter/@application_id}';
+        	    //检验批创建8D参数
+        	    if(application_id){
+        	        $('kw2010_maintain_ds').setQueryParameter('application_id', application_id);
+        	        $('kw2010_maintain_ds').query(); 
+        	    }else{
+        	        var record = $('kw2010_maintain_ds').create();
+        	        var date = new Date();
+        	        //var record = $('kw2010_maintain_ds').getCurrentRecord();
+        	        record.set('creation_date', Aurora.formatDate(date));  
+        	        //设置重要度和紧急程度
+        	        record.set('status_desc','新建');   
+        	    }
+        	     
+        	} 
+        	
+        	//问题详述长度校检
+        	// function qms5050_8d_issue_desc_validator(record,name,value){
+        	 	// if(name == "issue_desc"){
+			 	 	// var issue_desc = record.get("issue_desc");
+			 	 	// if(issue_desc){
+			 	 	    // if(issue_desc.length > 500){
+			 	 	     	// return '${l:QMS5050.ISSUE_DETAIL_OVERLENGTH}';   
+			 	 	    // }
+			 	 	// }
+			 	 	// return true;
+			 	// } 
+        	// }
+        	
+        	function kw2010_maintain_return(){
+        	    $('kw2010_create_win').close();
+        	} 
+        	
+        	//保存8D
+        	function kw2010_save(){   
+        	    var header_ds = $('kw2010_maintain_ds');
+                var attachment_ds = $('kw2010_create_atm_files_ds');
+                var header_record = header_ds.getCurrentRecord();
+                if (!header_ds.validate()) {
+                    return;
+                } 
+                
+                // var data = header_record.data;
+                var data = {};
+                if (Aurora.isEmpty(header_record.get('application_id'))) {
+                    data['_status'] = 'insert';
+                } else {
+                    data['_status'] = 'update';
+                }
+                
+                data['header'] = header_ds.getJsonData(); 
+                data['attachments'] = attachment_ds.getJsonData();
+                Aurora.Masker.mask($('kw2010_create_win').wrap);
+                Aurora.request({
+                    url: $('kw2010_apply_save_link').getUrl(),
+                    para: data,
+                    success: function(result) { 
+                    	var application_id='';
+                        if(result.result.header.record!=undefined){  
+                            application_id = result.result.header.record[0].application_id; 
+                        }
+                        Aurora.Masker.unmask($('kw2010_create_win').wrap);
+                        Aurora.showMessage('${l:PROMPT}', '现场审核保存成功！', function() {
+                            $('kw2010_create_win').close();
+                            if (Aurora.isEmpty(application_id)){
+                                application_id = '${/parameter/@application_id}';
+                            }
+							new Aurora.Window({
+			                    id: 'kw2010_create_win',
+			                    title: '现场审核创建',
+			                    url: $('kw2010_field_autid_create_link').getUrl() + '?application_id=' + application_id,
+			                    fullScreen:true
+			                }).on('beforeclose', function() {
+			                    $('kw2010_maintain_ds').query(); 
+			                });
+                        });
+                    },
+                    failure: function() {
+                        Aurora.Masker.unmask($('kw2010_create_win').wrap);
+                        return;
+                    },
+                    error: function() {
+                        Aurora.Masker.unmask($('kw2010_create_win').wrap);
+                        return;
+                    }
+                });
+            } 
+        	
+        	function qms5050_rendererDay(cell,date,text,currentMonth){
+				var today=new Date();
+				if(date < new Date(today.getFullYear(),today.getMonth(),today.getDate())){
+					cell.disabled=true;
+				}
+				return text;
+			} 
+        	
+        	function kw2010_submit(){
+        	    debugger;
+        	    var record = $('kw2010_maintain_ds').getCurrentRecord();
+            	if (!$('kw2010_maintain_ds').validate()) {
+                    return;
+                } 
+		        if(record.get('application_id')){ 
+		            if(record.dirty){
+		             	Aurora.showMessage('${l:PROMPT}', '${l:QMS5050.DATA_IS_NOT_SAVED}'); 
+		             	return ;  
+		            }
+		            Aurora.showConfirm('${l:PROMPT}','确定提交现场审核回复？',function(){
+		                Aurora.Masker.mask($('kw2010_create_win').wrap,'${l:QMS5050.BEING_SUBMITTED}'); 
+				        Aurora.request({
+		        	        url:$('kw2010_submit_link').getUrl(),
+		        	        para:record.data,
+		        	        success:function(){
+	        	                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function(){
+	        	                    Aurora.Masker.unmask($('kw2010_create_win').wrap);  
+		        	                kw2010_maintain_return();
+	        	                });
+		        	        },
+		        	        error:function(){
+		        	        	Aurora.Masker.unmask($('kw2010_create_win').wrap);     
+		        	        },
+		        	        failure:function(){
+		        	         	Aurora.Masker.unmask($('kw2010_create_win').wrap);    
+		        	        },
+		        	        scope:this
+		        	    });		                
+		            },function(){},300,100);
+			    } 
+        	} 
+        	
+        	//8D加载完成
+        	function kw_load_handler(dataSet){ 
+    	 	   var record = dataSet.getCurrentRecord();
+ 			   if(record.get('status_desc')!='新建')
+    	        {  
+    	            record.getField('vendor_code').setReadOnly(true);
+    	            record.getField('visit_date').setReadOnly(true);
+    	            record.getField('examine_type').setReadOnly(true);
+    	            record.getField('field_trip_flag').setReadOnly(true);
+    	            record.getField('application_reason').setReadOnly(true);
+            		record.getField('comments').setReadOnly(true); 
+    	        }  
+        	}  
+        	
+        	function kw2010_create_attachments_ds_beforeCreate(ds, record, index){
+                var application_id = $('kw2010_maintain_ds').getCurrentRecord().get('application_id');
+                if (Aurora.isEmpty(application_id)) {
+                    Aurora.showMessage('${l:PROMPT}', '请先保存数据,再新附件行！');
+                    return false;
+                }
+            }
+            
+            function kw2010_create_attachments_ds_add(ds, record, index){
+                var application_id = $('kw2010_maintain_ds').getCurrentRecord().get('application_id');
+                record.set('source_pk_value', application_id);
+            }
+            
+             function kw2010_upload_render(value, record, name) { 
+                var atm_line_id = record.get('atm_line_id');
+                var atm_counts = record.get('atm_counts');
+                var header_record =  $('kw2010_maintain_ds').getCurrentRecord();
+                if (name == "attachment") {
+                     return '<a href="javascript:qms8010_upload_file_readonly(' + atm_line_id + ')">附件查看</a>'; 
+                }
+                
+                if(name=="vendor_attachment")
+                {
+                    return '<a href="javascript:qms8010_upload_file(' + atm_line_id + ')">${l:PROMPT.UPLOAD_DOWNLOAD}</a>';
+                }
+            
+                if (name == "atm_flag") {
+                    if (atm_counts > 0) {
+                        return '<div style="margin-top:3px;margin-left:auto;margin-right:auto;vertical-align:middle;height:20px;line-height:20px;"><img src="${/request/@context_path}/images/paperclip.png"/></div>';
+                    } else {
+                        return '';
+                    }
+                }
+            }
+            
+           function qms8010_upload_file(id) {
+                var url = "${/request/@context_path}/uploadFile.screen?table_name=VENDOR_KW_FND_SCENE_AUDIT_HEADER&header_id=" + id;
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:ATM.UPLOAD_ATTACHMENT}',
+                    id: 'qms8010_entrustment_edit_atm_window',
+                    width: 850,
+                    height: 500
+                }).on('beforeclose', function() {
+                    $('kw2010_create_atm_files_ds').query();
+                });
+            }//附件上传
+            
+           function qms8010_upload_file_readonly(id) {
+                var url = "${/request/@context_path}/uploadFileView.screen?table_name=KW_FND_SCENE_AUDIT_HEADER&header_id=" + id;
+                new Aurora.Window({
+                    url: url,
+                    title: '附件查看',
+                    id: 'qms8010_entrustment_edit_atm_window',
+                    width: 850,
+                    height: 500
+                }).on('beforeclose', function() {
+                    $('kw2010_create_atm_files_ds').query();
+                });
+            }//附件查看
+
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="kw2010_examine_type_ds">
+                <a:datas dataSource="kw2010_examine_type_data"/>
+            </a:dataSet>
+            <a:dataSet id="kw2010_maintain_ds" autoCreate="true" loadData="true" model="cux.KW.KW2010.kw2010_field_autid_query" queryUrl="${/request/@context_path}/autocrud/cux.KW.KW1010.kw1010_field_autid_create_query/query?application_id=${/parameter/@application_id}">
+                <a:fields>
+                    <a:field name="application_id"/>
+                    <a:field name="application_reason" required="true"/>
+                    <a:field name="status"/>
+                    <a:field name="vendor_name" readOnly="true"/>
+                    <a:field name="vendor_code" lovHeight="530" lovService="qms.QMS5050.fnd_coop_companies_lov" lovWidth="530" required="true" title="QMS_8D.VENDER_SEARCH">
+                        <a:mapping>
+                            <a:map from="coop_company_code" to="vendor_code"/>
+                            <a:map from="coop_company_desc" to="vendor_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="examine_type" displayField="flex_desc" options="kw2010_examine_type_ds" returnField="examine_type_code" valueField="flex_value"/>
+                    <a:field name="field_trip_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="user_name" defaultValue="${/model/qms5050_current_user/record/@description}"/>
+                    <a:field name="comments"/>
+                    <a:field name="vendor_reply_date" required="true"/>
+                    <a:field name="submit_reject_reason" readOnly="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="kw_load_handler"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="kw2010_create_atm_files_ds" autoQuery="true" bindTarget="kw2010_maintain_ds" model="cux.KW.KW2010.fnd_atm_lines" queryUrl="${/request/@context_path}/autocrud/cux.KW.KW2010.fnd_atm_lines/query?source_table_name=KW_FND_SCENE_AUDIT_HEADER&amp;source_pk_value=${/parameter/@application_id}&amp;vendor_table_name=VENDOR_KW_FND_SCENE_AUDIT_HEADER" selectable="true">
+                <a:fields>
+                    <a:field name="atm_line_id"/>
+                    <a:field name="line_number"/>
+                    <a:field name="atm_desc"/>
+                    <a:field name="source_table_name" defaultValue="KW_FND_SCENE_AUDIT_HEADER"/>
+                    <a:field name="source_pk_value" defaultValue="${/parameter/@application_id}"/>
+                    <a:field name="vendor_table_name" defaultValue="VENDOR_KW_FND_SCENE_AUDIT_HEADER"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="beforecreate" handler="kw2010_create_attachments_ds_beforeCreate"/>
+                    <a:event name="add" handler="kw2010_create_attachments_ds_add"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton id="save" click="kw2010_save" text="PROMPT.SAVE" width="100"/>
+                <a:toolbarButton id="submit" click="kw2010_submit" text="HAP_SUBMIT" width="100"/>
+                <a:toolbarButton click="kw2010_maintain_return" text="HAP_BACK" width="100"/>
+            </a:screenTopToolbar>
+            <a:fieldSet title="审核意见">
+                <a:hBox labelWidth="100">
+                    <a:textArea name="submit_reject_reason" bindTarget="kw2010_maintain_ds" prompt="原因" width="920"/>
+                </a:hBox>
+            </a:fieldSet>
+            <a:fieldSet column="1" title="PROMPT.BASIC_INFOMATION">
+                <a:hBox labelWidth="100">
+                    <a:textField name="application_number" bindTarget="kw2010_maintain_ds" prompt="申请单号" readOnly="true" width="150"/>
+                    <a:textField name="status_desc" bindTarget="kw2010_maintain_ds" prompt="状态" readOnly="true" width="150"/>
+                    <a:textField name="user_name" bindTarget="kw2010_maintain_ds" prompt="创建人" readOnly="true" width="150"/>
+                    <a:datePicker name="plan_visit_date" bindTarget="kw2010_maintain_ds" prompt="计划到访日期" readOnly="true" renderer="Aurora.formatDate" width="150"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:lov name="vendor_code" bindTarget="kw2010_maintain_ds" prompt="供应商编码" width="150"/>
+                    <a:textField name="vendor_name" bindTarget="kw2010_maintain_ds" prompt="供应商名称" width="150"/>
+                    <a:textField name="creation_date" bindTarget="kw2010_maintain_ds" prompt="创建日期" readOnly="true" width="150"/>
+                    <a:datePicker name="vendor_reply_date" bindTarget="kw2010_maintain_ds" prompt="供应商回复日期" renderer="Aurora.formatDate" width="150"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:datePicker name="visit_date" bindTarget="kw2010_maintain_ds" prompt="最终确认到访日期" renderer="Aurora.formatDate" width="150"/>
+                    <a:datePicker name="vendor_must_reply_date" bindTarget="kw2010_maintain_ds" prompt="要求回复时间" readOnly="true" renderer="Aurora.formatDate" width="150"/>
+                    <a:comboBox name="examine_type" bindTarget="kw2010_maintain_ds" prompt="审核类别" width="150"/>
+                    <!-- <a:checkBox name="field_trip_flag" bindTarget="kw1010_maintain_ds" width="150" label="是否需要实地考察" style="margin-left:40px;" /> -->
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textArea name="application_reason" bindTarget="kw2010_maintain_ds" prompt="申请理由" width="920"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textArea name="comments" bindTarget="kw2010_maintain_ds" prompt="备注" width="920"/>
+                </a:hBox>
+            </a:fieldSet>
+            <a:tabPanel height="300" marginWidth="130">
+                <a:tabs>
+                    <a:tab prompt="附件信息" width="100">
+                        <a:grid id="kw2010_create_atm_files_grid" bindTarget="kw2010_create_atm_files_ds" height="260" marginWidth="150" navBar="true">
+                            <!--                             <a:toolBar>
+                                <a:button id="add" type="add"/>
+                                <a:button id="delete" type="delete"/>
+                            </a:toolBar> -->
+                            <a:columns>
+                                <a:column name="atm_desc" prompt="FND_ATM_LINES.ATM_DESC"/>
+                                <a:column name="upload_user_desc" prompt="上传人"/>
+                                <a:column name="upload_date" prompt="上传时间"/>
+                                <a:column name="attachment" align="center" prompt="采购方附件" renderer="kw2010_upload_render" width="100"/>
+                                <a:column name="vendor_attachment" align="center" prompt="供应商附件" renderer="kw2010_upload_render" width="100"/>
+                                <a:column name="atm_flag" align="center" renderer="kw2010_upload_render" width="20"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+        <script><![CDATA[
+        	init(); 
+        ]]></script>
+    </a:view>
+</a:screen>

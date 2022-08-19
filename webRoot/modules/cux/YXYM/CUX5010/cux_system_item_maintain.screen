@@ -1,0 +1,473 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wangcheng $
+	$Date: 2015/03/09 09:13:22 $
+	$Revision: 1.0
+	$Purpose: 物品录入维护
+-->
+<a:screen xmlns:c="aurora.application.action" xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="mir.item_id = ${/parameter/@item_id}" model="cux.YXYM.CUX5010.cux_mtl_item_requisition" rootPath="item_info"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="cux5010_system_item_save_link" modelaction="update" url="${/request/@context_path}/modules/cux/YXYM/CUX5010/cux_system_item_operation.svc"/>
+        <a:link id="cux5010_system_item_attachment_file_upload_link" url="${/request/@context_path}/attachment_file_upload.screen"/>
+        <a:link id="cux5010_system_item_attachment_file_download_link" url="${/request/@context_path}/atm_download.svc"/>
+        <script><![CDATA[
+            var item_id = '${/parameter/@item_id}'; //全局变量，物料ID，初始是物料查询页面传递过来的ID（针对物料数据修改）
+            //var tmpl_instance_id;
+            
+            //页面在加载完毕之后，执行此方法，为页面进行初始化工作
+            
+            function cux5010_systemItemMaintainInit() {
+                //alert(item_id);
+                //debugger;
+                if (item_id) { //判断全局变量是否有值，有值表示是修改，执行下面操作
+                    var item_record = $('cux5010_system_item_maintain_create_ds').getCurrentRecord();
+            
+                    //设置tab页可用
+                    $('cux5010_system_item_tabPanel').setEnabled(0);
+                    $('cux5010_system_item_tabPanel').setEnabled(1);
+                    //设置显示tab1
+                    $('cux5010_system_item_tabPanel').selectTab(0);
+            
+                    $('cux5010_system_item_attachment_maintain_ds').query();
+                    $('cux5010_category_classify_items_ds').query();
+            
+                    //提交、删除按钮可用
+                    $('cux5010_submitSystemItem_btn').enable();
+                    $('cux5010_deleteSystemItem_btn').enable();
+                } else {
+                    $('cux5010_submitSystemItem_btn').disable();
+                    $('cux5010_deleteSystemItem_btn').disable();
+                }
+            }
+            
+            
+            //页面保存按钮执行的方法
+            
+            function cux5010_saveSystemItem() {
+                if ($('cux5010_system_item_maintain_create_ds').validate()) { //进行数据校验（必输字段是否必输等）
+            
+                    var item_record = $('cux5010_system_item_maintain_create_ds').getCurrentRecord();
+            
+                    if (item_record.get('secondary_uom_enabled') == "Y") {
+                        if (item_record.get('primary_uom') == item_record.get('secondary_uom')) {
+                            Aurora.showMessage('${l:PROMPT}', '${l:MTL_SYSTEM_VENDOR_ITEMS.PRIMARY_SECONDARY_SAME_UOM}');
+                            return false;
+                        }
+                    }
+            
+                    if (item_record.dirty) {
+                        item_record.set('_status', 'update');
+                    }
+            
+                    var datas = item_record.data;
+            
+                    //自主品类
+                    var category_classify_items = [];
+                    if ($('cux5010_category_classify_items_ds') && $('cux5010_category_classify_items_ds').getAll().length > 0) {
+                        if ($('cux5010_category_classify_items_ds').validate()) {
+                            var category_classify_items_records = $('cux5010_category_classify_items_ds').getAll();
+                            for (var l = 0;l < category_classify_items_records.length;l++) {
+                                category_classify_items_records[l].set('item_id', item_id);
+                                category_classify_items.push(category_classify_items_records[l].data);
+                            }
+                        } else {
+                            return false;
+                        }
+                    }
+            
+                    datas['category_classify_items'] = category_classify_items;
+                    //提交AjAX请求
+                    Aurora.request({
+                        url: $('cux5010_system_item_save_link').getUrl(),
+                        para: datas,
+                        success: function(res) {
+                            Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SAVE_SUCCESS}', function() {
+                                cux5010_systemItemSubmitSuccess(res, item_record);
+                            });
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            //保存请求执行完成后
+            
+            function cux5010_systemItemSubmitSuccess(response, record) {
+            
+                //将AJAX请求返回的物料ID赋予全局变量
+                item_id = response.result.item_id;
+            
+                //重新加载物料头信息DataSet
+                var item_ds = $('cux5010_system_item_maintain_create_ds');
+                item_ds.setQueryParameter('item_id', item_id);
+                item_ds.query();
+            
+                //附件
+                $('cux5010_system_item_attachment_maintain_ds').setQueryParameter('pk_value', item_id);
+                $('cux5010_system_item_attachment_maintain_ds').setQueryParameter('table_name', 'MTL_ITEM_REQUISITION');
+                $('cux5010_system_item_attachment_maintain_ds').query();
+            
+                //自主品类
+                $('cux5010_category_classify_items_ds').setQueryParameter('item_id', item_id);
+                $('cux5010_category_classify_items_ds').query();
+                
+                // var category_records=$('cux5010_category_classify_items_ds');
+                // for (i=0;i<category_records.length;i++){
+                    // category_records[i].set('item_id',item_id);
+                // }
+            
+                //提交、删除按钮可用
+                $('cux5010_submitSystemItem_btn').enable();
+                $('cux5010_deleteSystemItem_btn').enable();
+            
+                //头信息保存成功后，所有TAB页都可用
+                cux5010_setItemTabsEnable(record.get('tmpl_instance_id'), item_id);
+                $('cux5010_system_item_tabPanel').selectTab(0); //定位到第一个tab页
+            }
+            
+            //将所有TAB页置为可用
+            
+            function cux5010_setItemTabsEnable(tmpl_instance_id, item_id) {
+            
+                $('cux5010_system_item_tabPanel').setEnabled(0);
+                $('cux5010_system_item_tabPanel').setEnabled(1);
+            }
+            
+            //返回按钮执行的方法
+            
+            function cux5010_backSystemItem() {
+                $('cux5010_system_item_maintain_window').close();
+            }
+            
+            
+            //物料头信息DataSet完成查询后，加载的方法
+            
+            function cux5010_mtlSystemItemLoad(ds) {
+                var record = ds.getCurrentRecord();
+            
+                //启用辅计量单位，辅计量单位（必输）、主单位基准转换率都可维护
+                if (record.get('secondary_uom_enabled') == "Y") {
+                    record.getField('secondary_uom').setReadOnly(false);
+                    record.getField('secondary_uom').setRequired(true);
+            
+                    //不启用辅计量单位，辅计量单位（必输）、主单位基准转换率都不可维护
+                } else if (record.get('secondary_uom_enabled') == "N") {
+                    record.getField('secondary_uom').setReadOnly(true);
+                    record.getField('secondary_uom').setRequired(false);
+                }
+            }
+            
+            //物料头信息数据发生修改时，执行的update事件
+            
+            function cux5010_mtlSystemItemUpdate(ds, record, name, value, oldvalue) {
+                if (name == 'secondary_uom_enabled_display') {
+                    if (!value) {
+                        record.set('secondary_uom_enabled', '');
+                    }
+                }
+                if (name == "secondary_uom_enabled") {
+                    //启用辅计量单位，辅计量单位（必输）、主单位基准转换率都可维护
+                    if (value == "Y") {
+                        record.getField('secondary_uom').setReadOnly(false);
+                        record.getField('secondary_uom').setRequired(true);
+            
+                        //不启用辅计量单位，辅计量单位（必输）、主单位基准转换率值清空，且都不可维护
+                    } else {
+                        record.set('secondary_uom', '');
+                        record.getField('secondary_uom').setReadOnly(true);
+                        record.getField('secondary_uom').setRequired(false);
+                    }
+                }
+            }
+            
+            //附件信息TAB页，在提交数据之前执行的方法（添加物料ID等）
+            
+            function cux5010_systemItemAttachmentBeforeSubmit(ds) {
+                var records = ds.getAll();
+                for (var i = 0;i < records.length;i++) {
+                    var record = records[i];
+                    record.set('item_id', item_id); //添加全局物料ID
+                    record.set('_status', 'update'); //添加提交执行的方法（insert\update\delete..），这里是更新附件说明和是否启用信息
+                }
+            }
+            
+            //附件信息TAB页，在提交成功之后执行的方法（设置grid查询参数、执行查询）
+            
+            function cux5010_systemItemAttachmentSubmitSuccess(ds, response) {
+                ds.setQueryParameter('item_id', item_id);
+                ds.query();
+            }
+            
+            //附件信息TAB页grid上，数据新增事件，打开公用的附件上传页面
+            
+            function cux5010_attachmentFileAdd() {
+                new Aurora.Window({
+                    id: 'cux5010_system_item_attachment_file_upload_link_window',
+                    title: '${l:HAP_UPLOAD_TITLE}',
+                    url: $('cux5010_system_item_attachment_file_upload_link').getUrl() + '?pkvalue=' + item_id + '&table_name=MTL_ITEM_REQUISITION',
+                    width: 500,
+                    height: 500
+                }).on('close', function() { //关闭附件上传页面，执行的方法，刷新附件信息grid
+                    $('cux5010_system_item_attachment_maintain_ds').setQueryParameter('pk_value', item_id);
+                    $('cux5010_system_item_attachment_maintain_ds').setQueryParameter('table_name', 'MTL_ITEM_REQUISITION');
+                    $('cux5010_system_item_attachment_maintain_ds').query();
+                });
+            }
+            
+            function cux5010_systemItemAttachmentMaintainDsGridRenderer(value, record, name) {
+                var attachment_id = record.get('attachment_id');
+                var file_name = record.get('file_name');
+                if (attachment_id) {
+                    return '<a href="' + $('cux5010_system_item_attachment_file_download_link').getUrl() + '?attachment_id=' + attachment_id + '">' + file_name + '</a>';
+                }
+            }
+            
+            function cux5010_systemItemPartnerVendorMaintainDsGridEditorFunction(record, name) {
+                var data_type = record.get('data_type');
+                if (name == 'partner_item_name') {
+                    if (!Aurora.isEmpty(data_type) && data_type == 'BUSINESS_GROUP') {
+                        record.getField('partner_item_name').setLovPara('business_group', record.get('data_code'));
+                        return 'cux5010_system_item_partner_vendor_maintain_ds_grid_lov';
+                    }
+                }
+            }
+            
+            function cux5010_systemItemPartnerCustomerMaintainDsGridEditorFunction(record, name) {
+                var data_type = record.get('data_type');
+                if (name == 'partner_item_name') {
+                    if (!Aurora.isEmpty(data_type) && data_type == 'BUSINESS_GROUP') {
+                        record.getField('partner_item_name').setLovPara('business_group', record.get('data_code'));
+                        return 'cux5010_system_item_partner_client_maintain_ds_grid_lov';
+                    }
+                }
+            }
+            
+            function cux5010_systemItemPartnerVendorMaintainDsLoad(ds) {
+                var records = ds.getAll();
+                for (var i = 0;i < records.length;i++) {
+                    if (records[i].get('data_type') == 'BUSINESS_GROUP') {
+                        records[i].getField('item_name').setLovPara('business_group', records[i].get('data_code'));
+                        records[i].getField('item_name').setReadOnly(false);
+                    }
+                }
+            }
+            
+            function cux5010_systemItemPartnerCustomerMaintainDsLoad(ds) {
+                var records = ds.getAll();
+                for (var i = 0;i < records.length;i++) {
+                    if (records[i].get('data_type') == 'BUSINESS_GROUP') {
+                        records[i].getField('item_name').setLovPara('business_group', records[i].get('data_code'));
+                        records[i].getField('item_name').setReadOnly(false);
+                    }
+                }
+            }
+            
+            
+            function cux5010_category_classify_items_ds_grid_editorFun(record, name) {
+                if (record.isNew) {
+                    return 'cux5010_category_classify_items_ds_grid_lov';
+                } else {
+                    return '';
+                }
+            }
+            
+            //提交
+            
+            function cux5010_submitSystemItem() {
+                var records = $('cux5010_system_item_maintain_create_ds').getCurrentRecord();
+                var datas = [];
+                var data = {
+                    'item_id': records.get('item_id'),
+                    '_status': 'execute'
+                };
+                datas.push(data);
+                Aurora.request({
+                    url: $('cux5010_system_tiem_execute_link').getUrl(),
+                    para: datas,
+                    success: function(result) {
+                        //提交结束关闭页面
+                        cux5010_backSystemItem();
+                    },
+                    scopo: this,
+                    sync: true
+                });
+            }
+            
+            //删除
+            function cux5010_deleteSystemItem() {
+                var records = $('cux5010_system_item_maintain_create_ds').getCurrentRecord();
+                var datas = [];
+                var data = {
+                    'item_id': records.get('item_id'),
+                    '_status': 'delete'
+                };
+                datas.push(data);
+                Aurora.request({
+                    url: $('cux5010_system_tiem_delete_link').getUrl(),
+                    para: datas,
+                    success: function(result) {
+                        //删除后关闭页面
+                        cux5010_backSystemItem();
+                    },
+                    scopo: this,
+                    sync: true
+                });
+            }
+            
+            //新增品类、给item_id赋值
+            function cux5010_categoryClassifyOnAdd(ds,record,index){
+                record.set('item_id',item_id);
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="cux5010_yes_or_no_ds" lookupCode="YES_OR_NO"/>
+            <a:dataSet id="cux5010_system_item_maintain_create_ds" autoCreate="true" model="cux.YXYM.CUX5010.cux_mtl_item_requisition">
+                <a:datas dataSource="/model/item_info"/>
+                <a:fields>
+                    <!--  <a:field name="category_name_all" lovHeight="450" lovUrl="${/request/@context_path}/modules/public/mtl_category_user_defined_lov.screen" lovWidth="550" prompt="MTL_SYSTEM_ITEMS.ITEM_CATEGORY_ID" requiredMessage="${l:MTL_SYSTEM_ITEMS.ITEM_CATEGORY_ID}${l:PROMPT.INPUT}" title="MTL_SYSTEM_ITEMS.ITEM_CATEGORY_ID">
+                        <a:mapping>
+                            <a:map from="category_name_all" to="category_name_all"/>
+                            <a:map from="category_udf_id" to="item_category_id"/>
+                            <a:map from="category_code" to="category_code"/>
+                            <a:map from="category_name" to="category_name"/>
+                            <a:map from="tmpl_instance_id" to="tmpl_instance_id"/>
+                        </a:mapping>
+                    </a:field> -->
+                    <a:field name="item_category_desc" lovHeight="480" lovService="cux.YXYM.CUX5010.cux_categories_user_defined_vl" lovWidth="550" prompt="PUR5120.ITEM_CATEGORY" required="true" title="PUR5120.ITEM_CATEGORY">
+                        <a:mapping>
+                            <a:map from="category_name" to="item_category_desc"/>
+                            <a:map from="category_udf_id" to="item_category_id"/>
+                            <a:map from="category_code" to="item_category_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="item_code" prompt="CUX5010.CLOUD_CODE" readOnly="true"/>
+                    <a:field name="display_item_code" prompt="WZPUR5020.MATERIAL_CODING" readOnly="true"/>
+                    <a:field name="item_name" prompt="WZPUR5020.MATERIAL_NAME" required="true" requiredMessage="${l:CUX5010.MATERIAL_NAME_CANNOT_BE_EMPTY}"/>
+                    <a:field name="primary_uom" autoComplete="true" autoCompleteField="uom_desc" lovGridHeight="300" lovHeight="450" lovService="public.fnd_uom_codes_lov" lovWidth="550" prompt="MTL_SYSTEM_VENDOR_ITEMS.PRIMARY_UOM" required="true" requiredMessage="${l:MTL_SYSTEM_VENDOR_ITEMS.PRIMARY_UOM_NOT_NULL}" title="MTL_SYSTEM_VENDOR_ITEMS.PRIMARY_UOM">
+                        <a:mapping>
+                            <a:map from="uom_code" to="primary_uom"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="secondary_uom_enabled" defaultValue="N"/>
+                    <a:field name="secondary_uom_enabled_display" displayField="code_value_name" options="cux5010_yes_or_no_ds" prompt="MTL_SYSTEM_VENDOR_ITEMS.SECONDARY_UOM_ENABLED" returnField="secondary_uom_enabled" valueField="code_value"/>
+                    <a:field name="secondary_uom" autoComplete="true" autoCompleteField="uom_desc" lovGridHeight="300" lovHeight="450" lovService="public.fnd_uom_codes_lov" lovWidth="550" prompt="MTL_SYSTEM_VENDOR_ITEMS.SECONDARY_UOM" readOnly="true" requiredMessage="${l:CUX5010.AUXILIARY_MEASUREMENT_UNIT_CANNOT_BE_EMPTY}" title="MTL_SYSTEM_VENDOR_ITEMS.SECONDARY_UOM">
+                        <a:mapping>
+                            <a:map from="uom_code" to="secondary_uom"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="lot_numbering_rule" prompt="INV_SYSTEM_ITEMS.LOT_NUMBERING_RULE"/>
+                    <a:field name="item_manage_method" prompt="INV_SYSTEM_ITEMS.ITEM_MANAGE_METHOD"/>
+                    <a:field name="quota_manage_type" prompt="INV_SYSTEM_ITEMS.QUOTA_MANAGE_TYPE"/>
+                    <a:field name="item_specs" maxLength="1000" prompt="INV_SYSTEM_ITEMS.ITEM_SPECS"/>
+                    <a:field name="item_model" maxLength="1000" prompt="INV_SYSTEM_ITEMS.ITEM_MODEL"/>
+                    <a:field name="comments" maxLength="2000" prompt="CUX5010.MATERIAL_DESCRIPTION"/>
+                    <a:field name="enabled_flag" defaultValue="Y"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="cux5010_mtlSystemItemUpdate"/>
+                    <a:event name="load" handler="cux5010_mtlSystemItemLoad"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="cux5010_system_item_attachment_maintain_ds" autoCount="true" autoPageSize="true" autoQuery="false" model="public.fnd_attachment_file_mgr" queryUrl="${/request/@context_path}/autocrud/public.fnd_attachment_file_mgr/query?pk_value=${/parameter/@item_id}&amp;table_name=MTL_ITEM_REQUISITION" selectable="false"/>
+            <!-- Category Classify Items Ds-->
+            <a:dataSet id="cux5010_category_classify_items_ds" autoCount="true" autoPageSize="true" autoQuery="false" model="cux.YXYM.CUX5010.cux_category_classify_items" queryUrl="${/request/@context_path}/autocrud/cux.YXYM.CUX5010.cux_category_classify_items/query?item_id=${/parameter/@item_id}" selectable="true">
+                <a:fields>
+                    <a:field name="item_id" defaultValue="${/parameter/@item_id}"/>
+                    <!-- <a:field name="category_code" lovHeight="450" lovUrl="${/request/@context_path}/modules/public/mtl_category_user_defined_lov.screen" lovWidth="550" prompt="MTL_CATEGORIES_USER_DEFINED.CATEGORY_CODE" requiredMessage="${l:MTL_CATEGORIES_USER_DEFINED.CATEGORY_CODE}${l:PROMPT.INPUT}" title="MTL_CATEGORIES_USER_DEFINED.LOV_TITLE">
+                        <a:mapping>
+                            <a:map from="category_udf_id" to="category_udf_id"/>
+                            <a:map from="category_code" to="category_code"/>
+                            <a:map from="category_name" to="category_name"/>
+                        </a:mapping>
+                    </a:field> -->
+                    <a:field name="category_code" lovHeight="480" lovService="cux.YXYM.CUX5010.cux_categories_user_defined_vl" lovWidth="550" prompt="PUR5120.ITEM_CATEGORY" required="true" title="PUR5120.ITEM_CATEGORY">
+                        <a:mapping>
+                            <a:map from="category_name" to="category_name"/>
+                            <a:map from="category_udf_id" to="item_category_id"/>
+                            <a:map from="category_code" to="category_code"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="cux5010_categoryClassifyOnAdd"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton id="cux5010_saveSystemItem_btn" click="cux5010_saveSystemItem" style="margin-left:20px;" text="HAP_SAVE" width="100"/>
+                <a:toolbarButton id="cux5010_submitSystemItem_btn" click="cux5010_submitSystemItem" style="margin-left:20px;" text="HAP_SUBMIT" width="100"/>
+                <a:toolbarButton id="cux5010_deleteSystemItem_btn" click="cux5010_deleteSystemItem" style="margin-left:20px;" text="HAP_DELETE" width="100"/>
+                <a:toolbarButton click="cux5010_backSystemItem" style="margin-left:20px;" text="HAP_BACK" width="100"/>
+            </a:screenTopToolbar>
+            <a:fieldSet title="INV_SYS_ITEMS.ITEM_INFOMATION">
+                <a:vBox>
+                    <a:hBox labelWidth="110">
+                        <a:textField name="display_item_code" bindTarget="cux5010_system_item_maintain_create_ds"/>
+                        <a:textField name="item_name" bindTarget="cux5010_system_item_maintain_create_ds" width="418"/>
+                    </a:hBox>
+                    <a:hBox labelWidth="110">
+                        <a:textField name="item_code" bindTarget="cux5010_system_item_maintain_create_ds"/>
+                        <a:lov name="item_category_desc" bindTarget="cux5010_system_item_maintain_create_ds" prompt="CUX5010.PLATFORM_CLASSIFICATION" width="418"/>
+                    </a:hBox>
+                    <a:hBox labelWidth="110">
+                        <a:lov name="primary_uom" bindTarget="cux5010_system_item_maintain_create_ds"/>
+                        <a:comboBox name="secondary_uom_enabled_display" bindTarget="cux5010_system_item_maintain_create_ds"/>
+                        <a:lov name="secondary_uom" bindTarget="cux5010_system_item_maintain_create_ds"/>
+                    </a:hBox>
+                    <a:hBox labelWidth="110">
+                        <a:textField name="lot_numbering_rule" bindTarget="cux5010_system_item_maintain_create_ds"/>
+                        <a:textField name="item_manage_method" bindTarget="cux5010_system_item_maintain_create_ds"/>
+                        <a:textField name="quota_manage_type" bindTarget="cux5010_system_item_maintain_create_ds"/>
+                    </a:hBox>
+                    <a:hBox labelWidth="110">
+                        <a:textField name="item_specs" bindTarget="cux5010_system_item_maintain_create_ds" width="686"/>
+                    </a:hBox>
+                    <a:hBox labelWidth="110">
+                        <a:textField name="item_model" bindTarget="cux5010_system_item_maintain_create_ds" width="686"/>
+                    </a:hBox>
+                    <a:hBox labelWidth="110">
+                        <a:textArea name="comments" bindTarget="cux5010_system_item_maintain_create_ds" height="60" width="664"/>
+                    </a:hBox>
+                </a:vBox>
+            </a:fieldSet>
+            <a:tabPanel id="cux5010_system_item_tabPanel" height="350" width="900">
+                <a:tabs>
+                    <a:tab disabled="true" prompt="MTL_2060.CLASSIFY_ITEMS" width="120">
+                        <a:grid id="cux5010_category_classify_items_ds_grid" autoAppend="false" bindTarget="cux5010_category_classify_items_ds" height="295" navBar="true" showRowNumber="true" style="margin:5px;" width="880">
+                            <a:toolBar>
+                                <a:button type="add"/>
+                                <a:button type="save"/>
+                                <a:button type="delete"/>
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="category_code" align="center" editorFunction="cux5010_category_classify_items_ds_grid_editorFun" prompt="MTL_CATEGORIES_USER_DEFINED.CATEGORY_CODE" width="200"/>
+                                <a:column name="category_name" prompt="MTL_CATEGORIES_USER_DEFINED.CATEGORY_NAME_ID" width="450"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:lov id="cux5010_category_classify_items_ds_grid_lov"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab disabled="true" prompt="MTL_SYSTEM_VENDOR_ITEMS.ATTACHMENT_INFO" width="120">
+                        <a:grid id="cux5010_system_item_attachment_maintain_ds_grid" bindTarget="cux5010_system_item_attachment_maintain_ds" height="295" navBar="true" showRowNumber="true" style="margin:5px;" width="880">
+                            <a:toolBar>
+                                <a:button id="cux5010_system_item_attachment_maintain_ds_grid_btn" click="cux5010_attachmentFileAdd" text="PROMPT.ADD-REMOVE"/>
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="file_name" align="left" renderer="cux5010_systemItemAttachmentMaintainDsGridRenderer" sortable="true" width="720"/>
+                                <a:column name="file_size" align="center" sortable="true" width="100"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+        <script><![CDATA[
+            cux5010_systemItemMaintainInit(); //页面加载完毕之后，初始方法（主要用于修改物料数据时的操作）
+        ]]></script>
+    </a:view>
+</a:screen>

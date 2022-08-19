@@ -1,0 +1,465 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="pur.PRINT.pur_po_print_headers_firstunion" rootPath="/model/po_print_headers"/>
+        <a:model-query fetchAll="true" model="pur.PRINT.pur_po_print_lines_firstunion" rootPath="/model/po_print_lines"/>
+    </a:init-procedure>
+    <a:view package="aurora.ui.std" template="default">
+        <style><![CDATA[ 
+        	.STYLE_VENDOR {
+				font-family: "宋体";
+				font-weight: bold;
+				font-size: 16px;
+			}
+			.STYLE1 {
+				font-family: "宋体";
+				font-weight: bold;
+				font-size: 18px;
+			}
+			.STYLE2 {
+				font-family: "宋体";
+				font-weight: bold;
+				font-size: 12px;
+			}
+			.STYLE3 {
+				font-family: "宋体";
+				font-size: 12px;
+				line-height: 20px;
+				font-weight: bold;
+			}
+			.STYLE4 {
+				font-family: "宋体";
+				font-size: 10px;
+				font-weight: bold;
+				border:1px solid;
+			}
+			.STYLE5 {
+				font-family: "宋体";
+				font-size: 10px;
+				font-weight: bold;
+				border:1px solid;
+			}
+			.STYLE6 {
+				font-family: "宋体";
+				font-size: 10px;
+			}
+			.STYLE7 {
+				font-family: "宋体";
+				font-size: 9px;
+			}
+			.barcode-style{
+			    font-family: "宋体";
+				font-weight: bold;
+				font-size: 17px;
+				font-style: italic;
+			    border: 1px solid #000000;
+			    width: 60%;
+			    text-align: center; 
+			    vertical-align: middle;
+			    line-height: 100px;
+			}
+			
+			.body{
+				background-color: #ffffff;
+			}
+		]]></style>
+        <script><![CDATA[
+            var record_num = 0;
+            var record_per_page = 16;
+            var pages = 0;
+            var show_pages = 0;
+            var total_records = 0;
+            var need_new_page = false;
+            var need_new_report = false;
+            var cur_page = 1;
+            var chinese_amount_total = '';
+            var cur_record_per_page = 0;
+            var left_line_count 	= 0,
+            	need_foot_break_flag = false,
+            	organization_id	= '',
+            	organization_address = '',
+            	inv_org_total_amount = 0,
+            	inv_org_total_records = 0;
+            
+            function changeMoneyToChinese(money){
+			     var cnNums = new Array("零","壹","贰","叁","肆","伍","陆","柒","捌","玖"); //汉字的数字
+			    var cnIntRadice = new Array("","拾","佰","仟"); //基本单位
+			    var cnIntUnits = new Array("","万","亿","兆"); //对应整数部分扩展单位
+			    var cnDecUnits = new Array("角","分","毫","厘"); //对应小数部分单位
+			    var cnInteger = "整"; //整数金额时后面跟的字符
+			    var cnIntLast = "元"; //整型完以后的单位
+			    var maxNum = 999999999999999.99; //最大处理的数字
+			    
+			     var IntegerNum; //金额整数部分
+			    var DecimalNum; //金额小数部分
+			    var ChineseStr=""; //输出的中文金额字符串
+			    var parts; //分离金额后用的数组，预定义
+			    if( money == "" ){
+			         return "";
+			     }
+			     money = parseFloat(money);
+			     if( money >= maxNum ){
+			         $.alert('超出最大处理数字');
+			         return "";
+			     }
+			     if( money == 0 ){
+			         ChineseStr = cnNums[0]+cnIntLast+cnInteger;
+			         //document.getElementById("show").value=ChineseStr;
+			         return ChineseStr;
+			     }
+			     money = money.toString(); //转换为字符串
+			    if( money.indexOf(".") == -1 ){
+			         IntegerNum = money;
+			         DecimalNum = '';
+			     }else{
+			         parts = money.split(".");
+			         IntegerNum = parts[0];
+			         DecimalNum = parts[1].substr(0,4);
+			     }
+			     if( parseInt(IntegerNum,10) > 0 ){//获取整型部分转换
+			        zeroCount = 0;
+			         IntLen = IntegerNum.length;
+			         for( i=0;i<IntLen;i++ ){
+			             n = IntegerNum.substr(i,1);
+			             p = IntLen - i - 1;
+			             q = p / 4;
+			             m = p % 4;
+			             if( n == "0" ){
+			                 zeroCount++;
+			             }else{
+			                 if( zeroCount > 0 ){
+			                     ChineseStr += cnNums[0];
+			                 }
+			                 zeroCount = 0; //归零
+			                ChineseStr += cnNums[parseInt(n)]+cnIntRadice[m];
+			             }
+			             if( m==0 && zeroCount<4 ){
+			                 ChineseStr += cnIntUnits[q];
+			             }
+			         }
+			         ChineseStr += cnIntLast;
+			         //整型部分处理完毕
+			    }
+			     if( DecimalNum!= '' ){//小数部分
+			        decLen = DecimalNum.length;
+			         for( i=0; i<decLen; i++ ){
+			             n = DecimalNum.substr(i,1);
+			             if( n != '0' ){
+			                 ChineseStr += cnNums[Number(n)]+cnDecUnits[i];
+			             }
+			         }
+			     }
+			     if( ChineseStr == '' ){
+			         ChineseStr += cnNums[0]+cnIntLast+cnInteger;
+			     }else if( DecimalNum == '' ){
+			         ChineseStr += cnInteger;
+			     }
+			     if(ChineseStr=='零元整'){  
+			         return "";
+			     }
+			     return ChineseStr;
+			 }
+            	
+            
+            function printPageBreak() {
+                document.write('<div style="page-break-after: always;"></div>');
+            }
+            
+            function printLogoAndBarcode(){
+                var html = '<table width="100%" border="0" cellspacing="0" cellpadding="0">'+
+                			'<tr>'+
+                				'<td width="100%" class="STYLE1"><div align="center">${/model/po_print_headers/record/@company_name}</div></td>'+
+                			'</tr>'+
+                			'<tr>'+
+                				'<td width="100%" class="STYLE6"><div align="center">地址：深圳宝安镇福永街道建安路1号塘尾高新科技园合元集团</div></td>'+
+                			'</tr>'+
+                			'<tr>'+
+                				'<td width="100%" class="STYLE6"><div align="center">电话：0755-27846056/27846095        传真：0755-27847287</div></td>'+
+                			'</tr>'+
+                		   '</table>';
+            	document.write(html);
+            }
+            
+            function printSupplyInfo(){
+                var html = '';
+				html =  '<table width="100%" style="border-collapse: collapse;" cellspacing="0" cellpadding="0">'+
+            			'<tr height="22">'+
+            				'<td width="12%" class="STYLE3"><div align="center">供应商：</div></td>'+
+            				'<td width="20%" class="STYLE3"><div align="left">&ensp;&ensp;${/model/po_print_headers/record/@vendor_name}</div></td>'+
+            				'<td width="32%" class="STYLE1"><div align="center">采购订单</div></td>'+
+            				'<td width="16%" class="STYLE3"><div align="center">订单编号：</div></td>'+
+            				'<td width="16%" class="STYLE3"><div align="left">&ensp;&ensp;${/model/po_print_headers/record/@display_po_number}</div></td>'+
+            			'</tr>'+
+            			'<tr height="22">'+	
+            				'<td width="12%" class="STYLE3"><div align="center">联系人：</div></td>'+
+            				'<td width="20%" class="STYLE3"><div align="left">&ensp;&ensp;${/model/po_print_headers/record/@contact_name}</div></td>'+
+            				'<td width="32%" class="STYLE3"><div align="center"></div></td>'+
+            				'<td width="16%" class="STYLE3"><div align="center">订单日期：</div></td>'+
+            				'<td width="16%" class="STYLE3"><div align="left">&ensp;&ensp;${/model/po_print_headers/record/@creation_date}</div></td>'+
+            			'</tr>'+
+            			'<tr height="22">'+	
+            				'<td width="12%" class="STYLE3"><div align="center">电话：</div></td>'+
+            				'<td width="20%" class="STYLE3"><div align="left">&ensp;&ensp;${/model/po_print_headers/record/@mobile_phone}</div></td>'+
+            				'<td width="32%" class="STYLE3"><div align="center"></div></td>'+
+            				'<td width="16%" class="STYLE3"><div align="center">付款条件：</div></td>'+
+            				'<td width="16%" class="STYLE3"><div align="left">&ensp;&ensp;${/model/po_print_headers/record/@payment_term_desc}</div></td>'+
+            			'</tr>'+
+            			'<tr height="22">'+	
+            				'<td width="12%" class="STYLE3"><div align="center">传真：${/model/po_print_headers/record/@fax_no}</div></td>'+
+            				'<td width="20%" class="STYLE3"><div align="left">&ensp;&ensp;</div></td>'+
+            				'<td width="32%" class="STYLE3"><div align="center"></div></td>'+
+            				'<td width="16%" class="STYLE3"><div align="center">币种：</div></td>'+
+            				'<td width="16%" class="STYLE3"><div align="left">&ensp;&ensp;${/model/po_print_headers/record/@currency_code}</div></td>'+
+            			'</tr>'+
+            			'<tr height="22">'+	
+            				'<td width="12%" class="STYLE3"><div align="center">税率：</div></td>'+
+            				'<td width="20%" class="STYLE3"><div align="left">&ensp;&ensp;${/model/po_print_headers/record/@tax_rate}</div></td>'+
+            				'<td width="32%" class="STYLE3"><div align="center"></div></td>'+
+            				'<td width="16%" class="STYLE3"><div align="center">页码：</div></td>'+
+            				'<td width="16%" class="STYLE3"><div align="left">&ensp;&ensp;' + cur_page + '/' + show_pages + '</div></td>'+
+            			'</tr>'+
+            		   '</table>';
+            	document.write(html);
+            }
+            
+
+            function printItemDetail(){
+                var html = '<table width="100%" style="border-collapse: collapse;" width="100%" border="1" cellpadding="0" cellspacing="0" bordercolor="#000000">'+
+                			'<tr height="28">'+
+                				'<td width="3%" class="STYLE4"><div align="center">序号</div></td>'+
+                				'<td width="6%" class="STYLE4"><div align="center">物料编码</div></td>'+
+                				'<td width="10%" class="STYLE4"><div align="center">规格型号</div></td>'+
+                				'<td width="5%" class="STYLE4"><div align="center">单位</div></td>'+
+                				'<td width="5%" class="STYLE4"><div align="center">数量</div></td>'+
+                				'<td width="5%" class="STYLE4"><div align="center">含税单价</div></td>'+
+                				'<td width="5%" class="STYLE4"><div align="center">含税金额</div></td>'+
+                				'<td width="5%" class="STYLE4"><div align="center">交货日期</div></td>'+
+                				'<td width="8%" class="STYLE4"><div align="center">备注</div></td>'+
+                			'</tr>';
+            	document.write(html);
+            }
+            
+            function printFooter(){	
+                var amount_total = ${/model/po_print_headers/record/@amount_total},
+                	sign_img = 'chenjia.jpg'; 
+                if(amount_total < 20000){
+                	sign_img = 'chenjia.jpg';    
+                } else {
+                	sign_img = 'liyonghai.jpg';    
+                }
+                var content ='<div width="100%">' +
+                		  '<p>其他约定事项：</p>' +
+						  '<p>1. 本订单必须在24小时内盖章回传，此表明双方认可并接受本订单所有条款。逾期视同认可。</p>' +
+						  '<p>2. 请在订单要求到期日发货到合元集团指定地点，如有特殊原因应提前通知我司。如供应商无法按承诺日期交货，迟交罚款按迟交每天按' +
+						  '本订单总金额的千分之五累计计算。</p>' +
+						  '<p>3. 供应商提供产品必须与确认样品和图纸要求相符，并其产品需符合国家相关法律法规规定和图纸标的法令法规要求，如由于供应商质量' +
+						  '原因造成合元集团损失,合元有权向供应商索赔相应损失及取消订单。不良品退货必须在7日之内来合元处理，否则合元将以废品处理。</p>' +
+						  '<p>4. 供应商提供产品绝不侵犯他人专利或者商标著作权，若有侵犯之行为由供应商全权负责。</p>' +
+						  '<p>5. 对于我司提供的样品，供应商不得直接或者间接将样品交予任何其他客户制样或者生产，否则一切损失由供应商承担。</p>' +
+						  '<p>6. 供方在交货时需提供5%备品.按照合元的要求包装,并提供规范的标签、送货单。</p>' +
+                		  '</div>';
+                document.write(content);	
+                var html = '<table width="100%" border="1" cellspacing="0" cellpadding="0">'+
+                			'<tr height="20">'+
+                				'<td  width="30%"  class="STYLE3"><div align="center">供应商签章：</div></td>'+
+                				'<td  width="70%"  colspan="3" class="STYLE3"><div align="center">${/model/po_print_headers/record/@company_name}</div></td>'+
+                			'</tr>'+
+                			'<tr height="20">'+
+                				'<td  width="30%" rowspan="2" class="STYLE3"></div></td>'+
+                				'<td  width="30%" class="STYLE3"><div align="center">批准</div></td>'+
+                				'<td  width="30%" class="STYLE3"><div align="center">审核</div></td>'+
+                				'<td  width="10%" class="STYLE3"><div align="center">制单</div></td>'+
+                			'</tr>'+
+                			'<tr height="60">'+
+                				'<td  width="30%" class="STYLE3"><div align="center" height="40"><img src="${/request/@context_path}/images/po_print/firstunion/' + sign_img + '"/></div></td>'+
+                				'<td  width="30%" class="STYLE3"><div align="center" height="40"><img src="${/request/@context_path}/images/po_print/firstunion/sign.jpg"/></div></td>'+
+                				'<td  width="10%" class="STYLE3"><div align="center">${/model/po_print_headers/record/@released_by_display}</div></td>'+
+                			'</tr>'+
+                		'</table>';
+            	document.write(html);
+            }
+            
+            function printDateAndPage(){
+                var html = '<table width="100%"  border="0" cellspacing="0" cellpadding="0">'+
+	                			'<tr height="20">'+
+	                				'<td width="30%" class="STYLE7"><div align="left">表单编号：FU. M. R. 007</div></td>'+
+	                				'<td width="30%" class="STYLE7"><div align="center">版别：1</div></td>'+
+	                				'<td width="25%" class="STYLE7"><div align="left"></div></td>'+
+	                				'<td width="15%" class="STYLE7"><div align="left">保存年限：2</div></td>'+
+	                			'</tr>'+
+	                			'<tr height="20">'+
+	                				'<td width="30%" class="STYLE7"><div align="left"></div></td>'+
+	                				'<td width="30%" class="STYLE7"><div align="left"></div></td>'+
+	                				'<td width="25%" class="STYLE7"><div align="left"></div></td>'+
+	                				'<td width="15%" class="STYLE7"><div align="left">列印日期时间：${/model/po_print_headers/record/@print_date}</div></td>'+
+	                			'</tr>'+
+	                		'</table>';
+            	document.write(html);
+            }
+            
+            function newRecord() {
+                
+                if (cur_page == 1){
+                	cur_record_per_page = record_per_page - 3;	    
+                }else{
+                	cur_record_per_page = record_per_page;	    
+                }
+                
+                if (record_num == cur_record_per_page && left_line_count > 0) {
+                    need_new_page = true;
+                    record_num = 0;
+                }
+                
+                if (need_new_page) {
+                    document.write("</table>");
+                    printDateAndPage();
+	                printPageBreak();   
+                    
+                    cur_page++;
+	                printItemDetail();
+                    need_new_page = false;
+                }
+                record_num++;
+                left_line_count = left_line_count - 1;
+            }
+            
+            //合计打印
+            function print_summary(){
+             	 chinese_amount_total = changeMoneyToChinese(inv_org_total_amount);
+            	 var summary_html = '<tr>' +
+            	 					'<td colspan="9"><div align="left">交货地点：'+ organization_address +'</div></td>'	+
+            	 					'</tr>'+
+            	 					'<tr>' +
+            	 					'<td colspan="3"><div align="left">合计大写：' + chinese_amount_total + ' </div></td>' +	
+            	 					'<td colspan="6"><div align="left">合计小写：' + inv_org_total_amount + '</div></td>' +
+            	 					'</tr>';
+            	 document.write(summary_html);
+                 document.write("</table>");
+                 if(need_foot_break_flag){
+                 	printPageBreak();    
+                 }
+				 printFooter();
+				 printDateAndPage();   
+            }
+        ]]></script>
+        <body style="margin-left:1;">
+            <a:repeater datamodel="/model/po_print_lines">
+                <script><![CDATA[
+
+                    //如果是新工厂，打印合计，新开一页
+                    if(organization_id && organization_id != '${@organization_id}'){
+                 		print_summary();
+                 		organization_id = '${@organization_id}';
+                 		organization_address = "${@organization_address}";
+
+		                //清空总数量和页码
+
+                 		left_line_count		 =  "${@inv_org_total_records}";
+                 		inv_org_total_amount =  "${@inv_org_total_amount}";
+                 		record_num = 0;
+			            total_records = left_line_count;
+			            if(total_records <= 13){
+			            	pages = 1;
+			            } else {
+			            	pages = Math.ceil((total_records - 13)/16) + 1;	    
+			            }
+			            //显示的页码
+			            if(total_records <= 2){
+			            	show_pages = 1;
+			            } else if(total_records <= 6) {
+			            	show_pages = 2;    
+			            } else {
+			            	show_pages = Math.ceil((total_records - 3)/16) + 1;	    
+			            }
+			            need_new_page = false;
+			            need_new_report = false;
+			            cur_page = 1;
+			            chinese_amount_total = '';
+			            cur_record_per_page = 0;
+			            
+			            printPageBreak();
+                 		printLogoAndBarcode();
+		            	printSupplyInfo();
+		                printItemDetail();
+                    } else if(!organization_id) {
+                     	organization_id = '${@organization_id}';
+                 		organization_address = "${@organization_address}";	
+                 		left_line_count		 =  "${@inv_org_total_records}";
+                 		inv_org_total_amount =  "${@inv_org_total_amount}";	 
+			            total_records = left_line_count;
+			            if(total_records <= 13){
+			            	pages = 1;
+			            } else {
+			            	pages = Math.ceil((total_records - 13)/16) + 1;	    
+			            }
+			            
+			            //显示的页码
+			             if(total_records <= 2){
+			            	show_pages = 1;
+			            } else if(total_records <= 6) {
+			            	show_pages = 2;    
+			            } else {
+			            	show_pages = Math.ceil((total_records - 3)/16) + 1;	    
+			            }
+			            
+            			printLogoAndBarcode();
+            			printSupplyInfo();
+                		printItemDetail();
+                    }
+                 	
+                 	
+                    newRecord();
+                ]]></script>
+                <tr height="28">
+                    <td class="STYLE5">
+                        <div align="center"><![CDATA[${@line_num}]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div align="center"><![CDATA[${@item_code}]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div style="width: 180px;height: 28px;line-height: 13px;word-wrap:break-word;word-break:break-all;"><![CDATA[${@item_description}]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div align="center"><![CDATA[${@unit_meas_lookup_code}]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div align="center"><![CDATA[${@quantity}]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div align="center"><![CDATA[${@unit_price}]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div align="center"><![CDATA[${@line_amount}]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div align="center"><![CDATA[${@need_by_date}]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div align="center"><![CDATA[${@production_memorandum}]]></div>
+                    </td>
+                </tr>
+                <script><![CDATA[
+                	if(left_line_count >= 0){
+	                    if(cur_page == 1 && record_num%cur_record_per_page <= 2 || cur_page != 1 && record_num%cur_record_per_page <= 6){
+	                 		need_foot_break_flag = false;
+	                    }  else {
+	                     	need_foot_break_flag = true;   
+	                    }
+                 	}
+                ]]></script>
+            </a:repeater>
+            <script><![CDATA[
+                	/* if(total_records == 0 || cur_page == pages){
+	                	print_summary();    
+                 	} */
+                 	if(cur_page == pages){
+	                	print_summary();    
+                 	}
+                ]]></script>
+            <script><![CDATA[
+				 printPageBreak();
+			]]></script>
+        </body>
+    </a:view>
+</a:screen>

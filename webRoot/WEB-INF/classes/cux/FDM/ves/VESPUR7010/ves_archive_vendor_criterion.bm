@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" alias="t1">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+				SELECT u.*
+				  FROM (SELECT DISTINCT t1.archive_header_id,
+				                        t1.archive_code,
+				                        t1.archive_desc,
+				                        t1.inv_organization_id,
+				                        (SELECT iov.description
+				                           FROM inv_organizations_vl iov
+				                          WHERE iov.inv_organization_id = t1.inv_organization_id) inv_organization_desc,
+				                        t1.template_id,
+				                        (SELECT vtv.ve_template_name FROM ves_template_vl vtv WHERE vtv.ve_template_id = t1.template_id) AS template_desc,
+				                        to_char(t1.eval_start_date,
+				                                'yyyy-mm-dd') eval_start_date,
+				                        to_char(t1.eval_end_date,
+				                                'yyyy-mm-dd') eval_end_date,
+				                        
+				                        t1.company_id,
+				                        (SELECT fcv.company_code FROM fnd_companies_vl fcv WHERE fcv.company_id = t1.company_id) AS company_code,
+				                        (SELECT nvl(fcv.company_short_name,
+				                                    fcv.company_full_name) company_desc
+				                           FROM fnd_companies_vl fcv
+				                          WHERE fcv.company_id = t1.company_id) AS company_desc,
+				                        t1.business_group,
+				                        t2.scoring_method,
+				                        t2.scoring_method_display,
+				                        t2.detail_criterion_id,
+				                        t2.detail_criterion_name,
+				                        t2.scored_by_display,
+				                        (SELECT sequence_num
+				                           FROM ves_template_mc_asgn
+				                          WHERE main_criteria_asgn_id IN
+				                                (SELECT main_criteria_asgn_id
+				                                   FROM ves_template_sc_asgn
+				                                  WHERE sub_criterion_id = (SELECT l.sub_criterion_id
+				                                                              FROM ves_archive_sub_lines l
+				                                                             WHERE l.archive_id = t1.archive_header_id
+				                                                                   AND l.sub_line_id = t2.sub_line_id
+				                                                                   AND l.sum_line_id = t2.sum_line_id
+				                                                                   AND rownum = 1))
+				                                AND ve_template_id = t1.template_id) sequence_num,
+				                        (SELECT l.sub_criterion_code
+				                           FROM ves_archive_sub_lines l
+				                          WHERE l.archive_id = t1.archive_header_id
+				                                AND l.sub_line_id = t2.sub_line_id
+				                                AND l.sum_line_id = t2.sum_line_id
+				                                AND rownum = 1) sub_criterion_code,
+				                        (SELECT l.sub_criterion_name
+				                           FROM ves_archive_sub_lines l
+				                          WHERE l.archive_id = t1.archive_header_id
+				                                AND l.sub_line_id = t2.sub_line_id
+				                                AND l.sum_line_id = t2.sum_line_id
+				                                AND rownum = 1) sub_criterion_name,
+				                        t2.vendor_id,
+				                        t2.vendor_code,
+				                        t2.vendor_desc,
+				                        t1.creation_date,
+				                        (SELECT round(AVG(t3.detail_score),
+				                                      2) detail_scores
+				                           FROM ves_archive_detail_lines_vl t3
+				                          WHERE t3.archive_id = t2.archive_id
+				                                AND t3.vendor_id = t2.vendor_id
+				                                AND t3.detail_criterion_id = t2.detail_criterion_id
+				                          GROUP BY t3.archive_id,
+				                                   t3.vendor_id,
+				                                   t3.detail_criterion_id) detail_scores
+				          FROM ves_archive_headers         t1,
+				               ves_archive_detail_lines_vl t2
+				         WHERE t1.enabled_flag = 'Y'
+				               AND t1.archive_header_id = t2.archive_id
+				         ORDER BY t1.archive_code DESC,
+				                  t2.vendor_code,
+				                  sequence_num,
+				                  sub_criterion_code) u
+                   #WHERE_CLAUSE#
+         ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="archive_header_id" queryExpression="u.archive_header_id = ${@archive_header_id}"/>
+        <bm:query-field name="vendor_id" queryExpression="u.vendor_id=${@vendor_id}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter name="filter" expression="u.business_group = ${/session/@business_group}"/>
+    </bm:data-filters>
+</bm:model>

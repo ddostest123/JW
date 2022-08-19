@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:service xmlns:s="aurora.plugin.script" xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchALL="true" model="cux.NEWHOPE.PUR.PUR7040.pur_reflash_sn" rootPath="sn_data"/>
+        <p:echo/>
+        <s:server-script import="request5.js"><![CDATA[
+            var logger = $logger('server-script');
+            
+            function log(msg) {
+                logger.info(msg);
+            }
+            
+            var record = $ctx.model.getChild('sn_data').getChildren()[0];
+            if (record.api_url) {
+                //println(record.request_data);
+                request({
+                    serverUrl: record.sn_serverurl,
+                    appkey: record.sn_appkey,
+                    appscret: record.sn_appscreat,
+                    url: record.api_url,
+                    para: JSON.parse(record.request_data),
+                    success: function(args) {
+                        log(args);
+                        //println(args.toString());
+                        var jsonData = JSON.parse(args.toString());
+                        //log(args.toString())
+                        //{"sn_responseContent":{"sn_error":{"error_code":"biz.govbus.queryprice.invalid-biz:102","error_msg":"入参校验失败"}}}
+                        //{"sn_responseContent":{"sn_error":{"error_code":"sys.check.request-apprequesttime:error"}}}
+                        var param = $ctx.parameter;
+                        if (jsonData.sn_responseContent.hasOwnProperty('sn_error')) {
+            
+                            if (jsonData.sn_responseContent.sn_error.hasOwnProperty('error_msg')) {
+                                var err_message = jsonData.sn_responseContent.sn_error.error_msg;
+                            } else {
+                                var err_message = jsonData.sn_responseContent.sn_error.error_code;
+                            }
+            
+                            param.state = err_message;
+                        } else {
+                            if (record.api_url == 'suning.govbus.price.query') {
+                                var price = jsonData.sn_responseContent.sn_body.queryPrice.skus[0].price;
+                                param.price = price;
+                            } else if (record.api_url == 'suning.govbus.inventory.get') {
+                                var state = jsonData.sn_responseContent.sn_body.getInventory.resultInfo[0].state;
+                                param.state = state;
+                            }
+                        }
+                    },
+                    failure: function(args) {
+                        raise_app_error(args.error.message);
+                    }
+                });
+            }
+        ]]></s:server-script>
+        <p:echo/>
+    </a:init-procedure>
+    <a:service-output output="/parameter"/>
+</a:service>

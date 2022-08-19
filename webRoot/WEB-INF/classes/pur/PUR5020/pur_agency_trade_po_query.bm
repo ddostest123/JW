@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wangcheng  
+    $Date: 2015-3-5 下午5:02:17  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="segment1 desc">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (
+SELECT h.pur_header_id,
+       h.display_po_number,
+       h.display_release_num,
+       h.coop_business_group,
+       l.line_num,
+       l.pur_line_id,
+       l.item_id,
+       l.item_code,
+       l.item_description,
+       asl.vendor_id,
+       asl.coop_company_id AS cooperative_company_id,
+       fcsv.company_code AS cooperative_company_code,
+       fcsv.company_full_name AS cooperative_company_name,
+       nvl(asl.vendor_site_id,
+           (SELECT vs.vendor_site_id
+              FROM pur_vendor_sites_vl vs
+             WHERE vs.vendor_id = asl.vendor_id
+                   AND rownum = 1)) vendor_site_id,
+       nvl(sv.site_name,
+           (SELECT vs.site_name
+              FROM pur_vendor_sites_vl vs
+             WHERE vs.vendor_id = asl.vendor_id
+                   AND rownum = 1)) site_name,
+       asl.using_organization_id,
+       iov.inv_organization_code,
+       iov.description AS inv_organization_name,
+       mip.partner_item_id,
+       miv.display_item_code client_vendor_code,
+       miv.item_name client_vendor_name,
+       h.company_name,
+       ll.pur_line_location_id,
+       ll.ship_to_organization_name,
+       ll.recycle_flag,
+       iwv.description AS warehouse_name,
+       ilv.description AS location_name,
+       h.comments AS line_desc
+  FROM pur_headers_all_v      h,
+       pur_lines_all          l,
+       pur_line_locations_all ll,
+       mtl_item_partners      mip,
+       pur_po_asl_list        asl,
+       fnd_companies_simplified_vl fcsv,
+       pur_vendor_sites_vl         sv,
+       inv_organizations_vl        iov,
+       mtl_system_items_vl         miv,
+       inv_warehouses_vl           iwv,
+       inv_locations_vl            ilv,
+       pur_po_relation_vendors     prv,
+       pur_po_rlt_vendor_auth      pva,
+       pur_vendors_v               pvv,
+       pur_purchase_order_types    pot
+ WHERE h.pur_header_id = l.pur_header_id
+       AND h.pur_header_id = ll.pur_header_id
+       AND l.pur_line_id = ll.pur_line_id
+       AND l.item_id = mip.item_id(+)
+       AND mip.partner_item_id = asl.item_id(+)
+       AND mip.business_group(+) = ${/session/@business_group}
+       AND asl.coop_company_id = fcsv.company_id(+)
+       AND asl.vendor_site_id = sv.vendor_site_id(+)
+       AND asl.using_organization_id = iov.inv_organization_id(+)
+       AND mip.partner_item_id = miv.item_id(+)
+       AND ll.warehouse_id = iwv.warehouse_id(+)
+       AND ll.inv_location_id = ilv.location_id(+)
+       AND nvl(h.agency_trade_job_flag,'N') = 'N' 
+       AND nvl(ll.agency_trade_job_flag,'N') = 'N' 
+       AND h.pur_header_id = prv.pur_header_id
+       AND prv.po_rltion_vendor_id = pva.po_rltion_vendor_id
+       AND prv.vendor_id = pvv.vendor_id
+       AND h.type_lookup_code = pot.order_type_code
+       AND h.last_version = 'Y'
+       AND h.srm_status = 'CONFIRMED'
+       AND l.cancel_flag = 'N'
+       AND ll.cancel_flag = 'N'
+       AND ll.approved_flag = 'Y'
+       AND nvl(ll.frozen_flag,
+               'N') = 'N'
+       AND (ll.quantity - nvl(ll.occupy_quantity,
+                              0)) > 0
+       AND ll.asn_can_create_flag = 'Y'
+       AND pva.document_type = 'ASN'
+       AND pva.query_flag = 'Y'
+       AND pot.create_asn_flag = 'Y'
+       AND (EXISTS (SELECT 1
+                      FROM fnd_config_center_bg_item_dtl ccbid
+                     WHERE ccbid.config_classify_code = 'PO'
+                           AND ccbid.config_item_code = 'PO_02'
+                           AND ccbid.config_item_detail_code = 'PO_02_01'
+                           AND ccbid.business_group = h.owner_business_group
+                           AND ccbid.bg_config_item_value = 'Y') OR NOT EXISTS
+        (SELECT 1
+               FROM fnd_config_center_bg_item_dtl ccbid
+              WHERE ccbid.config_classify_code = 'PO'
+                    AND ccbid.config_item_code = 'PO_02'
+                    AND ccbid.config_item_detail_code = 'PO_02_01'
+                    AND ccbid.business_group = h.owner_business_group))
+                    ) v #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+begin
+pur_po_trade_agency_pkg.po_agency_trade_unite(
+p_session_id=>${/session/@session_id},
+p_session_user_id=>${/session/@user_id},
+p_pur_header_id=>${@pur_header_id},
+p_pur_line_id=>${@pur_line_id},
+p_vendor_id=>${@vendor_id},
+p_vendor_site_id=>${@vendor_site_id},
+p_using_organization_id=>${@using_organization_id},
+p_warehouse_id=>${@warehouse_id},
+p_location_id=>${@location_id},
+p_line_location_id=>${@pur_line_location_id},
+p_coop_company_id=>${@cooperative_company_id},
+p_user_id=>${/session/@user_id}
+);
+end;
+]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+begin
+pur_po_trade_agency_pkg.po_agency_trade_submit(
+p_session_id=>${/session/@session_id},
+p_directcustomflag=>${@directcustomflag},
+p_user_id=>${/session/@user_id}
+);
+end;
+]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+begin
+pur_po_trade_agency_pkg.po_agency_trade_delete(
+p_session_id=>${/session/@session_id},
+p_user_id=>${/session/@user_id}
+);
+end;
+]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="display_po_number" queryExpression="v.display_po_number like &apos;%&apos;||${@display_po_number}||&apos;%&apos;"/>
+        <bm:query-field name="recycle_flag" queryExpression="((${@recycle_flag}=&apos;Y&apos; and v.recycle_flag=&apos;Y&apos;) or(${@recycle_flag}=&apos;N&apos; and nvl(v.recycle_flag,&apos;N&apos;)=&apos;N&apos;))"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="1=1"/>
+        <bm:data-filter expression="v.coop_business_group=${/session/@business_group}"/>
+        <!-- <bm:data-filter expression="v.session_id=${/session/@session_id}"/> -->
+    </bm:data-filters>
+</bm:model>

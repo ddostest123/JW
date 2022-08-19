@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: pccold  
+    $Date: 2015-4-8 下午4:38:59  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" xmlns:f="aurora.database.features" alias="t1">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        ic.company_id as coop_company_id,
+                        ic.business_group as coop_business_group,
+                        g.my_company_id,
+                        g.my_business_group,
+                        iv.item_name,
+                        iv.item_code,
+                        iv.display_item_code,
+                        g.item_id,
+                        g.sale_flag,
+                        g.sale_order,
+                        g.new_flag,
+                        g.new_order,
+                        g.recommend_flag,
+                        g.recommend_order,
+                        g.item_description,
+                        g.price,
+                        g.tax_flag,
+                        g.tax_type_id,
+                        pr.picture_name,
+                        ps.imgs_url,
+                        NVL(DECODE(pr.context_path, '', '', pr.file_path
+                        || 'MEDIUM_'
+                        || pr.file_name), 'images/b2b/product_none.png') AS medium_url,
+                        NVL(DECODE(pr.context_path, '', '', pr.file_path
+                        || 'LARGER_'
+                        || pr.file_name), 'images/b2b/product_none.png') AS larger_url,
+                        NVL(DECODE(pr.context_path, '', '', pr.file_path
+                        || 'LARGE_'
+                        || pr.file_name), 'images/b2b/product_none.png') AS large_url
+                    FROM
+                        (SELECT
+                            mo.item_id,
+                            u.company_id,
+                            u.business_group
+                        FROM
+                            mtl_item_inv_organization mo,
+                            inv_organizations o,
+                            fnd_business_units u
+                        WHERE
+                            mo.inventory_organization_id = o.inv_organization_id AND
+                            o.business_unit_id           = u.business_unit_id AND
+                            mo.enabled_flag              = 'Y' AND
+                            u.business_group             = ${/parameter/@coop_business_group} AND
+                            u.company_id                 = nvl(${/parameter/@coop_company_id}, ${@coop_company_id})
+                        ) ic,
+                        (SELECT
+                            t.item_id,
+                            t.coop_company_id AS my_company_id,
+                            t.coop_business_group AS my_business_group,
+                            t.business_group AS coop_business_coop,
+                            i.sale_flag,
+                            i.sale_order,
+                            i.new_flag,
+                            i.new_order,
+                            i.recommend_flag,
+                            i.recommend_order,
+                            dbms_lob.substr(i.item_description, 3000, 1) AS item_description,
+                            NVL(p.client_price, i.base_price) AS price,
+                            i.tax_flag,
+                            i.tax_type_id
+                        FROM
+                            b2b_client_products t,
+                            b2b_system_items i,
+                            (SELECT
+                                *
+                            FROM
+                                b2b_client_product_price p
+                            WHERE
+                                p.business_group      = ${/parameter/@coop_business_group} AND
+                                p.coop_business_group = ${/session/@business_group} AND
+                                p.coop_company_id     = NVL(${/parameter/@my_company_id}, ${@my_company_id})
+                            ) p
+                        WHERE
+                            t.item_id                  = i.item_id(+) AND
+                            t.enabled_flag             = 'Y' AND
+                            NVL(i.off_shelf_flag, 'N') = 'N' AND
+                            t.item_id                  = p.item_id(+)
+                        ) g,
+                        (SELECT * FROM b2b_product_picture_upload a WHERE a.first_flag = 'Y'
+                        ) pr,
+                        (SELECT
+                            dbms_lob.substr(wm_concat(a.file_path
+                            || '{ImgType}'
+                            || A.FILE_NAME), 3000, 1) AS imgs_url,
+                            a.product_id AS item_id
+                        FROM
+                            (SELECT
+                                *
+                            FROM
+                                b2b_product_picture_upload t
+                            ORDER BY
+                                t.first_flag DESC
+                            ) a
+                        GROUP BY
+                            a.product_id
+                        ) ps,
+                        mtl_system_items_vl iv
+                    WHERE 
+                        ic.business_group = ${/parameter/@coop_business_group} AND
+                        ic.company_id =  nvl(${/parameter/@coop_company_id}, ${@coop_company_id}) and
+                        g.my_company_id        = NVL(${/parameter/@my_company_id}, ${@my_company_id}) AND
+                        g.my_business_group    = ${/session/@business_group} AND
+                        ic.item_id             = g.item_id AND
+                        iv.item_id             = g.item_id AND
+                        iv.for_sales_flag = 'Y' and 
+                        g.item_id              = pr.product_id(+) AND
+                        g.item_id              = ps.item_id(+) AND
+                        (
+                            NVL(${@kind_id}, ${/parameter/@kind_id}) IS NULL OR
+                            ${@kind_id}                               = -1 OR
+                            (
+                                EXISTS
+                                (SELECT
+                                    1
+                                FROM
+                                    (SELECT
+                                        t.category_udf_id
+                                    FROM
+                                        mtl_categories_user_defined_vl t
+                                    WHERE
+                                        t.business_group = NVL(${/parameter/@coop_business_group}, ${@coop_business_group}) --访问的店铺BG
+                                        AND
+                                        t.enabled_flag     = 'Y' START
+                                    WITH t.category_udf_id = ${@kind_id} CONNECT BY prior t.category_udf_id = t.parent_category_udf_id
+                                    ) kk1,
+                                    mtl_category_classify_items kk2
+                                WHERE
+                                    kk2.item_id         = g.item_id AND
+                                    kk1.category_udf_id = kk2.category_udf_id
+                                ) OR
+                                (
+                                    ${@kind_id} = 0 AND
+                                    NOT EXISTS
+                                    (SELECT 1 FROM mtl_category_classify_items kk WHERE kk.item_id = g.item_id
+                                    )
+                                )
+                            )
+                        )
+                    ) goods #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="item_name" queryExpression="(upper(goods.item_name) like &apos;%&apos; || upper(trim(${@item_name})) || &apos;%&apos; or upper(goods.display_item_code) like &apos;%&apos; || upper(trim(${@item_name})) || &apos;%&apos;  or upper(goods.item_code) like &apos;%&apos; || upper(trim(${@item_name})) || &apos;%&apos; )"/>
+    </bm:query-fields>
+</bm:model>

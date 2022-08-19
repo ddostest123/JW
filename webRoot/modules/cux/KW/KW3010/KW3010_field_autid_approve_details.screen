@@ -1,0 +1,990 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: 7211
+    $Date: 2015-1-05 下午13:46:29  
+    $Revision: 1.0  
+    $Purpose: 现场审核创建
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query model="qms.QMS5050.get_current_employee_name" rootPath="qms5050_current_user"/>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;EXAMINE_TYPE&apos;" fetchAll="true" model="qms.QMS5050.fnd_flex_value_sets_query" rootPath="kw3010_examine_type_data"/>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;REVIEW_CONCLUSION&apos;" fetchAll="true" model="qms.QMS5050.fnd_flex_value_sets_query" rootPath="kw3010_review_conclusion_data"/>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;KW3010_MISSING_SPECIES_DATA&apos;" fetchAll="true" model="qms.QMS5050.fnd_flex_value_sets_query" rootPath="kw3010_missing_species_data"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="kw3010_save_link" url="${/request/@context_path}/modules/cux/KW/KW3010/kw3010_save_all.svc"/>
+        <a:link id="kw3010_reply_submit_link" model="cux.KW.KW3010.kw3010_field_autid_query" modelaction="execute"/>
+        <a:link id="kw3010_submit_link" model="cux.KW.KW5010.kw5010_field_autid_query" modelaction="execute"/>
+        <a:link id="kw3010_return_link" model="cux.KW.KW3010.kw3010_field_autid_query" modelaction="delete"/>
+        <script><![CDATA[
+            function init() {
+                var application_id = '${/parameter/@application_id}';
+                //检验批创建8D参数
+                if (application_id) {
+                    $('kw3010_maintain_ds').setQueryParameter('application_id', application_id);
+                    $('kw3010_maintain_ds').query();
+                } else {
+                    var record = $('kw3010_maintain_ds').create();
+                    var date = new Date();
+                    //var record = $('kw3010_maintain_ds').getCurrentRecord();
+                    record.set('creation_date', Aurora.formatDate(date));
+                    //设置重要度和紧急程度
+                    record.set('status_desc', '新建');
+                }
+                
+                var header_record = $('kw3010_maintain_ds').getCurrentRecord();
+                if(header_record.get('status_desc')=='已确认')
+                {
+                    $('confirmed').disable();
+                    $('return').disable();
+                    $('kw3010_maintain_ds').getField('visit_date').setReadOnly(true); 
+                    $('kw3010_maintain_ds').getField('visit_date').setRequired(false); 
+                    $('kw3010_maintain_ds').getField('submit_reject_reason').setReadOnly(true);
+                    $('kw3010_maintain_ds').getField('submit_reject_reason').setRequired(false);
+                } 
+            
+            }
+            
+            //问题详述长度校检
+            // function qms5050_8d_issue_desc_validator(record,name,value){
+            // if(name == "issue_desc"){
+            // var issue_desc = record.get("issue_desc");
+            // if(issue_desc){
+            // if(issue_desc.length > 500){
+            // return '${l:QMS5050.ISSUE_DETAIL_OVERLENGTH}';
+            // }
+            // }
+            // return true;
+            // }
+            // }
+            
+            function kw3010_maintain_return() {
+                $('kw3010_create_win').close();
+            }
+            
+            // //保存8D
+            // function kw3010_save(){
+            // var header_ds = $('kw3010_maintain_ds');
+            // var attachment_ds = $('kw3010_create_atm_files_ds');
+            // var header_record = header_ds.getCurrentRecord();
+            // if (!header_ds.validate()) {
+            // return;
+            // }
+            
+            // // var data = header_record.data;
+            // var data = {};
+            // if (Aurora.isEmpty(header_record.get('application_id'))) {
+            // data['_status'] = 'insert';
+            // } else {
+            // data['_status'] = 'update';
+            // }
+            
+            // data['header'] = header_ds.getJsonData();
+            // data['attachments'] = attachment_ds.getJsonData();
+            // Aurora.Masker.mask($('kw3010_create_win').wrap);
+            // Aurora.request({
+            // url: $('kw3010_apply_save_link').getUrl(),
+            // para: data,
+            // success: function(result) {
+            // var application_id = result.result.header.record[0].application_id;
+            // Aurora.Masker.unmask($('kw3010_create_win').wrap);
+            // Aurora.showMessage('${l:PROMPT}', '现场审核保存成功！', function() {
+            // $('kw3010_create_win').close();
+            // if (Aurora.isEmpty(application_id)){
+            // application_id = '${/parameter/@application_id}';
+            // }
+            // new Aurora.Window({
+            // id: 'kw3010_create_win',
+            // title: '现场审核创建',
+            // url: $('kw3010_field_autid_create_link').getUrl() + '?application_id=' + application_id,
+            // fullScreen:true
+            // }).on('beforeclose', function() {
+            // $('kw3010_maintain_ds').query();
+            // });
+            // });
+            // },
+            // failure: function() {
+            // Aurora.Masker.unmask($('kw3010_create_win').wrap);
+            // return;
+            // },
+            // error: function() {
+            // Aurora.Masker.unmask($('kw3010_create_win').wrap);
+            // return;
+            // }
+            // });
+            // }
+            
+            function qms5050_rendererDay(cell, date, text, currentMonth) {
+                var today = new Date();
+                if (date < new Date(today.getFullYear(), today.getMonth(), today.getDate())) {
+                    cell.disabled = true;
+                }
+                return text;
+            }
+            
+            function kw3010_submit() {
+                var record = $('kw3010_maintain_ds').getCurrentRecord();
+                var record_line = $('kw3010_create_maintain_lines_ds').getAll();
+                if (record.dirty) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:QMS5050.DATA_IS_NOT_SAVED}');
+                    return;
+                }
+            	if (!$('kw3010_maintain_ds').validate()) {
+                    return;
+                } 
+                
+                for (var i = 0;i < record_line.length;i++) {
+                    if (record_line[i].dirty) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:QMS5050.DATA_IS_NOT_SAVED}');
+                        return;
+                    }
+                }
+                if (record.get('application_id')) {
+		            if(record.dirty){
+		             	Aurora.showMessage('${l:PROMPT}', '${l:QMS5050.DATA_IS_NOT_SAVED}'); 
+		             	return ;  
+		            }
+                    Aurora.showConfirm('${l:PROMPT}', '确认整改通过？', function() {
+                        Aurora.Masker.mask($('kw3010_create_win').wrap, '${l:QMS5050.BEING_SUBMITTED}');
+                        Aurora.request({
+                            url: $('kw3010_submit_link').getUrl(),
+                            para: {
+                                'application_id': record.get('application_id'),
+                                'feedback_reason':record.get('feedback_reason'),
+                                'check_status': '40_REFORM_PASS'
+                            },
+                            success: function() {
+                                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                    Aurora.Masker.unmask($('kw3010_create_win').wrap);
+                                    kw3010_maintain_return();
+                                });
+                            },
+                            error: function() {
+                                Aurora.Masker.unmask($('kw3010_create_win').wrap);
+                            },
+                            failure: function() {
+                                Aurora.Masker.unmask($('kw3010_create_win').wrap);
+                            },
+                            scope: this
+                        });
+                    }, function() {}, 300, 100);
+                }
+            }
+            
+            function kw3010_reject() {
+                var record = $('kw3010_maintain_ds').getCurrentRecord();
+                var record_line = $('kw3010_create_maintain_lines_ds').getAll();
+                if(record.get('feedback_reason')==undefined)
+                {
+                    Aurora.showMessage('${l:PROMPT}', '请输入整改拒绝原因！');
+                    return;
+                } 
+                
+                // for (var i = 0;i < record_line.length;i++) {
+                    // if (record_line[i].dirty) {
+                        // Aurora.showMessage('${l:PROMPT}', '${l:QMS5050.DATA_IS_NOT_SAVED}');
+                        // return;
+                    // }
+                // }
+                if (record.get('application_id')) {
+                    Aurora.showConfirm('${l:PROMPT}', '确认整改拒绝？', function() {
+                        Aurora.Masker.mask($('kw3010_create_win').wrap, '${l:QMS5050.BEING_SUBMITTED}');
+                        Aurora.request({
+                            url: $('kw3010_submit_link').getUrl(),
+                            para: {
+                                'application_id': record.get('application_id'),
+                                'feedback_reason': record.get('feedback_reason'),
+                                'check_status': '50_REFORM_REFUSE'
+                            },
+                            success: function() {
+                                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                    Aurora.Masker.unmask($('kw3010_create_win').wrap);
+                                    kw3010_maintain_return();
+                                });
+                            },
+                            error: function() {
+                                Aurora.Masker.unmask($('kw3010_create_win').wrap);
+                            },
+                            failure: function() {
+                                Aurora.Masker.unmask($('kw3010_create_win').wrap);
+                            },
+                            scope: this
+                        });
+                    }, function() {}, 300, 100);
+                }
+            }
+            
+             function kw3010_confirmed() {
+                var record = $('kw3010_maintain_ds').getCurrentRecord();
+                var record_line = $('kw3010_create_maintain_lines_ds').getAll();
+                if(record.get('submit_reject_reason')==undefined || record.get('submit_reject_reason')=='')
+                {
+                    Aurora.showMessage('${l:PROMPT}', '请输入退回原因！');
+                    return;
+                }
+                
+                if(record.get('visit_date')==undefined || record.get('visit_date')=='')
+                {
+                    Aurora.showMessage('${l:PROMPT}', '请输入最终确认到访日期！');
+                    return;
+                }
+                if (record.get('application_id')) {
+                    Aurora.showConfirm('${l:PROMPT}', '是否确认自评？', function() {
+                        Aurora.Masker.mask($('kw3010_create_win').wrap, '${l:QMS5050.BEING_SUBMITTED}');
+                        Aurora.request({
+                            url: $('kw3010_submit_link').getUrl(),
+                            para: {
+                                'application_id': record.get('application_id'),
+                                'feedback_reason': record.get('feedback_reason'),
+                                'visit_date':record.get('visit_date'),
+                                'check_status': '90_CONFIRMED'
+                            },
+                            success: function() {
+                                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                    Aurora.Masker.unmask($('kw3010_create_win').wrap);
+                                    kw3010_maintain_return();
+                                });
+                            },
+                            error: function() {
+                                Aurora.Masker.unmask($('kw3010_create_win').wrap);
+                            },
+                            failure: function() {
+                                Aurora.Masker.unmask($('kw3010_create_win').wrap);
+                            },
+                            scope: this
+                        });
+                    }, function() {}, 300, 100);
+                }
+            }
+            
+            
+            function kw3010_reply() {
+                var record = $('kw3010_maintain_ds').getCurrentRecord();
+                var record_line = $('kw3010_create_maintain_lines_ds').getAll();
+                if (record.dirty) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:QMS5050.DATA_IS_NOT_SAVED}');
+                    return;
+                }
+                for (var i = 0;i < record_line.length;i++) {
+                    if (record_line[i].dirty) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:QMS5050.DATA_IS_NOT_SAVED}');
+                        return;
+                    }
+                }
+                if (record.get('application_id')) {
+                    Aurora.showConfirm('${l:PROMPT}', '确定向供应商请求反馈？', function() {
+                        Aurora.Masker.mask($('kw3010_create_win').wrap, '${l:QMS5050.BEING_SUBMITTED}');
+                        Aurora.request({
+                            url: $('kw3010_reply_submit_link').getUrl(),
+                            para: {
+                                'application_id': record.get('application_id')
+                            },
+                            success: function() {
+                                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                    Aurora.Masker.unmask($('kw3010_create_win').wrap);
+                                    kw3010_maintain_return();
+                                });
+                            },
+                            error: function() {
+                                Aurora.Masker.unmask($('kw3010_create_win').wrap);
+                            },
+                            failure: function() {
+                                Aurora.Masker.unmask($('kw3010_create_win').wrap);
+                            },
+                            scope: this
+                        });
+                    }, function() {}, 300, 100);
+                }
+            }
+            
+            function kw3010_return() {
+                debugger;
+                var record = $('kw3010_maintain_ds').getCurrentRecord();
+                var record_line = $('kw3010_create_maintain_lines_ds').getAll();
+ 				
+                if(record.get('submit_reject_reason')==undefined || record.get('submit_reject_reason')=='')
+                {
+                    Aurora.showMessage('${l:PROMPT}', '请输入退回原因！');
+                    return;
+                }
+                
+                if(record.get('visit_date')==undefined || record.get('visit_date')=='')
+                {
+                    Aurora.showMessage('${l:PROMPT}', '请输入最终确认到访日期！');
+                    return;
+                }
+                
+                for (var i = 0;i < record_line.length;i++) {
+                    if (record_line[i].dirty) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:QMS5050.DATA_IS_NOT_SAVED}');
+                        return;
+                    }
+                }
+                if (record.get('application_id')) { 
+                    Aurora.showConfirm('${l:PROMPT}', '确定退回供应商请求回复？', function() {
+                        Aurora.Masker.mask($('kw3010_create_win').wrap, '${l:QMS5050.BEING_SUBMITTED}');
+                        Aurora.request({
+                            url: $('kw3010_return_link').getUrl(),
+                            para: {
+                                'application_id': record.get('application_id'),
+                                'submit_reject_reason': record.get('submit_reject_reason'),
+                                'visit_date':record.get('visit_date')
+                            },
+                            success: function() {
+                                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                    Aurora.Masker.unmask($('kw3010_create_win').wrap);
+                                    kw3010_maintain_return();
+                                });
+                            },
+                            error: function() {
+                                Aurora.Masker.unmask($('kw3010_create_win').wrap);
+                            },
+                            failure: function() {
+                                Aurora.Masker.unmask($('kw3010_create_win').wrap);
+                            },
+                            scope: this
+                        });
+                    }, function() {}, 300, 100);
+                }
+            }
+            
+            function kw3010_create_attachments_ds_beforeCreate(ds, record, index) {
+                var application_id = $('kw3010_maintain_ds').getCurrentRecord().get('application_id');
+                if (Aurora.isEmpty(application_id)) {
+                    Aurora.showMessage('${l:PROMPT}', '请先保存数据,再新附件行！');
+                    return false;
+                }
+            }
+            
+            function kw3010_create_attachments_ds_add(ds, record, index) {
+                var application_id = $('kw3010_maintain_ds').getCurrentRecord().get('application_id');
+                record.set('source_pk_value', application_id);
+            }
+            
+            function kw3010_upload_render(value, record, name) {
+                var atm_line_id = record.get('atm_line_id');
+                var atm_counts = record.get('atm_counts');
+                var header_record = $('kw3010_maintain_ds').getCurrentRecord();
+                if (name == "attachment") {
+                    return '<a href="javascript:qms8010_upload_file_readonly(' + atm_line_id + ')">附件查看</a>';
+                }
+            
+                if (name == "vendor_attachment") {
+                    return '<a href="javascript:qms8010_vendor_upload_file_readonly(' + atm_line_id + ')">附件查看</a>';
+                }
+            
+                if (name == "atm_flag") {
+                    if (atm_counts > 0) {
+                        return '<div style="margin-top:3px;margin-left:auto;margin-right:auto;vertical-align:middle;height:20px;line-height:20px;"><img src="${/request/@context_path}/images/paperclip.png"/></div>';
+                    } else {
+                        return '';
+                    }
+                }
+            }
+            
+            function kw3010_line_upload_render(value, record, name) {
+                var line_id = record.get('line_id');
+                if (line_id == undefined) {
+                    return '';
+                } else {
+                    var header = $('kw3010_maintain_ds').getCurrentRecord();
+                    if (header.get('status_desc') == '已回复' || header.get('status_desc') == '已确认') {
+                        return '';
+                    } else {
+                        if (header.get('status_desc') == '已反馈') {
+                            return '<a href="javascript:kw3010_upload_file_view(' + line_id + ')">附件查看</a>';
+                        } else {
+                            return '<a href="javascript:kw3010_upload_file(' + line_id + ')">${l:PROMPT.UPLOAD_DOWNLOAD}</a>';
+                        }
+                    }
+                }
+            }
+            
+            function kw3010_upload_file(id) {
+                var url = "${/request/@context_path}/uploadFile.screen?table_name=KW_FND_SCENE_AUDIT_LINE&header_id=" + id;
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:ATM.UPLOAD_ATTACHMENT}',
+                    id: 'qms8010_entrustment_edit_atm_window',
+                    width: 850,
+                    height: 500
+                }).on('beforeclose', function() {
+                    $('kw3010_create_atm_files_ds').query();
+                });
+            } //附件上传
+            
+            function kw3010_upload_file_view(id) {
+                var url = "${/request/@context_path}/uploadFileView.screen?table_name=KW_FND_SCENE_AUDIT_LINE&header_id=" + id;
+                new Aurora.Window({
+                    url: url,
+                    title: '附件查看',
+                    id: 'qms8010_entrustment_edit_atm_window',
+                    width: 850,
+                    height: 500
+                }).on('beforeclose', function() {
+                    $('kw3010_create_atm_files_ds').query();
+                });
+            } //附件上传
+            
+            
+            function qms8010_upload_file(id) {
+                var url = "${/request/@context_path}/uploadFile.screen?table_name=VENDOR_KW_FND_SCENE_AUDIT_HEADER&header_id=" + id;
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:ATM.UPLOAD_ATTACHMENT}',
+                    id: 'qms8010_entrustment_edit_atm_window',
+                    width: 850,
+                    height: 500
+                }).on('beforeclose', function() {
+                    $('kw3010_create_atm_files_ds').query();
+                });
+            } //附件上传
+            
+            function qms8010_upload_file_readonly(id) {
+                var url = "${/request/@context_path}/uploadFileView.screen?table_name=KW_FND_SCENE_AUDIT_HEADER&header_id=" + id;
+                new Aurora.Window({
+                    url: url,
+                    title: '附件查看',
+                    id: 'qms8010_entrustment_edit_atm_window',
+                    width: 850,
+                    height: 500
+                }).on('beforeclose', function() {
+                    $('kw3010_create_atm_files_ds').query();
+                });
+            } //附件查看
+            
+            function qms8010_vendor_upload_file_readonly(id) {
+                var url = "${/request/@context_path}/uploadFileView.screen?table_name=VENDOR_KW_FND_SCENE_AUDIT_HEADER&header_id=" + id;
+                new Aurora.Window({
+                    url: url,
+                    title: '附件查看',
+                    id: 'qms8010_entrustment_edit_atm_window',
+                    width: 850,
+                    height: 500
+                }).on('beforeclose', function() {
+                    $('kw3010_create_atm_files_ds').query();
+                });
+            } //附件查看
+            
+            function kw3010_save() {
+                debugger;
+                header_ds = $('kw3010_maintain_ds');
+                line_ds = $('kw3010_create_maintain_lines_ds');
+            
+                if (!header_ds.validate()) {
+                    return;
+                }
+            
+                if (!line_ds.validate()) {
+                    return;
+                }
+            
+                datas = {};
+                datas = header_ds.getCurrentRecord().data;
+                datas['_status'] = 'update';
+                var line = line_ds.getAll();
+                var arr = [];
+                for (var i = 0;i < line.length;i++) {
+                    if (line[i].dirty) {
+                        var data = line[i].data;
+                        if (line[i].isNew) {
+                            data['_status'] = 'insert';
+                        } else {
+                            data['_status'] = 'update';
+                        }
+                        arr.push(data);
+                    }
+                }
+                if (arr.length != 0) {
+                    datas['line'] = arr;
+                }
+            
+                Aurora.Masker.mask($('kw3010_create_win').wrap, '${l:QMS5050.BEING_SUBMITTED}');
+                Aurora.request({
+                    url: $('kw3010_save_link').getUrl(),
+                    para: datas,
+                    success: function(res) {
+                        var application_id = res.result.application_id;
+                        $('kw3010_maintain_ds').setQueryParameter('application_id', application_id);
+                        $('kw3010_maintain_ds').query();
+                        $('kw3010_create_maintain_lines_ds').setQueryParameter('application_id', application_id);
+                        $('kw3010_create_maintain_lines_ds').query();
+            
+                        Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                            Aurora.Masker.unmask($('kw3010_create_win').wrap);
+                        });
+                    },
+                    error: function() {
+                        Aurora.Masker.unmask($('kw3010_create_win').wrap);
+                    },
+                    failure: function() {
+                        Aurora.Masker.unmask($('kw3010_create_win').wrap);
+                    },
+                    scope: this
+                });
+            }
+            
+            function kw_load_handler(dataSet) { 
+                var record = dataSet.getCurrentRecord();
+                if (record.get('status_desc') != '新建') {
+                    record.getField('vendor_code').setReadOnly(true);
+                    // record.getField('visit_date').setReadOnly(true);
+                    record.getField('examine_type').setReadOnly(true);
+                    record.getField('field_trip_flag').setReadOnly(true);
+                    record.getField('application_reason').setReadOnly(true);
+                    record.getField('comments').setReadOnly(true);
+                }
+            
+                if (record.get('status_desc') == '已回复') {
+                    $('submit').disable();
+                    $('reject').disable();
+                    $('reply').disable();
+                    // $('save_line').disable();
+                    record.getField('feedback_reason').setReadOnly(true);
+                    record.getField('feedback_reason').setRequired(false);
+                    
+                    record.getField('service_items').setReadOnly(true);
+                    record.getField('auditor').setReadOnly(true);
+                    record.getField('audit_team_leader').setReadOnly(true);
+                    record.getField('accompanying_person').setReadOnly(true);
+                    record.getField('qsa_scores').setReadOnly(true);
+                    record.getField('qpa_scores').setReadOnly(true);
+                    record.getField('total_scores').setReadOnly(true);
+                    record.getField('actual_review_time').setReadOnly(true);
+                    record.getField('review_conclusion').setReadOnly(true);
+                    record.getField('last_review_conclusion').setReadOnly(true); 
+                    
+                    record.getField('service_items').setRequired(false);
+                    record.getField('auditor').setRequired(false);
+                    record.getField('audit_team_leader').setRequired(false);
+                    record.getField('accompanying_person').setRequired(false);
+                    record.getField('qsa_scores').setRequired(false);
+                    record.getField('qpa_scores').setRequired(false);
+                    record.getField('total_scores').setRequired(false);
+                    record.getField('actual_review_time').setRequired(false);
+                    record.getField('review_conclusion').setRequired(false);
+                    record.getField('last_review_conclusion').setRequired(false); 
+                    
+                    $('add').disable();
+                    $('clear').disable();
+                }
+                else if(record.get('status_desc') == '已确认'){
+                    $('confirmed').disable();
+                    $('return').disable();
+            		$('submit').disable();
+                    $('reject').disable();
+                    record.getField('visit_date').setReadOnly(true); 
+                    record.getField('visit_date').setRequired(false); 
+                    record.getField('submit_reject_reason').setReadOnly(true);
+                    record.getField('submit_reject_reason').setRequired(false);
+                } 
+                else {
+                    // $('save').disable();
+                    $('reply').disable();
+                    $('return').disable();
+                    $('confirmed').disable();
+                    record.getField('service_items').setReadOnly(true);
+                    record.getField('auditor').setReadOnly(true);
+                    record.getField('audit_team_leader').setReadOnly(true);
+                    record.getField('accompanying_person').setReadOnly(true);
+                    record.getField('plan_review_time').setReadOnly(true);
+                    record.getField('actual_review_time').setReadOnly(true);
+                    record.getField('audit_time').setReadOnly(true);
+                    record.getField('qsa_scores').setReadOnly(true);
+                    record.getField('qpa_scores').setReadOnly(true);
+                    record.getField('delay_date_reason').setReadOnly(true);
+                    record.getField('last_review_conclusion').setReadOnly(true);
+                    record.getField('review_conclusion').setReadOnly(true);
+                    record.getField('total_scores').setReadOnly(true);
+                    record.getField('visit_date').setReadOnly(true); 
+            
+                    record.getField('auditor').setRequired(false);
+                    record.getField('audit_team_leader').setRequired(false);
+                    record.getField('plan_review_time').setRequired(false);
+                    record.getField('actual_review_time').setRequired(false);
+                    record.getField('audit_time').setRequired(false);
+                    record.getField('qsa_scores').setRequired(false);
+                    record.getField('qpa_scores').setRequired(false);
+                    record.getField('review_conclusion').setRequired(false);
+                    record.getField('total_scores').setRequired(false);
+                    record.getField('visit_date').setRequired(false); 
+            
+                    record.getField('submit_reject_reason').setReadOnly(true);
+                    record.getField('submit_reject_reason').setRequired(false);
+                    
+                    record.getField('feedback_reason').setReadOnly(false);
+                    record.getField('feedback_reason').setRequired(true);
+            
+                    $('add').disable();
+                    $('clear').disable();
+                }
+            }
+            
+            
+            function kw_update_handler(ds, record, name, value, oldvalue) {
+                var today = new Date();
+            
+                if (name == 'actual_review_time' && value != undefined) {
+                    // if (value < new Date(today.getFullYear(), today.getMonth(), today.getDate())) {
+                        // Aurora.showMessage('${l:PROMPT}', '实际审核时间不能早于当前日期！');
+                        // record.set('actual_review_time', undefined);
+                        // return false;
+                    // }
+            
+            
+                    if (record.get('plan_review_time') != undefined) {
+                        if (record.get('plan_review_time') > record.get('actual_review_time')) {
+                            Aurora.showMessage('${l:PROMPT}', '计划审核时间不能晚于实际审核时间！');
+                            record.set('actual_review_time', undefined);
+                            return false;
+                        }
+                    }
+            
+                    if (record.get('audit_time') != undefined) {
+                        if (record.get('actual_review_time') > record.get('audit_time')) {
+                            Aurora.showMessage('${l:PROMPT}', '实际审核时间不能晚于稽核时间！');
+                            record.set('actual_review_time', undefined);
+                            return false;
+                        }
+                    }
+                }
+            
+                // if (name == 'plan_review_time' && value != undefined) {
+                    // if (value < new Date(today.getFullYear(), today.getMonth(), today.getDate())) {
+                        // Aurora.showMessage('${l:PROMPT}', '计划审核时间不能早于当前日期！');
+                        // record.set('plan_review_time', undefined);
+                        // return false;
+                    // }
+            
+                    // if (record.get('actual_review_time') != undefined) {
+                        // if (record.get('plan_review_time') > record.get('actual_review_time')) {
+                            // Aurora.showMessage('${l:PROMPT}', '计划审核时间不能晚于实际审核时间！');
+                            // record.set('plan_review_time', undefined);
+                            // return false;
+                        // }
+                    // }
+            
+                    // if (record.get('audit_time') != undefined) {
+                        // if (record.get('plan_review_time') > record.get('audit_time')) {
+                            // Aurora.showMessage('${l:PROMPT}', '计划审核时间不能晚于稽核时间！');
+                            // record.set('plan_review_time', undefined);
+                            // return false;
+                        // }
+                    // }
+                // }
+            
+                if (name == "audit_time" && value != undefined) {
+                    if (value < new Date(today.getFullYear(), today.getMonth(), today.getDate())) {
+                        Aurora.showMessage('${l:PROMPT}', '稽核时间不能早于当前日期！');
+                        record.set('audit_time', undefined);
+                        return false;
+                    }
+            
+                    if (record.get('plan_review_time') != undefined) {
+                        if (record.get('plan_review_time') > record.get('audit_time')) {
+                            Aurora.showMessage('${l:PROMPT}', '计划审核时间不能晚于稽核时间！');
+                            record.set('audit_time', undefined);
+                            return false;
+                        }
+                    }
+            
+                    if (record.get('actual_review_time') != undefined) {
+                        if (record.get('actual_review_time') > record.get('audit_time')) {
+                            Aurora.showMessage('${l:PROMPT}', '实际审核时间不能晚于稽核时间！');
+                            record.set('audit_time', undefined);
+                            return false;
+                        }
+                    }
+                }
+            }
+            
+            function get_editor_grid(record, name) {
+                var header = $('kw3010_maintain_ds').getCurrentRecord();
+                if (header.get('status_desc') != '已回复' && header.get('status_desc') != '已反馈' && header.get('status_desc') != '已确认') {
+                    if (name == 'casue_analysis') {
+                        return 'grid_tx3';
+                    }
+                    if (name == 'improve_strategy') {
+                        return 'grid_tx4';
+                    }
+                    if (name == 'responsible') {
+                        return 'grid_tx5';
+                    }
+                    if (name == 'completion_date') {
+                        return 'grid_pc1';
+                    }
+                }
+            
+                if (header.get('status_desc') == '已确认') {
+                    if (name == 'missing_species') {
+                        return 'grid_cb2';
+                    }
+                    if (name == 'bad_problem_desc') {
+                        return 'grid_tx2';
+                    }
+                }
+            
+                if (header.get('status_desc') == '已反馈') {
+                    if (name == 'effect_confirmed') {
+                        return 'grid_tx6';
+                    }
+                }
+            }
+            
+            function check_number(record, name, value) {
+                if (value > 100) {
+                    return '输入数值不能大于100！';
+                    record.set(name, '');
+                }
+                return true;
+            }
+            
+            function kw3010_vendor_survey_manufacturer_rendererFun(value, record, name) {
+                var application_id = record.get('application_id');
+                var status = record.get('status_desc');
+                if (name == 'scene_audit_report') {
+                    if (status == '已反馈') {
+                        return '<a style="color:blue" href="javascript:kw3010_scene_audit_report_uploadFun(' + application_id + ')">${l:ATM.UPLOAD_ATTACHMENT}</a>';
+                    } else {
+                        return '-';
+                    }
+                }
+            }
+            
+            function kw3010_scene_audit_report_uploadFun(id) {
+                var url = "${/request/@context_path}/uploadFile.screen?table_name=KW_SCENE_AUDIT_REPORT&header_id=" + id;
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:ATM.UPLOAD_ATTACHMENT}',
+                    id: 'qms8010_entrustment_edit_atm_window',
+                    width: 850,
+                    height: 500
+                });
+            } //附件上传
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="kw3010_examine_type_ds">
+                <a:datas dataSource="kw3010_examine_type_data"/>
+            </a:dataSet>
+            <a:dataSet id="kw3010_review_conclusion_ds">
+                <a:datas dataSource="kw3010_review_conclusion_data"/>
+            </a:dataSet>
+            <a:dataSet id="kw3010_missing_species_ds">
+                <a:datas dataSource="kw3010_missing_species_data"/>
+            </a:dataSet>
+            <a:dataSet id="kw3010_maintain_ds" autoCreate="true" loadData="true" model="cux.KW.KW3010.kw3010_field_autid_query" queryUrl="${/request/@context_path}/autocrud/cux.KW.KW1010.kw1010_field_autid_create_query/query?application_id=${/parameter/@application_id}">
+                <a:fields>
+                    <a:field name="application_id"/>
+                    <a:field name="application_reason"/>
+                    <a:field name="status"/>
+                    <a:field name="vendor_name" readOnly="true"/>
+                    <a:field name="vendor_code" lovHeight="530" lovService="qms.QMS5050.fnd_coop_companies_lov" lovWidth="530" title="QMS_8D.VENDER_SEARCH">
+                        <a:mapping>
+                            <a:map from="coop_company_code" to="vendor_code"/>
+                            <a:map from="coop_company_desc" to="vendor_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="examine_type" displayField="flex_desc" options="kw3010_examine_type_ds" returnField="examine_type_code" valueField="flex_value"/>
+                    <a:field name="field_trip_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="user_name" defaultValue="${/model/qms5050_current_user/record/@description}"/>
+                    <a:field name="comments"/>
+                    <!--                     <a:field name="auditor_id"/>
+                    <a:field name="auditor" lovHeight="530" lovService="cux.KW.KW3010.hrm_employee_lov" lovWidth="530" required="true" title="员工查询">
+                        <a:mapping>
+                            <a:map from="employee_id" to="auditor_id"/>
+                            <a:map from="name" to="auditor"/>
+                        </a:mapping>
+                    </a:field> -->
+                    <!--                     <a:field name="audit_team_leader_id"/>
+                    <a:field name="audit_team_leader" lovHeight="530" lovService="cux.KW.KW3010.hrm_employee_lov" lovWidth="530" required="true" title="员工查询">
+                        <a:mapping>
+                            <a:map from="employee_id" to="audit_team_leader_id"/>
+                            <a:map from="name" to="audit_team_leader"/>
+                        </a:mapping>
+                    </a:field> -->
+                    <a:field name="auditor" required="true"/>
+                    <a:field name="audit_team_leader" required="true"/>
+                    <a:field name="accompanying_person" required="true"/>
+                    <!--                     <a:field name="accompanying_person" lovHeight="530" lovService="cux.KW.KW3010.hrm_employee_lov" lovWidth="530" required="true" title="员工查询">
+                        <a:mapping>
+                            <a:map from="employee_id" to="accompanying_person_id"/>
+                            <a:map from="name" to="accompanying_person"/>
+                        </a:mapping>
+                    </a:field> -->
+                    <!-- <a:field name="plan_review_time" required="true"/> -->
+                    <a:field name="actual_review_time" required="true"/>
+                    <!-- <a:field name="audit_time" required="true"/> -->
+                    <a:field name="qsa_scores" required="true" validator="check_number"/>
+                    <a:field name="qpa_scores" required="true" validator="check_number"/>
+                    <a:field name="total_scores" required="true" validator="check_number"/>
+                    <a:field name="review_conclusion_code"/>
+                    <a:field name="review_conclusion" displayField="flex_desc" options="kw3010_review_conclusion_ds" required="true" returnField="review_conclusion_code" valueField="flex_value"/>
+                    <a:field name="visit_date" required="true"/>
+                    <a:field name="submit_reject_reason" required="true"/>
+                    <a:field name="feedback_reason" readOnly="true"/>
+                    <a:field name="last_review_conclusion" required="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="kw_load_handler"/>
+                    <a:event name="update" handler="kw_update_handler"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="kw3010_create_atm_files_ds" autoQuery="true" bindTarget="kw3010_maintain_ds" model="cux.KW.KW2010.fnd_atm_lines" queryUrl="${/request/@context_path}/autocrud/cux.KW.KW2010.fnd_atm_lines/query?source_table_name=KW_FND_SCENE_AUDIT_HEADER&amp;source_pk_value=${/parameter/@application_id}&amp;vendor_table_name=VENDOR_KW_FND_SCENE_AUDIT_HEADER" selectable="true">
+                <a:fields>
+                    <a:field name="atm_line_id"/>
+                    <a:field name="line_number"/>
+                    <a:field name="atm_desc"/>
+                    <a:field name="source_table_name" defaultValue="KW_FND_SCENE_AUDIT_HEADER"/>
+                    <a:field name="source_pk_value" defaultValue="${/parameter/@application_id}"/>
+                    <a:field name="vendor_table_name" defaultValue="VENDOR_KW_FND_SCENE_AUDIT_HEADER"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="beforecreate" handler="kw3010_create_attachments_ds_beforeCreate"/>
+                    <a:event name="add" handler="kw3010_create_attachments_ds_add"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="kw3010_create_maintain_lines_ds" loadData="true" model="cux.KW.KW3010.kw3010_field_autid_lines" selectable="true">
+                <a:fields>
+                    <a:field name="effect_confirmed"/>
+                    <a:field name="missing_species" displayField="flex_desc" options="kw3010_missing_species_ds" required="true" returnField="review_conclusion_code" valueField="flex_value"/>
+                    <a:field name="bad_problem_desc" required="true"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton id="save" click="kw3010_save" text="PROMPT.SAVE" width="100"/>
+                <a:toolbarButton id="confirmed" click="kw3010_confirmed" text="自评确认" width="100"/>
+                <a:toolbarButton id="return" click="kw3010_return" text="退回" width="100"/>
+                <a:toolbarButton id="reply" click="kw3010_reply" text="请求反馈" width="100"/>
+                <a:toolbarButton id="submit" click="kw3010_submit" text="整改通过" width="100"/>
+                <a:toolbarButton id="reject" click="kw3010_reject" text="整改拒绝" width="100"/>
+                <a:toolbarButton click="kw3010_maintain_return" text="HAP_BACK" width="100"/>
+            </a:screenTopToolbar>
+            <a:fieldSet title="审核意见">
+                <a:hBox labelWidth="100">
+                    <a:textArea name="submit_reject_reason" bindTarget="kw3010_maintain_ds" prompt="原因" width="920"/>
+                </a:hBox>
+            </a:fieldSet>
+            <a:fieldSet column="1" title="PROMPT.BASIC_INFOMATION">
+                <a:hBox labelWidth="100">
+                    <a:textField name="application_number" bindTarget="kw3010_maintain_ds" prompt="申请单号" readOnly="true" width="150"/>
+                    <a:textField name="status_desc" bindTarget="kw3010_maintain_ds" prompt="状态" readOnly="true" width="150"/>
+                    <a:textField name="user_name" bindTarget="kw3010_maintain_ds" prompt="创建人" readOnly="true" width="150"/>
+                    <a:datePicker name="plan_visit_date" bindTarget="kw3010_maintain_ds" prompt="计划到访日期" readOnly="true" renderer="Aurora.formatDate" width="150"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:lov name="vendor_code" bindTarget="kw3010_maintain_ds" prompt="供应商编码" width="150"/>
+                    <a:textField name="vendor_name" bindTarget="kw3010_maintain_ds" prompt="供应商名称" width="150"/>
+                    <a:textField name="creation_date" bindTarget="kw3010_maintain_ds" prompt="创建日期" readOnly="true" width="150"/>
+                    <a:datePicker name="vendor_reply_date" bindTarget="kw3010_maintain_ds" prompt="供应商回复日期" readOnly="true" renderer="Aurora.formatDate" width="150"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:datePicker name="visit_date" bindTarget="kw3010_maintain_ds" prompt="最终确认到访日期" renderer="Aurora.formatDate" width="150"/>
+                    <a:datePicker name="vendor_must_reply_date" bindTarget="kw3010_maintain_ds" prompt="要求回复时间" readOnly="true" renderer="Aurora.formatDate" width="150"/>
+                    <a:comboBox name="examine_type" bindTarget="kw3010_maintain_ds" prompt="审核类别" width="150"/>
+                    <!-- <a:checkBox name="field_trip_flag" bindTarget="kw1010_maintain_ds" width="150" label="是否需要实地考察" style="margin-left:40px;" /> -->
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textArea name="application_reason" bindTarget="kw3010_maintain_ds" prompt="申请理由" width="920"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textArea name="comments" bindTarget="kw3010_maintain_ds" prompt="备注" width="920"/>
+                </a:hBox>
+            </a:fieldSet>
+            <a:tabPanel height="300" marginWidth="130">
+                <a:tabs>
+                    <a:tab prompt="附件信息" width="100">
+                        <a:grid id="kw3010_create_atm_files_grid" bindTarget="kw3010_create_atm_files_ds" height="260" marginWidth="150" navBar="true">
+                            <!--                             <a:toolBar>
+                                <a:button id="add" type="add"/>
+                                <a:button id="delete" type="delete"/>
+                            </a:toolBar> -->
+                            <a:columns>
+                                <a:column name="atm_desc" prompt="FND_ATM_LINES.ATM_DESC"/>
+                                <a:column name="upload_user_desc" prompt="上传人"/>
+                                <a:column name="upload_date" prompt="上传时间"/>
+                                <a:column name="attachment" align="center" prompt="采购方附件" renderer="kw3010_upload_render" width="100"/>
+                                <a:column name="vendor_attachment" align="center" prompt="供应商附件" renderer="kw3010_upload_render" width="100"/>
+                                <a:column name="atm_flag" align="center" renderer="kw3010_upload_render" width="20"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+            <a:fieldSet title="审核意见">
+                <a:hBox labelWidth="100">
+                    <a:textArea name="feedback_reason" bindTarget="kw3010_maintain_ds" prompt="原因" width="920"/>
+                </a:hBox>
+            </a:fieldSet>
+            <a:fieldSet title="审核结果">
+                <a:hBox labelWidth="100">
+                    <a:textField name="service_items" bindTarget="kw3010_maintain_ds" prompt="服务项目" width="150"/>
+                    <a:label name="scene_audit_report" id="pur5730_vendor_survey_manufacturer_stock_uploadBtu" bindTarget="kw3010_maintain_ds" prompt="完整审核报告" renderer="kw3010_vendor_survey_manufacturer_rendererFun" width="160"/>
+                    <!-- <img id="pur5730_vendor_survey_manufacturer_bond_uploadBtu_img" alt="有附件" height="20" src="${/request/@context_path}/images/touch/report.png" title="有附件" width="20"/> -->
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textField name="auditor" bindTarget="kw3010_maintain_ds" prompt="稽核人员" width="150"/>
+                    <a:textField name="audit_team_leader" bindTarget="kw3010_maintain_ds" prompt="审核组长" width="150"/>
+                    <a:textField name="accompanying_person" bindTarget="kw3010_maintain_ds" prompt="陪同人员" width="150"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:numberField name="qsa_scores" allowDecimals="true" allowNegative="false" bindTarget="kw3010_maintain_ds" decimalPrecision="1" prompt="QSA得分"/>
+                    <a:numberField name="qpa_scores" allowDecimals="true" allowNegative="false" bindTarget="kw3010_maintain_ds" decimalPrecision="1" prompt="QPA得分"/>
+                    <a:numberField name="total_scores" allowDecimals="true" allowNegative="false" bindTarget="kw3010_maintain_ds" decimalPrecision="2" prompt="综合总分"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <!-- <a:datePicker name="plan_review_time" bindTarget="kw3010_maintain_ds" prompt="计划审核时间" renderer="Aurora.formatDate" width="150"/> -->
+                    <a:datePicker name="actual_review_time" bindTarget="kw3010_maintain_ds" prompt="实际审核时间" renderer="Aurora.formatDate" width="150"/>
+                    <!-- <a:datePicker name="audit_time" bindTarget="kw3010_maintain_ds" prompt="稽核时间" renderer="Aurora.formatDate" width="150"/> -->
+                    <a:comboBox name="review_conclusion" bindTarget="kw3010_maintain_ds" prompt="审核结论" width="150"/>
+                </a:hBox>
+                <!--                 <a:hBox labelWidth="100">
+                    <a:textArea name="delay_date_reason" bindTarget="kw3010_maintain_ds" prompt="审核延期原因" width="920"/>
+                </a:hBox> -->
+                <a:hBox labelWidth="100">
+                    <a:textArea name="last_review_conclusion" bindTarget="kw3010_maintain_ds" prompt="现场审核概述" width="920"/>
+                </a:hBox>
+            </a:fieldSet>
+            <a:tabPanel height="300" marginWidth="130" style="margin-bottom:20px;">
+                <a:tabs>
+                    <a:tab prompt="整改问题" width="100">
+                        <a:grid id="kw3010_create_lines_grid" bindTarget="kw3010_create_maintain_lines_ds" height="260" marginWidth="150" navBar="true">
+                            <a:toolBar>
+                                <a:button id="add" type="add"/>
+                                <a:button id="clear" type="clear"/>
+                                <!-- <a:button id="save_line" type="save"/> -->
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="serial_number" prompt="序号" width="30"/>
+                                <a:column name="missing_species" editorFunction="get_editor_grid" prompt="缺失种类" width="100"/>
+                                <a:column name="bad_problem_desc" editorFunction="get_editor_grid" prompt="不良问题描述" width="120"/>
+                                <a:column name="casue_analysis" align="center" editorFunction="get_editor_grid" prompt="原因分析" width="100"/>
+                                <a:column name="improve_strategy" align="center" editorFunction="get_editor_grid" prompt="改善对策" width="100"/>
+                                <a:column name="responsible" align="center" editorFunction="get_editor_grid" prompt="责任人" width="100"/>
+                                <a:column name="completion_date" align="center" editorFunction="get_editor_grid" prompt="完成日期" renderer="Aurora.formatDate" width="100"/>
+                                <a:column name="upload_attachment" align="center" prompt="上传附件" renderer="kw3010_line_upload_render" width="100"/>
+                                <a:column name="effect_confirmed" align="center" editorFunction="get_editor_grid" prompt="整改效果确认" width="50"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:textField id="grid_tx1"/>
+                                <a:textField id="grid_tx2"/>
+                                <a:textField id="grid_tx3"/>
+                                <a:textField id="grid_tx4"/>
+                                <a:textField id="grid_tx5"/>
+                                <a:textField id="grid_tx6"/>
+                                <a:datePicker id="grid_pc1"/>
+                                <a:checkBox id="grid_cb1"/>
+                                <a:comboBox id="grid_cb2"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+        <script><![CDATA[
+        	init(); 
+        ]]></script>
+    </a:view>
+</a:screen>

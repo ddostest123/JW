@@ -1,0 +1,1336 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wsh  
+    $Date: 2013-1-17 下午06:07:40  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query model="pur.PUR3010.sys_role_function_check" rootPath="role_function_default"/>
+    </a:init-procedure>
+    <a:view>
+        <link href="${/request/@context_path}/css/pur/orders-common.css?v=1.07" rel="stylesheet"/>
+        <a:link id="pur7030_purchaseOrderViewDetail_simplify_link" url="${/request/@context_path}/modules/pur/PUR7030/pur_purchase_order_view_detail_simplify.screen"/>
+        <script src="${/request/@context_path}/component/handPagesBreak/handPagesBreak.js?v=2.31"/>
+        <link href="${/request/@context_path}/component/handPagesBreak/handPagesBreak.css?v=2.32" rel="stylesheet" type="text/css"/>
+        <a:link id="pur7030_purchaseOrderViewDetail_link" url="${/request/@context_path}/modules/pur/PUR7030/pur_purchase_order_view_detail.screen"/>
+        <a:link id="pur3010_puchase_order_verify_record_link" url="${/request/@context_path}/modules/pur/public/pur_purchase_order_operate_record.screen"/>
+        <a:link id="pur3010_purchase_order_confirm_link" url="${/request/@context_path}/modules/pur/PUR3010/pur_purchase_order_confirm_detail.svc"/>
+        <a:link id="pur3010_purchase_order_direct_confirm_link" url="${/request/@context_path}/modules/pur/PUR3010/pur_purchase_order_direct_confirm_detail.svc"/>
+        <a:link id="pur3010_purchase_order_confirm_with_agency_link" model="pur.PUR3010.pur_purchase_order_confirm_with_agency" modelaction="execute"/>
+        <a:link id="pur3010_po_need_trader_agency_show_link" url="${/request/@context_path}/modules/pur/PUR3010/pur_po_need_trade_agency_show.screen"/>
+        <a:link id="pur3010_trade_agency_new_po_link" url="${/request/@context_path}/modules/pur/PUR3010/pur_trade_agency_new_purchase_order.screen"/>
+        <script><![CDATA[
+            Aurora.onReady(function (){
+                Aurora.Masker.mask(Ext.getBody());
+                
+                var ds = $('pur3010_purchase_order_verify_ds');
+                ds.cloudPage = 1;
+                ds.query();
+                
+                var dom = document.getElementById('search_content_id');
+    		    dom.onfocus = onFocusSearchInput;
+    		    
+    		    window.onmousedddown = function(e){
+    		    	e = e || window.event;
+    		    	var target = e.srcElement || e.target;
+    		    	while (target != document.body){
+    		    		if (target.className == 'search-con'){
+    		    		    return;
+    		    		}else{
+    		    			target = target.parentNode;
+    		    		}
+    		    	}
+    		    	hideSearchInput();
+    		    };
+            });
+            
+            function queryPageDs(index){
+                if (!$('pur3010_purchase_order_confirm_query_ds').validate()){
+                	return;
+                }
+            	var ds = $('pur3010_purchase_order_verify_ds');
+            	Aurora.Masker.mask(Ext.getBody(), '查询中...');
+            	ds.cloudPage = index || ds.cloudPage;
+            	ds.setQueryParameter('pagenum', ds.cloudPage);
+            	ds.query();
+            }
+   			
+   			function changeOrderType(target, sign, type){
+   			    var parentNode = target.parentNode;
+   				var originalSign = parentNode.sign || 0;
+   				if (originalSign == sign){
+   					return;
+   				}
+   				
+   				parentNode.children[originalSign].className = '';
+   				target.className = 'active';
+   				parentNode.sign = sign;
+   				
+   				var ds = $('pur3010_purchase_order_confirm_query_ds');
+   				ds.reset();
+   				ds.getAt(0).set('type_lookup_code', 'STANDARD');
+   				
+   				ds = $('pur3010_purchase_order_verify_ds');
+   				if (type == 'can_deliver_lookup'){
+   				    ds.setQueryParameter('order_type', '');
+   					ds.setQueryParameter('can_delievery', 'Y');
+   				}else{
+   				    ds.setQueryParameter('can_delievery', '');
+   					ds.setQueryParameter('order_type', type);
+   				}
+   				Aurora.Masker.mask(Ext.getBody(), '查询中...');
+    		    ds.cloudPage = 1;
+    		    ds.setQueryParameter('pagenum', 1);
+                ds.query();
+   			}         
+            function pur_3010_purchase_order_query() {
+                if (!$('pur3010_purchase_order_confirm_query_ds').validate()){
+                	return;
+                }
+                
+                var ds = $('pur3010_purchase_order_verify_ds');
+                ds.cloudPage = 1;
+                ds.setQueryParameter('pagenum', '1');
+                Aurora.Masker.mask(Ext.getBody());
+                ds.query();
+            }
+            
+            //加急订单查询
+            
+            function pur3010_purchaseOrderHeaderUrgent_query() {
+                $('pur3010_purchase_order_confirm_query_ds').getAt(0).set('urgent_status', 'URGENT');
+                $('pur3010_purchase_order_confirm_query_ds').getAt(0).set('urgent_status_desc', '已加急');
+                $('pur3010_purchase_order_verify_ds').query();
+                Aurora.Masker.mask(Ext.getBody());
+            }
+            
+            //比较两个日期的大小
+            
+            function pur3010_compareDate(start, end) {
+                if (start > end) {
+                    return false;
+                }
+                return true;
+            }
+            
+            //发布日期校验
+            function pur3010_release_dateValidator(record, name, value) {
+                if (name == 'release_date_begin' || name == 'release_date_end') {
+                    var start_rele_date = record.get('release_date_begin');
+                    var end_rele_date = record.get('release_date_end');
+            
+                    if ( !! end_rele_date) {
+                        if (!pur3010_compareDate(start_rele_date, end_rele_date)) {
+                            return '${l:ORDER_DATE_COMPARE_ERROR}';
+                        }
+                    }
+                    return true;
+                }
+            }
+            //确认日期校验
+            function pur7030_confirm_dateValidator(record, name, value) {
+                if (name == 'confirm_date_from' || name == 'confirm_date_to') {
+                    var start = record.get('confirm_date_from');
+                    var end = record.get('confirm_date_to');
+            
+                    if ( !! end) {
+                        if (!pur3010_compareDate(start, end)) {
+                            return '${l:PUR_COMFIRM_DATE_COMPARE_ERROR}';
+                        }
+                    }
+                    return true;
+                }
+            }
+            
+            //截止回复日期校验
+            
+            function pur3010_end_reply_dateValidator(record, name, value) {
+                if (name == 'reply_date_from' || name == 'reply_date_to') {
+                    var start_reply_date = record.get('reply_date_from');
+                    var end_reply_date = record.get('reply_date_to');
+            
+                    if ( !! end_reply_date) {
+                        if (!pur3010_compareDate(start_reply_date, end_reply_date)) {
+                            return '${l:ORDER_REPLY_DATE_COMPARE_ERROR}';
+                        }
+                    }
+                    return true;
+                }
+            }
+            
+            //查看明细
+            function pur3010_detailRender(value, record, name) {
+                if (record.isNew) {
+                    return '';
+                }
+                return '<a href="javascript:pur3010_openDetail(' + record.get('pur_header_id') + ')">' + value + '</a>';
+            }
+            
+            function pur3010_openDetail(id) {
+                var url = '${/request/@context_path}/modules/pur/newPur/pur_order_detail/pur_order_detail_header.screen' + '?pur_header_id=' + id;
+                //$('pur7030_purchaseOrderViewDetail_link').getUrl()
+                new Aurora.Window({
+                    id: 'pur_purchaseOrderViewLineDetail_window',
+                    url:  url,
+                    title: '${l:PUR_HEADERS_ALL.PUR_DETAILS}',
+                    fullScreen: true
+                });
+            }
+            
+            //${l:PUR_HEADERS_ALL.OPERATION_RECORD}
+            
+            function pur3010_recordRender(value, record, name) {
+                if (record.isNew) {
+                    return '';
+                }
+                return '<a href="javascript:pur3010_openRecord(' + record.get('pur_header_id') + ')">${l:PUR_HEADERS_ALL.OPERATION_RECORD}</a>';
+            }
+            
+            function pur3010_openRecord(id) {
+                new Aurora.Window({
+                    id: 'pur_purchase_order_record_window',
+                    url: $('pur3010_puchase_order_verify_record_link').getUrl() + '?transaction_object=PUR_HEADERS_ALL' + '&pur_header_id=' + id,
+                    title: '${l:PUR_HEADERS_ALL.OPERATION_RECORD}',
+                    height: 450,
+                    width: 700
+                });
+            }
+            
+            //确认操作
+            function pur_3010_purchase_order_confirm(index) {
+                var datas = [], data;
+                var list_ds = $('pur3010_purchase_order_verify_ds');
+                if (typeof index != 'number') {
+                    var records = getCheckedRecords(list_ds);
+                    if (records.length == 0) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:PUR_HEADERS_ALL.UNSELECT_ERROR}！');
+                        return;
+                    }
+                    for (var i = 0;i < records.length;i++) {
+                        data = records[i].data || records[i];
+                        if (data.can_confirm == 'Y'){
+                            datas.push(data);
+                        }
+                    }
+                } else {
+                    list_ds.select(list_ds.getAt(index));
+                    datas.push(list_ds.getAt(index).data);
+                }
+                order_confirm_datas(datas);
+            }
+            
+            function order_confirm_datas(datas){
+                Aurora.showConfirm('${l:MODULES/PUR/PUR3010/PUR_PURCHASE_ORDER_CONFIRM.SCREEN.TITLE}', '${l:PUR_HEADERS_ALL.CONFIRM}', function() {
+                    Aurora.Masker.mask(Ext.getBody());
+                    Aurora.request({
+                        url: $('pur3010_purchase_order_confirm_link').getUrl(),
+                        para: datas,
+                        success: function(res) {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            if (res.result.feedback == 'TRADE_AGENCY') {
+                                pur3010_poNeedTraderAgencyShow_openWindow();
+                            } else {
+                                Aurora.showMessage('提示', '确认成功！');
+                                queryPageDs();
+                            }
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        scope: this
+                    });
+                }, null, 300, 100);
+            }
+            
+            function pur3010_poNeedTraderAgencyShow_openWindow() {
+                (new Aurora.Window({
+                    id: 'pur3010_needTradeAgencyShowWindow',
+                    url: $('pur3010_po_need_trader_agency_show_link').getUrl(),
+                    title: '${l:PUR_HEADERS_ALL.CONFIRM_PO}',
+                    height: 450,
+                    width: 500
+                })).on('beforeclose', function() {
+                    queryPageDs();
+                });
+            }
+            
+            function pur3010_urgentRendererFun(value, record, name) {
+                if ('URGENT' == record.get('urgent_status')) {
+                    return '<div class="status-text status-red">' + value + '</div>';
+                } else {
+                    return value;
+                }
+            }
+            
+            function pur3010_purchaseOrderConfirmQuery_updateFun(ds, record, name, value, oldvalue) {
+                if (name == 'company_id') {
+                    record.set('business_unit_name', '');
+                    record.set('business_unit_id', '');
+                    record.set('vendor_site_id', '');
+                    record.set('vendor_site_code', '');
+                    if (Ext.isEmpty(value)) {
+                        record.getField('business_unit_name').setReadOnly(true);
+                        record.getField('business_unit_name').setLovPara('company_id', -1);
+                        record.getField('vendor_site_code').setReadOnly(true);
+                        record.getField('vendor_site_code').setLovPara('company_id', -1);
+                    } else {
+                        record.getField('business_unit_name').setReadOnly(false);
+                        record.getField('business_unit_name').setLovPara('company_id', value);
+                        record.getField('vendor_site_code').setReadOnly(false);
+                        record.getField('vendor_site_code').setLovPara('company_id', value);
+                    }
+                }
+            }
+            
+            function pur3010_tradeAgencyNewPo_openWindow() {
+                //判断当前用户是否有权限打开PUR5630-订单维护工功能'
+                if ('${/model/role_function_default/record/@role_function_check}' == 'Y') {
+                    $('mainTab').openTab('${/model/role_function_default/record/@function_url}', '${/model/role_function_default/record/@function_name}');
+                } else {
+                    new Aurora.Window({
+                        id: 'pur3010_tradeAgencyNewPoWindow',
+                        url: $('pur3010_trade_agency_new_po_link').getUrl(),
+                        title: '${l:PUR3010_TRADE_AGENCY_NEW_PO}',
+                        height: 400,
+                        width: 500
+                    });
+                }
+            }
+            
+            
+            //送货单创建
+            var pur_headers = '';
+            var ponums = '';
+            function createDeliveryOrder(index) {
+                var list_ds = $('pur3010_purchase_order_verify_ds');
+                var po_nums = '(';
+                pur_headers = '(';
+                if (typeof index != 'number') {
+                    var records = getCheckedRecords(list_ds);
+                    if (records.length == 0) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:PUR_HEADERS_ALL.UNSELECT_ERROR}！');
+                        return;
+                    }
+                    for (var i = 0;i < records.length;i++) {
+                        if (i > 0) {
+                            po_nums += ",";
+                            pur_headers += ",";
+                        }
+                        po_nums += "\'" + records[i].data.display_po_number + "\'";
+                        pur_headers += records[i].data.pur_header_id;
+                    }
+                } else {
+                    po_nums += "\'" + list_ds.getAt(index).data.display_po_number + "\'";
+                    pur_headers += list_ds.getAt(index).data.pur_header_id;
+                }
+                po_nums += ')';
+                pur_headers += ")";
+                ponums = po_nums;
+                create_delievery_query(po_nums, pur_headers);
+                
+            }
+            function create_delievery_query(po_nums, pur_headers){
+                var url = '${/request/@context_path}/autocrud/pur.newPur.pur_lines_all/query';
+                Aurora.request({
+                    url: url,
+                    para: {
+                        pur_headers: pur_headers
+                    },
+                    success: function(res) {
+                        asn_header_go_create(res.result.record);
+                    },
+                    failure: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    error: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    scope: this
+                });
+            }
+            //创建临时送货单
+            function asn_header_go_create(record) {
+                 if (1 == 2 && (!record)) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:INV_ASN_HEADERS.UNSELECT_ERROR}');
+                    return;
+                }
+                if (record){
+	                var datas = [],
+	                    records;
+	                if (record instanceof Array) {
+	                    records = record;
+	                } else {
+	                    records = [];
+	                    records.push(record);
+	                }
+	                for (var i = 0;i < records.length;i++) {
+	                    if (records[i].creation_flag && records[i].creation_flag == 'Y') {
+	                        datas.push(records[i]);
+	                    }
+	                }
+	            
+	                Aurora.Masker.mask(Ext.getBody(), '${l:LOADING}');
+	                Aurora.request({
+	                    url: '${/request/@context_path}/modules/inv/INV5010/inv_asn_header_go_create.svc',
+	                    para: datas,
+	                    success: function(res) {
+	                        Aurora.Masker.unmask(Ext.getBody());
+	                        inv_asn_headers_temp_count();
+	                    },
+	                    failure: function(res) {
+	                        Aurora.Masker.unmask(Ext.getBody());
+	                        $('inv5010_inv_asn_header_go_create_btn').enable();
+	                    },
+	                    error: function(res) {
+	                        Aurora.Masker.unmask(Ext.getBody());
+	                        $('inv5010_inv_asn_header_go_create_btn').enable();
+	                    },
+	                    scope: this
+	                });
+                }else{
+                	new Aurora.Window({
+                        id: 'inv5010_asn_create_window',
+                        title: '${l:INV5010.ASN_PREVIEW}',
+                        url: '${/request/@context_path}/modules/pur/newPur/create_delivery/create_delivery_note_temp_datas.screen' + '?asn_headers=(-1)&po_nums=' + ponums + '&pur_headers=' + pur_headers,
+                        fullScreen: true
+                    });
+                }
+            }
+            //查询临时送货单
+            function inv_asn_headers_temp_count() {
+                Aurora.Masker.mask(Ext.getBody(), '${l:LOADING}');
+                var url = '${/request/@context_path}/autocrud/pur.newPur.count_inv_asn_headers_temp/query';
+                Aurora.request({
+                    url: url,
+                    success: function(res) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        inv_asn_headers_temp_view(res.result.record);
+                    },
+                    failure: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    error: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    scope: this
+                });
+            }
+            
+            function inv_asn_headers_temp_view(record) {
+                var records, asn_headers, l, i;
+                if (record instanceof Array) {
+                    records = record;
+                } else {
+                    records = [];
+                    records.push(record);
+                }
+                
+                l = records.length;
+                if (l == 0) {
+                    Aurora.showMessage('提示', '创建送货单失败！');
+               	} else{
+               	    
+                    asn_headers = '(' + records[0].asn_header_id;
+                    for (i = 1; i < l; i++){
+                    	asn_headers += ',' + records[i].asn_header_id;
+                    }
+                    asn_headers += ')';
+                    
+                    new Aurora.Window({
+                        id: 'inv5010_asn_create_window',
+                        title: '${l:INV5010.ASN_PREVIEW}',
+                        url: '${/request/@context_path}/modules/pur/newPur/create_delivery/create_delivery_note_temp_datas.screen' + '?asn_headers=' + asn_headers + '&po_nums=' + ponums + '&pur_headers=' + pur_headers,
+                        fullScreen: true
+                    });
+                }
+            }
+            
+            function combineConsignBillCreate(index) {
+                var list_ds = $('pur3010_purchase_order_verify_ds');
+                var po_nums = '(',
+                    noneOrders = true;
+                var records, data;
+                if (typeof index != 'number') {
+                    records = getCheckedRecords(list_ds);
+                    if (records.length == 0) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:PUR_HEADERS_ALL.UNSELECT_ERROR}！');
+                        return;
+                    }
+                    for (var i = 0;i < records.length;i++) {
+                        data = records[i].data;
+                        if (data.if_invoice_base_order == 'N' && data.can_create_invoice == 'Y') {
+                            noneOrders = false;
+                            if (po_nums != '(') {
+                                po_nums += ",";
+                            }
+                            po_nums += "\'" + data.pur_header_id + "\'";
+                        }
+                    }
+                } else {
+                    records = list_ds.getAll();
+                    data = records[index].data;
+                    if (data.if_invoice_base_order == 'N' && data.can_create_invoice == 'Y') {
+                        noneOrders = false;
+                        po_nums += "\'" + data.pur_header_id + "\'";
+                    }
+                }
+                if (noneOrders) {
+                    Aurora.showMessage('${l:PROMPT}', '不存在可创建开票申请的订单！');
+                    return;
+                }
+                po_nums += ')';
+                initBillCreate(po_nums);
+            }
+            
+            //用货单查询
+            function queryMyDeliveryOrder(pur_header_id) {
+                var pur_headers = '(' +  pur_header_id + ')';
+             	new Aurora.Window({
+                    id: 'inv_order_asn_query_window',
+                    title: '${l:INV5010.ASN_PREVIEW}',
+                    url: '${/request/@context_path}/modules/pur/newPur/pur_purchase_delivery_order.screen?pur_headers=' + pur_headers,
+                    height: 410,
+                    width:950
+                });
+            }
+            
+            //传统表格渲染
+            var trPool = [];
+            function renderRecord(tbody, index, data) {
+                var trs, tr1, tr2;
+                var attrs, ifNeedInsert = true;
+                tr1 = tbody.children[2 * index];
+                if (tr1 && tr1.type == 'tr1') {
+                    ifNeedInsert = false;
+                    tr2 = tbody.children[2 * index + 1];
+                } else {
+                    if (trPool.length > 0) {
+                        tr1 = trPool.pop();
+                        if (tr1.type == 'tr1'){
+                        	tr2 = trPool.pop();
+                        }else{
+                        	tr2 = tr1;
+                        	tr1 = trPool.pop();
+                        }
+                    } else {
+                        attrs = {
+                            header: {
+                                checkbox: null,
+                                orderInfor: '',
+                                phoneIconPart: null,
+                                operationIconPart: null
+                            },
+                            body: {
+                                no: null,
+                                client: null,
+                                address: null,
+                                materials: null,
+                                money: null,
+                                type: '',
+                                creationDate: '',
+                                state: '',
+                                ifRed: null,
+                                comments: null,
+                                operation: null
+                            }
+                        };
+            
+                        var td, ul, li, dom, s;
+                        tr1 = document.createElement('TR');
+                        tr1.className = 'order-header-tr';
+                        tr2 = document.createElement('TR');
+                        tr2.className = 'order-detail-tr';
+                        tr1.attrs = attrs;
+                        tr2.attrs = attrs;
+            
+                        td = document.createElement('TD');
+                        attrs.header.checkbox = dom = document.createElement('INPUT');
+                    	dom.onchange = changeCheckAllRecord;
+                        dom.setAttribute('type', 'checkbox');
+                        td.appendChild(dom);
+                        tr1.appendChild(td);
+            
+                        td = document.createElement('TD');
+                        td.setAttribute('colspan', '6');
+                        td.setAttribute('colSpan', '6');
+                        ul = renderDom('UL', 'order-header');
+                        td.appendChild(ul);
+                        tr1.appendChild(td);
+            
+                        attrs.header.orderInfor = li = renderDom('LI', 'infor-part');
+                        ul.appendChild(li);
+            
+                        attrs.header.phoneIconPart = li = renderDom('LI', 'phone-part');
+                        ul.appendChild(li);
+            
+                        attrs.header.operationIconPart = li = renderDom('LI', 'operation-part');
+                        ul.appendChild(li);
+            
+                        //body 行 td1 'order-detail-infor'
+                        attrs.body.ifRedTd = td = renderDom('TD', 'order-detail-infor');
+                        td.setAttribute('colspan', '2');
+                        td.setAttribute('colSpan', '2');
+                        ul = document.createElement('UL');
+                        
+                        td.appendChild(ul);
+                        td.appendChild(renderDom('DIV', 'order-red-back'));
+                        tr2.appendChild(td);
+            
+                        li = document.createElement('LI');
+                        dom = renderDom('SPAN', 'aatr-name', '发放号：');
+                        li.appendChild(dom);
+                        attrs.body.no = dom = renderDom('SPAN', 'aatr-value');
+                        li.appendChild(dom);
+                        ul.appendChild(li);
+            
+                        li = document.createElement('LI');
+                        dom = renderDom('SPAN', 'aatr-name', '收货方：');
+                        li.appendChild(dom);
+                        attrs.body.address = dom = renderDom('SPAN', 'aatr-value');
+                        li.appendChild(dom);
+                        ul.appendChild(li);
+                        
+                        li = document.createElement('LI');
+                        dom = renderDom('SPAN', 'aatr-name', '采购员：');
+                        li.appendChild(dom);
+                        attrs.body.client = dom = renderDom('SPAN', 'aatr-value');
+                        li.appendChild(dom);
+                        ul.appendChild(li);
+            
+                        //body 行 td2 'order-other-infor'
+                        td = renderDom('TD', 'order-other-infor');
+                        tr2.appendChild(td);
+                        ul = document.createElement('UL');
+                        td.appendChild(ul);
+            
+                        li = document.createElement('LI');
+                        dom = renderDom('SPAN', 'aatr-name', '订单金额：');
+                        li.appendChild(dom);
+                        attrs.body.money = dom = renderDom('SPAN', 'aatr-value');
+                        li.appendChild(dom);
+                        ul.appendChild(li);
+            
+                        li = document.createElement('LI');
+                        dom = renderDom('SPAN', 'aatr-name', '订单类型：');
+                        li.appendChild(dom);
+                        attrs.body.type = dom = renderDom('SPAN', 'aatr-value');
+                        li.appendChild(dom);
+                        ul.appendChild(li);
+            
+                        li = document.createElement('LI');
+                        dom = renderDom('SPAN', 'aatr-name', '创建日期：');
+                        li.appendChild(dom);
+                        attrs.body.creationDate = dom = renderDom('SPAN', 'aatr-value');
+                        li.appendChild(dom);
+                        ul.appendChild(li);
+            
+                        td = attrs.body.state = renderDom('TD');
+                        tr2.appendChild(td);
+            
+            			//商品
+                        attrs.body.materials = td = renderDom('TD', 'goods-content');
+                        tr2.appendChild(td);
+            
+                        td = attrs.body.comments = renderDom('TD');
+                        tr2.appendChild(td);
+            
+                        td = attrs.body.operation = renderDom('TD', 'operation-part');
+                        tr2.appendChild(td);
+                        
+                        tr1.type = 'tr1';
+                        tr2.type = 'tr2';
+                    }
+                }
+                
+                tr1.order_id = data.pur_header_id;
+                tr2.order_id = data.pur_header_id;
+                
+                attrs = tr1.attrs;
+                var h, b;
+                h = attrs.header;
+                b = attrs.body;
+                
+                s = '<span>订单号：</span>' + '<span class="header-part-code">' + data.display_po_number + '</span>';
+                s += '<span>发布日期：</span><span class="header-part-date">' +( data.release_date_desc || '') + '</span>';
+                s += '<span class="header-part-company-icon"> </span><span class="header-part-company">' + (data.company_name || '') + '</span>';
+                h.orderInfor.innerHTML = s;
+                
+                s = '<span class="phone-icon"><i class="icon-phone-sign"></i></span><a href="#">沟通留言</a>';
+                h.phoneIconPart.innerHTML = '';
+                s = '<a href="#" class="operation-icon"><i class="icon-mobile-phone"></i></a>';
+                s += '<a href="#" class="operation-icon"><i class="icon-lock"></i></a>';
+                s += '<a href="#" class="operation-icon"><i class="icon-exclamation-sign"></i></a>';
+                h.operationIconPart.innerHTML = '';
+                
+                b.no.innerHTML = data.display_release_num || '';
+                b.client.innerHTML = data.agent_name || '';
+                b.address.innerHTML = data.ship_to_organization_name || '';
+                
+                s = data.items_description || ' ';
+                if (s.length > 30){
+                    b.materials.setAttribute('title', s);
+                	s = s.substr(0, 30) + '...';
+                }
+                b.materials.innerHTML = s + '等物品共<span style="color:#19a2d5;"> ' + data.items_num + ' </span>项';
+                
+                b.money.innerHTML = data.sum_amount ? ('<span style="color:#f00;">' + Aurora.formatMoney(data.sum_amount) + '</span> 元') : '';
+                b.type.innerHTML = data.type_lookup_desc;
+                b.creationDate.innerHTML = data.creation_date_desc;
+                b.state.innerHTML = data.srm_name_desc;
+                
+                if (data.urgent_status && data.urgent_status == 'URGENT'){
+                    b.ifRedTd.className = 'order-detail-infor order-red';
+                }else{
+                    b.ifRedTd.className = 'order-detail-infor';
+                }
+                b.comments.innerHTML = data.comments || '';
+                b.operation.innerHTML = getAction(index, data);
+                
+                if (ifNeedInsert){
+	                tbody.appendChild(tr1);
+	                tbody.appendChild(tr2);
+                }
+                return h.checkbox;
+            }
+            
+            function renderDom(tagName, className, value) {
+                var d = document.createElement(tagName);
+                d.className = className || '';
+                d.innerHTML = value || '';
+                return d;
+            }
+            
+            function getAction(sign, mda) {
+                //新建 NEW  quantity_accepted
+                var ss, action, text;
+                ss = '<a href="javascript:pur3010_openDetail(\'' + mda.pur_header_id + '\');">订单详情</a>';
+            
+                if (mda.can_confirm == 'Y') {
+                    action = 'javascript:pur_3010_purchase_order_confirm(' + sign + ');';
+                    text = '确认';
+                    ss += '<a href="' + action + '">' + text + '</a>';
+                }
+                if (mda.can_deliver.charAt(0) == 'Y' || mda.can_deliver_lookup.charAt(0) == 'Y') {
+                    action = 'javascript:createDeliveryOrder(' + sign + ');';
+                    text = '发货';
+                    ss += '<a href="' + action + '">' + text + '</a>';
+                }
+                
+                if (mda.can_deliver_lookup.charAt(1) == 'Y') {
+                        action = 'javascript:queryMyDeliveryOrder(\'' + mda.pur_header_id + '\');';
+                        text = '查看物流';
+                        ss += '<a href="' + action + '">' + text + '</a>';
+                }
+            	
+            	//&& mda.quantity_accepted > 0
+                if (1 == 2 && mda.if_invoice_base_order == 'N' && mda.can_create_invoice == 'Y') {
+                    action = 'javascript:combineConsignBillCreate(' + sign + ');';
+                    text = '开票';
+                    ss += '<a href="' + action + '">' + text + '</a>';
+                }
+                return ss;
+            }
+            
+            function onLoadPurchaseOrders(ds) {
+                Aurora.Masker.unmask(Ext.getBody());
+                var l, i, data, tr, td, checkbox, s, checkChildren;
+                var totalPage = ds.totalPage;
+                var totalCount = ds.totalCount;
+                var checkObject = ds.checkObject;
+                var records = ds.getAll();
+                l = records.length;
+                //设置 选择所有checkbox
+                if (!checkObject) {
+                    checkbox = document.getElementById('check_all_id');
+                    checkObject = ds.checkObject = checkbox;
+                    //改变是否选择所有行值
+                    checkbox.onchange = changeCheckAllRecord;
+                }
+                checkObject.checked = false;
+                checkChildren = checkObject.checkboxChildren =  new Array();
+                var tbody = document.getElementById('pur_orders_tbody_id');
+                if (totalPage > 0 && l > 0) {
+                    document.getElementById('page_break_con').style.display = 'block';
+                    initHandPageBreak('page_break_con', totalPage, 3, queryPageDs, ds.cloudPage);
+                } else {
+                    document.getElementById('page_break_con').style.display = 'none';
+                    l = tbody.children.length;
+                    if (l == 1){
+                        tr = tbody.children[0];
+                    }else{
+                    	if (l > 1){
+	                        tr = tbody.children[0];
+		                    while (tr) {
+		                        trPool.push(tbody.removeChild(tr));
+		                        tr = tbody.children[0];
+		                    }
+                    	}
+                    	tr = document.createElement('TR');
+                    	tbody.appendChild(tr);
+                    }
+                    
+                    tr.innerHTML = '';
+                    td = renderDom('TD', 'td-nothing', '未找到任何记录');
+                    td.setAttribute('colspan', '7');
+                    tr.appendChild(td);
+                    setPageConShow();
+                    return;
+                }
+            	
+            	if (tbody.children.length < 2){
+            		tr = tbody.children[0];
+            		while(tr){
+            		    tbody.removeChild(tr);
+            		    tr = tbody.children[0];
+            		}
+            	}
+                for (i = 0;i < l;i++) {
+                    data = records[i].data;
+                    checkbox = renderRecord(tbody, i, data);
+             		checkChildren[i] = checkbox;
+             		checkbox.checkboxParent = checkObject;
+                    checkbox.record = records[i];
+                    checkbox.checked = false;
+                }
+            
+                //删除多余行
+                l = 2 * l;
+                tr = tbody.children[l];
+                while (tr) {
+                    trPool.push(tbody.removeChild(tr));
+                    tr = tbody.children[l];
+                }
+                
+                setPageConShow();
+            }
+            
+            function changeCheckAllRecord(e) {
+                var i, l;
+                e = e || event;
+                var target = e.currentTarget || e.srcElement;
+                var value = target.checked ? true : false;
+                var children = target.checkboxChildren;
+                if (children) {
+                    l = children.length;
+                    for (i = 0;i < l;i++) {
+                        checkBox = children[i];
+                        checkBox.checked = value;
+                    }
+                } else if (target.checkboxParent) {
+                    if (!value) {
+                        target.checkboxParent.checked = false;
+                    } else {
+                        children = target.checkboxParent.checkboxChildren;
+                        l = children.length;
+                        var sign = 0;
+                        for (i = 0;i < l;i++) {
+                            checkBox = children[i];
+                            if (!checkBox.checked) {
+                                sign = -1;
+                                break;
+                            } else {
+                                sign = 1;
+                            }
+                        }
+                        if (sign == 1) {
+                            target.checkboxParent.checked = true;
+                        } else {
+                            target.checkboxParent.checked = false;
+                        }
+                    }
+                }
+            }
+            
+            function getCheckedRecords(ds) {
+                var checkObject = ds.checkObject;
+                if (!checkObject) {
+                    ds.selectAll();
+                    return ds.getAll();
+                }
+                
+                if (checkObject.checked){
+                	ds.selectAll();
+                }else{
+	                var checkBox, children, l, i;
+	                children = checkObject.checkboxChildren;
+	                l = children.length;
+	                for (i = 0;i < l;i++) {
+	                    checkBox = children[i];
+	                    if (checkBox.checked) {
+	                        ds.select(checkBox.record);
+	                    }else{
+	                    	ds.unSelect(checkBox.record);
+	                    }
+	                 }
+                }
+                return ds.getSelected();
+            }
+            
+            function changeCheckBox(checkBox, value) {
+                if (value == 1) {
+                    checkBox.checked = true;
+                    checkBox.indeterminate = false;
+                    checkBox.unchecked = false;
+                    checkBox.value = 1;
+                } else if (value == -1) {
+                    checkBox.checked = false;
+                    checkBox.indeterminate = false;
+                    checkBox.unchecked = true;
+                    checkBox.value = -1;
+                } else {
+                    checkBox.checked = false;
+                    checkBox.indeterminate = true;
+                    checkBox.unchecked = false;
+                    checkBox.value = 0;
+                }
+            }
+        ]]></script>
+        <a:link id="acp5260_bill_detail_link" url="${/request/@context_path}/modules/acp/ACP5260/acp_bill_detail.screen"/>
+        <script><![CDATA[
+            //日期比较
+            function acp5031_compareDate(start, end) {
+                if (start > end) {
+                    return false;
+                }
+                return true;
+            }
+            //日期校验
+            function acp5031_trx_dateValidator(record, name, value) {
+                if (name == 'trx_date_from' || name == 'trx_date_to') {
+                    var start = record.get('trx_date_from');
+                    var end = record.get('trx_date_to');
+            
+                    if ( !! end) {
+                        if (!acp5031_compareDate(start, end)) {
+                            return '${l:START_GREATER_THAN_END}';
+                        }
+                    }
+                    return true;
+                }
+            }
+            
+            //校验开票单头是否已存在
+            function acp5260_checkHeaderExists(record) {
+                var header_record = $('acp5260_bill_headers_ds').getCurrentRecord();
+                if (header_record.get('company_id') == record.get('company_id') && header_record.get('vendor_id') == record.get('vendor_id') && header_record.get('vendor_site_id') == record.get('vendor_site_id') && header_record.get('currency_code') == record.get('currency_code')) {
+                    return true;
+                }
+                return false;
+            }
+            
+            //校验开票单行是否已存在
+            function acp5260_checkBillLineExists(record) {
+                var line_records = $('acp5260_bill_lines_ds').getAll();
+                var flag = false;
+                for (var i = 0;i < line_records.length;i++) {
+                    if (line_records[i].get('item_id') == record.get('item_id') && line_records[i].get('unit_meas_lookup_code') == record.get('unit_meas_lookup_code') && line_records[i].get('unit_price') == record.get('unit_price')) {
+                        flag = true;
+                        return flag;
+                    }
+                }
+                return flag;
+            }
+            
+            //获取同物料、单位、单价的数量之和
+            function acp5260_getBillLineSumQuantity(record) { 
+                var trx_records = $('acp5260_bill_select_ds').getAll();
+                var sum_quantity = 0;
+                for (var i = 0;i < trx_records.length;i++) {
+                    if (trx_records[i].get('item_id') == record.get('item_id') && trx_records[i].get('unit_meas_lookup_code') == record.get('unit_meas_lookup_code') && trx_records[i].get('unit_price') == record.get('unit_price')) {
+                        sum_quantity = sum_quantity + (trx_records[i].get('trx_quantity') * 1);
+                    }
+                }
+                sum_quantity = sum_quantity.toFixed(4);
+                return sum_quantity;
+            }
+            
+            //获取同物料、单位、单价的金额之和
+            function acp5260_getBillLineSumAmount(record) {
+                var trx_records = $('acp5260_bill_select_ds').getAll();
+                var result = {};
+                var trx_quantity = 0;
+                var unit_price = 0;
+                var sum_amount = 0;
+                var display_sum_amount = 0;
+                for (var i = 0;i < trx_records.length;i++) {
+                    if (trx_records[i].get('item_id') == record.get('item_id') && trx_records[i].get('unit_meas_lookup_code') == record.get('unit_meas_lookup_code') && trx_records[i].get('unit_price') == record.get('unit_price')) {
+                        trx_quantity = trx_records[i].get('trx_quantity') * 1;
+                        unit_price = trx_records[i].get('unit_price') * 1;
+                        sum_amount = sum_amount + (trx_quantity * unit_price);
+	                    if(trx_records[i].get('display_unit_price') == '***'){
+	                        display_sum_amount = '***';
+	                    }else{
+	                        display_sum_amount = sum_amount;
+	                    }
+                    }
+                }
+                sum_amount = sum_amount.toFixed(2);
+                if(display_sum_amount != '***'){
+					display_sum_amount = display_sum_amount.toFixed(2);
+                }
+                result.sum_amount = sum_amount;
+                result.display_sum_amount = display_sum_amount;
+                return result;
+            }
+            
+            //获取勾选数据的金额之和
+            function acp5260_getBillSumAmount() {
+                var trx_records = $('acp5260_bill_select_ds').getAll();
+                var result = {};
+                var trx_quantity = 0;
+                var unit_price = 0;
+                var sum_amount = 0;
+                var display_sum_amount = 0;
+                for (var i = 0;i < trx_records.length;i++) {
+                	trx_quantity = trx_records[i].get('trx_quantity') * 1;
+                    unit_price = trx_records[i].get('unit_price') * 1;
+                	sum_amount = sum_amount + (trx_quantity * unit_price);
+                    if(trx_records[i].get('display_unit_price') == '***'){
+						display_sum_amount = '***';  
+                    }else{
+                        display_sum_amount = sum_amount;
+                    }
+                }
+                sum_amount = sum_amount.toFixed(2);
+                if(display_sum_amount != '***'){
+					display_sum_amount = display_sum_amount.toFixed(2);
+                }
+                result.sum_amount = sum_amount;
+                result.display_sum_amount = display_sum_amount;
+                return result;
+            }
+            
+            //创建开票单
+            function create_view_bill(trx_records) {
+                var header_ds = $('acp5260_bill_headers_ds');
+                var line_ds = $('acp5260_bill_lines_ds');
+                var detail_ds = $('acp5260_bill_detail_ds');
+            
+                //开票单头
+                var now = new Date();
+                var month = now.getMonth() + 1;
+                month = month > 9 ? month : '0' + month;
+                var day = now.getDate();
+                day = day > 9 ? day : '0' + day;
+                var date = now.getFullYear() + '-' + month + '-' + day; //STRING类型
+                trx_records[0].set('creation_date',date); //创建日期
+                trx_records[0].set('bill_amount',acp5260_getBillSumAmount().sum_amount); //开票金额
+                trx_records[0].set('display_bill_amount',acp5260_getBillSumAmount().display_sum_amount); //开票金额,展示
+                header_ds.create(trx_records[0].data);
+            
+                //校验
+                for (var i = 0;i < trx_records.length;i++) {
+                    if (!acp5260_checkHeaderExists(trx_records[i])) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:ACP_BILL.SELECTED_RECORDS_BE_SAME}');
+                        return false;
+                    }
+                }
+            
+                //开票行
+                var bill_line_num = 1;
+                var new_line = false;
+                trx_records[0].set('bill_line_num', bill_line_num);
+                trx_records[0].set('sum_quantity', acp5260_getBillLineSumQuantity(trx_records[0]));
+                trx_records[0].set('sum_amount', acp5260_getBillLineSumAmount(trx_records[0]).sum_amount);
+                trx_records[0].set('display_sum_amount', acp5260_getBillLineSumAmount(trx_records[0]).display_sum_amount);
+                line_ds.create(trx_records[0].data);
+                detail_ds.create(trx_records[0].data);
+                for (var k = 1;k < trx_records.length;k++) {
+                    if (!acp5260_checkBillLineExists(trx_records[k])) {
+                        bill_line_num++;
+                        trx_records[k].set('bill_line_num', bill_line_num);
+                        trx_records[k].set('sum_quantity', acp5260_getBillLineSumQuantity(trx_records[k]));
+                        trx_records[k].set('sum_amount', acp5260_getBillLineSumAmount(trx_records[k]).sum_amount);
+                        trx_records[k].set('display_sum_amount', acp5260_getBillLineSumAmount(trx_records[k]).display_sum_amount);
+                        line_ds.create(trx_records[k].data);
+                        new_line = true;
+                    }
+                    //明细行
+                    detail_ds.create(trx_records[k].data);
+                }
+                return true;
+            }
+            
+            // 创建
+            function createBill(ds) {
+                var header_ds = $('acp5260_bill_headers_ds');
+                var line_ds = $('acp5260_bill_lines_ds');
+                var detail_ds = $('acp5260_bill_detail_ds');
+                var records = ds.getAll();
+                if (records.length < 1) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:ACP_BILL.PLEASE_SELECT_AT_LEASE_ONE_RECORD}',null,300,120);
+                    return false;
+                } else {
+                    header_ds.removeAll();
+                    line_ds.removeAll();
+                    detail_ds.removeAll();
+            
+                    //添加开票单头、行、明细行
+                    var flag = create_view_bill(records);
+                    if (flag) {
+                        //打开预览页面
+                        new Aurora.Window({
+                            id: 'acp5260_bill_detail_link_window',
+                            url: $('acp5260_bill_detail_link').getUrl(),
+                            title: '${l:ACP_BILL.BILL_CREATE}',
+                            fullScreen: true
+                        });
+                    }
+                }
+            }
+            
+           function initBillCreate(po_nums) {
+            	var ds = $('acp5260_bill_select_ds');
+            	ds.setQueryParameter('po_nums', po_nums);
+            	ds.query();
+            }
+        ]]></script>
+        <a:dataSets>
+            <!-- 发票创建 -->
+            <a:dataSet id="acp5260_bill_headers_ds"/>
+            <a:dataSet id="acp5260_bill_lines_ds"/>
+            <a:dataSet id="acp5260_bill_detail_ds"/>
+            <!-- <a:dataSet id="acp5260_bill_select_ds"/> -->
+            <a:dataSet id="acp5260_bill_select_ds" autoQuery="false" fetchAll="true" model="pur.newPur.pur_rcv_trx_lines">
+                <a:fields>
+                    <a:field name="bill_source_id"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="createBill"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 加急状态 -->
+            <a:dataSet id="pur3010_po_urgent_status_ds" lookupCode="PUR_PO_URGENT_STATUS"/>
+            <a:dataSet id="pur3010_order_verify_order_type_options" fetchAll="true" loadData="true" model="pur.public.pur_purchase_order_type"/>
+            <a:dataSet id="pur3010_headeErpStatus" lookupCode="PUR_HEADER_ERP_STATUS"/>
+            <a:dataSet id="pur3010_purchase_order_confirm_query_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="company_name" autoComplete="true" autoCompleteField="company_full_name" lovHeight="500" lovService="public.fnd_cooperative_company_by_supply_lov" lovWidth="500" title="FND_COMPANIES.QUERY">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_full_name" to="company_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="business_unit_name" autoComplete="true" autoCompleteField="business_unit_name" lovHeight="480" lovService="public.fnd_client_business_unit_by_supply_lov?company_id=-1" lovWidth="550" prompt="ERP_AP_INVOICE_LINES.BUSINESS_UNIT_ID" readOnly="true" title="ERP_AP_INVOICE_LINES.BUSINESS_UNIT_ID">
+                        <a:mapping>
+                            <a:map from="business_unit_id" to="business_unit_id"/>
+                            <a:map from="business_unit_name" to="business_unit_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="vendor_site_code" autoComplete="true" autoCompleteField="vendor_site_code" lovGridHeight="330" lovHeight="470" lovService="public.pur_vendor_site_lov_by_client_company?vendor_id=-1" lovWidth="530" readOnly="true" title="供应商地点查询">
+                        <a:mapping>
+                            <a:map from="vendor_site_id" to="vendor_site_id"/>
+                            <a:map from="vendor_site_code" to="vendor_site_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="type_lookup_code" defaultValue="STANDARD"/>
+                    <a:field name="type_lookup_desc" defaultValue="标准采购订单" displayField="description" options="pur3010_order_verify_order_type_options" returnField="type_lookup_code" valueField="order_type_code"/>
+                    <a:field name="confirm_date_from" validator="pur7030_confirm_dateValidator"/>
+                    <a:field name="confirm_date_to" validator="pur7030_confirm_dateValidator"/>
+                    <a:field name="release_date_begin" validator="pur3010_release_dateValidator"/>
+                    <a:field name="release_date_end" validator="pur3010_release_dateValidator"/>
+                    <a:field name="reply_date_from" validator="pur3010_end_reply_dateValidator"/>
+                    <a:field name="reply_date_to" validator="pur3010_end_reply_dateValidator"/>
+                    <a:field name="urgent_status_desc" displayField="code_value_name" options="pur3010_po_urgent_status_ds" returnField="urgent_status" valueField="code_value"/>
+                    <a:field name="urgent_date_from"/>
+                    <a:field name="urgent_date_to"/>
+                    <a:field name="erp_status_desc" displayField="code_value_name" options="pur3010_headeErpStatus" returnField="erp_status" valueField="code_value"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="pur3010_purchaseOrderConfirmQuery_updateFun"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="pur3010_purchase_order_verify_ds" autoCount="true" autoQuery="false" model="pur.newPur.pur_purchase_my_received_orders" pageSize="10" queryDataSet="pur3010_purchase_order_confirm_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="pur_header_id"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="onLoadPurchaseOrders"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <div style="width: 98%; margin: auto;margin-top: 10px;height:100%;">
+            <div class="orders-type-link">
+                <a class="active" onclick="changeOrderType(this, 0, &apos;&apos;);"><![CDATA[全部订单]]></a>
+                <a onclick="changeOrderType(this, 1, &apos;can_confirm&apos;);"><![CDATA[待确认]]></a>
+                <a onclick="changeOrderType(this, 2, &apos;can_deliver_lookup&apos;);"><![CDATA[待发货]]></a>
+            </div>
+            <a:screenTopToolbar marginWidth="0px;">
+                <button class="gray-btn" onclick="pur_3010_purchase_order_confirm();"><![CDATA[合并确认]]></button>
+                <button class="gray-btn" onclick="createDeliveryOrder();" style="margin-left: 20px !important;"><![CDATA[合并发货]]></button>
+                <!-- <a:button click="pur_3010_purchase_order_confirm" text="合并确认" width="100"/>
+                <a:button click="createDeliveryOrder" text="合并发货" width="100"/> -->
+                <!-- <a:toolbarButton click="combineConsignBillCreate" text="合并开票申请" width="100"/> -->
+                <!-- <a:toolbarButton click="pur3010_purchaseOrderHeaderUrgent_query" text="PUR_URGENT_PO_QUERY" width="100"/> -->
+                <div class="search-con">
+                    <span class="icon" onclick="searchOrders();">
+                        <i class="icon-search"/>
+                    </span>
+                    <span class="prompt"><![CDATA[点击搜索]]></span>
+                    <input id="search_content_id" class="null-input all" value=""/>
+                    <button class="search-button" onclick="searchOrders();"><![CDATA[搜索一下]]></button>
+                    <div id="search_components_id" class="search-content">
+                        <a:hBox labelWidth="80">
+                            <a:textField name="display_po_number" bindTarget="pur3010_purchase_order_confirm_query_ds" prompt="PUR_HEADERS_ALL.SEGMENT1">
+                                <a:events>
+                                    <a:event name="enterdown" handler="pur_3010_purchase_order_query"/>
+                                </a:events>
+                            </a:textField>
+                            <a:comboBox name="type_lookup_desc" bindTarget="pur3010_purchase_order_confirm_query_ds" prompt="PUR_HEADERS_ALL.ORDER_TYPE_ID">
+                                <a:events>
+                                    <a:event name="enterdown" handler="pur_3010_purchase_order_query"/>
+                                </a:events>
+                            </a:comboBox>
+                        </a:hBox>
+                        <a:hBox labelWidth="80">
+                            <a:lov name="company_name" bindTarget="pur3010_purchase_order_confirm_query_ds" prompt="PROMPT.CLIENT">
+                                <a:events>
+                                    <a:event name="enterdown" handler="pur_3010_purchase_order_query"/>
+                                </a:events>
+                            </a:lov>
+                            <a:lov name="business_unit_name" bindTarget="pur3010_purchase_order_confirm_query_ds">
+                                <a:events>
+                                    <a:event name="enterdown" handler="pur_3010_purchase_order_query"/>
+                                </a:events>
+                            </a:lov>
+                        </a:hBox>
+                        <a:hBox labelWidth="80">
+                            <a:textField name="display_release_num" bindTarget="pur3010_purchase_order_confirm_query_ds" prompt="PUR_HEADERS_ALL.RELEASE_NUM">
+                                <a:events>
+                                    <a:event name="enterdown" handler="pur_3010_purchase_order_query"/>
+                                </a:events>
+                            </a:textField>
+                            <a:comboBox name="erp_status_desc" bindTarget="pur3010_purchase_order_confirm_query_ds" prompt="PUR_HEADERS_ALL.ERP_STATUS">
+                                <a:events>
+                                    <a:event name="enterdown" handler="pur_3010_purchase_order_query"/>
+                                </a:events>
+                            </a:comboBox>
+                        </a:hBox>
+                        <a:hBox labelWidth="80">
+                            <a:datePicker name="release_date_begin" bindTarget="pur3010_purchase_order_confirm_query_ds" prompt="PUR_HEADERS_ALL.RELEASE_DATE_FROM">
+                                <a:events>
+                                    <a:event name="enterdown" handler="pur_3010_purchase_order_query"/>
+                                </a:events>
+                            </a:datePicker>
+                            <a:datePicker name="release_date_end" bindTarget="pur3010_purchase_order_confirm_query_ds" prompt="PUR_HEADERS_ALL.RELEASE_DATE_TO">
+                                <a:events>
+                                    <a:event name="enterdown" handler="pur_3010_purchase_order_query"/>
+                                </a:events>
+                            </a:datePicker>
+                        </a:hBox>
+                        <a:hBox labelWidth="80">
+                            <a:datePicker name="confirm_date_from" bindTarget="pur3010_purchase_order_confirm_query_ds" prompt="PUR_HEADERS_ALL.CONFIRM_DATE_FROM">
+                                <a:events>
+                                    <a:event name="enterdown" handler="pur_3010_purchase_order_query"/>
+                                </a:events>
+                            </a:datePicker>
+                            <a:datePicker name="confirm_date_to" bindTarget="pur3010_purchase_order_confirm_query_ds" prompt="PUR_HEADERS_ALL.CONFIRM_DATE_TO">
+                                <a:events>
+                                    <a:event name="enterdown" handler="pur_3010_purchase_order_query"/>
+                                </a:events>
+                            </a:datePicker>
+                        </a:hBox>
+                        <div class="hide-search-angle">
+                            <button class="yellow-button" onclick="pur_3010_purchase_order_query();"><![CDATA[查询]]></button>
+                            <a href="javascript:hideSearchInput();">
+                                <span>
+                                    <i class="icon-double-angle-up"/>
+                                </span>
+                            </a>
+                            <button class="yellow-button" onclick="$(&apos;pur3010_purchase_order_confirm_query_ds&apos;).reset();"><![CDATA[清除]]></button>
+                        </div>
+                    </div>
+                </div>
+            </a:screenTopToolbar>
+            <div id="orders_table_con_id" class="orders-table-con">
+                <table class="orders-table order-table-header">
+                    <thead>
+                        <tr>
+                            <th class="check-part">
+                                <input id="check_all_id" type="checkbox"/>
+                            </th>
+                            <th class="order-infor"><![CDATA[订单信息]]></th>
+                            <th class="other-part"><![CDATA[其他信息]]></th>
+                            <th class="order-status"><![CDATA[状态]]></th>
+                            <th class="goods-content"><![CDATA[商品]]></th>
+                            <th class="order-comments"><![CDATA[订单摘要]]></th>
+                            <th class="order-action"><![CDATA[操作]]></th>
+                        </tr>
+                    </thead>
+                </table>
+                <table class="orders-table content">
+                    <thead>
+                        <tr>
+                            <th class="check-part"><![CDATA[checkbox]]></th>
+                            <th class="order-infor"><![CDATA[订单信息]]></th>
+                            <th class="other-part"><![CDATA[其他信息]]></th>
+                            <th class="order-status"><![CDATA[状态]]></th>
+                            <th class="goods-content"><![CDATA[商品]]></th>
+                            <th class="order-comments"><![CDATA[订单摘要]]></th>
+                            <th class="order-action"><![CDATA[操作]]></th>
+                        </tr>
+                    </thead>
+                    <tbody id="pur_orders_tbody_id" class="order-body"/>
+                </table>
+                <div id="page_break_con" style="padding:10px 0px;"/>
+            </div>
+        </div>
+        <script><![CDATA[
+        	//页码标签相关
+        	function setPageConShow(){
+        	    var body = document.body;
+        	    var pageContainer = document.getElementById('page_break_con');
+        	    var tabltContainer = document.getElementById('orders_table_con_id');
+        	    var dh = body.offsetHeight - jDawn.getPageSize().pageHeight - ( body.scrollTop || document.documentElement.scrollTop );
+        	    if ( dh  > 120){
+        	    	jDawn.addClass(pageContainer, 'fixed');
+        	    	pageContainer.style.width = tabltContainer.offsetWidth + 'px';
+        	    	tabltContainer.style.paddingBottom = '70px';
+        	    }else if ( dh  < 100){
+        	    	jDawn.removeClass(pageContainer, 'fixed');
+        	    	tabltContainer.style.paddingBottom = '0px';
+        	    }
+        	}
+        	window.onscroll = setPageConShow;
+        	
+        	document.getElementById('orders_table_con_id').onclick = hideSearchInput;
+        	function onFocusSearchInput(){
+    	    	var dom = document.getElementById('search_content_id');
+    			dom.className='reality all';
+    			
+    			dom = document.getElementById('search_components_id');
+    			if (dom.style.display != 'block'){
+    			    dom.style.display = 'block';
+					jQuery(dom).animate({opacity:'1'}, 400);
+					dom.focus();
+    			}else{
+    				hideSearchInput();
+    			}
+    			dom.focus();
+    		}
+    		function hideSearchInput(){
+    		    var dom = document.getElementById('search_content_id');
+    			if (!dom.value){
+			    	dom.className='null-input all';
+		    	}
+		    	
+		    	dom = document.getElementById('search_components_id');
+				jQuery(dom).animate({opacity:'0'}, 400, function(){dom.style.display = 'none';});
+    		}
+    		
+    		function searchOrders(){
+    		    hideSearchInput();
+    		    pur_3010_purchase_order_query();
+    		}
+        ]]></script>
+        <script src="${/request/@context_path}/component/jquery/jquery-1.8.3.min.js" type="text/javascript"/>
+        <script><![CDATA[
+				jQuery.noConflict();
+		]]></script>
+    </a:view>
+</a:screen>

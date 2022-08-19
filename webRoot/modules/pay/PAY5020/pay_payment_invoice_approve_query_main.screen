@@ -1,0 +1,331 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Weiqinglong  
+    $Date: 2017-01-12 15:19
+    $Revision: 1.0  
+    $Purpose: 开票审批
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure/>
+    <a:view>
+        <a:link id="pay_payment_invoice_detail_link" url="${/request/@context_path}/modules/pay/PAY5020/pay_payment_invoice_detail.screen"/>
+        <a:link id="pay_payment_invoice_detail_link1" url="${/request/@context_path}/modules/pay/PAY5010/pay_payment_invoice_details.screen"/>
+        <a:link id="pay_payment_invoice_approve_link" url="${/request/@context_path}/modules/pay/PAY5020/pay_payment_invoice_approve.screen"/>
+        <a:link id="pay_payment_invoice_approve_link1" model="pay.PAY5020.pay_payment_invoice_query" modelaction="batch_update"/>
+        <a:link id="pay_payment_invoice_mailed_link1" model="pay.PAY5020.pay_payment_invoice_mailed" modelaction="batch_update"/>
+        <a:link id="PAY5020_invoice_import_link" url="${/request/@context_path}/modules/pay/PAY5020/pay_payment_invoice_import_frame.screen"/>
+        <script><![CDATA[
+            var PAY5020_click_index_h = '-1';
+            var PAY5020_tree_div = [];
+            
+            function PAY5020_invoice_query() {
+                $('PAY5020_result_ds').query();
+            }
+            
+            function pay5020_resultDsSubmitsuccessFun() {
+                $('PAY5020_result_ds').query();
+            }
+            
+            function PAY5020_detail(invoice_header_id, status) {
+                var url = $('pay_payment_invoice_detail_link1').getUrl() + '?invoice_header_id=' + invoice_header_id;
+                if (status == 'SUBMITTED') {
+                    url = $('pay_payment_invoice_detail_link').getUrl() + '?invoice_header_id=' + invoice_header_id;
+                }
+                new Aurora.Window({
+                    id: 'pay_payment_invoice_detail_window',
+                    url: url,
+                    title: '发票明细',
+                    fullScreen: true
+                });
+            }
+            
+            function PAY5020_result_grid_renderer(value, record, name) {
+                if (name == 'invoice_code') {
+                    return '<a href="javascript:PAY5020_detail(\'' + record.get('invoice_header_id') + '\',\'' + record.get('status') + '\')">' + value + '</a>';
+                }
+            }
+            
+            function PAY5020_approve() {
+                var records = $('PAY5020_result_ds').getSelected();
+                if (records.length > 0) {
+                    new Aurora.Window({
+                        id: 'pay_payment_invoice_approve_window',
+                        url: $('pay_payment_invoice_approve_link').getUrl() + '?ACTION=APPROVE',
+                        title: '审批同意',
+                        fullScreen: false,
+                        width: 360,
+                        height: 200
+                    });
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SELECT_ONE_RECORD_AT_LEAST}');
+                }
+            }
+            
+            function PAY5020_reject() {
+                var records = $('PAY5020_result_ds').getSelected();
+                if (records.length > 0) {
+                    new Aurora.Window({
+                        id: 'pay_payment_invoice_approve_window',
+                        url: $('pay_payment_invoice_approve_link').getUrl() + '?ACTION=REJECT',
+                        title: '审批拒绝',
+                        fullScreen: false,
+                        width: 360,
+                        height: 200
+                    });
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SELECT_ONE_RECORD_AT_LEAST}');
+                }
+            }
+            
+            //已邮寄
+            
+            function PAY5020_mailed() {
+            
+                var records = $('PAY5020_result_ds').getSelected();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SELECT_ONE_RECORD_AT_LEAST}');
+                    return;
+                }
+                for (var i = 0;i < records.length;i++) {
+                    var record = records[i];
+                    //判断选择的数据是否被改变
+                    if (record.dirty) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:PAY5020.DATA_SAVED_ERROR}');
+                        return;
+                    }
+                    var courier_company_value = record.get('courier_company');
+                    var invoice_number_value = record.get('invoice_number');
+                    var tracking_number_value = record.get('tracking_number');
+                    if (record.get('status') != 'APPROVED') {
+                        Aurora.showMessage('${l:PROMPT}', '${l:PAY5020.APPROVED_MAILED_PROMPT}');
+                        return;
+                    }
+                    if ((courier_company_value == null) || (invoice_number_value == null) || (tracking_number_value == null)) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:PAY5020.COURIER_COMPANY_EMPTY_ERROR}');
+                        return;
+                    }
+                    Aurora.showConfirm('${l:PROMPT}', '${l:PAY5020.INVOICE_MAILED_PROMPT}', function() {
+                        var status = 'execute';
+                        var records = $('PAY5020_result_ds').getSelected();
+                        var param = [];
+                        for (var i = 0;i < records.length;i++) {
+                            if (records[i].get('status') == 'APPROVED') {
+                                var data = {
+                                    'invoice_header_id': records[i].get('invoice_header_id'),
+                                    '_status': status
+                                };
+                                param.push(data);
+                            }
+                        }
+                        Aurora.request({
+                            url: $('pay_payment_invoice_mailed_link1').getUrl(),
+                            para: param,
+                            success: function() {
+                                $('PAY5020_result_ds').query();
+                            },
+                            scope: this
+                        });
+                    });
+                }
+            }
+            
+            function PAY5020_import() {
+                Aurora.showMessage('${l:PROMPT}', '开发中');
+            }
+            
+            function PAY5020_treeGrid_renderer(value, record, name) {
+                var index = $('PAY5020_invoice_query_parameter_tree_ds').indexOf(record);
+                var id = "PAY5020_" + index;
+                PAY5020_tree_div.push(id);
+                return '<div id="' + id + '" >' + value + '</div>';
+            }
+            
+            function PAY5020_tree_click(grid, row, record) {
+                var query_ds = $('PAY5020_invoice_query_ds').getAt(0);
+                PAY5020_click_index_h = $('PAY5020_invoice_query_parameter_tree_ds').indexOf(record);
+                var id = "PAY5020_" + PAY5020_click_index_h;
+                //设置被选中div背景色为红色
+                document.getElementById(id).style.color = "#FF0000";
+                //设置没被选中div背景色为红色
+                for (var i = 0;i < PAY5020_tree_div.length;i++) {
+                    if (PAY5020_tree_div[i] != id) {
+                        document.getElementById(PAY5020_tree_div[i]).style.color = "#000000";
+                    }
+                }
+            
+                var status = record.get('query_code');
+                if (status == 'APPROVED') {
+                    $('mail_button').enable();
+                    $('mail_button').show();
+                    $('import_button').enable();
+                    $('import_button').show();
+                } else {
+                    $('mail_button').disable();
+                    $('mail_button').hide();
+                    $('import_button').disable();
+                    $('import_button').hide();
+                }
+            
+                if (record.get('query_code') == 'ALL') {
+                    query_ds.set('status', null);
+                    query_ds.set('status1', null);
+                } else if (record.get('query_code') == 'HANDLED') {
+                    query_ds.set('status', null);
+                    query_ds.set('status1', 'HANDLED');
+                } else {
+                    query_ds.set('status', record.get('query_code'));
+                    query_ds.set('status1', null);
+                }
+            
+                $('PAY5020_result_ds').query();
+            }
+            
+            function PAY5020_invoiceInf_fun() {
+                new Aurora.Window({
+                    id: 'PAY5020_invoice_import_win',
+                    title: '开票信息导入',
+                    url: $('PAY5020_invoice_import_link').getUrl(),
+                    fullScreen: true
+                }).on('close', function() {
+                    PAY5020_invoice_query();
+                });
+                //window.open($('ves0030_order_manual_score_import_link').getUrl());
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="PAY5020_invoice_query_parameter_tree_ds" loadData="true" model="pay.PAY5020.pay_payment_invoice_query_parameter_tree"/>
+            <a:dataSet id="PAY5020_invoice_query_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="status"/>
+                    <a:field name="status1"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="PAY5020_result_ds" autoCount="true" autoPageSize="true" autoQuery="false" model="pay.PAY5020.pay_payment_invoice_query" queryDataSet="PAY5020_invoice_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="invoice_number"/>
+                    <a:field name="courier_company"/>
+                    <a:field name="tracking_number"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="submitsuccess" handler="pay5020_resultDsSubmitsuccessFun"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:hBox>
+                <a:treeGrid id="PAY5020_invoice_query_parameter_tree" bindTarget="PAY5020_invoice_query_parameter_tree_ds" expandField="expand" idField="query_code" marginHeight="80" parentField="parent_query_code" sequenceField="sequence" showCheckBox="false" width="150">
+                    <a:columns>
+                        <a:column name="query_name" align="left" prompt="PUR_HEADERS_ALL.STATUS" renderer="PAY5020_treeGrid_renderer" width="120"/>
+                    </a:columns>
+                    <a:events>
+                        <a:event name="rowclick" handler="PAY5020_tree_click"/>
+                    </a:events>
+                </a:treeGrid>
+                <a:vBox>
+                    <a:screenTopToolbar marginWidth="180">
+                        <a:toolbarButton click="PAY5020_approve" text="审批同意" width="100"/>
+                        <a:toolbarButton click="PAY5020_reject" text="审批拒绝" width="100"/>
+                        <a:gridButton bind="PAY5020_result_grid" type="save" width="100"/>
+                        <a:gridButton bind="PAY5020_result_grid" type="excel" width="100"/>
+                        <a:toolbarButton id="import_button" click="PAY5020_invoiceInf_fun" disabled="true" hidden="true" text="PROMPT.IMPORT" width="100"/>
+                        <a:toolbarButton id="mail_button" click="PAY5020_mailed" disabled="true" hidden="true" text="已邮寄" width="100"/>
+                    </a:screenTopToolbar>
+                    <a:queryForm bindTarget="PAY5020_invoice_query_ds" resultTarget="PAY5020_result_ds" style="width:100%;border:none">
+                        <a:formToolBar>
+                            <a:hBox labelWidth="100">
+                                <a:datePicker name="application_time_from" bindTarget="PAY5020_invoice_query_ds" prompt="申请日期从">
+                                    <a:events>
+                                        <a:event name="enterdown" handler="PAY5020_invoice_query"/>
+                                    </a:events>
+                                </a:datePicker>
+                                <a:datePicker name="application_time_to" bindTarget="PAY5020_invoice_query_ds" prompt="申请日期至">
+                                    <a:events>
+                                        <a:event name="enterdown" handler="PAY5020_invoice_query"/>
+                                    </a:events>
+                                </a:datePicker>
+                                <a:datePicker name="approve_date_from" bindTarget="PAY5020_invoice_query_ds" prompt="审批日期从">
+                                    <a:events>
+                                        <a:event name="enterdown" handler="PAY5020_invoice_query"/>
+                                    </a:events>
+                                </a:datePicker>
+                                <a:datePicker name="approve_date_to" bindTarget="PAY5020_invoice_query_ds" prompt="审批日期至">
+                                    <a:events>
+                                        <a:event name="enterdown" handler="PAY5020_invoice_query"/>
+                                    </a:events>
+                                </a:datePicker>
+                            </a:hBox>
+                        </a:formToolBar>
+                        <a:formBody>
+                            <a:hBox labelWidth="100">
+                                <a:textField name="invoice_code" bindTarget="PAY5020_invoice_query_ds" prompt="申请编号">
+                                    <a:events>
+                                        <a:event name="enterdown" handler="PAY5020_invoice_query"/>
+                                    </a:events>
+                                </a:textField>
+                                <a:datePicker name="invoice_time_from" bindTarget="PAY5020_invoice_query_ds" prompt="开票日期从">
+                                    <a:events>
+                                        <a:event name="enterdown" handler="PAY5020_invoice_query"/>
+                                    </a:events>
+                                </a:datePicker>
+                                <a:datePicker name="invoice_time_to" bindTarget="PAY5020_invoice_query_ds" prompt="开票日期至">
+                                    <a:events>
+                                        <a:event name="enterdown" handler="PAY5020_invoice_query"/>
+                                    </a:events>
+                                </a:datePicker>
+                                <a:textField name="business_group_name" bindTarget="PAY5020_invoice_query_ds" prompt="申请企业">
+                                    <a:events>
+                                        <a:event name="enterdown" handler="PAY5020_invoice_query"/>
+                                    </a:events>
+                                </a:textField>
+                            </a:hBox>
+                        </a:formBody>
+                    </a:queryForm>
+                    <a:grid id="PAY5020_result_grid" bindTarget="PAY5020_result_ds" marginHeight="180" marginWidth="180" navBar="true" width="1000">
+                        <a:columns>
+                            <a:column name="invoice_code" align="center" lock="true" prompt="申请编号" renderer="PAY5020_result_grid_renderer" width="80"/>
+                            <a:column name="status_desc" align="center" lock="true" prompt="状态" width="60"/>
+                            <a:column name="business_group_name" lock="true" prompt="申请企业" width="150"/>
+                            <a:column name="company_letterhead" prompt="发票抬头" width="200"/>
+                            <a:column name="invoice_content" editor="PAY5020_result_grid_tf" prompt="发票内容" width="100"/>
+                            <a:column name="invoice_amount" align="right" prompt="发票金额" width="70"/>
+                            <a:column name="taxpayer_id" editor="PAY5020_result_grid_tf" prompt="纳税人识别号" width="100"/>
+                            <!-- <a:column name="registered_address_phone" prompt="地址、电话" width="100"/>
+                            <a:column name="bank_account_number" prompt="开户行和账号" width="100"/> -->
+                            <a:column name="registered_address" editor="PAY5020_result_grid_tf" prompt="经营地址" width="100"/>
+                            <a:column name="registered_phone" editor="PAY5020_result_grid_tf" prompt="企业电话" width="100"/>
+                            <a:column name="bank_account" editor="PAY5020_result_grid_tf" prompt="企业银行开户行" width="100"/>
+                            <a:column name="bank_number" editor="PAY5020_result_grid_tf" prompt="企业银行账户" width="100"/>
+                            <a:column name="note" editor="PAY5020_result_grid_tf" prompt="备注" width="100"/>
+                            <a:column name="invoice_time_desc" align="center" editor="PAY5020_result_grid_dp" prompt="开票时间" renderer="Aurora.formatDate" width="80"/>
+                            <a:column name="invoice_number" editor="PAY5020_result_grid_tf" prompt="发票号" width="100"/>
+                            <a:column name="courier_company" editor="PAY5020_result_grid_tf" prompt="快递公司" width="100"/>
+                            <a:column name="tracking_number" editor="PAY5020_result_grid_tf" prompt="快递单号" width="90"/>
+                            <a:column name="approved_by_desc" align="center" prompt="审批人" width="80"/>
+                            <a:column name="approve_note" align="left" prompt="审批意见" width="120"/>
+                            <a:column name="approve_date_desc" align="center" prompt="审批时间" width="110"/>
+                            <a:column name="applicant_desc" align="center" prompt="申请人" width="80"/>
+                            <a:column name="application_time_desc" align="center" prompt="申请日期" width="80"/>
+                            <a:column name="recipienter" align="center" editor="PAY5020_result_grid_tf" prompt="收件人" width="80"/>
+                            <a:column name="contact_number" align="center" editor="PAY5020_result_grid_tf" prompt="联系电话" width="80"/>
+                            <a:column name="mailing_address" align="center" editor="PAY5020_result_grid_tf" prompt="邮寄地址" width="80"/>
+                        </a:columns>
+                        <a:editors>
+                            <a:textField id="PAY5020_result_grid_tf"/>
+                            <a:datePicker id="PAY5020_result_grid_dp"/>
+                        </a:editors>
+                    </a:grid>
+                </a:vBox>
+            </a:hBox>
+        </a:screenBody>
+        <script><![CDATA[
+            Aurora.onReady(function() {
+                var query_ds = $('PAY5020_invoice_query_ds').getAt(0);
+                var id = "PAY5020_1";
+                //设置初始状态为待审批
+                document.getElementById(id).style.color = "#FF0000";
+                query_ds.set('status', 'SUBMITTED');
+                PAY5020_invoice_query();
+            });
+        ]]></script>
+    </a:view>
+</a:screen>

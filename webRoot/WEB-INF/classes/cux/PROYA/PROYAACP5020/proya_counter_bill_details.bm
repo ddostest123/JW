@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao
+    $Date: 2018年4月1日 下午6:01:44  
+    $Revision: 1.0  
+    $Purpose: 珀莱雅，柜台类对账申请，对账单明细行查询BM
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="v.detail_id">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT *
+				  FROM (SELECT d.detail_id,
+				               d.line_id,
+				               d.header_id,
+				               d.detail_num,
+				               d.rcv_trx_line_id,
+				               to_char(d.transaction_date,
+				                       'yyyy-mm-dd hh24:mi:ss') AS trx_date_fmt,
+				               d.transaction_name,
+				               (SELECT al.item_code FROM proya_counter_bill_lines al WHERE al.line_id = d.line_id) item_code,
+				               (SELECT al.item_name FROM proya_counter_bill_lines al WHERE al.line_id = d.line_id) item_name,
+				               fnd_document_control_pkg.get_reality_value(p_rule_code       => 'PRICE_SECRECY',
+				                                                          p_role_id         => ${/session/@role_id},
+				                                                          p_foundation_code => 'AP_BILL',
+				                                                          p_document_id     => d.header_id,
+				                                                          p_control_area    => 'EXTERNAL',
+				                                                          p_business_group  => ${/session/@business_group},
+				                                                          p_value           => d.unit_price) AS display_unit_price,
+				               fnd_document_control_pkg.get_reality_value(p_rule_code       => 'PRICE_SECRECY',
+				                                                          p_role_id         => ${/session/@role_id},
+				                                                          p_foundation_code => 'AP_BILL',
+				                                                          p_document_id     => d.header_id,
+				                                                          p_control_area    => 'EXTERNAL',
+				                                                          p_business_group  => ${/session/@business_group},
+				                                                          p_value           => round((d.unit_price *
+				                                                                                     d.transaction_quantity),
+				                                                                                     2)) AS display_amount,
+				               fnd_document_control_pkg.get_reality_value(p_rule_code       => 'PRICE_SECRECY',
+				                                                          p_role_id         => ${/session/@role_id},
+				                                                          p_foundation_code => 'AP_BILL',
+				                                                          p_document_id     => d.header_id,
+				                                                          p_control_area    => 'EXTERNAL',
+				                                                          p_business_group  => ${/session/@business_group},
+				                                                          p_value           => (SELECT pl.original_unit_price
+				                                                                                  FROM pur_lines_all pl
+				                                                                                 WHERE pl.pur_line_id = d.po_line_id)) AS display_tax_unit_price,
+				               fnd_document_control_pkg.get_reality_value(p_rule_code       => 'PRICE_SECRECY',
+				                                                          p_role_id         => ${/session/@role_id},
+				                                                          p_foundation_code => 'AP_BILL',
+				                                                          p_document_id     => d.header_id,
+				                                                          p_control_area    => 'EXTERNAL',
+				                                                          p_business_group  => ${/session/@business_group},
+				                                                          p_value           => round((SELECT pl.original_unit_price
+				                                                                                        FROM pur_lines_all pl
+				                                                                                       WHERE pl.pur_line_id = d.po_line_id) *
+				                                                                                     d.transaction_quantity,
+				                                                                                     2)) AS display_tax_line_amount,
+				               d.unit_price,
+				               round((d.unit_price * d.transaction_quantity),
+				                     2) AS detail_amount,
+				               (SELECT pl.original_unit_price FROM pur_lines_all pl WHERE pl.pur_line_id = d.po_line_id) AS tax_unit_price,
+				               round((SELECT pl.original_unit_price FROM pur_lines_all pl WHERE pl.pur_line_id = d.po_line_id) *
+				                     d.transaction_quantity,
+				                     2) AS tax_line_amount,
+				               (SELECT pl.actual_receiver_name FROM pur_lines_all pl WHERE pl.pur_line_id = d.po_line_id) AS actual_receiver_name,
+				               d.transaction_quantity AS trx_quantity,
+				               d.unit_meas_lookup_code,
+				               d.segment1 AS from_po_display_number,
+				               d.line_num AS from_po_line_num,
+				               d.shipment_num,
+				               d.release_num,
+				               d.distribution_num,
+				               d.organization_name,
+				               d.primary_unit_meas_lookup_code,
+				               d.primary_quantity,
+				               d.receipt_num,
+				               d.receipt_line_num,
+				               d.terminal_information,
+				               d.freight_amount,
+				               d.vendor_desc,
+				               d.return_flag,
+				               d.return_by,
+				               d.return_date,
+				               to_char(d.return_date,'yyyy-mm-dd hh24:mi:ss') AS return_date_fmt,
+				               (SELECT cb.bg_tax_type_rate
+				                  FROM pur_lines_all         pl,
+				                       pur_headers_all       ph,
+				                       fnd_tax_type_codes_bg cb
+				                 WHERE pl.pur_header_id = ph.pur_header_id
+				                       AND cb.tax_type_id = pl.tax_code_id
+				                       AND cb.bg_enabled_flag = 'Y'
+				                       AND cb.business_group = ph.owner_business_group
+				                       AND pl.pur_line_id = d.po_line_id) AS tax_rate,
+				               (SELECT h.currency_code FROM proya_counter_bill_headers h WHERE h.header_id = d.header_id) AS currency_code,
+				               (SELECT ttv.description1
+				                  FROM pur_rcv_trx_lines    tl,
+				                       pur_rcv_trx_types_vl ttv
+				                 WHERE ttv.rcv_trx_type = tl.rcv_trx_type
+				                       AND tl.rcv_trx_line_id = d.rcv_trx_line_id) AS rcv_trx_type_desc
+				          FROM proya_counter_bill_details d) v
+				#WHERE_CLAUSE# 
+            	#ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+                BEGIN
+                  proya_counter_bill_pkg.delete_bill_detail
+                  	(
+                  		p_detail_id 		=> ${@detail_id},
+                		p_user_id			=> ${/session/@user_id});
+                END;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="line_id" queryExpression="v.line_id = ${@line_id}"/>
+        <bm:query-field name="header_id" queryExpression="v.header_id = ${@header_id}"/>
+    </bm:query-fields>
+</bm:model>

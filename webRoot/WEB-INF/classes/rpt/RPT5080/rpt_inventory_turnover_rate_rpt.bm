@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: hansen  
+    $Date: 2015-11-30 下午4:45:54  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        ROUND(SUM(quantity)/vl.quantity_all,3)*100 sum_quantity,
+                        vl.display_item_code,
+                        vl.item_name,
+                        vl.quantity_all
+                    FROM
+                        (SELECT
+                            l.item_id,
+                            v.display_item_code,
+                            v.item_name,
+                            d.quantity,
+                            h.vendor_id,
+                            d.lot_num,
+                            d.creation_date,
+                            (SELECT
+                                SUM(oq.quantity)
+                            FROM
+                                inv_onhand_quantities oq
+                            WHERE
+                                oq.item_id        = l.item_id AND
+                                oq.business_group = ${/session/@business_group} AND
+                                (
+                                    ${@creation_date_from} IS NULL OR
+                                    oq.last_update_date     < to_date(${@creation_date_from},'yyyy-mm-dd')
+                                )
+                            ) quantity_all
+                        FROM
+                            inv_trx_headers h,
+                            inv_trx_lines l,
+                            inv_trx_details d,
+                            mtl_system_items_vl v
+                        WHERE
+                            h.trx_header_id  = l.trx_header_id AND
+                            l.trx_line_id    = d.trx_line_id AND
+                            l.item_id        = v.item_id(+) AND
+                            h.business_group = ${/session/@business_group} AND
+                            h.trx_type NOT  IN ('CONSIGNMENT_DELIVER', 'INITIALIZE_PROFIT', 'CHECK_PROFIT')
+                        ) vl #WHERE_CLAUSE#
+                    GROUP BY
+                        vl.display_item_code,
+                        vl.item_name,
+                        vl.quantity_all
+                    ORDER BY
+                        sum_quantity DESC
+                    ) ll
+                WHERE
+                    ll.sum_quantity > 0
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="vendor_id" queryExpression="vl.vendor_id = ${@vendor_id}"/>
+        <bm:query-field name="item_id" queryExpression="vl.item_id = ${@item_id}"/>
+        <bm:query-field name="lot_num" queryExpression="vl.lot_num = ${@lot_num}"/>
+        <bm:query-field name="creation_date_from" queryExpression="vl.creation_date &gt;= to_date(${@creation_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="creation_date_to" queryExpression="vl.creation_date &lt;= to_date(${@creation_date_to},&apos;yyyy-mm-dd&apos;)"/>
+    </bm:query-fields>
+</bm:model>

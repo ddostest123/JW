@@ -1,0 +1,538 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: zyn  
+    $Date: 2015-3-16 下午04:16:17  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="product_id=${/parameter/@product_id}" model="mtl.MTL1070.b2b_product_picture_upload" rootPath="picture_list"/>
+        <a:model-query defaultWhereClause="siv.item_id = ${/parameter/@product_id}" model="mtl.MTL1070.mtl_system_item_maintain" rootPath="item_info"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="mtl1070_priview_link" url="${/request/@context_path}/modules/mtl/MTL1070/b2b_sys_product_picture_preview.screen"/>
+        <a:link id="mtl1070_pictureDelete_link" url="${/request/@context_path}/modules/mtl/MTL1070/b2b_sys_product_picture_delete.svc"/>
+        <a:link id="mtl1070_setReleasePic_link" model="mtl.MTL1070.b2b_product_picture_set_release_pic" modelaction="execute"/>
+        <a:link id="mtl1070_upload_link" url="${/request/@context_path}/modules/mtl/MTL1070/b2b_sys_item_picture_upload.screen"/>
+        <a:link id="mtl1070_pictureBatchDelete_link" url="${/request/@context_path}/modules/mtl/MTL1070/b2b_sys_product_picture_delete.svc"/>
+        <a:link id="mtl1070_mtl_b2b_system_item_info_save_link" url="${/request/@context_path}/modules/mtl/MTL1070/mtl_b2b_system_item_info_save.svc"/>
+        <a:link id="mtl1070_primaryPictureCheck_link" model="mtl.MTL1070.b2b_product_picture_check_primary_picture" modelaction="execute"/>
+        <a:link id="mtl1070_setOrCancelPrimaryPic_link" model="mtl.MTL1070.b2b_product_picture_set_primary_pic" modelaction="execute"/>
+        <script charset="utf-8" src="${/request/@context_path}/kindeditor/kindeditor-min.js"/>
+        <script charset="utf-8" src="${/request/@context_path}/kindeditor/lang/zh_CN.js"/>
+        <script><![CDATA[
+            var blt1010_contentEditor;
+            KindEditor.ready(function(K) {
+                blt1010_contentEditor = K.create('textarea[id="context_id"]', {
+                    width: '100%',
+                    allowFileManager: true,
+                    uploadJson: '${/request/@context_path}/upload_json.jsp',
+                    fileManagerJson: '${/request/@context_path}/file_manager_json.jsp'
+                });
+            });
+            
+            
+            //构造多选队列对象
+            
+            function DelImgQueue() {
+                this.delImgList = {};
+            }
+            
+            DelImgQueue.prototype = {
+                add: function(id) {
+                    this.delImgList[id] = {
+                        picture_id: id,
+                        _status: 'delete'
+                    };
+                },
+                remove: function(id) {
+                    delete this.delImgList[id];
+                },
+                reset: function(id) {
+                    this.delImgList = {};
+                },
+                getArray: function() {
+                    var array = [];
+                    var i = 0;
+                    for (obj in this.delImgList) {
+                        array[i] = this.delImgList[obj];
+                        i++;
+                    }
+                    return array;
+                }
+            
+            };
+            //实例化对象
+            var queue = new DelImgQueue();
+            
+            
+            //获取HTML元素ID
+            
+            function get(id) {
+                return document.getElementById(id);
+            }
+            //删除HTML元素
+            
+            function htmlRemove(id) {
+                var obj = get(id);
+                if (obj != undefined) {
+                    obj.parentNode.removeChild(obj);
+                }
+            
+            }
+            //根据pattern截取对象ID
+            
+            function getObjId(str, pattern) {
+                return str.substring(0, str.indexOf(pattern));
+            }
+            
+            //多选框点击事件
+            
+            function mtl1070_checkBox_onclick(checkBox, checked) {
+                if (checked) {
+                    queue.add(getObjId(checkBox.id, '_batch_delete_img'));
+                } else {
+                    queue.remove(getObjId(checkBox.id, '_batch_delete_img'));
+                }
+            }
+            
+            function mtl1070_category_classify_items_ds_grid_editorFun(record, name) {
+                if (record.isNew) {
+                    return 'mtl1070_category_classify_items_ds_grid_lov';
+                } else {
+                    return '';
+                }
+            }
+            
+            //批量删除图片
+            
+            function mtl1070_batchDeleteImg() {
+                var imgs = queue.getArray();
+                if (imgs.length == 0) {
+                    Aurora.showMessage('提示', '请选择要删除的图片！');
+                    return;
+                }
+            
+                var cf = Aurora.showConfirm('${l:HAP_MESSAGE}', '确认删除改图片？', function() {
+            
+                    Aurora.request({
+                        url: $('mtl1070_pictureBatchDelete_link').getUrl(),
+                        para: imgs,
+                        success: function(rst) {
+                            var records = rst.result.record;
+                            var id;
+                            if (records.length == undefined) {
+                                id = records.picture_id;
+                                htmlRemove(id + '_div');
+                                queue.remove(id);
+                            } else {
+                                for (var i = 0,
+                                    j = records.length;i < j;i++) {
+                                    id = records[i]['picture_id'];
+                                    htmlRemove(id + '_div');
+                                    queue.remove(id);
+                                }
+                            }
+                            //Aurora.showMessage('${l:PROMPT_MESSAGE}', '${l:B2B_PRODUCT_PICTURE_UPDATE.BATCH_DELETE_SUCCESS}');
+                        },
+                        scope: this,
+                        sync: false
+                    });
+            
+                    cf.close();
+                });
+            }
+            
+            //设置主图
+            //原理：为button添加flag属性，
+            //若flag='Y'则说明是主图，将执行取消主图操作
+            //若flag='N'则说明不是主图，将执行设置主图操作
+            
+            function mtl1070_SetOrCancelPrimaryImg(button, e) {
+                var id = getObjId(button.id, '_mtl1070_SetOrCancelPrimaryImg');
+                var product_id = '${/parameter/@product_id}';
+                var flag = button.flag;
+            
+                Aurora.request({
+                    url: $('mtl1070_setOrCancelPrimaryPic_link').getUrl(),
+                    para: {
+                        'product_id': product_id,
+                        'picture_id': id,
+                        'flag': flag
+                    },
+                    success: function(rst) {
+                        var result = rst.result;
+                        var btn = $(result['picture_id'] + '_mtl1070_SetOrCancelPrimaryImg');
+                        var flag = result['flag'];
+                        //flag='Y'表示取消主图，变成取消后的状态
+                        if (flag == 'Y') {
+                            btn.flag = 'N';
+                            btn.setText('设置主图');
+                        }
+                        //flag='N'表示设置主图，变成设置后的状态
+                        else if (flag == 'N') {
+                            //注意：这时需要将原来的主图的button状态改掉
+                            var old_picture_id = result['old_picture_id'];
+                            if (old_picture_id != null) {
+                                var old_btn = $(old_picture_id + '_mtl1070_SetOrCancelPrimaryImg');
+                                old_btn.flag = 'N';
+                                old_btn.setText('设置主图');
+                            }
+                            btn.flag = 'Y';
+                            btn.setText('取消主图');
+                        }
+                        Aurora.showMessage('${l:PROMPT_MESSAGE}', '操作成功');
+                    },
+                    scope: this,
+                    sync: false
+                });
+            }
+            
+            //上传图片
+            
+            function mtl1070_uploadImg() {
+                var product_id = '${/parameter/@product_id}';
+                var uploadWin = new Aurora.Window({
+                    title: '图片上传',
+                    params: {
+                        'product_id': product_id
+                    },
+                    id: 'mtl1070_b2b_sys_item_picture_upload_window',
+                    url: $('mtl1070_upload_link').getUrl(),
+                    //fullScreen: true
+                    heigh: 600,
+                    width: 700
+                });
+                uploadWin.on('close', function() {
+                    $('mtl1070_product_info_window').load('${/request/@context_path}/modules/mtl/MTL1070/mtl_b2b_system_item_info.screen?product_id=${/parameter/@product_id}');
+                });
+            
+            }
+            //删除这张图片
+            
+            function mtl1070_deleteThisImg(button, e) {
+                var cf = Aurora.showConfirm('提示', '确认删除改图片？', function() {
+                    var id = getObjId(button.id, '_delete_this_img');
+                    var imgs = [];
+                    imgs[0] = {
+                        picture_id: id,
+                        _status: 'delete'
+                    };
+                    Aurora.request({
+                        url: $('mtl1070_pictureDelete_link').getUrl(),
+                        para: imgs,
+                        success: function(rst) {
+                            var records = rst.result.record;
+            
+                            var id;
+                            if (records.length == undefined) {
+                                id = records.picture_id;
+                                htmlRemove(id + '_div');
+                                queue.remove(id);
+                            }
+            
+                            //Aurora.showMessage('${l:PROMPT_MESSAGE}', '${l:B2B_PRODUCT_PICTURE_UPDATE.DELETE_SUCCESS}');
+                        },
+                        scope: this,
+                        sync: false
+                    });
+            
+                    cf.close();
+                });
+            
+            }
+            
+            
+            //预览图片
+            
+            function mtl1070_priviewImg() {
+                var product_id = '${/parameter/@product_id}';
+            
+                Aurora.request({
+                    url: $('mtl1070_primaryPictureCheck_link').getUrl(),
+                    para: {
+                        'product_id': product_id
+                    },
+                    success: function(rst) {
+                        window.open($('mtl1070_priview_link').getUrl() + '?product_id=' + '${/parameter/@product_id}');
+                    },
+                    scope: this,
+                    sync: false
+                });
+            
+            }
+            
+            //图片发布
+            
+            function mtl1070_releaseImg() {
+                Aurora.request({
+                    url: $('mtl1070_setReleasePic_link').getUrl(),
+                    para: {
+                        'product_id': ${/parameter/@product_id}
+                    },
+                    success: function(rst) {
+                        Aurora.showMessage('${l:PROMPT_MESSAGE}', '${l:B2B_PRODUCT_PICTURE_UPDATE.PICTURE_RELEASE_SUCCESS}');
+                    },
+                    scope: this,
+                    sync: false
+                });
+            }
+            
+            
+            function mtl1070_save() {
+            
+            
+                var platform_ds = $('mtl1070_b2b_system_item_info_ds');
+                var platform_record = platform_ds.getAt(0);
+                // datas['item_id'] = platform_record.get('item_id');
+                // datas['item_category_id'] = platform_record.get('item_category_id');
+                // datas['base_price'] = platform_record.get('base_price');
+                // datas['tax_flag'] = platform_record.get('tax_flag');
+                // datas['tax_type_id'] = platform_record.get('tax_type_id');
+                var datas = platform_record.data;
+                // datas.push(platform_record.data);
+            
+                var items_ds = $('mtl1070_category_classify_items_ds');
+                var items_records = items_ds.getAll();
+                var category_classify = [];
+                for (i = 0;i < items_records.length;i++) {
+                    if (items_records[i].isNew) {
+                        items_records[i].set('_status', 'insert');
+                    } else {
+                        items_records[i].set('_status', '');
+                    }
+            
+                    category_classify.push(items_records[i].data);
+                }
+                datas['category_classify'] = category_classify;
+                var product_description = window.frames["0"].mtl1070_get_mtl1070_contentEditor();
+                datas['product_description'] = product_description;
+            
+                //提交AjAX请求
+            
+                Aurora.request({
+                    url: $('mtl1070_mtl_b2b_system_item_info_save_link').getUrl(),
+                    para: datas,
+                    success: function(res) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SAVE_SUCCESS}', function() {
+            
+                           });
+                    },
+                    scope: this
+                });
+            
+            }
+            
+            function mtl1070_back() {
+            
+                $('mtl1070_product_info_window').close();
+            
+            }
+            
+            function mtl1070_detail_update(dataSet, record, name, value, oldvalue) {
+                if (name == 'tax_flag') {
+                    if (value == 'N') {
+                        record.set('tax_type_name', '');
+                        record.set('tax_type_rate', '');
+                        record.set('tax_type_id', '');
+                        record.getField('tax_type_name').setReadOnly(true);
+                    } else if (value == 'Y') {
+                        record.getField('tax_type_name').setReadOnly(false);
+                    }
+                }
+            }
+            
+            function mtl1070_detail_load(ds) {
+                var record = ds.getAt(0);
+                var tax_flag = record.get('tax_flag');
+                if (tax_flag == 'N') {
+                    record.getField('tax_type_name').setReadOnly(true);
+                } else if (tax_flag == 'Y') {
+                    record.getField('tax_type_name').setReadOnly(false);
+                }
+            }
+            
+            function mtl1070_shopping_detail_view(){
+                window.open('${/request/@context_path}/modules/B2B/B2B4010/b2b_good_view.screen?product_id=${/parameter/@product_id}');
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="mtl2060_yes_or_no_ds" lookupCode="YES_OR_NO"/>
+            <a:dataSet id="mtl1070_category_classify_items_ds" autoQuery="true" fetchAll="true" model="mtl.MTL1070.mtl_category_classify_items" queryUrl="${/request/@context_path}/autocrud/mtl.MTL2060.mtl_category_classify_items/query?item_id=${/parameter/@product_id}" selectable="true">
+                <a:fields>
+                    <a:field name="item_id" defaultValue="${/parameter/@product_id}"/>
+                    <a:field name="category_code" lovHeight="450" lovUrl="${/request/@context_path}/modules/public/mtl_category_user_defined_lov.screen" lovWidth="550" prompt="MTL_CATEGORIES_USER_DEFINED.CATEGORY_CODE" required="true" requiredMessage="${l:MTL_CATEGORIES_USER_DEFINED.CATEGORY_CODE}${l:PROMPT.INPUT}" title="MTL_CATEGORIES_USER_DEFINED.LOV_TITLE">
+                        <a:mapping>
+                            <a:map from="category_udf_id" to="category_udf_id"/>
+                            <a:map from="category_code" to="category_code"/>
+                            <a:map from="category_name" to="category_name"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="mtl1070_b2b_system_item_info_ds" autoCreate="true" model="mtl.MTL1070.mtl_system_item_maintain">
+                <a:datas dataSource="/model/item_info"/>
+                <a:fields>
+                    <a:field name="category_name_all" lovHeight="450" lovUrl="${/request/@context_path}/modules/public/mtl_category_user_defined_lov.screen" lovWidth="550" prompt="MTL_SYSTEM_ITEMS.ITEM_CATEGORY_ID" requiredMessage="${l:MTL_SYSTEM_ITEMS.ITEM_CATEGORY_ID}${l:PROMPT.INPUT}" title="MTL_SYSTEM_ITEMS.ITEM_CATEGORY_ID">
+                        <a:mapping>
+                            <a:map from="category_name_all" to="category_name_all"/>
+                            <a:map from="category_udf_id" to="item_category_id"/>
+                            <a:map from="category_code" to="category_code"/>
+                            <a:map from="category_name" to="category_name"/>
+                            <a:map from="tmpl_instance_id" to="tmpl_instance_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="primary_uom" autoComplete="true" autoCompleteField="uom_desc" lovGridHeight="300" lovHeight="450" lovService="public.fnd_uom_codes_lov" lovWidth="550" prompt="MTL_SYSTEM_VENDOR_ITEMS.PRIMARY_UOM" required="true" requiredMessage="${l:MTL_SYSTEM_VENDOR_ITEMS.PRIMARY_UOM_NOT_NULL}" title="MTL_SYSTEM_VENDOR_ITEMS.PRIMARY_UOM">
+                        <a:mapping>
+                            <a:map from="uom_code" to="primary_uom"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="agent_vendor_name" autoComplete="true" autoCompleteField="vendor_name" lovHeight="500" lovService="public.pur_vendors_by_user_authority_lov" lovWidth="500" title="供应商">
+                        <a:mapping>
+                            <a:map from="vendor_id" to="agent_vendor_id"/>
+                            <a:map from="vendor_name" to="agent_vendor_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="uom_of_weight" autoComplete="true" autoCompleteField="uom_desc" lovGridHeight="300" lovHeight="450" lovService="public.fnd_uom_codes_lov" lovWidth="550" prompt="重量单位" title="重量单位">
+                        <a:mapping>
+                            <a:map from="uom_code" to="uom_of_weight"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="packing_uom_code" autoComplete="true" autoCompleteField="uom_desc" lovGridHeight="300" lovHeight="450" lovService="public.fnd_uom_codes_lov" lovWidth="550" prompt="包装单位" title="包装单位">
+                        <a:mapping>
+                            <a:map from="uom_code" to="packing_uom_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="volume_uom_code" autoComplete="true" autoCompleteField="uom_desc" lovGridHeight="300" lovHeight="450" lovService="public.fnd_uom_codes_lov" lovWidth="550" prompt="体积单位" title="体积单位">
+                        <a:mapping>
+                            <a:map from="uom_code" to="volume_uom_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="import_flag_desc" displayField="code_value_name" options="mtl2060_yes_or_no_ds" returnField="import_flag" valueField="code_value"/>
+                    <a:field name="tax_type_name" autoComplete="true" autoCompleteField="tax_type_name" lovGridHeight="350" lovHeight="500" lovService="public.fnd_tax_type_code_lov?business_group=${/session/@business_group}" lovWidth="500" required="false" requiredMessage="税率不能为空" title="税率">
+                        <a:mapping>
+                            <a:map from="tax_type_id" to="tax_type_id"/>
+                            <a:map from="description" to="tax_type_name"/>
+                            <a:map from="tax_type_rate" to="tax_type_rate"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="tax_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="mtl1070_detail_update"/>
+                    <a:event name="load" handler="mtl1070_detail_load"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <!-- <a:screenTitle/> -->
+                <a:toolbarButton click="mtl1070_save" style="margin-left:20px;" text="HAP_SAVE" width="100"/>
+                <a:toolbarButton click="mtl1070_back" style="margin-left:20px;" text="HAP_BACK" width="100"/>
+                <!-- <a:toolbarButton click="mtl1070_shopping_detail_view" style="margin-left:20px;" text="店铺预览" width="100"/> -->
+            </a:screenTopToolbar>
+            <a:hBox>
+                <a:fieldSet height="220" title="商品信息" width="800">
+                    <a:hBox labelWidth="110">
+                        <a:lov name="category_name_all" bindTarget="mtl1070_b2b_system_item_info_ds"/>
+                        <a:textField name="item_specs" bindTarget="mtl1070_b2b_system_item_info_ds" prompt="规格"/>
+                        <a:textField name="item_model" bindTarget="mtl1070_b2b_system_item_info_ds" prompt="型号"/>
+                    </a:hBox>
+                    <a:hBox labelWidth="110">
+                        <a:numberField name="gross_weight" bindTarget="mtl1070_b2b_system_item_info_ds" prompt="毛重"/>
+                        <a:numberField name="net_weight" bindTarget="mtl1070_b2b_system_item_info_ds" prompt="净重"/>
+                        <a:lov name="uom_of_weight" bindTarget="mtl1070_b2b_system_item_info_ds" prompt="重量单位"/>
+                    </a:hBox>
+                    <a:hBox labelWidth="110">
+                        <a:lov name="packing_uom_code" bindTarget="mtl1070_b2b_system_item_info_ds" prompt="包装单位"/>
+                        <a:numberField name="volume" bindTarget="mtl1070_b2b_system_item_info_ds" prompt="体积"/>
+                        <a:lov name="volume_uom_code" bindTarget="mtl1070_b2b_system_item_info_ds" prompt="体积单位"/>
+                    </a:hBox>
+                    <a:hBox labelWidth="110">
+                        <a:textField name="brand" bindTarget="mtl1070_b2b_system_item_info_ds" prompt="品牌"/>
+                        <a:textField name="origin" bindTarget="mtl1070_b2b_system_item_info_ds" prompt="产地"/>
+                        <a:comboBox name="import_flag_desc" bindTarget="mtl1070_b2b_system_item_info_ds" prompt="是否进口"/>
+                    </a:hBox>
+                </a:fieldSet>
+                <a:fieldSet height="220" title="自主品类分类">
+                    <a:grid id="mtl1070_category_classify_items_ds_grid" autoAppend="false" bindTarget="mtl1070_category_classify_items_ds" height="150" showRowNumber="true" width="430">
+                        <a:toolBar>
+                            <a:button type="add"/>
+                            <a:button type="save"/>
+                            <a:button type="delete"/>
+                        </a:toolBar>
+                        <a:columns>
+                            <a:column name="category_code" align="center" editorFunction="mtl1070_category_classify_items_ds_grid_editorFun" prompt="MTL_CATEGORIES_USER_DEFINED.CATEGORY_CODE" width="150"/>
+                            <a:column name="category_name" prompt="MTL_CATEGORIES_USER_DEFINED.CATEGORY_NAME_ID" width="200"/>
+                        </a:columns>
+                        <a:editors>
+                            <a:lov id="mtl1070_category_classify_items_ds_grid_lov"/>
+                        </a:editors>
+                    </a:grid>
+                </a:fieldSet>
+            </a:hBox>
+            <a:tabPanel id="mtl2060_system_item_tabPanel" height="500" width="1250">
+                <a:tabs>
+                    <a:tab prompt="商品图片管理" width="80">
+                        <a:hBox>
+                            <a:gridButton click="mtl1070_uploadImg" text="上传图片"/>
+                            <a:gridButton click="mtl1070_batchDeleteImg" text="批量删除"/>
+                            <a:gridButton click="mtl1070_priviewImg" text="图片预览"/>
+                            <span style="font-family:微软雅黑; color:red; "><![CDATA[温馨提示：为提高商品图片显示效果，请上传图片分辨率为  200*200 / 400*400 / 800*800]]></span>
+                            <!-- <a:gridButton click="mtl1070_releaseImg" text="发布所有图片"/> -->
+                        </a:hBox>
+                        <div style="overflow:auto;height:auto;width:1200px;border:1px solid;border-color:blue;">
+                            <a:repeater datamodel="/model/picture_list">
+                                <div id="${@picture_id}_div" style="float:left;margin:5px;">
+                                    <img height="250" src="${/request/@context_path}/${@file_path}MEDIUM_${@file_name}" style="float:left" width="250"/>
+                                    <div style="float:left;clear:both;margin-top:5px"><![CDATA[${@picture_name}]]></div>
+                                    <div style="float:left;width:100%;clear:both;margin-top:5px">
+                                        <a:button id="${@picture_id}_mtl1070_SetOrCancelPrimaryImg" click="mtl1070_SetOrCancelPrimaryImg" style="float:left ;height:30px;width:100px;"/>
+                                        <a:switch test="@first_flag">
+                                            <a:case value="N">
+                                                <script><![CDATA[
+                                                    $('${@picture_id}_mtl1070_SetOrCancelPrimaryImg').flag = 'N';
+                                                    $('${@picture_id}_mtl1070_SetOrCancelPrimaryImg').setText('设置主图');
+                                                ]]></script>
+                                            </a:case>
+                                            <a:case value="Y">
+                                                <script><![CDATA[
+                                                    $('${@picture_id}_mtl1070_SetOrCancelPrimaryImg').flag = 'Y';
+                                                    $('${@picture_id}_mtl1070_SetOrCancelPrimaryImg').setText('取消主图');
+                                                ]]></script>
+                                            </a:case>
+                                        </a:switch>
+                                        <a:button id="${@picture_id}_delete_this_img" click="mtl1070_deleteThisImg" style="float:right; height:30px;width:100px;" text="HAP_DELETE"/>
+                                    </div>
+                                    <div style="float:left;width:100%;clear:both;">
+                                        <a:checkBox id="${@picture_id}_batch_delete_img" style="float:left">
+                                            <a:events>
+                                                <a:event name="click" handler="mtl1070_checkBox_onclick"/>
+                                            </a:events>
+                                        </a:checkBox>
+                                    </div>
+                                </div>
+                            </a:repeater>
+                        </div>
+                    </a:tab>
+                    <a:tab height="200" prompt="商品价格管理" width="120">
+                        <a:hBox labelWidth="120">
+                            <a:numberField name="base_price" allowDecimals="true" allowNegative="false" bindTarget="mtl1070_b2b_system_item_info_ds" decimalPrecision="2" prompt="基准价" renderer="Aurora.formatMoney"/>
+                            <a:checkBox name="tax_flag" bindTarget="mtl1070_b2b_system_item_info_ds" prompt="含税"/>
+                            <a:lov name="tax_type_name" bindTarget="mtl1070_b2b_system_item_info_ds" prompt="税率类型"/>
+                            <a:numberField name="tax_type_rate" bindTarget="mtl1070_b2b_system_item_info_ds" prompt="税率(%)" readOnly="true"/>
+                        </a:hBox>
+                    </a:tab>
+                    <a:tab prompt="商品详情管理" width="120">
+                        <iframe id="mtl1070_iframe" src="${/request/@context_path}/modules/mtl/MTL1070/b2b_sys_product_description.screen?item_id=${/parameter/@product_id}" style="width:98%;height:98%;"/>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+            <!--  <a:hBox>
+                <a:gridButton click="mtl1070_save" style="margin-left:20px;" text="HAP_SAVE" width="100"/>
+                <a:gridButton click="mtl1070_back" style="margin-left:20px;" text="HAP_BACK" width="100"/>
+            </a:hBox> -->
+        </a:screenBody>
+    </a:view>
+</a:screen>

@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: waiwaids  
+    $Date: 2012-10-24 下午1:49:54  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="customer_name,t1.order_number,ol.line_number,t1.order_date asc">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+	      select 
+	       (SELECT ERPFND_PRECISION_PKG.GET_QUANTITY_PRECISION (t1.company_id) FROM dual) quantity,
+	       t1.order_number,
+	       t1.sales_order_id,
+	       t1.company_id,
+	       t1.return_order_flag,
+	       t1.goods_issue_flag,
+	       t1.customer_id,
+	       t1.order_date,
+	       t1.status,
+	       t1.closed_flag,
+	       decode(ol.gift_flag,'Y',null,'N') billing_status,
+	       (select p.partner_name
+	          from erpfnd_business_partners p
+	         where p.partner_id = t1.customer_id) as customer_name,
+	       (select p.partner_code||'-'||p.partner_name
+	          from erpfnd_business_partners p
+	         where p.partner_id = t1.customer_id) as customer_desc,  
+	       ol.line_number,
+	       ol.item_id,
+	       (select b.item_code || '-' || b.item_name from erpinv_items_basics b where b.item_id = ol.item_id) item_desc,
+	       abs(ol.trade_quantity) line_trade_quantity,   
+	       (abs(ol.trade_quantity)-abs(nvl(delivery_trade_quantity,0))) un_trade_quantity,
+	       (abs(ol.trade_quantity)-abs(nvl(delivery_trade_quantity,0))) line_delivery_quantity_tmp,
+	       ol.trade_uom,
+	       (select c.uom_description from erpinv_uom_codes c where c.uom_code=ol.trade_uom and c.company_id = ol.company_id) trade_uom_desc,
+	       ol.gi_warehouse_id warehouse_id, 
+	       (select w.warehouse_code||'-'||w.warehouse_name from erpinv_warehouses w  where w.warehouse_id = ol.gi_warehouse_id ) warehouse_desc,
+	       ol.primary_uom,
+	       (select c.uom_description from erpinv_uom_codes c where c.uom_code=ol.primary_uom and c.company_id = t1.company_id) primary_uom_desc,
+	       ol.primary_quantity line_primary_quantity,
+	       ol.gift_flag,
+	       ol.sales_order_line_id
+	  from erpord_sales_order_headers t1,erpord_sales_order_lines ol
+	 	#WHERE_CLAUSE#
+   		#ORDER_BY_CLAUSE#
+	 ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="order_number"/>
+        <bm:field name="sales_order_id"/>
+        <bm:field name="company_id"/>
+        <bm:field name="return_order_flag"/>
+        <bm:field name="goods_issue_flag"/>
+        <bm:field name="customer_id"/>
+        <bm:field name="order_date" databaseType="DATE" datatype="java.util.Date"/>
+        <bm:field name="status"/>
+        <bm:field name="closed_flag"/>
+        <bm:field name="customer_name"/>
+        <bm:field name="line_number"/>
+        <bm:field name="item_id"/>
+        <bm:field name="item_desc"/>
+        <bm:field name="line_trade_quantity"/>
+        <bm:field name="un_trade_quantity"/>
+        <bm:field name="line_delivery_quantity_tmp"/>
+        <bm:field name="trade_uom"/>
+        <bm:field name="trade_uom_desc"/>
+        <bm:field name="warehouse_id"/>
+        <bm:field name="warehouse_desc"/>
+        <bm:field name="primary_uom"/>
+        <bm:field name="primary_uom_desc"/>
+        <bm:field name="line_primary_quantity"/>
+        <bm:field name="gift_flag"/>
+        <bm:field name="sales_order_line_id"/>
+        <bm:field name="customer_desc"/>
+        <bm:field name="billing_status"/>
+        <bm:field name="quantity" expression="(SELECT ERPFND_PRECISION_PKG.GET_QUANTITY_PRECISION (t1.company_id) FROM dual)"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field name="order_number" queryExpression="t1.order_number like ${@order_number} ||&apos;%&apos;"/>
+        <bm:query-field field="customer_id" queryOperator="="/>
+        <bm:query-field field="goods_issue_flag" queryOperator="="/>
+        <bm:query-field field="return_order_flag" queryOperator="="/>
+        <bm:query-field field="item_id" queryOperator="="/>
+        <bm:query-field name="line_close_flag" queryExpression="ol.closed_flag=${@line_close_flag}"/>
+        <!-- <bm:query-field name="ord5110_delivery_match_query" queryExpression="not exists(select 1 from ord_sales_order_lines t2 where t2.sales_order_id=t1.sales_order_id and t2.closed_flag='Y')"  /> -->
+        <bm:query-field name="order_date_from" queryExpression="(to_char(t1.order_date,&apos;yyyy-mm-dd&apos;) &gt;= ${@order_date_from})"/>
+        <bm:query-field name="order_date_to" queryExpression="(to_char(t1.order_date,&apos;yyyy-mm-dd&apos;) &lt;= ${@order_date_to})"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter name="business_group" expression="t1.business_group = ${/session/@business_group}"/>
+        <bm:data-filter name="status" expression="t1.status = &apos;APPROVED&apos;"/>
+        <bm:data-filter name="close_flag" expression="t1.closed_flag=&apos;N&apos;"/>
+        <bm:data-filter name="sale_order" expression="ol.sales_order_id = t1.sales_order_id"/>
+        <bm:data-filter name="quantity_filter" expression="((t1.return_order_flag=&apos;N&apos; and (ol.trade_quantity&gt;nvl(ol.delivery_trade_quantity,0))) or ((t1.return_order_flag=&apos;Y&apos;) and (ol.trade_quantity&lt;nvl(ol.delivery_trade_quantity,0))))"/>
+    </bm:data-filters>
+</bm:model>

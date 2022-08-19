@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao  
+    $Date: 2016-07-28 下午03:38:31  
+    $Revision: 1.0  
+    $Purpose: 送货单打印,东风农机打印样式
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+    <a:init-procedure>
+        <p:set field="/model/inv_print_headers" setToNull="true"/>
+        <p:set field="/model/inv_print_lines" setToNull="true"/>
+        <a:model-query autoCount="true" model="inv.PRINT.inv_asn_print_headers_dfam" rootpath="inv_print_headers"/>
+        <a:model-query autoCount="true" fetchAll="true" model="inv.PRINT.inv_asn_print_lines_dfam" rootpath="inv_print_lines"/>
+    </a:init-procedure>
+    <a:view package="aurora.ui.std" template="default">
+        <style><![CDATA[ 
+			.STYLE1 {
+				font-family: "宋体";
+				font-weight: bold;
+				font-size: 24px;
+			}
+			.STYLE2 {
+				font-family: "宋体";
+				font-weight: bold;
+				font-size: 14px;
+			}
+			.STYLE3 {
+				font-family: "宋体";
+				font-size: 12px;
+			}
+			.STYLE4 {
+				font-family: "宋体";
+				font-weight: bold;
+				font-size: 12px;
+			}
+			.STYLE5 {
+				font-family: "宋体";
+				font-size: 12px;
+			}
+			.STYLE6 {
+				font-family: "宋体";
+				font-size: 11px;
+			}
+			.STYLE7 {
+				font-family: "宋体";
+				font-size: 9px;
+			}
+			.barcode-style{
+			    font-family: "宋体";
+				font-weight: bold;
+				font-size: 17px;
+				font-style: italic;
+			    border: 1px solid #000000;
+			    width: 60%;
+			    text-align: center; 
+			    vertical-align: middle;
+			    line-height: 100px;
+			}
+			
+			body{
+				background-color:#ffffff;
+			}
+		]]></style>
+        <script><![CDATA[
+            var record_num = 0;
+            var num = 0;
+            var record_per_page = 30;
+            var pages = '${/model/inv_print_headers/record/@pages}';
+            var total_records = '${/model/inv_print_headers/record/@line_count}';
+            var need_new_page = false;
+            var need_new_report = false;
+            var cur_page = 1;
+            var new_page = 0;
+            var uom_code_before = '';
+            var uom_code_now;
+            var unit_meas_lookup_code;
+            var uom_code_amount = 0;
+            var uom_code_sum = 0;
+            
+            function printPageBreak() {
+                document.write('<div style="page-break-after: always;"></div>');
+            }
+            
+            function printLogoAndBarcode(){
+                var html = '<table width="100%" border="0" cellspacing="0" cellpadding="0">'+
+                			'<tr>'+
+                				'<td width="15%"><div align="left" width="200" height="40"><img src="${/request/@context_path}/images/asn_print/dfam/logo.jpg"/></div></td>'+
+                				'<td width="10%"></td>'+
+                				'<td width="35%" class="STYLE1"><div align="center">东风农机标准送货单</div></td>'+
+                				'<td width="40%" align="right"><div><img src="${/request/@context_path}/asnbarcode?type=code128&amp;height=7.5mm&amp;qz=0.25mm&amp;hrp=bottom&amp;hrsize=3pt&amp;mw=0.17mm&amp;fmt=jpeg&amp;msg=${/model/inv_print_headers/record/@asn_number}"/></div></td>'+
+                			'</tr>'+
+                		   '</table>'+
+                		   '<br/>';
+                		   
+            	document.write(html);
+            }
+            
+            function printSupplyInfo(){
+
+				html = '<table width="100%" border="0" cellspacing="0" cellpadding="0">'+
+            			'<tr>'+
+            				'<td width="6%" class="STYLE3"><div align="right">送货单号:</div></td>'+
+            				'<td width="10%" class="STYLE3"><div align="left">&nbsp;${/model/inv_print_headers/record/@asn_number}</div></td>'+
+            				'<td width="6%" class="STYLE3"><div align="right">供应商:</div></td>'+
+            				'<td width="20%" class="STYLE3"><div align="left">&nbsp;${/model/inv_print_headers/record/@vendor_name}</div></td>'+
+            			'</tr>'+
+            			'<tr>'+
+            				'<td width="6%" class="STYLE3"><div align="right">送货日期:</div></td>'+
+            				'<td width="17%" class="STYLE3"><div align="left">&nbsp;${/model/inv_print_headers/record/@ship_date}</div></td>'+
+            				'<td width="6%" class="STYLE3"><div align="right">收货组织:</div></td>'+
+            				'<td width="17%" class="STYLE3"><div align="left">&nbsp;${/model/inv_print_headers/record/@ship_to_organization_name}</div></td>'+
+            			'</tr>'+
+            			'<tr>'+
+            			    '<td  class="STYLE3"><div align="right">备注:</div></td>'+
+            			    '<td  colspan="3" class="STYLE3"><div align="left">&nbsp;${/model/inv_print_headers/record/@comments}</div></td>'+
+            			'</tr>'+
+            		   '</table>'+
+            		   '<br/>';
+            	document.write(html);
+            }
+
+            function printItemDetail(){
+                var html = '<table width="100%" style="border-collapse: collapse;" width="100%" border="1" cellpadding="0" cellspacing="0" bordercolor="#000000">'+
+                			'<tr>'+
+                				'<td width="3%" class="STYLE4"><div align="center">序号</div></td>'+
+                				'<td width="7%" class="STYLE4"><div align="center">订单号</div></td>'+
+                				'<td width="3%" class="STYLE4"><div align="center">行号</div></td>'+
+                				'<td width="7%" class="STYLE4"><div align="center">订单创建日期</div></td>'+
+                				'<td width="9%" class="STYLE4"><div align="center">物料编码</div></td>'+
+                				'<td width="14%" class="STYLE4"><div align="center">物料名称</div></td>'+
+                				'<td width="5%" class="STYLE4"><div align="center">送货数量</div></td>'+
+                				'<td width="4%" class="STYLE4"><div align="center">单位</div></td>'+
+                				'<td width="4%" class="STYLE4"><div align="center">采购员</div></td>'+
+                				'<td width="10%" class="STYLE4"><div align="center">库房库位</div></td>'+
+                				'<td width="7%" class="STYLE4"><div align="center">附注信息</div></td>'+
+                				'<td width="5%" class="STYLE4"><div align="center">备注</div></td>'+
+                			'</tr>';
+            	document.write(html);
+            }
+            
+            function item_foot(end_flag){
+                if((uom_code_before != uom_code_now && uom_code_before !='')||end_flag == 1){
+                    var html = '';
+                    html = '<tr>'+
+                				'<td width="3%" class="STYLE5"><div align="center"></div></td>'+
+                				'<td width="7%" class="STYLE5"><div align="center"></div></td>'+
+                				'<td width="3%" class="STYLE5"><div align="center"></div></td>'+
+                				'<td width="7%" class="STYLE5"><div align="center"></div></td>'+
+                				'<td width="9%" class="STYLE5"><div align="center"></div></td>'+
+                				'<td width="14%" class="STYLE2"><div align="center">合计</div></td>'+
+                				'<td width="5%" class="STYLE2"><div align="center">'+uom_code_sum+'</div></td>'+
+                				'<td width="4%" class="STYLE2"><div align="center">'+unit_meas_lookup_code+'</div></td>'+
+                				'<td width="4%" class="STYLE5"><div align="center"></div></td>'+
+                				'<td width="10%" class="STYLE5"><div align="center"></div></td>'+
+                				'<td width="7%" class="STYLE5"><div align="center"></div></td>'+
+                				'<td width="5%" class="STYLE5"><div align="center"></div></td>'+
+                			'</tr>';
+                    document.write(html);
+                    uom_code_sum = 0;
+                    record_num ++;
+                }
+                //uom_code_before = uom_code_now;
+            }
+            
+            function printFooter(){
+            	html = '<table width="100%"  border="0" cellspacing="0" cellpadding="0">'+
+                			'<tr height="30">'+
+                				'<td width="40%" class="STYLE7"><div align="left">制单日期：${/model/inv_print_headers/record/@print_date}</div></td>'+
+                				'<td width="40%" class="STYLE7"></td>'+
+                				'<td width="20%" class="STYLE7"><div align="right">共' + pages + '页&nbsp;&nbsp;第' + cur_page + '页</div></td>'+
+                			'</tr>'+
+                		'</table>';
+            	
+            	document.write(html);
+            }
+            
+            function newRecord() {
+                
+                if (record_num == record_per_page) {
+                    need_new_page = true;
+                    record_num = 0;
+                }
+            
+                if (need_new_page) {
+                    document.write("</table>");
+                    document.write("<br/>");
+                    printFooter();
+                    printPageBreak();
+                    
+                    cur_page = cur_page + 1;
+                    
+                    printLogoAndBarcode();
+	            	printSupplyInfo();
+	                printItemDetail();
+                    need_new_page = false;
+                }
+                new_page = new_page + 1;
+                record_num++;
+            }
+        ]]></script>
+        <body style="margin-left:1;">
+            <script><![CDATA[
+            	printLogoAndBarcode();
+            	printSupplyInfo();
+                printItemDetail();
+            ]]></script>
+            <a:repeater datamodel="/model/inv_print_lines">
+                <script><![CDATA[
+                    newRecord();
+                    uom_code_now = '${@unit_meas_lookup_code}';            
+                    item_foot(0);
+                ]]></script>
+                <tr height="20">
+                    <td class="STYLE5">
+                        <div align="center"><![CDATA[${@line_sequence}]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div align="center"><![CDATA[${@segment1}]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div align="center"><![CDATA[${@line_num}]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div align="center"><![CDATA[${@erp_creation_date}]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div align="left"><![CDATA[${@item_code}]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div align="left"><![CDATA[${@item_name}]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div align="center"><![CDATA[${@ship_quantity}]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div align="center"><![CDATA[${@unit_meas_lookup_code}]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div align="center"><![CDATA[${@agent_name}]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div align="center"><![CDATA[${@inv_warehouse_desc}]]></div>
+                        <div align="center"><![CDATA[${@inv_location_desc}]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div align="center"/>
+                    </td>
+                    <td class="STYLE5">
+                        <div align="center"><![CDATA[${@line_desc}]]></div>
+                    </td>
+                </tr>
+                <script><![CDATA[
+                    uom_code_before = '${@unit_meas_lookup_code}';
+                    unit_meas_lookup_code = '${@unit_meas_lookup_code}';
+                    uom_code_amount = '${@ship_quantity}';
+                    uom_code_sum += parseInt(uom_code_amount);
+                ]]></script>
+            </a:repeater>
+            <script><![CDATA[
+            	 item_foot(1);
+                 document.write("</table>");
+                 document.write("<br/>");
+            ]]></script>
+            <script><![CDATA[
+				 printFooter();
+				 if(${/parameter/@asn_header_id} != ${/parameter/@maxasn}){
+					 printPageBreak();
+				 }
+			]]></script>
+        </body>
+    </a:view>
+</a:screen>

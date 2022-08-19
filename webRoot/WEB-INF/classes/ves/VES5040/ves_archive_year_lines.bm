@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:update-sql><![CDATA[
+            	   SELECT vv.*,
+					       (nvl(vv.q1_score,
+					            0) + nvl(vv.q2_score,
+					                      0) + nvl(vv.q3_score,
+					                                0) + nvl(vv.q4_score,
+					                                          0)) / decode(vv.eval_count,
+					                                                       0,
+					                                                       1,
+					                                                       vv.eval_count) year_score
+					  FROM (SELECT v.*,
+					               (nvl2(v.q1_score,
+					                     1,
+					                     0) + nvl2(v.q2_score,
+					                                1,
+					                                0) + nvl2(v.q3_score,
+					                                           1,
+					                                           0) + nvl2(v.q4_score,
+					                                                      1,
+					                                                      0)) eval_count
+					          FROM (SELECT t.vendor_id,
+					                       (SELECT pvv.display_vendor_code vendor_code
+					                          FROM pur_vendors_vl pvv
+					                         WHERE pvv.vendor_id = t.vendor_id) vendor_code,
+					                       (SELECT nvl(pvv.short_name,
+					                                   pvv.full_name)
+					                          FROM pur_vendors_vl pvv
+					                         WHERE pvv.vendor_id = t.vendor_id) vendor_desc,
+					                       t.item_category_id,
+					                       (SELECT mcud.category_code
+					                          FROM mtl_categories_user_defined_vl mcud
+					                         WHERE mcud.category_udf_id = t.item_category_id) item_category_code,
+					                       (SELECT mcud.category_name
+					                          FROM mtl_categories_user_defined_vl mcud
+					                         WHERE mcud.category_udf_id = t.item_category_id) item_category_desc,
+					                       SUM(decode(t.eval_season,
+					                                  1,
+					                                  t.score,
+					                                  NULL)) AS q1_score,
+					                       SUM(decode(t.eval_season,
+					                                  2,
+					                                  t.score,
+					                                  NULL)) AS q2_score,
+					                       SUM(decode(t.eval_season,
+					                                  3,
+					                                  t.score,
+					                                  NULL)) AS q3_score,
+					                       SUM(decode(t.eval_season,
+					                                  4,
+					                                  t.score,
+					                                  NULL)) AS q4_score
+					                  FROM (SELECT s.score,
+					                               s.vendor_id,
+					                               s.item_category_id,
+					                               s1.eval_year,
+					                               s1.eval_season
+					                          FROM ves_archive_total_lines s
+					                          LEFT OUTER JOIN ves_archive_headers s1
+					                            ON s.archive_id = s1.archive_header_id
+					                         WHERE (s1.archive_header_id = ${@archive_header_0} OR s1.archive_header_id = ${@archive_header_1} OR
+					                               s1.archive_header_id = ${@archive_header_2} OR s1.archive_header_id = ${@archive_header_3})
+					                               AND s1.enabled_flag = 'Y') t
+					                 GROUP BY t.vendor_id,
+					                          t.item_category_id) v) vv
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:update-sql><![CDATA[
+            	begin
+            		ves_archive_pkg.create_year_line(
+            				 p_year_header_id   => ${../../@year_header_id},
+                             p_vendor_id        => ${@vendor_id},
+                             p_item_category_id => ${@item_category_id},
+                             p_year_score       => ${@year_score},
+                             p_eval_count       => ${@eval_count},
+                             p_q1_score         => ${@q1_score},
+                             p_q2_score         => ${@q2_score},
+                             p_q3_score         => ${@q3_score},
+                             p_q4_score         => ${@q4_score},
+                             p_year_total_score => round(${@year_total_score},2),
+                             p_other_score      => ${@other_score},
+                             p_other_score_weight=>${@other_score_weight},
+                             p_user_id          => ${/session/@user_id});
+            	end;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <!--
+        <bm:field name="year_line_id"  databaseType="NUMBER" datatype="java.lang.Long" physicalName="YEAR_LINE_ID"/>
+        <bm:field name="year_header_id"  databaseType="NUMBER" datatype="java.lang.Long" physicalName="YEAR_HEADER_ID"/> -->
+        <bm:field name="vendor_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="VENDOR_ID"/>
+        <bm:field name="vendor_code" expression="(select pvv.display_vendor_code vendor_code from pur_vendors_vl pvv where pvv.VENDOR_ID = t1.vendor_id)" prompt="供应商编码"/>
+        <bm:field name="vendor_desc" expression="(select nvl(pvv.short_name, pvv.full_name) from pur_vendors_vl pvv where pvv.VENDOR_ID = t1.vendor_id)" prompt="供应商名称"/>
+        <bm:field name="item_category_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="ITEM_CATEGORY_ID"/>
+        <bm:field name="item_category_code" expression="(select mcud.category_code from mtl_categories_user_defined_vl mcud where mcud.category_udf_id = t1.item_category_id)" prompt="采购品类代码"/>
+        <bm:field name="item_category_desc" expression="(select mcud.category_name from mtl_categories_user_defined_vl mcud where mcud.category_udf_id = t1.item_category_id)" prompt="采购品类名称"/>
+        <bm:field name="year_score" databaseType="NUMBER" datatype="java.lang.Double" physicalName="YEAR_SCORE" prompt="系统年度得分"/>
+        <bm:field name="eval_count" databaseType="NUMBER" datatype="java.lang.Long" physicalName="EVAL_COUNT" prompt="参评次数"/>
+        <bm:field name="q1_score" databaseType="NUMBER" datatype="java.lang.Double" physicalName="Q1_SCORE" prompt="一季度"/>
+        <bm:field name="q2_score" databaseType="NUMBER" datatype="java.lang.Double" physicalName="Q2_SCORE" prompt="二季度"/>
+        <bm:field name="q3_score" databaseType="NUMBER" datatype="java.lang.Double" physicalName="Q3_SCORE" prompt="三季度"/>
+        <bm:field name="q4_score" databaseType="NUMBER" datatype="java.lang.Double" physicalName="Q4_SCORE" prompt="四季度"/>
+        <!--<bm:field name="creation_date" databaseType="DATE" datatype="java.util.Date" physicalName="CREATION_DATE"/>
+        <bm:field name="created_by" databaseType="NUMBER" datatype="java.lang.Long" physicalName="CREATED_BY"/>
+        <bm:field name="last_update_date" databaseType="DATE" datatype="java.util.Date" physicalName="LAST_UPDATE_DATE"/>
+        <bm:field name="last_updated_by" databaseType="NUMBER" datatype="java.lang.Long" physicalName="LAST_UPDATED_BY"/> -->
+    </bm:fields>
+</bm:model>

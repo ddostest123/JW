@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Jolly
+    $Date: 2018-9-6 19:41:50  
+    $Revision: 1.0  
+    $Purpose: 送货单二维码打印，送货单行信息查询BM
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="v.po_num asc,v.asn_number asc,v.asn_line_num asc">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*,
+                    rownum AS line_sequence
+                FROM
+                    (SELECT
+                        (SELECT
+                            h.asn_number
+                        FROM
+                            inv_asn_headers h
+                        WHERE
+                            h.asn_header_id = l.asn_header_id
+                        ) asn_number,
+                        l.asn_line_num,
+                        l.asn_header_id,
+                        l.asn_line_id,
+                        l.item_code,
+                        TO_CHAR(l.lots_validity_date, 'yyyy-mm-dd') lots_validity_date,
+                        l.item_name,
+                        l.ship_quantity,
+                        (SELECT
+                            pvv.full_name
+                        FROM
+                            fnd_companies_vl fc,
+                            pur_vendors_v pvv
+                        WHERE
+                            fc.company_id = pvv.coop_company_id AND
+                            pvv.vendor_id = h.vendor_id
+                        ) AS vendor_company_name,
+                        (SELECT
+                            pha.display_po_number
+                        FROM
+                            pur_headers_all_v pha,
+                            pur_line_locations_all lla
+                        WHERE
+                            pha.pur_header_id        = lla.pur_header_id AND
+                            lla.pur_line_location_id = l.line_location_id
+                        ) AS po_num,
+                        l.lots_num,
+                        TO_CHAR(l.production_date,'YYYYMMDD') production_date,
+                        ROUND(l.packet_weight,2) packet_weight,
+                        (SELECT
+                            DECODE(SUBSTR(t.note_to_receiver,1,5),'F2906','F2906','')
+                        FROM
+                            inv_asn_lines ial ,
+                            pur_line_locations_all_es plle ,
+                            apps.po_line_locations_all@ebslink t
+                        WHERE
+                            ial.asn_line_id = l.asn_line_id AND
+                            ial.item_code LIKE '308%' AND
+                            plle.pur_line_location_id = ial.line_location_id AND
+                            t.line_location_id        = plle.es_po_line_location_id AND
+                            rownum                    = 1
+                        ) as F2906_FLAG,
+                        l.isrosh
+                    FROM
+                        inv_asn_lines l,
+                        inv_asn_headers h,
+                        inv_asn_print p
+                    WHERE
+                        l.asn_line_id           = p.asn_line_id AND
+                        h.asn_header_id         = p.asn_header_id AND
+                        NVL(l.cancel_flag, 'N') = 'N' AND
+                        NVL(l.close_flag, 'N')  = 'N' AND
+                        p.session_id            = ${/session/@session_id} AND
+                        l.asn_header_id         = ${/parameter/@asn_header_id}
+                    ) v
+                WHERE
+                    (
+                        inv_asn_print_pkg.check_asn_print_authority(${/session/@session_id}, ${/session/@role_id}, ${/session/@user_id}) = 0
+                    )
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

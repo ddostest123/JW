@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: shenjun  
+    $Date: 2017-4-5 09:39:50
+    $Revision: 1.0  
+    $Purpose: 内江六院应付帐确认页面
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="cvv.code = &apos;NJLY_ACP_ACCOUNTS_PAYABLE_STATUS&apos; and cvv.code_value in (&apos;RELEASED&apos;,&apos;CONFIRMED&apos;)" fetchAll="true" model="public.get_syscode_list" rootPath="accounts_payable_status_list"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="njlyacp1020_operation_record_link" url="${/request/@context_path}/modules/acp/PUBLIC/acp_operation_record.screen"/>
+        <a:link id="njlyacp1020_confirm_link" url="${/request/@context_path}/modules/cux/NJLY/ACP/ACP1020/njly_acp_accounts_payable_confirm.svc"/>
+        <script><![CDATA[
+
+			function njlyacp1020_accounts_payable_create_query(){
+			    $('njlyacp1020_accounts_payable_create_result_ds').query();
+			}
+            
+            function njlyacp1020_go_operation_records(payable_id) {
+                new Aurora.Window({
+                    id: 'acp_operation_record_win',
+                    title: '${l:PROMPT.OPERATION_RECORD}',
+                    url: $('njlyacp1020_operation_record_link').getUrl() + '?operation_table_id=' + payable_id + '&operation_table=NJLY_ACP_ACCOUNTS_PAYABLE',
+                    height: 450,
+                    width: 600
+                });
+            
+            }
+
+            function njlyacp1020_gridRenderer(value, record, name){
+                if (name == 'display_unit_price' || name == 'display_amount') {
+                    if (value == '***') {
+                        return value;
+                    } else {
+                        return Aurora.formatNumber(value);
+                    }
+                }
+                
+				if(name == 'operation_record'){
+	                var payable_id = record.get('payable_id');
+	                return '<a href="javascript:njlyacp1020_go_operation_records(' + payable_id + ');">${l:PROMPT.OPERATION_RECORD}</a>';
+                }
+            }
+		    
+		    function njlyacp1020_result_ds_submitsuccess(ds){
+				njlyacp1020_accounts_payable_create_query();
+		    }
+		    
+		    
+		    function njlyacp1020_accounts_payable_edit_confirm(){
+                var records = $('njlyacp1020_accounts_payable_create_result_ds').getSelected();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SELECT_ONE_RECORD_AT_LEAST}');
+                    return false;
+                }
+                
+                for (var i = 0;i < records.length;i++) {
+                    if(records[i].get('status') != 'RELEASED'){
+	                    Aurora.showMessage('${l:PROMPT}', '只有“已发布”状态才能确认，请检查！');
+	                    return false;
+                	}                    
+                }
+                
+                Aurora.showConfirm('${l:PROMPT}', '确认选中的记录？', function() {
+                    Aurora.Masker.mask(Ext.getBody(),'${l:LOADING}');
+                    var datas = [];
+                    for (var i = 0;i < records.length;i++) {
+                        datas.push(records[i].data);
+                    }
+                    Aurora.request({
+                        url: $('njlyacp1020_confirm_link').getUrl(),
+                        para: datas,
+                        success: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            njlyacp1020_accounts_payable_create_query();
+                            
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            return;
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            return;
+                        }
+                    });
+                });
+		    }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="njlyacp1020_accounts_payable_status_part_ds">
+                <a:datas dataSource="/model/accounts_payable_status_list"/>
+            </a:dataSet>
+            <a:dataSet id="njlyacp1020_accounts_payable_create_query_ds">
+                <a:fields>
+                    <a:field name="status"/>
+                    <a:field name="status_display" displayField="code_value_name" options="njlyacp1020_accounts_payable_status_part_ds" returnField="status" valueField="code_value"/>
+                    <a:field name="period_name" autoComplete="true" autoCompleteField="inv_period" lovGridHeight="370" lovHeight="500" lovService="cux.DANZ.DZINV.DZINV1030.inv_outsource_period_lov" lovWidth="600" title="DZINV1030.INV_PERIOD">
+                        <a:mapping>
+                            <a:map from="inv_period" to="period_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="company_name" autoComplete="true" autoCompleteField="company_full_name" lovHeight="480" lovService="public.fnd_cooperative_company_by_supply_lov" lovWidth="500" title="FND_COMPANIES.CLIENT">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_full_name" to="company_name"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="njlyacp1020_accounts_payable_create_result_ds" autoCount="true" autoPageSize="true" model="cux.NJLY.ACP.ACP1020.njly_acp_accounts_payable" queryDataSet="njlyacp1020_accounts_payable_create_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="status" defaultValue="NEW"/>
+                    <a:field name="status_display" displayField="code_value_name" options="njlyacp1020_accounts_payable_status_part_ds" readOnly="true" returnField="status" valueField="code_value"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton id="njlyacp1020_accounts_payable_edit_confirm_btn" click="njlyacp1020_accounts_payable_edit_confirm" text="确认" width="100"/>
+                <a:gridButton bind="njlyacp1020_accounts_payable_create_grid" className="item-rbtn-blue button-excel" type="excel" width="100"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="njlyacp1020_accounts_payable_create_query_ds" resultTarget="njlyacp1020_accounts_payable_create_result_ds" style="width:100%;border:none;">
+                <a:formToolBar>
+                    <a:hBox labelWidth="100">
+                        <a:lov name="company_name" bindTarget="njlyacp1020_accounts_payable_create_query_ds" prompt="FND_COMPANIES.CLIENT">
+                            <a:events>
+                                <a:event name="enterdown" handler="njlyacp1020_accounts_payable_create_query"/>
+                            </a:events>
+                        </a:lov>
+                        <a:lov name="period_name" bindTarget="njlyacp1020_accounts_payable_create_query_ds" prompt="期间">
+                            <a:events>
+                                <a:event name="enterdown" handler="njlyacp1020_accounts_payable_create_query"/>
+                            </a:events>
+                        </a:lov>
+                        <a:comboBox name="status_display" bindTarget="njlyacp1020_arrival_query_ds" prompt="DZINV1010.STATUS">
+                            <a:events>
+                                <a:event name="enterdown" handler="njlyacp1020_accounts_payable_create_query"/>
+                            </a:events>
+                        </a:comboBox>
+                    </a:hBox>
+                </a:formToolBar>
+                <a:formBody><![CDATA[
+	            ]]></a:formBody>
+            </a:queryForm>
+            <a:grid id="njlyacp1020_accounts_payable_create_grid" autoAppend="false" bindTarget="njlyacp1020_accounts_payable_create_result_ds" marginHeight="200" marginWidth="90" navBar="true" style="margin:5px;">
+                <a:columns>
+                    <a:column name="status_display" align="center" prompt="DZINV1010.STATUS" sortable="true" width="50"/>
+                    <a:column name="period_name" align="center" prompt="月份" sortable="true" width="80"/>
+                    <a:column name="vendor_code" align="center" prompt="PUR_VENDORS.VENDOR_CODE" sortable="true" width="70"/>
+                    <a:column name="vendor_name" align="center" prompt="PUR_VENDORS.VENDOR_NAME" sortable="true" width="130"/>
+                    <a:column name="period_deposit_amount" align="right" prompt="本月入库金额" renderer="Aurora.formatNumber" sortable="true" width="80"/>
+                    <a:column name="period_payment_amount" align="right" prompt="本月付款金额" renderer="Aurora.formatNumber" sortable="true" width="80"/>
+                    <a:column name="left_payable_amount" align="right" prompt="剩余应付金额" renderer="Aurora.formatNumber" sortable="true" width="80"/>
+                    <a:column name="comments" align="left" prompt="DZINV1010.COMMENTS" sortable="true" width="80"/>
+                    <a:column name="operation_record" align="center" prompt="PROMPT.OPERATION_RECORD" renderer="njlyacp1020_gridRenderer" width="50"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

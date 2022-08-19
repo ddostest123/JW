@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:view>
+        <a:link id="qms3010_claim_item_submit_link" model="qms.QMS3010.qms_claim_type_lines" modelaction="batch_update"/>
+        <script><![CDATA[
+			var max_level = 2;//最大层级数
+			var claim_type_id ;//索赔类型
+			function init(){
+        	    claim_type_id = '${/parameter/@claim_type_id}';
+        	    if(qms_8d_id){
+        	        //缓存索赔类型
+        	        $('qms3010_claim_item_result_ds').setQueryParameter('claim_type_id', claim_type_id);
+        	        $('qms3010_claim_item_result_ds').query();
+        	    }
+        	}
+        	
+        	//查询
+        	function qms3010_claim_item_query(){
+        	    $('qms3010_claim_item_result_ds').setQueryParameter('claim_type_id', claim_type_id);
+        		$('qms3010_claim_item_result_ds').query(); 	   
+        	}
+		
+			//新增索赔项目
+			function qms3010_claim_item_create(){
+			    var ds = $('qms3010_claim_item_result_ds');
+			 	var record = ds.create();
+			 	//设置索赔类型
+			 	record.set('claim_type_id',claim_type_id);
+			 	//设置父节点为-1
+			 	record.set('parent_item_id',-1); 
+			 	//设置有效状态
+			 	record.set('enabled_flag','Y');
+			 	//设置层级
+			 	record.set('level_num',1);
+			 	//ds.remove(record);
+			}	
+			
+			//保存
+			function qms3010_claim_item_save(){
+			 	var qms3010_claim_item_result_ds = $('qms3010_claim_item_result_ds');
+			 	var para =  qms3010_claim_item_result_ds.getJsonData(false);
+			 	if(qms3010_claim_item_result_ds.validate()){
+			 	    Aurora.Masker.mask($('qms3010_claim_item_create_win').wrap,'正在提交...'); 
+			 	    //更新数据
+			 	 	Aurora.request({
+	        	        url:$('qms3010_claim_item_submit_link').getUrl(),
+	        	        para:para,
+	        	        success:function(){ 
+        	                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SAVE_SUCCESS}', function(){
+	        	            	qms3010_claim_item_query();
+	        	            	Aurora.Masker.unmask($('qms3010_claim_item_create_win').wrap);	    
+        	                });   
+	        	        },
+	        	        failure:function(){
+		        	        Aurora.Masker.unmask($('qms3010_claim_item_create_win').wrap);    
+	        	        },
+	        	        error:function(){
+	        	        	Aurora.Masker.unmask($('qms3010_claim_item_create_win').wrap);    
+	        	        },
+	        	        scope:this
+	        	    });  
+			 	}    
+			}
+			
+			//树形节点操作
+			function qms3010_claim_item_add_child_renderer(value, record, name){
+				var claim_item_id = record.get('claim_item_id');
+                var level_num = record.get('level_num');
+                var parent_item_id = record.get('parent_item_id');
+                var enabled_flag = record.get('enabled_flag');
+                var records = $('qms3010_claim_item_result_ds').getAll();
+            
+                if (name == 'add_child') {
+                    if (!Aurora.isEmpty(claim_item_id) && enabled_flag == 'Y' && level_num < max_level) {
+                        return '<a href="javascript:qms3010_claim_item_add_child(' + level_num + ',' + claim_item_id + ')">新增明细项目</a>';
+                    } else if (enabled_flag == 'N') {
+                        return '<div style="background:red">失效</div>';
+                    }
+                }
+            
+                if (name == 'disable_claim_item') {
+                    if (!Aurora.isEmpty(claim_item_id) && enabled_flag == 'Y') {
+                        if (level_num < max_level) {
+                            return '<a href="javascript:qms3010_claim_item_disable(' + claim_item_id + ')">禁用当前及下级项目</a>';
+                        } else {
+                            return '<a href="javascript:qms3010_claim_item_disable(' + claim_item_id + ')">禁用当前项目</a>';
+                        }
+                    } else if (record.isNew) {
+                        return '<a href="javascript:qms3010_claim_item_clear()">清除此行</a>';
+                    } else if (enabled_flag == 'N') {
+                        if (Aurora.isEmpty(parent_item_id) || parent_item_id == -1) {
+                            //根级地区
+                            return '<a href="javascript:qms3010_claim_item_enable(' + claim_item_id + ')">启用当前及下级项目</a>';
+                        } else {
+                            for (var i = 0;i < records.length;i++) {
+                                //判断上级地区是否启用，启用则显示，禁用则不显示
+                                if (parent_item_id == records[i].get('claim_item_id') && records[i].get('enabled_flag') == 'Y') {
+                                    return '<a href="javascript:qms3010_claim_item_enable(' + claim_item_id + ')">启用当前节点</a>';
+                                }
+                            }
+                        }
+                    }
+                }       
+			}
+			
+			 //增加子节点
+            function qms3010_claim_item_add_child(level_num, claim_item_id) {
+                var ds = $('qms3010_claim_item_result_ds');
+                var new_record = ds.create();
+                new_record.set('level_num', level_num + 1);
+                new_record.set('parent_item_id', claim_item_id);
+                new_record.set('enabled_flag', 'Y');
+                new_record.set('claim_type_id', claim_type_id);
+            }
+            
+            //禁用节点
+            function qms3010_claim_item_disable(region_id) {
+                var ds = $('qms3010_claim_item_result_ds');
+                var records = ds.getAll();
+                var record = ds.getCurrentRecord();
+                var index = ds.indexOf(record);
+                record.set('enabled_flag', 'N');
+                for (var i = index + 1;i < records.length;i++) {
+                    if (records[i].get('level_num') < record.get('level_num') + 1) {
+                        break;
+                    }
+                    //将所有下级节点设置为disable
+                    //为避免发生下级节点被禁用后，再禁用上级节点时，下级节点任有启用选项
+                    //先将enabled_flag设置为Y再设置为N则所有下级节点都会触发renderer
+                    records[i].set('enabled_flag', 'Y');
+                    records[i].set('enabled_flag', 'N');
+                }
+            }
+            
+            //启用节点
+            function qms3010_claim_item_enable(region_id) {
+                var ds = $('qms3010_claim_item_result_ds');
+                var records = ds.getAll();
+                var record = ds.getCurrentRecord();
+                var index = ds.indexOf(record);
+                record.set('enabled_flag', 'Y');
+                for (var i = index + 1;i < records.length;i++) {
+                    if (records[i].get('level_num') < record.get('level_num') + 1) {
+                        break;
+                    }
+                    //将所有下级节点设置为enable
+                    records[i].set('enabled_flag', 'Y');
+                }
+            }
+            
+            //清除当前行
+            function qms3010_claim_item_clear() {
+                var ds = $('qms3010_claim_item_result_ds');
+                var record = ds.getCurrentRecord();
+                ds.remove(record);
+            }
+			
+			//编辑索赔项目编码  --新建可编辑，更新不可编辑
+			function qms3010_edit_claim_item_code(record,name){
+			 	if(record.get('claim_item_id')){
+					return '';
+			    } else {
+			     	return 'qms3010_claim_item_result_grid_tf';  
+			    }       
+			}
+			
+			//返回
+			function qms3010_claim_item_return(){
+			 	$('qms3010_claim_item_create_win').close();   
+			}
+		]]></script>
+        <a:dataSets>
+            <a:dataSet id="qms3010_claim_item_query_ds"/>
+            <a:dataSet id="qms3010_claim_item_result_ds" loadData="true" model="qms.QMS3010.qms_claim_type_lines" queryDataSet="qms3010_claim_item_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="claim_item_code" required="true"/>
+                    <a:field name="description" required="true"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="qms3010_claim_item_create" text="新增索赔项目" width="100"/>
+                <a:toolbarButton click="qms3010_claim_item_save" text="保存" width="100"/>
+                <a:toolbarButton click="qms3010_claim_item_return" text="返回" width="100"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="qms3010_claim_item_query_ds" createSearchButton="false" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:textField name="claim_item_code_or_description" bindTarget="qms3010_claim_item_query_ds" emptyText="请输入索赔项目代码/索赔项目描述" marginWidth="220"/>
+                    <a:toolbarButton click="qms3010_claim_item_query" style="margin-left:20px;" text="HAP_QUERY" width="100"/>
+                </a:formToolBar>
+            </a:queryForm>
+            <a:treeGrid id="qms3010_claim_item_result_grid" bindTarget="qms3010_claim_item_result_ds" idField="claim_item_id" marginHeight="160" marginWidth="60" parentField="parent_item_id" showCheckBox="false">
+                <a:columns>
+                    <a:column name="claim_item_code" align="right" editorFunction="qms3010_edit_claim_item_code" sortable="true" width="80"/>
+                    <a:column name="description" editor="qms3010_claim_item_result_grid_tf" width="120"/>
+                    <a:column name="comments" editor="qms3010_claim_item_result_grid_tf" width="260"/>
+                    <a:column name="level_num" align="right" width="30"/>
+                    <a:column prompt="HAP_OPERATION">
+                        <a:column name="add_child" align="left" renderer="qms3010_claim_item_add_child_renderer" width="70"/>
+                        <a:column name="disable_claim_item" align="left" renderer="qms3010_claim_item_add_child_renderer" width="90"/>
+                    </a:column>
+                </a:columns>
+                <a:editors>
+                    <a:textField id="qms3010_claim_item_result_grid_tf"/>
+                </a:editors>
+            </a:treeGrid>
+        </a:screenBody>
+        <script><![CDATA[
+        	init();
+        ]]></script>
+    </a:view>
+</a:screen>

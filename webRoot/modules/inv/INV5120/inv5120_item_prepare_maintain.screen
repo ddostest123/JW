@@ -1,0 +1,448 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:view>
+        <a:link id="inv5120_item_prepare_submit_link" model="inv.INV5120.inv_item_prepare" modelaction="batch_update"/>
+        <a:link id="inv5120_item_prepare_delete_link" model="inv.INV5120.inv_item_prepare" modelaction="batch_update"/>
+        <a:link id="inv5120_pro_plan_maintain_link" url="${/request/@context_path}/modules/inv/INV5120/inv5120_pro_plan_maintain.screen"/>
+        <a:link id="inv5120_need_plan_query_link" url="${/request/@context_path}/modules/inv/INV5120/inv5120_need_plan_query.screen"/>
+        <a:link id="inv5120_item_prepare_batch_import_url" url="${/request/@context_path}/modules/inv/INV5120/inv_item_prepare_batch_import.screen"/>
+        <a:link id="inv5120_need_plan_export_link" url="${/request/@context_path}/modules/inv/INV5120/inv5120_need_plan_export.screen"/>
+        <a:script><![CDATA[
+            //查询条件参数更新
+            
+            function inv5120_item_query_update(dataSet, record, name, value, oldvalue) {
+                if (name === 'company_code' || name == 'company_desc' || name == 'company_id') {
+                    debugger;
+            
+                    var company_id = record.get('company_id');
+                    var company_name = record.get('company_desc');
+                    record.set('client_company_code', '');
+                    record.set('client_company_desc', '');
+                    if (company_name == '' || company_name == 'undefined' || company_name == null) {
+                        record.getMeta().getField('client_company_code').setLovPara('company_id', company_id);
+                        record.getMeta().getField('client_company_code').setReadOnly(true);
+                    } else {
+                        record.getMeta().getField('client_company_code').setLovPara('company_id', company_id);
+                        record.getMeta().getField('client_company_code').setReadOnly(false);
+                    }
+            
+                    if (value && record.get('client_company_id')) {
+                        $('inv5120_add_button').enable(true);
+                        $('inv5120_save_button').enable(true);
+                    } else {
+                        $('inv5120_add_button').disable(true);
+                        $('inv5120_save_button').disable(true);
+                    }
+                }
+                if (name === 'client_company_code') {
+                    if (value && record.get('company_id') && record.get('vendor_id')) {
+                        $('inv5120_add_button').enable(true);
+                        $('inv5120_save_button').enable(true);
+                    } else {
+                        $('inv5120_add_button').disable(true);
+                        $('inv5120_save_button').disable(true);
+                    }
+                }
+            }
+            
+            //查询物品需求
+            
+            function inv5120_item_need_query() {
+                $('inv5120_item_need_result_ds').query();
+            }
+            
+            //查询物品需求和备库情况
+            
+            function inv5120_item_query() {
+                $('inv5120_item_need_result_ds').query();
+                $('inv5120_item_prepare_result_ds').query();
+            }
+            
+            
+            //编辑物品
+            
+            function inv5120_edit_item_code(record, name) {
+                if (record.get('item_prepare_id')) {
+                    return '';
+                } else {
+                    return 'inv5120_item_prepare_grid_lov';
+                }
+            }
+            
+            //新建备货
+            
+            function inv5120_item_prepare_create() {
+                $('inv5120_item_prepare_result_ds').create();
+                var inv5120_item_query_ds = $('inv5120_item_query_ds');
+                var query_record = inv5120_item_query_ds.getCurrentRecord();
+                var inv5120_item_prepare_result_ds = $('inv5120_item_prepare_result_ds');
+                var prepare_record = $('inv5120_item_prepare_result_ds').getCurrentRecord();
+                var need_record = $('inv5120_item_need_result_ds').getCurrentRecord();
+                if (query_record.get('company_id') && query_record.get('vendor_id') && query_record.get('client_company_id') && query_record.get('client_company_desc') && query_record.get('coop_business_group')) {
+                    prepare_record.set('company_id', query_record.get('company_id'));
+                    prepare_record.set('vendor_id', query_record.get('vendor_id'));
+                    prepare_record.set('client_company_id', query_record.get('client_company_id'));
+                    prepare_record.set('client_company_desc', query_record.get('client_company_desc'));
+                    prepare_record.set('coop_business_group', query_record.get('coop_business_group'));
+                    prepare_record.set('item_id', need_record.get('item_id'));
+                    prepare_record.set('item_code', need_record.get('item_code'));
+                    prepare_record.set('item_desc', need_record.get('item_desc'));
+                    prepare_record.set('item_uom', need_record.get('item_uom'));
+                    prepare_record.set('uom_desc', need_record.get('uom_desc'));
+                    prepare_record.set('item_desc', need_record.get('item_category_id'));
+                    prepare_record.set('item_category_desc', need_record.get('item_category_desc'));
+                    prepare_record.set('item_category_code', need_record.get('item_category_code'));
+                    prepare_record.set('agent_id', need_record.get('agent_id'));
+                    prepare_record.set('agent_code', need_record.get('agent_code'));
+                    prepare_record.set('agent_name', need_record.get('agent_name'));
+            
+                    //设置单位选择的lov查询参数
+                    prepare_record.getField('uom_desc').setLovPara('coop_business_group', query_record.get('coop_business_group'));
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '请先选择公司编码和客户公司编码!', function() {
+            
+                       });
+                }
+            
+            }
+            
+            //保存备货
+            
+            function inv5120_item_prepare_save() {
+                var ds = $('inv5120_item_prepare_result_ds');
+                var para = ds.getJsonData(false);
+                if (ds.validate()) {
+                    //更新数据
+                    Aurora.Masker.mask(Ext.getBody(), '正在提交...');
+                    Aurora.request({
+                        url: $('inv5120_item_prepare_submit_link').getUrl(),
+                        para: para,
+                        success: function() {
+            
+                            Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SAVE_SUCCESS}', function() {
+                                inv5120_item_prepare_query();
+                                Aurora.Masker.unmask(Ext.getBody());
+                            });
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            //删除备货
+            
+            function inv5120_item_prepare_delete() {
+                var records = $('inv5120_item_prepare_result_ds').getSelected();
+                if (records.length > 0) {
+                    //判断数据是否已经保存
+                    for (var i = 0;i < records.length;i++) {
+                        if (records[i].dirty || !records[i].get('item_prepare_id')) {
+                            Aurora.showMessage('${l:PROMPT}', '数据尚未保存 !');
+                            return;
+                        }
+                    }
+                    Aurora.showConfirm('${l:PROMPT}', '确认删除备货情况?', function() {
+                        var para = [];
+                        for (var i = 0;i < records.length;i++) {
+                            records[i].set('_status', 'delete');
+                            para.push(records[i].data);
+                        }
+                        Aurora.Masker.mask(Ext.getBody(), '正在提交...');
+                        Aurora.request({
+                            url: $('inv5120_item_prepare_delete_link').getUrl(),
+                            para: para,
+                            success: function() {
+            
+                                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                    inv5120_item_prepare_query();
+                                    Aurora.Masker.unmask(Ext.getBody());
+                                });
+                            },
+                            failure: function() {
+                                Aurora.Masker.unmask(Ext.getBody());
+                            },
+                            error: function() {
+                                Aurora.Masker.unmask(Ext.getBody());
+                            },
+                            scope: this
+                        });
+                    }, function() {}, 300, 100);
+                }
+            }
+            
+            //根据半成品数，成品数，毛坯数带出合计数
+            
+            function inv5120_item_prepare_update(dataSet, record, name, value, oldValue) {
+                var total_sum;
+                if (name === 'rough_manu_sum') {
+                    total_sum = (record.get('rough_manu_sum') || 0) + (record.get('semi_manu_sum') || 0) + (record.get('full_manu_sum') || 0);
+                    record.set('total_sum', total_sum);
+                }
+                if (name === 'semi_manu_sum') {
+                    total_sum = (record.get('rough_manu_sum') || 0) + (record.get('semi_manu_sum') || 0) + (record.get('full_manu_sum') || 0);
+                    record.set('total_sum', total_sum);
+                }
+                if (name === 'full_manu_sum') {
+                    total_sum = (record.get('rough_manu_sum') || 0) + (record.get('semi_manu_sum') || 0) + (record.get('full_manu_sum') || 0);
+                    record.set('total_sum', total_sum);
+                }
+            }
+            
+            function inv5120_pro_plan_renderer(value, record, name) {
+                var item_prepare_id = record.get('item_prepare_id');
+                if (item_prepare_id) {
+                    return '<a href="javascript:inv5120_pro_plan_maintain(' + item_prepare_id + ')">${l:PUR_RCV_TRX_LINES.PRODUCTION_PLAN}</a>';
+                }
+            }
+            
+            //排产计划维护
+            
+            function inv5120_pro_plan_maintain(item_prepare_id) {
+                new Aurora.Window({
+                    id: 'inv5120_pro_plan_maintain_win',
+                    title: '${l:PUR_RCV_TRX_LINES.PRODUCTION_PLAN}',
+                    url: $('inv5120_pro_plan_maintain_link').getUrl() + "?item_prepare_id=" + item_prepare_id,
+                    fullScreen: true
+                });
+                /*
+                 $('inv5120_pro_plan_maintain_win').on('close', function(){
+                 $('inv5120_item_prepare_result_ds').query();
+                 }); */
+            }
+            
+            function inv5120_need_plan_renderer(value, record, name) {
+                var item_need_id = record.get('item_need_id');
+                if (item_need_id) {
+                    return '<a href="javascript:inv5120_need_plan_query(' + item_need_id + ')">需求预测</a>';
+                }
+            }
+            
+            //需求预测查看
+            
+            function inv5120_need_plan_query(item_need_id) {
+                new Aurora.Window({
+                    id: 'inv5120_need_plan_query',
+                    title: '需求预测',
+                    url: $('inv5120_need_plan_query_link').getUrl() + "?item_need_id=" + item_need_id,
+                    fullScreen: true
+                });
+            }
+            
+            //导入备货情况
+            
+            function inv5120_item_prepare_import() {
+                window.open($('inv5120_item_prepare_batch_import_url').getUrl());
+            }
+            
+            //备货情况查询
+            
+            function inv5120_item_prepare_query() {
+                $('inv5120_item_prepare_result_ds').query();
+            }
+            
+            
+            function inv5120_item_need_export() {
+                new Aurora.Window({
+                    id: 'inv5120_need_plan_export',
+                    title: '需求预测',
+                    url: $('inv5120_need_plan_export_link').getUrl(),
+                    fullScreen: true
+                });
+            }
+        ]]></a:script>
+        <a:dataSets>
+            <a:dataSet id="inv5120_item_query_ds">
+                <a:fields>
+                    <a:field name="client_company_code" lovHeight="530" lovService="ves.VES6010.ves6010_innovation_coop_vendor_lov" lovWidth="530" readOnly="true" required="true" title="INV_ONHAND_QUANTITIES.CLIENT_COMPANY_SELECT">
+                        <a:mapping>
+                            <a:map from="coop_company_id" to="client_company_id"/>
+                            <a:map from="vendor_code" to="client_company_code"/>
+                            <a:map from="vendor_name" to="client_company_desc"/>
+                            <a:map from="coop_business_group" to="coop_business_group"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="client_company_desc" readOnly="true"/>
+                    <a:field name="company_code" lovHeight="530" lovService="pur.PUR5710.pur5710_company_lov" lovWidth="530" required="true" title="INV_ONHAND_QUANTITIES.COMPANY_SELECT">
+                        <a:mapping>
+                            <a:map from="company_code" to="company_code"/>
+                            <a:map from="company_name" to="company_desc"/>
+                            <a:map from="owner_company_id" to="company_id"/>
+                            <a:map from="vendor_id" to="vendor_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="company_id"/>
+                    <a:field name="company_desc" readOnly="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="inv5120_item_query_update"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="inv5120_item_need_result_ds" autoCount="true" autoPageSize="true" model="inv.INV5120.inv_item_need_query" queryDataSet="inv5120_item_query_ds" selectable="true"/>
+            <a:dataSet id="inv5120_item_prepare_result_ds" autoCount="true" autoPageSize="true" model="inv.INV5120.inv_item_prepare" queryDataSet="inv5120_item_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="client_company_desc" required="true"/>
+                    <a:field name="item_code" lovHeight="530" lovService="inv.INV5120.inv_custom_item_lov" lovWidth="530" required="true" title="INV_ONHAND_QUANTITIES.MATERIAL_SELECT">
+                        <a:mapping>
+                            <a:map from="item_id" to="item_id"/>
+                            <a:map from="item_code" to="item_code"/>
+                            <a:map from="item_name" to="item_desc"/>
+                            <a:map from="uom_code" to="item_uom"/>
+                            <a:map from="uom_desc" to="uom_desc"/>
+                            <a:map from="" to="agent_id"/>
+                            <a:map from="" to="agent_code"/>
+                            <a:map from="" to="agent_name"/>
+                            <a:map from="" to="item_category_id"/>
+                            <a:map from="" to="item_category_desc"/>
+                            <a:map from="" to="item_category_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="item_desc" readOnly="true"/>
+                    <a:field name="uom_desc" lovHeight="530" lovService="inv.INV5120.inv_custom_item_uom_lov" lovWidth="530" required="true" title="INV_ONHAND_QUANTITIES.UNIT_SELECT">
+                        <a:mapping>
+                            <a:map from="uom_id" to="uom_id"/>
+                            <a:map from="uom_code" to="item_uom"/>
+                            <a:map from="uom_desc" to="uom_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="statistics_date" required="true"/>
+                    <a:field name="rough_manu_sum" required="true"/>
+                    <a:field name="semi_manu_sum" required="true"/>
+                    <a:field name="full_manu_sum" required="true"/>
+                    <a:field name="item_category_desc" autoComplete="true" autoCompleteField="category_code_name" lovHeight="480" lovService="pur.PUR5130.mtl_categories_user_defined_vl" lovWidth="510" title="PUR_REQUISITION_LNS.ITEM_CATEGORY_ID">
+                        <a:mapping>
+                            <a:map from="category_name" to="item_category_desc"/>
+                            <a:map from="category_udf_id" to="item_category_id"/>
+                            <a:map from="category_code" to="item_category_code"/>
+                            <a:map from="quote_tmpl_flag" to="quote_tmpl_flag"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="agent_name" autoComplete="true" autoCompleteField="code_name" lovGridHeight="320" lovHeight="480" lovService="public.pur_buyers_lov" lovWidth="500" title="PUR_HEADERS_ALL.PUR_BUYER">
+                        <a:mapping>
+                            <a:map from="buyer_id" to="agent_id"/>
+                            <a:map from="buyer_code" to="agent_code"/>
+                            <a:map from="description" to="agent_name"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="inv5120_item_prepare_update"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:form title="PUR_RCV_TRX_LINES.MY_PRE_INVENTORY" width="1000">
+                <a:queryForm bindTarget="inv5120_item_query_ds" createsearchbutton="false">
+                    <a:formToolBar>
+                        <a:hBox>
+                            <a:lov name="company_code" prompt="PUR_RCV_TRX_LINES.COMPANY_CODE">
+                                <a:event name="enterdown" handler="inv5120_item_query"/>
+                            </a:lov>
+                            <a:textField name="company_desc" prompt="PUR_RCV_TRX_LINES.COMPANY_NAME"/>
+                            <a:lov name="client_company_code" prompt="PUR_RCV_TRX_LINES.CLIENT_CODE">
+                                <a:events>
+                                    <a:event name="enterdown" handler="inv5120_item_query"/>
+                                </a:events>
+                            </a:lov>
+                            <a:textField name="client_company_desc" prompt="PUR_RCV_TRX_LINES.CLIENT_NAME"/>
+                            <a:toolbarButton click="inv5120_item_query" text="PROMPT.QUERY" width="100"/>
+                        </a:hBox>
+                    </a:formToolBar>
+                </a:queryForm>
+                <a:fieldSet title="PUR_RCV_TRX_LINES.BUYER_DEMAND_PLAN">
+                    <a:grid id="inv5120_item_need_result_grid" bindTarget="inv5120_item_need_result_ds" marginHeight="360" marginWidth="80" navBar="true">
+                        <a:columns>
+                            <a:column name="inv_org_code" align="center" prompt="生产工厂" sortable="true"/>
+                            <!--                            <a:column name="business_unit_code" align="center" prompt="客户代码" sortable="true"/>
+                            <a:column name="business_unit_name" align="center" prompt="客户名称" sortable="true"/> -->
+                            <a:column name="product_code" align="center" prompt="成品编码" sortable="true"/>
+                            <a:column name="product_total_quantity" align="center" prompt="成品总需求数量" sortable="true"/>
+                            <a:column name="product_week_quantity" align="center" prompt="成品周需求数量" sortable="true"/>
+                            <a:column name="estimated_order_date" align="center" prompt="预计业务下单时间" sortable="true"/>
+                            <a:column name="estimated_online_date" align="center" prompt="预计上线时间" sortable="true"/>
+                            <a:column name="comments" align="center" prompt="业务备注" sortable="true"/>
+                            <a:column name="flow_number" align="center" prompt="流水号" sortable="true"/>
+                            <a:column name="product_code_detail" align="center" prompt="成品编码明细" sortable="true"/>
+                            <a:column name="order_total_amount" align="center" prompt="订单备料金额总计" sortable="true"/>
+                            <a:column name="last_update_date" align="center" prompt="最后更新时间" sortable="true"/>
+                            <a:column name="order_num" align="center" prompt="序号" sortable="true"/>
+                            <a:column name="item_code" align="center" prompt="物料编码" sortable="true"/>
+                            <a:column name="item_desc" align="center" prompt="物料描述" sortable="true"/>
+                            <a:column name="primary_quantity" align="center" prompt="单位用量" sortable="true"/>
+                            <a:column name="week_need_quantity" align="center" prompt="周需求数量" sortable="true"/>
+                            <a:column name="total_need_quantity" align="center" prompt="总需求数量" sortable="true"/>
+                            <a:column name="item_days" align="center" prompt="物料days" sortable="true"/>
+                            <a:column name="vendor_code" align="center" prompt="备料供应商" sortable="true"/>
+                            <a:column name="is_specila_item" align="center" prompt="是否为专用料" sortable="true"/>
+                            <a:column name="is_need_order_item" align="center" prompt="是否需要订单备料" sortable="true"/>
+                            <a:column name="cost_price" align="center" prompt="成本单价" sortable="true"/>
+                            <a:column name="purchar_comment" align="center" prompt="采购备注" sortable="true"/>
+                            <a:column name="order_total_amount" align="center" prompt="订单备料金额合计" sortable="true"/>
+                            <!--                             <a:column name="company_desc" width="60"/>
+                            <a:column name="item_code" align="center" sortable="true" width="50"/>
+                            <a:column name="item_desc" width="100"/>
+                            <a:column name="unfinished_order" align="right" sortable="true" width="50"/>
+                            <a:column name="uom_desc" align="center" width="50"/>
+                            <a:column name="item_category_desc" align="left" prompt="物品分类" width="60"/>
+                            <a:column name="agent_name" align="center" prompt="PUR_HEADERS_ALL.PUR_BUYER" width="60"/> -->
+                            <!-- <a:column name="period_name" align="center" sortable="true" width="70"/>
+                            <a:column prompt="INV_ONHAND_QUANTITIES.DEMAND_FORECAST">
+                                <a:column name="period_m1_sum" align="right" renderer="Aurora.formatMoney" width="50"/>
+                                <a:column name="period_m2_sum" align="right" renderer="Aurora.formatMoney" width="50"/>
+                                <a:column name="period_m3_sum" align="right" renderer="Aurora.formatMoney" width="50"/>
+                                <a:column name="period_m4_sum" align="right" renderer="Aurora.formatMoney" width="50"/>
+                                <a:column name="period_m5_sum" align="right" renderer="Aurora.formatMoney" width="50"/>
+                                <a:column name="period_m6_sum" align="right" renderer="Aurora.formatMoney" width="50"/>
+                            </a:column> -->
+                            <!--                             <a:column name="comments" align="left" width="70"/>
+                            <a:column name="last_updated_display" align="center" width="70"/>
+                            <a:column name="last_update_date_fmt" align="center" sortable="true" width="100"/> -->
+                            <!-- <a:column name="need_plan" align="center" prompt="需求预测" renderer="inv5120_need_plan_renderer" width="70"/> -->
+                        </a:columns>
+                    </a:grid>
+                </a:fieldSet>
+                <a:fieldSet title="PUR_RCV_TRX_LINES.MY_PRE_INVENTORY">
+                    <a:screenTopToolbar>
+                        <a:toolbarButton id="inv5120_add_button" click="inv5120_item_prepare_create" disabled="true" text="PROMPT.NEW" width="100"/>
+                        <a:toolbarButton id="inv5120_save_button" click="inv5120_item_prepare_save" disabled="true" text="HAP_SAVE" width="100"/>
+                        <a:toolbarButton click="inv5120_item_prepare_delete" text="HAP_DELETE" width="100"/>
+                        <a:gridButton bind="inv5120_item_prepare_grid" type="clear" width="100"/>
+                        <a:toolbarButton click="inv5120_item_need_export" text="PUR_RCV_TRX_LINES.EXPORT_THE_DEMANDS" width="120"/>
+                        <a:toolbarButton click="inv5120_item_prepare_import" text="PUR_RCV_TRX_LINES.IMPORT_THE_PRE" width="100"/>
+                    </a:screenTopToolbar>
+                    <a:grid id="inv5120_item_prepare_grid" bindTarget="inv5120_item_prepare_result_ds" marginHeight="240" marginWidth="80" navBar="true">
+                        <a:columns>
+                            <a:column name="client_company_desc" prompt="PUR_RCV_TRX_LINES.CLIENT_COMPANY" width="50"/>
+                            <a:column name="item_code" align="center" editorFunction="inv5120_edit_item_code" prompt="PUR_RCV_TRX_LINES.MATERIAL_CODE" sortable="true" width="50"/>
+                            <a:column name="item_desc" prompt="PUR_RCV_TRX_LINES.MATERIAL_NAME" width="60"/>
+                            <a:column name="uom_desc" align="center" editor="inv5120_item_prepare_grid_lov" width="50"/>
+                            <a:column name="item_category_desc" align="left" prompt="物品分类" width="60"/>
+                            <a:column name="agent_name" align="center" prompt="PUR_HEADERS_ALL.PUR_BUYER" width="60"/>
+                            <a:column name="statistics_date" align="center" editor="inv5120_item_prepare_grid_dp" renderer="Aurora.formatDate" sortable="true" width="50"/>
+                            <a:column name="rough_manu_sum" align="right" editor="inv5120_item_prepare_grid_nf" renderer="Aurora.formatMoney" width="40"/>
+                            <a:column name="semi_manu_sum" align="right" editor="inv5120_item_prepare_grid_nf" renderer="Aurora.formatMoney" width="40"/>
+                            <a:column name="full_manu_sum" align="right" editor="inv5120_item_prepare_grid_nf" renderer="Aurora.formatMoney" width="40"/>
+                            <a:column name="total_sum" align="right" renderer="Aurora.formatMoney" width="50"/>
+                            <a:column name="key_item_deposit" editor="inv5120_item_prepare_grid_tf"/>
+                            <a:column name="pro_plan" align="center" prompt="PUR_RCV_TRX_LINES.PRODUCTION_PLAN" renderer="inv5120_pro_plan_renderer" width="60"/>
+                            <a:column name="comments" editor="inv5120_item_prepare_grid_tf" width="60"/>
+                            <a:column name="last_updated_display" align="center" width="70"/>
+                            <a:column name="last_update_date_fmt" align="center" sortable="true" width="100"/>
+                        </a:columns>
+                        <a:editors>
+                            <a:lov id="inv5120_item_prepare_grid_lov"/>
+                            <a:textField id="inv5120_item_prepare_grid_tf"/>
+                            <a:numberField id="inv5120_item_prepare_grid_nf" allowDecimals="true" allowFormat="true" allowNegative="false" decimalPrecision="2"/>
+                            <a:datePicker id="inv5120_item_prepare_grid_dp"/>
+                        </a:editors>
+                    </a:grid>
+                </a:fieldSet>
+            </a:form>
+        </a:screenBody>
+    </a:view>
+</a:screen>

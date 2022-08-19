@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;SGACP_PAYMENT_STATUS&apos; and flex_value in (&apos;10_NOT_PAYED&apos;,&apos;20_PART_PAYED&apos;)" fetchAll="true" model="public.fnd_flex_value_v_lov" rootPath="sgacp5240_payment_status_data"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="sgacp5240_payment_apply_confirm_link" url="${/request/@context_path}/modules/cux/SUGON/SGACP/SGACP5240/sgacp5240_payment_apply_confirm.screen"/>
+        <a:link id="sgacp5240_payment_apply_batch_execute_link" model="cux.SUGON.SGACP.SGACP5240.sgacp_payment_apply_headers_query" modelaction="batch_update"/>
+        <script><![CDATA[
+		
+			//创建日期校检
+			function sgacp5240_creation_date_validator(record,name,value){
+			 	if(name == "creation_date_from" || name == "creation_date_to"){
+			 	 	var start_date = record.get("creation_date_from");  
+			 	 	var end_date = record.get("creation_date_to");
+			 	 	if(typeof(end_date) != 'undefined' && !Ext.isEmpty(end_date) && typeof(start_date) != 'undefined' && !Ext.isEmpty(start_date)){
+			 	 	 	if(start_date > end_date){
+			 	 	 	 	return '申请日期从不能大于申请日期至！';   
+			 	 	 	}   
+			 	 	}
+			 	 	return true;
+			 	}   
+			}
+			
+			//单号渲染
+			function sgacp5240_payment_apply_code_renderer(value, record, name){
+				return '<a href="javascript:sgacp5240_payment_apply_confirm_detail('+record.get('apply_header_id')+');">'+value+'</a>';
+			}
+			
+			//付款申请详细信息
+			function sgacp5240_payment_apply_confirm_detail(apply_header_id){
+				new Aurora.Window({
+        	        id:'sgacp5240_payment_apply_confirm_win',
+        	        title:'付款申请明细',
+        	        url:$('sgacp5240_payment_apply_confirm_link').getUrl()+'?apply_header_id='+apply_header_id,
+        	        fullScreen:true
+        	    });
+        	    $('sgacp5240_payment_apply_confirm_win').on('close', function(){
+        	        $('sgacp5240_payment_apply_result_ds').query();
+        	    });  		   
+			}
+		
+			//查询
+			function sgacp5240_payment_apply_query(){
+			 	$('sgacp5240_payment_apply_result_ds').query();   
+			}
+			
+			//确认付款
+			function sgacp5240_payment_apply_confirm(){
+			 	var ds = $('sgacp5240_payment_apply_result_ds'),
+			 		records = ds.getAll();
+        	    if(records.length > 0 && ds.validate()){
+        	        Aurora.showConfirm('${l:PROMPT}','是否确认付款？',function(){
+	        	        var para = [];
+	        	        for(var i = 0; i < records.length; i++){
+	        	            records[i].set('_status', 'execute');
+	        	            para.push(records[i].data);
+	        	        }
+	        	        Aurora.Masker.mask(Ext.getBody(),'正在提交...'); 
+	        	        Aurora.request({
+		        	        url:$('sgacp5240_payment_apply_batch_execute_link').getUrl(),
+		        	        para:para,
+		        	        success:function(){
+		        	            Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function(){
+		        	                sgacp5240_payment_apply_query();
+		        	                Aurora.Masker.unmask(Ext.getBody());
+	        	                });
+		        	        },
+		        	        failure:function(){
+		        	        	Aurora.Masker.unmask(Ext.getBody());    
+		        	        },
+		        	        error:function(){
+		        	         	Aurora.Masker.unmask(Ext.getBody()); 	  
+		        	        },
+		        	        scope:this
+		        	    });
+	        	    },function(){},300,100);
+        	    }
+			}
+		
+		]]></script>
+        <a:dataSets>
+            <a:dataSet id="sgacp5240_payment_status_ds">
+                <a:datas dataSource="sgacp5240_payment_status_data"/>
+            </a:dataSet>
+            <a:dataSet id="sgacp5240_payment_apply_query_ds">
+                <a:fields>
+                    <a:field name="creation_date_from" validator="sgacp5240_creation_date_validator"/>
+                    <a:field name="creation_date_to" validator="sgacp5240_creation_date_validator"/>
+                    <a:field name="company_desc" lovHeight="530" lovService="cux.SUGON.SGACP.fnd_assign_company_lov" lovWidth="530" title="公司选择">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_desc" to="company_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="vendor_desc" lovHeight="530" lovService="cux.SUGON.SGACP.pur_vendors_lov" lovWidth="530" title="供应商选择">
+                        <a:mapping>
+                            <a:map from="vendor_id" to="vendor_id"/>
+                            <a:map from="vendor_desc" to="vendor_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="payment_status_display" displayField="flex_desc" options="sgacp5240_payment_status_ds" returnField="payment_status" valueField="flex_value"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="sgacp5240_payment_apply_result_ds" model="cux.SUGON.SGACP.SGACP5240.sgacp_payment_apply_headers_query" queryDataSet="sgacp5240_payment_apply_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="paying_amount" required="true"/>
+                    <a:field name="payment_date" required="true"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="sgacp5240_payment_apply_confirm" text="确认付款" width="100"/>
+                <a:gridButton bind="sgacp5240_payment_apply_result_grid" type="excel" width="100"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="sgacp5240_payment_apply_query_ds" resultTarget="sgacp5240_payment_apply_result_ds">
+                <a:formToolBar>
+                    <a:hBox labelWidth="110">
+                        <a:textField name="apply_header_code" bindTarget="sgacp5240_payment_apply_query_ds" prompt="付款申请单号">
+                            <a:events>
+                                <a:event name="enterdown" handler="sgacp5240_payment_apply_query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:lov name="vendor_desc" bindTarget="sgacp5240_payment_apply_query_ds" prompt="供应商">
+                            <a:events>
+                                <a:event name="enterdown" handler="sgacp5240_payment_apply_query"/>
+                            </a:events>
+                        </a:lov>
+                        <a:comboBox name="payment_status_display" bindTarget="sgacp5240_payment_apply_query_ds" prompt="付款进度">
+                            <a:events>
+                                <a:event name="enterdown" handler="sgacp5240_payment_apply_query"/>
+                            </a:events>
+                        </a:comboBox>
+                    </a:hBox>
+                </a:formToolBar>
+                <a:formBody>
+                    <a:hBox labelWidth="110">
+                        <a:lov name="company_desc" bindTarget="sgacp5240_payment_apply_query_ds" prompt="公司">
+                            <a:events>
+                                <a:event name="enterdown" handler="sgacp5240_payment_apply_query"/>
+                            </a:events>
+                        </a:lov>
+                        <a:datePicker name="creation_date_from" bindTarget="sgacp5240_payment_apply_query_ds" prompt="申请日期从">
+                            <a:events>
+                                <a:event name="enterdown" handler="sgacp5240_payment_apply_query"/>
+                            </a:events>
+                        </a:datePicker>
+                        <a:datePicker name="creation_date_to" bindTarget="sgacp5240_payment_apply_query_ds" prompt="申请日期至">
+                            <a:events>
+                                <a:event name="enterdown" handler="sgacp5240_payment_apply_query"/>
+                            </a:events>
+                        </a:datePicker>
+                    </a:hBox>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="sgacp5240_payment_apply_result_grid" bindTarget="sgacp5240_payment_apply_result_ds" marginHeight="240" marginWidth="80" navBar="true" width="900">
+                <a:columns>
+                    <a:column name="payment_status_display" sortable="true" width="60"/>
+                    <a:column name="apply_header_code" align="center" renderer="sgacp5240_payment_apply_code_renderer" sortable="true" width="80"/>
+                    <a:column name="vendor_name"/>
+                    <a:column name="tax_total_amount" align="right" renderer="Aurora.formatMoney" sortable="true" width="80"/>
+                    <a:column name="adjusted_total_amount" align="right" renderer="Aurora.formatMoney" sortable="true" width="90"/>
+                    <a:column name="adjust_desc"/>
+                    <a:column prompt="付款进度(含税)">
+                        <a:column name="payed_amount" align="right" renderer="Aurora.formatMoney" sortable="true" width="80"/>
+                        <a:column name="paying_amount" align="right" editor="sgacp5240_payment_apply_result_grid_nf" renderer="Aurora.formatMoney" sortable="true" width="80"/>
+                        <a:column name="unpayed_amount" align="right" renderer="Aurora.formatMoney" sortable="true" width="80"/>
+                    </a:column>
+                    <a:column name="payment_date" align="center" editor="sgacp5240_payment_apply_result_grid_dp" renderer="Aurora.formatDate" sortable="true" width="80"/>
+                    <a:column name="final_payment_date" align="center" renderer="Aurora.formatDate" sortable="true" width="80"/>
+                    <a:column name="currency_code" width="60"/>
+                    <a:column name="tax_rate" align="right" sortable="true" width="60"/>
+                    <a:column name="company_name"/>
+                    <a:column name="created_by_display"/>
+                    <a:column name="creation_date" align="center" renderer="Aurora.formatDate" sortable="true" width="80"/>
+                    <a:column name="comments"/>
+                </a:columns>
+                <a:editors>
+                    <a:datePicker id="sgacp5240_payment_apply_result_grid_dp"/>
+                    <a:numberField id="sgacp5240_payment_apply_result_grid_nf" allowDecimals="true" allowNegative="false" decimalPrecision="2"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

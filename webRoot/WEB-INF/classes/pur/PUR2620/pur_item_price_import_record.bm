@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: hansen  
+    $Date: 2016-1-7 下午1:39:31  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        h.company_id,
+                        (SELECT
+                            v.company_code
+                        FROM
+                            fnd_companies_vl v
+                        WHERE
+                            v.company_id = h.company_id
+                        ) owner_company_code,
+                        (SELECT
+                            v.company_full_name
+                        FROM
+                            fnd_companies_vl v
+                        WHERE
+                            v.company_id = h.company_id
+                        ) owner_company_name,
+                        h.coop_company_id,
+                        (SELECT
+                            v.company_code
+                        FROM
+                            fnd_companies_vl v
+                        WHERE
+                            v.company_id = h.coop_company_id
+                        ) coop_company_code,
+                        (SELECT
+                            v.company_full_name
+                        FROM
+                            fnd_companies_vl v
+                        WHERE
+                            v.company_id = h.coop_company_id
+                        ) coop_company_name,
+                        h.business_unit_id,
+                        (SELECT
+                            ul.business_unit_name
+                        FROM
+                            fnd_business_units_vl ul
+                        WHERE
+                            ul.business_unit_id = h.business_unit_id
+                        ) business_unit_name,
+                        h.item_id,
+                        (SELECT
+                            NVL(m.display_item_code, m.item_code)
+                        FROM
+                            mtl_system_items_vl m
+                        WHERE
+                            m.item_id = h.item_id
+                        ) item_code,
+                        (SELECT m.item_name FROM mtl_system_items_vl m WHERE m.item_id = h.item_id
+                        ) item_name,
+                        h.data_source,
+                        DECODE(h.data_source,'BID_ENTRUSTMENT_HEADERS','招标','PUR_RFX_HEADERS','询价','其他') data_source_description,
+                        h.source_id,
+                        l.start_date,
+                        l.end_date,
+                        d.quantity_from,
+                        d.quantity_to,
+                        d.unit_price,
+                        d.used_flag,
+                        d.error_msg,
+                        h.item_price_header_id,
+                        d.detail_line_id,
+                        DECODE(d.used_flag,'Y','已导入','未导入') used_flag_desc
+                    FROM
+                        pur_item_price_record_headers h,
+                        pur_item_price_record_lines l,
+                        pur_item_price_record_dtls d
+                    WHERE
+                        h.item_price_header_id = l.item_price_header_id AND
+                        l.date_line_id         = d.date_line_id AND
+                        h.business_group       = ${/session/@business_group}
+                    ) t #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:parameters>
+                <bm:parameter name="item_header_id" dataType="java.lang.Long" input="true" output="true" outputPath="@item_header_id"/>
+            </bm:parameters>
+            <bm:update-sql><![CDATA[
+                begin
+                    pur_item_price_pkg.select_from_record_to_price(p_record_header_id =>${@record_header_id},
+                                                                   p_user_id          =>${/session/@user_id},
+                                                                   x_item_price_id    =>${@item_header_id});
+                end;
+             ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:parameters>
+                <bm:parameter name="error_message" dataType="java.lang.String" input="true" output="true" outputPath="@error_message"/>
+            </bm:parameters>
+            <bm:update-sql><![CDATA[
+                begin
+                    pur_item_price_pkg.load_record_into_price(p_record_detail_id        =>${@detail_line_id},
+                                                              p_start_date              =>to_date(${@start_date},'yyyy-mm-dd'),
+                                                              p_end_date                =>to_date(${@end_date},'yyyy-mm-dd'),
+                                                              p_quantity_from           =>${@quantity_from},
+                                                              p_quantity_to             =>${@quantity_to},
+                                                              p_unit_price              =>${@unit_price},
+                                                              p_price_adjustment_method =>${@price_adjustment_method},
+                                                              p_user_id                 =>${/session/@user_id},
+                                                              p_header_id               =>${@record_header_id},
+                                                              x_out_error_message       =>${@error_message});
+                end;
+             ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+                begin
+                    pur_item_price_pkg.validate_record_into_price(p_record_detail_id =>${@detail_line_id},
+                                                                  p_header_id        =>${@record_header_id},
+                                                                  p_user_id          =>${/session/@user_id});
+                end;
+             ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+                begin
+                    pur_item_price_pkg.delete_error_msg(p_user_id          =>${/session/@user_id});
+                end;
+             ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="company_id" queryExpression="t.company_id = ${@company_id}"/>
+        <bm:query-field name="business_unit_id" queryExpression="t.business_unit_id = ${@business_unit_id}"/>
+        <bm:query-field name="cooperative_company_id" queryExpression="t.coop_company_id = ${@cooperative_company_id}"/>
+        <bm:query-field name="item_id" queryExpression="t.item_id = ${@item_id}"/>
+        <bm:query-field name="used_flag" queryExpression="nvl(t.used_flag,&apos;N&apos;) = ${@used_flag}"/>
+        <bm:query-field name="error_msg" queryExpression="t.error_msg is not null"/>
+    </bm:query-fields>
+</bm:model>

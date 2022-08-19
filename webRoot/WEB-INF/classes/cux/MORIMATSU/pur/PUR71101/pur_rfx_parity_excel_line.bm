@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*,
+                    NVL(v.total_costs2,0) AS total_costs
+                FROM
+                    (SELECT
+                        rownum AS line_num,
+                        p.*,
+                        DECODE(p.head_adjust_cost,0,p.head_total_cost,p.head_adjust_cost) AS total_costs2,
+                        NVL(p.valid_fb_retail_price * p.need_quantity, 0) total_price
+                    FROM
+                        (SELECT
+                            (SELECT
+                                v.company_full_name
+                            FROM
+                                fnd_companies_vl v
+                            WHERE
+                                v.company_id = fh.coop_company_id
+                            ) coop_company_desc,
+                            (SELECT
+                                NVL(SUM(NVL(fl2.valid_fb_retail_price, 0) * fl2.allotted_quantity),0)
+                            FROM
+                                pur_rfx_feedback_headers fh2,
+                                pur_rfx_feedback_lines fl2,
+                                pur_rfx_ln_items li2
+                            WHERE
+                                fh2.rfx_header_id      = h.rfx_header_id AND
+                                fh2.feedback_header_id = fl2.feedback_header_id AND
+                                fl2.rfx_line_item_id   = li2.rfx_line_item_id AND
+                                fh2.rfx_round          = li2.current_round AND
+                                fh2.rfx_version        = li2.current_version AND
+                                fh2.coop_company_id    = fh.coop_company_id AND
+                                fh2.cancel_flag        = 'N' AND
+                                fl2.cancel_flag        = 'N' AND
+                                li2.cancel_flag        = 'N' AND
+                                --li2.rfx_finished_flag  = 'Y' AND
+                                fl2.suggested_flag = 'Y'
+                            ) AS suggested_total_amount,
+                            NVL(li.samples_requested, 'N') samples_requested,
+                            NVL(h.adjust_cost,0) AS adjust_costs,
+                            fl.item_code,
+                            fl.item_desc,
+                            li.item_note,
+                            li.work_num,
+                            li.line_num AS num,
+                            li.item_parameter_config specification,
+                            li.uom_code,
+                            NVL(
+                            (SELECT
+                                SUM(fl3.allotted_quantity)
+                            FROM
+                                pur_rfx_feedback_lines fl3
+                            WHERE
+                                fl3.rfx_line_item_id = fl.rfx_line_item_id
+                            ) ,0) AS need_quantity,
+                            NVL(li.cost_price,0) AS cost_price,
+                            h.total_cost AS head_total_cost,
+                            NVL(
+                            (SELECT
+                                NVL(rh2.approved_amount, 0)
+                            FROM
+                                pur_rfx_header_snaps rh2
+                            WHERE
+                                rh2.rfx_header_id      = h.rfx_header_id AND
+                                rh2.rfx_header_snap_id =
+                                (SELECT
+                                    MAX(rh3.rfx_header_snap_id)
+                                FROM
+                                    pur_rfx_header_snaps rh3
+                                WHERE
+                                    rh3.rfx_header_id = h.rfx_header_id
+                                )
+                            ),0) head_adjust_cost,
+                            NVL(li.quantity * li.cost_price, 0) total_cost,
+                            NVL(fl.valid_fb_retail_price,0) valid_fb_retail_price,
+                            (
+                                CASE fl.suggested_flag
+                                    WHEN 'Y'
+                                    THEN NVL(fl.valid_fb_retail_price * li.quantity, 0)
+                                    ELSE 0
+                                END) AS total_allotted,
+                            (SELECT
+                                NVL(SUM((
+                                        CASE fl2.suggested_flag
+                                            WHEN 'Y'
+                                            THEN NVL(fl2.valid_fb_retail_price * li2.quantity, 0)
+                                            ELSE 0
+                                        END)),0)
+                            FROM
+                                pur_rfx_feedback_headers fh2,
+                                pur_rfx_feedback_lines fl2,
+                                pur_rfx_ln_items li2
+                            WHERE
+                                fh2.rfx_header_id      = h.rfx_header_id AND
+                                fh2.feedback_header_id = fl2.feedback_header_id AND
+                                fl2.rfx_line_item_id   = li2.rfx_line_item_id AND
+                                fh2.rfx_round          = li2.current_round AND
+                                fh2.rfx_version        = li2.current_version AND
+                                fh2.coop_company_id    = fh.coop_company_id AND
+                                fh2.cancel_flag        = 'N' AND
+                                fl2.cancel_flag        = 'N' AND
+                                li2.cancel_flag        = 'N' AND
+                                --li2.rfx_finished_flag  = 'Y' AND
+                                fl2.suggested_flag = 'Y'
+                            ) AS total_allotted_value,
+                            fl.suggested_flag,
+                            TO_CHAR(fl.promised_date,'yyyy-mm-dd') promised_date,
+                            (SELECT
+                                NVL(pv.proposed_flag, 'N')
+                            FROM
+                                pur_rfx_ln_vendors pv
+                            WHERE
+                                pv.coop_company_id = fh.coop_company_id AND
+                                pv.rfx_header_id   = h.rfx_header_id AND
+                                rownum             = 1
+                            ) proposed_flag,
+                            h.rfx_header_id
+                        FROM
+                            pur_rfx_headers h,
+                            pur_rfx_ln_items li,
+                            pur_rfx_feedback_headers fh,
+                            pur_rfx_feedback_lines fl
+                        WHERE
+                            h.rfx_header_id       = fh.rfx_header_id AND
+                            h.rfx_header_id       = li.rfx_header_id AND
+                            fh.feedback_header_id = fl.feedback_header_id AND
+                            li.rfx_line_item_id   = fl.rfx_line_item_id AND
+                            fh.rfx_round          = li.current_round AND
+                            fh.rfx_version        = li.current_version AND
+                            fh.cancel_flag        = 'N' AND
+                            fl.cancel_flag        = 'N' AND
+                            li.cancel_flag        = 'N'
+                            --AND li.rfx_finished_flag  = 'Y'
+                        ORDER BY
+                            li.line_num
+                        ) p #WHERE_CLAUSE#
+                    ) v
+                ORDER BY
+                    v.num ASC,
+                    v.total_allotted_value DESC
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

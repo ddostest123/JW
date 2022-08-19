@@ -1,0 +1,558 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: libin  
+    $Date: 2015-1-8 下午6:01:32  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="t.business_group_code=${/parameter/@bg_code}" fetchAll="true" model="wfl.WFL1001.fnd_company_query_result" rootPath="wfl1001_map_detail_relation"/>
+        <a:model-query defaultWhereClause="t.owner_business_group=${/parameter/@bg_code}" fetchAll="true" model="wfl.WFL1001.fnd_owner_company_query" rootPath="wfl1001_map_detail_owner"/>
+        <a:model-query defaultWhereClause="t.owner_business_group=${/parameter/@bg_code}" fetchAll="true" model="wfl.WFL1001.fnd_coop_company_query" rootPath="wfl1001_map_detail_coop"/>
+        <a:model-query defaultWhereClause="t.owner_business_group=${/parameter/@bg_code}" fetchAll="true" model="wfl.WFL1001.fnd_time_line_query" rootPath="wfl1001_map_detail_timeLine"/>
+    </a:init-procedure>
+    <a:view>
+        <!-- js引入 -->
+        <script src="http://echarts.baidu.com/build/dist/echarts.js" type="text/javascript"/>
+        <script><![CDATA[
+            /*
+             ***************************************************************
+             *首页地图点击进入的详细页面：调用echarts显示集团的合作公司的分布情况
+             *参数wfl1001_map_detail_index：百度地图地址解析序列
+             *参数wfl1001_map_detail_owner_company:主公司地址解析成功后存入的数组：重要！
+             *参数wfl1001_map_detail_coop_company:合作公司地址解析成功后存入的数组：重要！
+             *参数wfl1001_map_detail_Bmap_error_errorScope：百度地图地址解析误差范围
+             *参数wfl1001_map_detail_Bmap_flag：标志
+             *参数wfl1001_map_detail_myGeo：百度地址解析实例
+             *参数wfl1001_map_detail_serie：百度echarts设置options里series数组（不同时间轴初始时清空）
+             *参数wfl1001_map_detail_series:百度echarts设置options里多个wfl1001_map_detail_serie数组组合成的二维数组
+             *参数wfl1001_map_detail_options：百度echarts设置options数组
+             *参数wfl1001_map_detail_amount_all：判断有效连接的个数
+             ***************************************************************
+             */
+            var wfl1001_map_detail_index = -1;
+            var wfl1001_map_detail_owner_company = [];
+            var wfl1001_map_detail_coop_company = [];
+            var wfl1001_map_detail_Bmap_error_errorScope = 0;
+            var wfl1001_map_detail_Bmap_flag = false;
+            var wfl1001_map_detail_myGeo = new BMap.Geocoder();
+            var wfl1001_map_detail_options = [];
+            var wfl1001_map_detail_serie = [];
+            var wfl1001_map_detail_series = [];
+            var wfl1001_map_detail_amount_all = 0;
+            
+            
+            function wfl1001_map_detail_init() {
+                wfl1001_map_lock_current_window();
+                var result_ds = $('wfl1001_map_detail_result_ds').getAll();
+                var owner_ds = $('wfl1001_map_detail_owner_ds').getAll();
+                var coop_ds = $('wfl1001_map_detail_coop_ds').getAll();
+                var length = result_ds.length;
+                //if (length > 0) {
+                //地址解析
+                wfl1001_map_detail_address_anaylse('wfl1001_map_detail_owner_ds');
+                //}
+            }
+            
+            //地址分析定时调用函数
+            
+            function wfl1001_map_detail_Bmap_address(name, address, company_ds) {
+                wfl1001_map_detail_myGeo.getPoint(address, function(point) {
+                    if (point) {
+                        if (company_ds == 'wfl1001_map_detail_owner_ds') {
+                            wfl1001_map_detail_owner_company.push({
+                                name: name,
+                                lng: point.lng,
+                                lat: point.lat
+                            });
+                        } else if (company_ds == 'wfl1001_map_detail_coop_ds') {
+                            wfl1001_map_detail_coop_company.push({
+                                name: name,
+                                lng: point.lng,
+                                lat: point.lat
+                            });
+                        }
+                    }
+                    wfl1001_map_detail_address_anaylse(company_ds);
+                }, "");
+            }
+            
+            //地址分析主函数入口
+            
+            function wfl1001_map_detail_address_anaylse(company_ds) {
+                var ds = $(company_ds).getAll();
+                wfl1001_map_detail_index++;
+                if (wfl1001_map_detail_index < ds.length) {
+                    var address = ds[wfl1001_map_detail_index].get('address');
+                    var name = ds[wfl1001_map_detail_index].get('company_full_name');
+                    setTimeout(wfl1001_map_detail_Bmap_address(name, address, company_ds), 400);
+                } else {
+                    if (company_ds == 'wfl1001_map_detail_owner_ds') {
+                        wfl1001_map_detail_index = -1;
+                        wfl1001_map_detail_address_anaylse('wfl1001_map_detail_coop_ds');
+                    } else {
+                        wfl1001_map_detail_Bmap_option_set();
+                    }
+                }
+            }
+            /*
+             ***************************************************************
+             *百度echarts设置主函数：配置echarts时先配置出显示所有的公司的点和联系的关系。再根据每个有效的owner配置炫动效果
+             *参数owner_address_effective_flag：ds查询出的owner的地址是否有效的标志
+             *参数owner_address_inArray_index:若有效，则在owner地址数组里的序号
+             *参数coop_address_effective_flag:ds查询出的coop的地址是否有效的标志
+             *参数coop_address_inArray_index：若有效，则在coop地址数组里的序号
+             *参数address_array：所有（包括owner和coop公司的地址信息和名称）的数组
+             *参数name_array：所有（包括owner和coop公司的名称）的数组
+             *参数link_array：所有的关联关系数组
+             *参数owner_link_array：当前owner公司下的关联关系数组
+             *参数legend_data：百度echarts下的设置的legend的数组（存放所有有效的owner公司的名称）
+             ***************************************************************
+             */
+            
+            //地址解析后调用的函数，根据time时间轴的个数循环调用wfl1001_map_detail_Bmap_data(month)函数设置显示设置
+            
+            function wfl1001_map_detail_Bmap_option_set() {
+                var time_ds = $('wfl1001_map_detail_timeLine_ds').getAll();
+                if (time_ds.length > 0) {
+                    for (var i = 0;i < time_ds.length;i++) {
+                        //全局变量初始化
+                        wfl1001_map_detail_serie = [];
+                        wfl1001_map_detail_Bmap_data(time_ds[i].get('date_month'), time_ds[i].get('date_year'));
+                    }
+                } else {
+                    //若time时间轴为空，为了显示地图，将month值传入0
+                    wfl1001_map_detail_Bmap_data(0);
+                }
+                wfl1001_map_draw();
+                wfl1001_map_unlock_current_window();
+            }
+            
+            //设置echarts显示的主函数，根据month将显示数据分类显示
+            
+            
+            function wfl1001_map_detail_Bmap_data(month, year) {
+                var result_ds = $('wfl1001_map_detail_result_ds').getAll();
+                var owner_company_name;
+                var coop_company_name;
+                var owner_address_effective_flag;
+                var owner_address_inArray_index;
+                var coop_address_effective_flag;
+                var coop_address_inArray_index;
+                var address_array = {};
+                var name_array = [];
+                var link_array = [];
+                var owner_link_array = [];
+                var legend_data = [];
+                //设置全部要显示的owner_company和coop_company的经纬度
+                for (var i = 0;i < wfl1001_map_detail_owner_company.length;i++) {
+                    address_array[wfl1001_map_detail_owner_company[i].name] = [wfl1001_map_detail_owner_company[i].lng, wfl1001_map_detail_owner_company[i].lat];
+                    name_array.push({
+                        name: wfl1001_map_detail_owner_company[i].name
+                    });
+                    //legend_data.push(wfl1001_map_detail_owner_company[i].name);
+                    //避免legend图例数据过大，只显示前十个
+                    if (legend_data.length < 10) {
+                        legend_data.push(wfl1001_map_detail_owner_company[i].name);
+                    }
+                }
+                for (i = 0;i < wfl1001_map_detail_coop_company.length;i++) {
+                    address_array[wfl1001_map_detail_coop_company[i].name] = [wfl1001_map_detail_coop_company[i].lng, wfl1001_map_detail_coop_company[i].lat];
+                    name_array.push({
+                        name: wfl1001_map_detail_coop_company[i].name
+                    });
+                }
+                //设置全部要显示的owner_company和coop_company的连线关系
+                for (i = 0;i < result_ds.length;i++) {
+                    //判断每条记录的owner和coop的地址是否在有效，（是否在name_array数组里有值）
+                    owner_address_effective_flag = false;
+                    coop_address_effective_flag = false;
+                    for (var j = 0;j < name_array.length;j++) {
+                        if (name_array[j].name == result_ds[i].get('owner_company_name')) {
+                            owner_address_effective_flag = true;
+                            owner_address_inArray_index = j;
+                        }
+                        if (name_array[j].name == result_ds[i].get('coop_company_name')) {
+                            coop_address_effective_flag = true;
+                            coop_address_inArray_index = j;
+                        }
+                    }
+                    //全部的己方和合作公司地址都有效则创建连接关系,无效关系置入空数据占用连接空间！！！重要
+                    if (owner_address_effective_flag && coop_address_effective_flag) {
+                        if (result_ds[i].get('date_month') == month) {
+                            link_array[link_array.length] = [name_array[owner_address_inArray_index], name_array[coop_address_inArray_index]];
+                        } else {
+                            //不在month下的连接默认为主公司自己连接自己。否则会出现该时间轴后面的数据覆盖前面时间的数据！！！重要
+                            link_array[link_array.length] = [name_array[owner_address_inArray_index], name_array[owner_address_inArray_index]];
+                        }
+                    }
+                }
+                //设置series首个数据配置
+                wfl1001_map_detail_serie.push({
+                    name: '全国',
+                    type: 'map',
+                    roam: true,
+                    hoverable: false,
+                    mapType: 'china',
+                    itemStyle: {
+                        normal: {
+                            borderColor: 'rgba(100,149,237,1)',
+                            borderWidth: 0.5,
+                            areaStyle: {
+                                color: '#1b1b1b'
+                            }
+                        }
+                    },
+                    data: [],
+                    markLine: {
+                        smooth: true,
+                        symbol: ['none', 'circle'],
+                        symbolSize: 1,
+                        itemStyle: {
+                            normal: {
+                                color: '#fff',
+                                borderWidth: 1,
+                                borderColor: 'rgba(30,144,255,0.5)'
+                            }
+                        },
+                        data: []
+                    },
+                    geoCoord: address_array
+                });
+                //循环配置serie
+                for (i = 0;i < wfl1001_map_detail_owner_company.length;i++) {
+                    //配置当前owner公司下的coop关系数组
+                    owner_link_array = wfl1001_map_detail_owner_to_coop(wfl1001_map_detail_owner_company[i].name, i, month);
+                    //当联系数组有值时新增series
+                    if (owner_link_array.length > 0) {
+                        wfl1001_map_detail_series_add(wfl1001_map_detail_owner_company[i].name, owner_link_array, month);
+                    }
+                }
+                //将配置好的serie插入到series中，每次进来serie置空
+                wfl1001_map_detail_series.push(wfl1001_map_detail_serie);
+                //series配置好后配置option
+                wfl1001_map_detail_option_push(legend_data, link_array, month, year);
+            }
+            
+            function wfl1001_map_detail_option_push(legend_data, link_array, month, year) {
+                var result_ds = $('wfl1001_map_detail_result_ds').getAll();
+                var time_ds = $('wfl1001_map_detail_timeLine_ds').getAll();
+                var bg_name;
+                var sutest = '数据来自SRM云';
+                if (result_ds.length > 0) {
+                    bg_name = year + '-' + month + '——' + result_ds[0].get('business_group_name') + '——集团详细分布';
+                    if (link_array.length == 0) {
+                        sutest += '——无有效数据';
+                        //Aurora.showMessage('提示', '无有效数据：该集团下有合作关系，可能是合作关系上有一方的地址无效', null, 300, 120);
+                    }
+                } else {
+                    bg_name = '该集团下无合作关系';
+                    //Aurora.showMessage('提示', '无合作关系：该集团下规定期间内没有合作关系', null, 300, 120);
+                }
+                wfl1001_map_detail_options.push({
+                    backgroundColor: '#1b1b1b',
+                    color: ['gold', 'aqua', 'lime'],
+                    title: {
+                        text: bg_name,
+                        subtext: sutest,
+                        x: 'center',
+                        textStyle: {
+                            color: '#fff'
+                        }
+                    },
+                    tooltip: {
+                        trigger: 'item',
+                        formatter: '{b}'
+                    },
+                    legend: {
+                        orient: 'vertical',
+                        x: 'left',
+                        data: legend_data,
+                        selectedMode: 'single',
+                        /*  selected: {
+                         '上海 Top10': false,
+                         '广州 Top10': false
+                         }, */
+                        textStyle: {
+                            color: '#fff'
+                        }
+                    },
+                    toolbox: {
+                        show: true,
+                        orient: 'vertical',
+                        x: 'right',
+                        y: 'center',
+                        feature: {
+                            mark: {
+                                show: true
+                            },
+                            dataView: {
+                                show: true,
+                                readOnly: false
+                            },
+                            restore: {
+                                show: true
+                            },
+                            saveAsImage: {
+                                show: true
+                            }
+                        }
+                    },
+                    dataRange: {
+                        min: 0,
+                        max: 100,
+                        calculable: true,
+                        color: ['#ff3333', 'orange', 'yellow', 'lime', 'aqua'],
+                        textStyle: {
+                            color: '#fff'
+                        }
+                    },
+                    series: wfl1001_map_detail_series[wfl1001_map_detail_series.length - 1]
+                });
+                //配置每个series[0]的连接数据
+                for (i = 0;i < link_array.length;i++) {
+                    wfl1001_map_detail_options[wfl1001_map_detail_options.length - 1].series[0].markLine.data.push(link_array[i]);
+                }
+            }
+            
+            //配置当前owner下的coop的联系关系数组
+            
+            function wfl1001_map_detail_owner_to_coop(owner_name, owner_index, month) {
+                var result_ds = $('wfl1001_map_detail_result_ds').getAll();
+                var owner_link_array = [];
+                wfl1001_map_detail_amount_all = 0;
+                for (var index = 0;index < result_ds.length;index++) {
+                    if (owner_name == result_ds[index].get('owner_company_name')) {
+                        //判断在coop地址数组里时候有对应的coop记录，有则建立与owner的连接
+                        for (var i = 0;i < wfl1001_map_detail_coop_company.length;i++) {
+                            if (wfl1001_map_detail_coop_company[i].name == result_ds[index].get('coop_company_name')) {
+                                if (result_ds[index].get('date_month') == month) {
+                                    wfl1001_map_detail_amount_all++;
+                                    owner_link_array[owner_link_array.length] = [{
+                                        name: owner_name
+                                    }, {
+                                        name: result_ds[index].get('coop_company_name')
+                                    }];
+                                } else {
+                                    //不在此month下的连接默认主公司自己连自己，否则会被后面的时间轴上的数据覆盖点！！！重要
+                                    owner_link_array[owner_link_array.length] = [{
+                                        name: owner_name
+                                    }, {
+                                        name: owner_name
+                                    }];
+                                }
+                            }
+                        }
+                    }
+                }
+                return owner_link_array;
+            }
+            
+            //计算当前owner下的与有效coop的总业务量，
+            
+            function wfl1001_map_onwer_coop_sum_all(owner_name, owner_link_array, month) {
+                var ds = $('wfl1001_map_detail_result_ds').getAll();
+                var length = owner_link_array.length;
+                var sum = 0;
+                var i;
+                var j;
+                //计算总业务量,该owner公司和所有有效的合作公司的业务量总和
+                for (i = 0;i < ds.length;i++) {
+                    if (ds[i].get('owner_company_name') == owner_name && ds[i].get('date_month') == month) {
+                        //计算总的
+                        for (j = 0;j < length;j++) {
+                            if (ds[i].get('coop_company_name') == owner_link_array[j][1].name) {
+                                sum += ds[i].get('sum');
+                            }
+                        }
+                    }
+                }
+                return sum;
+            }
+            
+            //根据业务量设置节点的半径即颜色,业务量是计算当前合作公司的业务量占改owner公司的业务量的比。
+            
+            function wfl1001_map_set_node_color(owner_name, owner_link_array, index, sum, month) {
+                var ds = $('wfl1001_map_detail_result_ds').getAll();
+                var length = owner_link_array.length;
+                var sum_now = 0;
+                var radious;
+                var i;
+                var j;
+                //计算index下的当前coop的业务量
+                for (i = 0;i < ds.length;i++) {
+                    if (ds[i].get('owner_company_name') == owner_name && ds[i].get('coop_company_name') == owner_link_array[index][1].name && ds[i].get('date_month') == month) {
+                        sum_now = ds[i].get('sum');
+                    }
+                }
+                if (sum != 0) {
+                    radious = (90 * (sum_now / sum)).toFixed(2);
+                } else {
+                    radious = 0;
+                }
+                return radious;
+            }
+            
+            //动态增加echarts的option-series
+            
+            function wfl1001_map_detail_series_add(legend_name, owner_link_array, month) {
+                var sum;
+                var radious;
+                wfl1001_map_detail_serie.push({
+                    name: legend_name,
+                    type: 'map',
+                    mapType: 'china',
+                    data: [],
+                    markLine: {
+                        smooth: true,
+                        effect: {
+                            show: true,
+                            scaleSize: 1,
+                            period: 10,
+                            color: '#fff',
+                            shadowBlur: 10
+                        },
+                        itemStyle: {
+                            normal: {
+                                borderWidth: 1,
+                                lineStyle: {
+                                    type: 'solid',
+                                    shadowBlur: 10
+                                }
+                            }
+                        },
+                        data: []
+                    },
+                    markPoint: {
+                        symbol: 'emptyCircle',
+                        symbolSize: function(v) {
+                            return 10 + v / 10;
+                        },
+                        effect: {
+                            show: true,
+                            shadowBlur: 0
+                        },
+                        itemStyle: {
+                            normal: {
+                                label: {
+                                    show: false
+                                }
+                            },
+                            emphasis: {
+                                label: {
+                                    position: 'top'
+                                }
+                            }
+                        },
+                        data: []
+                    }
+            
+                });
+                //当此month下的连接数据都是主公司自己连自己（即无效连接）时，将显示point的大小设为0
+                if (wfl1001_map_detail_amount_all == 0) {
+                    wfl1001_map_detail_serie[wfl1001_map_detail_serie.length - 1].markPoint.symbolSize = 0;
+                }
+                //设置本公司的点
+                /* wfl1001_map_detail_serie[wfl1001_map_detail_serie.length - 1].markPoint.data.push({
+                 name: legend_name,
+                 value: 100
+                 }); */
+                //计算当前owner下的总业务量
+                sum = wfl1001_map_onwer_coop_sum_all(legend_name, owner_link_array, month);
+                for (i = 0;i < owner_link_array.length;i++) {
+                    radious = wfl1001_map_set_node_color(legend_name, owner_link_array, i, sum, month);
+                    //设置本公司和合作公司的连线关系
+                    wfl1001_map_detail_serie[wfl1001_map_detail_serie.length - 1].markLine.data.push(owner_link_array[i]);
+                    //设置连接线的value值（从大小控制颜色）
+                    wfl1001_map_detail_serie[wfl1001_map_detail_serie.length - 1].markLine.data[i][1].value = radious;
+                    //设置合作公司的点
+                    wfl1001_map_detail_serie[wfl1001_map_detail_serie.length - 1].markPoint.data.push({
+                        name: owner_link_array[i][1].name,
+                        value: radious
+                    });
+                }
+            
+            }
+            
+            //根据设置好的options配置echart显示
+            
+            function wfl1001_map_draw() {
+                var time_ds = $('wfl1001_map_detail_timeLine_ds').getAll();
+                // 路径配置
+                require.config({
+                    paths: {
+                        echarts: 'http://echarts.baidu.com/build/dist'
+                    }
+                });
+            
+                // 使用
+                require(['echarts', 'echarts/chart/map', // 使用柱状图就加载bar模块，按需加载
+                'echarts/chart/chord'], function(ec) {
+                    // 基于准备好的dom，初始化echarts图表
+                    var myChart = ec.init(document.getElementById('wfl1001_map_detail_main'));
+            
+                    option = {
+                        timeline: {
+                            data: [],
+                            label: {
+                                formatter: function(s) {
+                                    return s.slice(0, 10);
+                                },
+                                textStyle: {
+                                    color: '#fff'
+                                }
+                            },
+                            autoPlay: true,
+                            playInterval: 1000
+                        },
+                        options: wfl1001_map_detail_options
+                    };
+                    //配置时间轴数据
+                    if (time_ds.length > 0) {
+                        for (i = 0;i < time_ds.length;i++) {
+                            option.timeline.data.push(time_ds[i].get('date_year') + '-' + time_ds[i].get('date_month'));
+                            //alert(time_ds[i].get('date_year') + '-' + time_ds[i].get('date_month'));
+                        }
+                    } else {
+                        option.timeline.data.push('0000-00-00');
+                    }
+                    // 为echarts对象加载数据
+                    myChart.setOption(option);
+                });
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="wfl1001_map_detail_result_ds">
+                <a:datas dataSource="/model/wfl1001_map_detail_relation"/>
+            </a:dataSet>
+            <a:dataSet id="wfl1001_map_detail_owner_ds">
+                <a:datas dataSource="/model/wfl1001_map_detail_owner"/>
+            </a:dataSet>
+            <a:dataSet id="wfl1001_map_detail_coop_ds">
+                <a:datas dataSource="/model/wfl1001_map_detail_coop"/>
+            </a:dataSet>
+            <a:dataSet id="wfl1001_map_detail_timeLine_ds">
+                <a:datas dataSource="/model/wfl1001_map_detail_timeLine"/>
+            </a:dataSet>
+        </a:dataSets>
+        <div id="wfl1001_map_detail_main" style="height:600px;width:100%;"/>
+        <script><![CDATA[
+                var wfl1001_map_detail_width = screen.availWidth;
+                var wfl1001_map_detail_height = screen.availHeight;
+                //document.getElementById('wfl1001_map_detail_main').style.width = 880 + 'px';
+                //document.getElementById('wfl1001_map_detail_main').style.height = 560 + 'px';
+                wfl1001_map_detail_init();
+                
+                //锁屏
+                function wfl1001_map_lock_current_window() {
+                    Aurora.Masker.mask($('wfl001_detail_view').wrap, '努力加载中，请稍等...');
+                }
+                
+                //结屏
+                function wfl1001_map_unlock_current_window() {
+                    Aurora.Masker.unmask($('wfl001_detail_view').wrap);
+                }
+            ]]></script>
+    </a:view>
+</a:screen>

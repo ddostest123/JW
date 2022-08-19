@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao  
+    $Date: 2014-10-11 上10:38:31  
+    $Revision: 1.0  
+    $Purpose: 送货单查询，送货单头查询BM
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        iah.asn_header_id,
+                        iah.display_asn_number AS asn_number,
+                        iah.asn_type_code,
+                        (SELECT
+                            atv.asn_type_name
+                        FROM
+                            inv_asn_types_vl atv
+                        WHERE
+                            atv.asn_type_code = iah.asn_type_code
+                        ) AS asn_type_name,
+                        iah.coop_company_id AS company_id,
+                        (SELECT
+                            fcv.company_full_name
+                        FROM
+                            fnd_companies_vl fcv
+                        WHERE
+                            fcv.company_id = iah.coop_company_id
+                        ) AS company_name,
+                        iah.status,
+                        (SELECT
+                            cvv.code_value_name
+                        FROM
+                            sys_code_values_v cvv
+                        WHERE
+                            cvv.code       = 'INV_ASN_HEADERS_STATUS' AND
+                            cvv.code_value = iah.status
+                        ) AS header_status,
+                        TO_CHAR(iah.ship_date, 'yyyy-mm-dd') AS ship_date_fmt,
+                        TO_CHAR(iah.expected_date, 'yyyy-mm-dd') AS expected_date_fmt,
+                        TO_CHAR(iah.creation_date, 'yyyy-mm-dd') AS creation_date_fmt,
+                        TO_CHAR(iah.transit_receive_date, 'yyyy-mm-dd') AS transit_receive_date_fmt,
+                        TO_CHAR(iah.transit_shipment_date, 'yyyy-mm-dd') AS transit_shipment_date_fmt,
+                        iah.comments,
+                        iah.location_id,
+                        DECODE(
+                        (SELECT
+                            fbc.contrast_code FROM fnd_bg_code_contrast fbc WHERE iah.coop_business_group=fbc.business_group_code
+                        ),'JINKO',
+                        (SELECT
+                            pla.ship_to_location_address
+                        FROM
+                            pur_lines_all pla,
+                            pur_line_locations_all plla,
+                            inv_asn_lines ial
+                        WHERE
+                            pla.pur_header_id         = plla.pur_header_id AND
+                            plla.pur_line_location_id = ial.line_location_id AND
+                            ial.asn_header_id         = iah.asn_header_id AND
+                            rownum                    = 1
+                        ),NVL(iah.ship_to_location_address,
+                        (SELECT
+                            fl.address_line_1
+                        FROM
+                            fnd_locations fl
+                        WHERE
+                            fl.location_id = iah.location_id
+                        ))) location_name,
+                        iah.ship_to_organization_id,
+                        case when
+                         (SELECT
+                            iov.description
+                        FROM
+                            inv_organizations_vl iov,
+                            inv_asn_lines l
+                        WHERE iov.description = l.send_address
+                         and l.asn_header_id = iah.asn_header_id
+                         and rownum =1  ) is null then
+                         (SELECT
+                            iov.description
+                        FROM
+                            inv_organizations_vl iov
+                        WHERE
+                            iov.inv_organization_id = iah.ship_to_organization_id
+                        )
+                        else
+                        (SELECT
+                            iov.description
+                        FROM
+                            inv_organizations_vl iov,
+                            inv_asn_lines l
+                        WHERE iov.description = l.send_address
+                         and l.asn_header_id = iah.asn_header_id
+                         and rownum = 1  )
+                         end AS ship_to_organization_name,
+                        (SELECT
+                            pvv.full_name
+                        FROM
+                            pur_vendors_v pvv
+                        WHERE
+                            pvv.vendor_id = iah.vendor_id
+                        )AS vendor_name,
+                        (SELECT
+                            vsv.site_name
+                        FROM
+                            pur_vendor_sites_vl vsv
+                        WHERE
+                            vsv.vendor_site_id = iah.vendor_site_id
+                        ) AS vendor_site_name,
+                        iah.actual_receiver_code,
+                        iah.actual_receiver_name,
+                        iah.logistics_company,
+                        (SELECT lower(fvv.flex_value)
+				           FROM fnd_flex_values_v fvv
+				          WHERE fvv.flex_value_set_code = 'INV_ASN_LOGISTICS_COMPANY'
+				                AND fvv.flex_desc = iah.logistics_company) AS logistics_company_code,
+                        iah.dispatching_staff,
+                        iah.contact_information,
+						iah.logistics_cost,
+						iah.deliver_number,
+						iah.express_number
+                    FROM
+                        inv_asn_headers iah
+                    WHERE
+                        iah.asn_header_id = ${@asn_header_id}
+                    ORDER BY
+                        iah.asn_header_id DESC
+                    ) v
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+                BEGIN
+                	inv_asn_pkg.asn_new_header_edit_save(p_asn_header_id		=> ${@asn_header_id},
+                										 p_asn_type_code		=> ${@asn_type_code},
+					                                   	 p_ship_date 			=> to_date(${@ship_date_fmt},'yyyy-mm-dd'),
+					                                   	 p_expected_date		=> to_date(${@expected_date_fmt},'yyyy-mm-dd'),
+					                                   	 p_comments 			=> ${@comments},
+					                                   	 p_logistics_company 	=> ${@logistics_company},
+					                                     p_dispatching_staff 	=> ${@dispatching_staff},
+					                                     p_contact_information	=> ${@contact_information},
+					                                     p_logistics_cost		=> ${@logistics_cost},
+					                                     p_express_number		=> ${@express_number},
+					                                   	 p_user_id				=> ${/session/@user_id});
+                END;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

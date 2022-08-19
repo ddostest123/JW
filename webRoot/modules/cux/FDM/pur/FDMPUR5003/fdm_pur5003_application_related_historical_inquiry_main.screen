@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: ZhaoLe  
+    $Date: 2017年8月21日 下午2:15:33  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure/>
+    <a:view package="aurora.ui.std" template="default">
+        <a:link id="fdm_pur5003_arhi_result_relevance_detail_link" url="${/request/@context_path}/modules/cux/FDM/pur/FDMPUR5003/fdm_pur5003_application_related_historical_inquiry.screen"/>
+        <a:link id="fdm_pur5003_arhi_result_delete_link" model="cux.FDM.pur.FDMPUR5003.fdm_pur5003_application_related_historical_inquiry" modelaction="delete"/>
+        <div/>
+        <a:link id="fdm_pur5003_operation_record_link" url="${/request/@context_path}/modules/pur/PUR5180/pur_req_operation_record.screen"/>
+        <script><![CDATA[
+            function fdm_pur5003_arhi_main_query() {
+                var ds = $('fdm_pur5003_application_related_historical_inquiry_main_result_ds');
+                var page = ds.currentPage;
+                ds.query(page);
+            }
+            
+            function fdm_pur5003_arhi_result_grid_upload_render_fun(value, record, name) {
+                if (name == 'atm_update') {
+                    var demand_pool_id = record.get('demand_pool_id');
+                    if (!record.isNew && demand_pool_id) {
+                        return '<a href="javascript:fdm_pur5003_arhi_result_grid_upload_fun(' + demand_pool_id + ')">上传/下载</a>';
+                    }
+                } else if (name == 'atm_flag') {
+                    var atm_show_flag = record.get('atm_show_flag');
+                    if (atm_show_flag == 'Y') {
+                        return '<div style="margin-top:3px;margin-left:auto;margin-right:auto;vertical-align:middle;height:20px;line-height:20px;"><img src="${/request/@context_path}/images/paperclip.png"/></div>';
+                    } else {
+                        return '';
+                    }
+                }
+            }
+            
+            function fdm_pur5003_arhi_result_grid_upload_fun(id) {
+                var url = "${/request/@context_path}/uploadFile.screen?table_name=PUR_DEMAND_POOL&header_id=" + id;
+                new Aurora.Window({
+                    url: url,
+                    title: '上传/下载',
+                    id: 'fdm_pur5003_arhi_result_grid_upload_window',
+                    width: 850,
+                    height: 500
+                });
+            }
+            
+            //操作记录
+            
+            function pur_recordRender(value, record, name) {
+                if (record.isNew) {
+                    return '无操作记录';
+                }
+                return '<a href="javascript:pur_openRecord(' + record.get('demand_pool_id') + ')">操作记录</a>';
+            }
+            
+            function pur_openRecord(id) {
+                new Aurora.Window({
+                    id: 'fdm_pur5003_operation_record_link_win',
+                    title: '${l:PROMPT.OPERATION_RECORD}',
+                    url: $('fdm_pur5003_operation_record_link').getUrl() + '?operation_table=pur_demand_pool' + '&operation_table_id=' + id,
+                    height: 450,
+                    width: 600
+                });
+            }
+            //关联操作
+            function fdm_pur5003_arhi_result_relevance_fun() {
+                var result_ds = $('fdm_pur5003_application_related_historical_inquiry_main_result_ds');
+                var records = result_ds.getSelected();
+                if (records.length > 0) {
+                    if (records.length > 1) {
+                        Aurora.showMessage('${l:PROMPT}', '请选择一行申请！');
+                        return false;
+                    } else {
+                        var record = records[0];
+                        if (record.get('req_status_desc') == '已分配') {
+                            if (!Aurora.isEmpty(record.get('demand_pool_id')) && !Aurora.isEmpty(record.get('demand_pool_id'))) {
+                                new Aurora.Window({
+                                    id: 'fdm_pur5003_arhi_result_relevance_detail_link_win',
+                                    title: '关联',
+                                    url: $('fdm_pur5003_arhi_result_relevance_detail_link').getUrl() + '?demand_pool_id=' + record.get('demand_pool_id'),
+                                    height: 350,
+                                    width: 900
+                                });
+                            }
+                        } else {
+                            Aurora.showMessage('${l:PROMPT}', '该申请已被处理，无法操作！');
+                            return false;
+                        }
+                    }
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '请选择一行申请！');
+                    return false;
+                }
+            }
+            //取消关联操作
+            function fdm_pur5003_arhi_result_relevance_cancel_fun() {
+                var result_ds = $('fdm_pur5003_application_related_historical_inquiry_main_result_ds');
+                var records = result_ds.getSelected();
+                var datas = [];
+                for (var i = 0;i < records.length;i++) {
+                    datas = {
+                        'demand_pool_id': records[i].get('demand_pool_id'),
+                        'info_record_id': records[i].get('info_record_id')
+                    };
+                }
+                if (records.length > 0) {
+                    if (records.length > 1) {
+                        Aurora.showMessage('${l:PROMPT}', '请选择一行申请！');
+                        return false;
+                    } else {
+                        if (records[0].get('relevance_flag') == '是' && records[0].get('req_status_desc') == '寻源结束') {
+                            Aurora.showConfirm('${l:PROMPT}', '是否取消关联', function() {
+                                $('fdm_pur5003_arhi_result_delete_btn').disable();
+                                Aurora.Masker.mask(Ext.getBody(), '${l:LOADING}');
+                                Aurora.request({
+                                    url: $('fdm_pur5003_arhi_result_delete_link').getUrl(),
+                                    para: datas,
+                                    success: function(res) {
+                                        $('fdm_pur5003_arhi_result_delete_btn').enable();
+                                        Aurora.Masker.unmask(Ext.getBody());
+                                        fdm_pur5003_arhi_main_query();
+                                    },
+                                    failure: function(res) {
+                                        $('fdm_pur5003_arhi_result_delete_btn').enable();
+                                        Aurora.Masker.unmask(Ext.getBody());
+                                    },
+                                    error: function(res) {
+                                        $('fdm_pur5003_arhi_result_delete_btn').enable();
+                                        Aurora.Masker.unmask(Ext.getBody());
+                                    },
+                                    scope: this
+                                });
+                            });
+                        } else {
+                            Aurora.showMessage('${l:PROMPT}', '该申请无法进行取消关联操作！');
+                            return false;
+                        }
+                    }
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '请选择一行申请！');
+                    return false;
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="fdm_pur5003_assign_status_ds" loadData="true" model="cux.FDM.pur.FDMPUR5003.fdm_pur5003_demand_pool_status"/>
+            <a:dataSet id="fdm_pur5003_application_related_historical_inquiry_main_query_ds">
+                <a:fields>
+                    <a:field name="req_status_desc" displayField="code_value_name" options="fdm_pur5003_assign_status_ds" returnField="code_value_name" valueField="code_value_name"/>
+                    <!-- <a:field name="vendor_name" autoComplete="true" autoCompleteField="vendor_code_name" lovGridHeight="330" lovHeight="450" lovService="pur.PUR7010.pur_vendors_by_user_authority_lov" lovWidth="500" title="PUR_VENDORS.VENDOR">
+                        <a:mapping>
+                            <a:map from="vendor_id" to="vendor_id"/>
+                            <a:map from="vendor_code" to="vendor_code"/>
+                            <a:map from="vendor_name" to="vendor_name"/>
+                        </a:mapping>
+                    </a:field> -->
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="fdm_pur5003_application_related_historical_inquiry_main_result_ds" autoCount="true" autoPageSize="true" model="cux.FDM.pur.FDMPUR5003.fdm_pur5003_application_related_historical_inquiry_main" queryDataSet="fdm_pur5003_application_related_historical_inquiry_main_query_ds" selectable="true"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:gridButton id="fdm_pur5003_arhi_result_relevance_fun_id" click="fdm_pur5003_arhi_result_relevance_fun" text="关联" width="100"/>
+                <a:gridButton id="fdm_pur5003_arhi_result_delete_btn" click="fdm_pur5003_arhi_result_relevance_cancel_fun" text="取消关联" width="100"/>
+                <a:gridButton id="fdm_pur5003_application_related_historical_inquiry_main_result_grid_id" bind="fdm_pur5003_application_related_historical_inquiry_main_result_grid" className="item-rbtn-blue button-excel" type="excel" width="100"/>
+                <a:gridButton bind="fdm_pur5003_application_related_historical_inquiry_main_result_grid" type="save" width="100"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="fdm_pur5003_application_related_historical_inquiry_main_query_ds" resultTarget="fdm_pur5003_application_related_historical_inquiry_main_result_ds" style="border:none">
+                <a:formToolBar>
+                    <a:hBox>
+                        <a:textField name="req_number" prompt="申请编号"/>
+                        <a:textField name="line_num" prompt="行号"/>
+                        <a:textField name="item_code" prompt="物品编码"/>
+                        <a:textField name="item_desc" prompt="物品名称"/>
+                    </a:hBox>
+                </a:formToolBar>
+                <a:formBody>
+                    <a:hBox>
+                        <a:datePicker name="need_by_date_from" prompt="需求日期从"/>
+                        <a:datePicker name="need_by_date_to" prompt="需求日期至"/>
+                        <a:comboBox name="req_status_desc" prompt="状态"/>
+                    </a:hBox>
+                    <a:hBox>
+                        <a:datePicker name="creation_date_from" prompt="申请日期从"/>
+                        <a:datePicker name="creation_date_to" prompt="申请日期至"/>
+                        <a:textField name="assigned_to_desc" prompt="询价员"/>
+                    </a:hBox>
+                    <a:hBox>
+                        <a:datePicker name="allocation_date_from" prompt="分配日期从"/>
+                        <a:datePicker name="allocation_date_to" prompt="分配日期至"/>
+                        <a:textField name="sourcing_doc_number" prompt="寻源单据编号"/>
+                    </a:hBox>
+                    <a:hBox>
+                        <a:datePicker name="release_date_from" prompt="完成日期从"/>
+                        <a:datePicker name="release_date_to" prompt="完成日期至"/>
+                        <a:textField name="erp_create_desc" prompt="申请人"/>
+                    </a:hBox>
+                    <a:hBox>
+                        <a:textField name="display_vendor_code" prompt="供应商编码"/>
+                        <a:textField name="descriptions" prompt="供应商名称"/>
+                    </a:hBox>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="fdm_pur5003_application_related_historical_inquiry_main_result_grid" autoAppend="false" bindTarget="fdm_pur5003_application_related_historical_inquiry_main_result_ds" marginHeight="200" marginWidth="100" navBar="true">
+                <a:columns>
+                    <a:column name="relevance_flag" align="center" prompt="关联询价" width="40"/>
+                    <a:column name="req_number" prompt="申请编号" width="100"/>
+                    <a:column name="line_num" prompt="行号" width="40"/>
+                    <a:column name="assigned_to_desc" prompt="询价员" width="80"/>
+                    <a:column name="req_status_desc" prompt="状态" width="40"/>
+                    <a:column name="item_code" prompt="物品编码" width="100"/>
+                    <a:column name="item_desc" prompt="物品名称" width="100"/>
+                    <a:column name="quantity" align="right" prompt="数量" width="30"/>
+                    <a:column name="unit_meas_lookup_code" align="right" prompt="单位" width="20"/>
+                    <a:column name="need_by_date" align="right" prompt="需求日期" width="60"/>
+                    <a:column name="unit_desc" align="center" prompt="需求部门" width="60"/>
+                    <a:column name="erp_create_desc" align="center" prompt="申请人" width="60"/>
+                    <a:column name="sourcing_doc_number" prompt="寻源单据编号" width="100"/>
+                    <a:column name="display_po_number" prompt="订单编号" width="100"/>
+                    <a:column name="display_vendor_code" align="center" prompt="供应商编码" width="60"/>
+                    <a:column name="descriptions" align="center" prompt="供应商名称" width="60"/>
+                    <a:column name="unit_price" align="center" prompt="单价" width="60"/>
+                    <a:column name="tax_type_rate" align="center" prompt="税率" width="60"/>
+                    <a:column name="creation_date1" align="right" prompt="申请日期" width="60"/>
+                    <a:column name="allocation_date" align="right" prompt="分配日期" width="60"/>
+                    <a:column name="release_date" align="right" prompt="完成日期" width="60"/>
+                    <a:column name="assigned_comment" align="center" prompt="分配说明" width="60"/>
+                    <a:column name="comments" align="center" prompt="备注" width="80"/>
+                    <a:column name="notes" align="center" editor="fdm_pur5003_arhim_result_ds_grid_textField" prompt="说明" width="80"/>
+                    <a:column name="atm_update" align="center" prompt="上传/下载" renderer="fdm_pur5003_arhi_result_grid_upload_render_fun" width="60"/>
+                    <a:column name="" prompt="操作记录" renderer="pur_recordRender" width="40"/>
+                </a:columns>
+                <a:editors>
+                    <a:textField id="fdm_pur5003_arhim_result_ds_grid_textField"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: huangyingfei
+    $Date: 2019-05-07 10:12:56  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:f="aurora.database.features" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT v.*,
+       CASE
+         WHEN v.po_receive_amount_sum <> 0 THEN
+          (round(v.po_receive_amount / v.po_receive_amount_sum * 100,
+                 2)) || '%'
+         ELSE
+          ''
+       END AS vendor_po_ratio /*,
+       CASE
+         WHEN (v.mtl_qualification_rate + v.wip_quality_per + v.cust_quality_issue + v.after_sale +
+              v.env_quality_conformance) / v.total_score >= 0.9 THEN
+          'A'
+         WHEN (v.mtl_qualification_rate + v.wip_quality_per + v.cust_quality_issue + v.after_sale +
+              v.env_quality_conformance) / v.total_score >= 0.8 AND
+              (v.mtl_qualification_rate + v.wip_quality_per + v.cust_quality_issue + v.after_sale +
+              v.env_quality_conformance) / v.total_score < 0.9 THEN
+          'B'
+         WHEN (v.mtl_qualification_rate + v.wip_quality_per + v.cust_quality_issue + v.after_sale +
+              v.env_quality_conformance) / v.total_score >= 0.7 AND
+              (v.mtl_qualification_rate + v.wip_quality_per + v.cust_quality_issue + v.after_sale +
+              v.env_quality_conformance) / v.total_score < 0.8 THEN
+          'C'
+         WHEN (v.mtl_qualification_rate + v.wip_quality_per + v.cust_quality_issue + v.after_sale +
+              v.env_quality_conformance) / v.total_score < 0.7 THEN
+          'D'
+         ELSE
+          ''
+       END AS quality_level*/
+  FROM (SELECT t1.vendor_id,
+               t1.rating_classify_code judge_group,
+               (SELECT d.description_text
+                  FROM fnd_flex_values fv,
+                       fnd_descriptions d,
+                       (SELECT pfv.flex_value_id,
+                               pfv.flex_value,
+                               pd.description_text flex_value_desc
+                          FROM fnd_flex_values  pfv,
+                               fnd_descriptions pd
+                         WHERE pfv.description_id = pd.description_id
+                               AND pd.language = 'ZHS') p
+                 WHERE fv.description_id = d.description_id
+                       AND p.flex_value_id(+) = fv.parent_flex_value_id
+                       AND fv.flex_value_set_id = 919871
+                       AND d.language = 'ZHS'
+                       AND fv.flex_value = t1.rating_classify_code) vendor_judge_type,
+               (CASE
+                 WHEN t1.business_department IS NULL THEN
+                  '集团'
+                 ELSE
+                  '工厂'
+               END) attribute1_desc,
+               (CASE
+                 WHEN t1.business_department IS NULL THEN
+                  'GRP'
+                 ELSE
+                  'INV'
+               END) attribute1,
+               (SELECT io.description FROM inv_organizations_vl io WHERE io.inv_organization_id = t1.business_department) inv_organization_desc,
+               t1.business_department,
+               vah.evaluation_cycle,
+               (SELECT code_value_name
+                  FROM sys_code_values_v t
+                 WHERE t.code_value = vah.evaluation_cycle
+                       AND t.code = 'EVALUATION_CYCLE_TYPE') evaluation_cycle_desc,
+               to_char(vah.eval_start_date,
+                       'yyyy-mm-dd') judge_date_from,
+               to_char(vah.eval_end_date,
+                       'yyyy-mm-dd') judge_date_to,
+               (SELECT nvl(pvv.short_name,
+                           pvv.full_name)
+                  FROM pur_vendors_vl pvv
+                 WHERE pvv.vendor_id = t1.vendor_id) AS vendor_name,
+               (SELECT pvv.display_vendor_code FROM pur_vendors_vl pvv WHERE pvv.vendor_id = t1.vendor_id) AS vendor_code,
+               (SELECT round(sb.sub_score * sb.conversion_rate * sl.conversion_rate / 10000,
+                             0) AS sub_score
+                  FROM ves_archive_sum_lines sl,
+                       ves_archive_sub_lines sb
+                 WHERE sl.sum_line_id = sb.sum_line_id
+                       AND nvl(sl.business_department,
+                               1) = nvl(sb.business_department,
+                                            1)
+                       AND sl.total_line_id = t1.total_line_id
+                       AND sb.sub_criterion_code = 'SB01') sbxn, --设备性能
+               (SELECT round(sb.sub_score * sb.conversion_rate * sl.conversion_rate / 10000,
+                             0) AS sub_score
+                  FROM ves_archive_sum_lines sl,
+                       ves_archive_sub_lines sb
+                 WHERE sl.sum_line_id = sb.sum_line_id
+                       AND nvl(sl.business_department,
+                               1) = nvl(sb.business_department,
+                                            1)
+                       AND sl.total_line_id = t1.total_line_id
+                       AND sb.sub_criterion_code = 'SB02') cb, --成本
+               (SELECT round(sb.sub_score * sb.conversion_rate * sl.conversion_rate / 10000,
+                             0) AS sub_score
+                  FROM ves_archive_sum_lines sl,
+                       ves_archive_sub_lines sb
+                 WHERE sl.sum_line_id = sb.sum_line_id
+                       AND nvl(sl.business_department,
+                               1) = nvl(sb.business_department,
+                                            1)
+                       AND sl.total_line_id = t1.total_line_id
+                       AND sb.sub_criterion_code = 'SB03') jq, --交期
+               (SELECT round(sb.sub_score * sb.conversion_rate * sl.conversion_rate / 10000,
+                             0) AS sub_score
+                  FROM ves_archive_sum_lines sl,
+                       ves_archive_sub_lines sb
+                 WHERE sl.sum_line_id = sb.sum_line_id
+                       AND nvl(sl.business_department,
+                               1) = nvl(sb.business_department,
+                                            1)
+                       AND sl.total_line_id = t1.total_line_id
+                       AND sb.sub_criterion_code = 'SB04') fw, --服务
+               (SELECT round(sb.sub_score * sb.conversion_rate * sl.conversion_rate / 10000,
+                             0) AS sub_score
+                  FROM ves_archive_sum_lines sl,
+                       ves_archive_sub_lines sb
+                 WHERE sl.sum_line_id = sb.sum_line_id
+                       AND nvl(sl.business_department,
+                               1) = nvl(sb.business_department,
+                                            1)
+                       AND sl.total_line_id = t1.total_line_id
+                       AND sb.sub_criterion_code = 'SB05') gjsj, --关键事件
+               (SELECT SUM(round(sb.sub_score * sb.conversion_rate * sl.conversion_rate / 10000,
+                                 0)) AS sub_score
+                  FROM ves_archive_sum_lines sl,
+                       ves_archive_sub_lines sb
+                 WHERE sl.sum_line_id = sb.sum_line_id
+                       AND sl.total_line_id = t1.total_line_id) total_score,
+               (SELECT vav.current_inv_amount
+                  FROM ves_archive_vendor_lines vav
+                 WHERE vav.total_line_id = t1.total_line_id) po_receive_amount,
+               (SELECT SUM(nvl(vav.current_inv_amount,
+                               0))
+                  FROM ves_archive_total_lines  vat,
+                       ves_archive_vendor_lines vav
+                 WHERE vat.archive_id = vah.archive_header_id
+                       AND vat.rating_classify_code = t1.rating_classify_code
+                       AND vat.total_line_id = vav.total_line_id) po_receive_amount_sum,
+               vah.archive_header_id,
+               vah.archive_code
+          FROM ves_archive_total_lines t1,
+               ves_archive_headers     vah
+         WHERE 1 = 1
+               AND t1.archive_id = vah.archive_header_id
+               AND vah.archive_status = '60_EVALUATE_FINISH'
+               AND vah.template_id in (SELECT vt.ve_template_id  FROM ves_template vt WHERE vt.ve_template_code like '%FC%')
+               ) v
+        #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <!--         <bm:query-field name="vendor_desc" queryExpression="v.vendor_name like &apos;%&apos;|| ${@vendor_desc} ||&apos;%&apos;"/>
+        -->
+        <!--         <bm:query-field name="vendor_code" queryExpression="v.vendor_code like &apos;%&apos;|| ${@vendor_code} ||&apos;%&apos;"/>
+         -->
+        <bm:query-field name="archive_id" queryExpression="v.archive_header_id = ${@archive_id} "/>
+        <bm:query-field name="vendor_id" queryExpression="v.vendor_id = ${@vendor_id} "/>
+        <bm:query-field name="judge_date_from" queryExpression="to_date(v.judge_date_from,&apos;YYYY-MM-DD&apos;) &gt;= to_date(${@judge_date_from},&apos;YYYY-MM-DD&apos;) "/>
+        <bm:query-field name="judge_date_to" queryExpression="to_date(v.judge_date_to,&apos;YYYY-MM-DD&apos;) &lt; to_date(${@judge_date_to},&apos;YYYY-MM-DD&apos;)+1 "/>
+        <bm:query-field name="judge_group" queryExpression="v.judge_group like &apos;%&apos;|| ${@judge_group} ||&apos;%&apos;"/>
+        <bm:query-field name="attribute1_desc" queryExpression="v.attribute1 = ${@attribute1} "/>
+        <bm:query-field name="inv_organization_desc" queryExpression="v.business_department = ${@inv_organization_id} "/>
+        <bm:query-field name="evaluation_cycle_desc" queryExpression="v.evaluation_cycle = ${@evaluation_cycle} "/>
+    </bm:query-fields>
+</bm:model>

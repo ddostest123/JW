@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: zc  
+    $Date: 2018-8-30 下午7:49:14  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:service xmlns:t="aurora.application.action" xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <p:echo/>
+        <a:model-query defaultWhereClause="v.suggested_flag = &apos;Y&apos;" fetchAll="true" model="pur.PUR5240.pur_rfx_feedback_all" rootPath="detail"/>
+        <a:model-query fetchAll="true" model="pur.PUR5240.pur_rfx_geturl_to_oa" rootPath="url"/>
+        <a:model-query fetchAll="true" model="cux.KINWONG.public.pur_get_tcode_to_oa" rootPath="tcode"/>
+        <a:rest-invoker acceptLanguage="zh-CN,zh;q=0.8" cacheControl="no-cache" contentType="application/json;charset=UTF-8" raiseExceptionOnError="true" requestMethod="GET" returnPath="/soapResponse/USER" url="${/model/url/record/@get_user_url}"/>
+        <a:model-execute model="pur.PUR5240.pur_rfx_check_price_submit"/>
+        <p:set field="/parameter/@userName" sourceField="/soapResponse/USER/@userName"/>
+        <s:server-script><![CDATA[
+            var logger = $logger('server-script');
+            
+            function log(msg) {
+                logger.info(msg);
+            }
+            var para = $ctx.parameter;
+            // var paraList = para.getChild('detail').getChildren();
+            var dataList = $ctx.model.getChild('detail').getChildren();
+            var data = {};
+            
+            for (var i = 0;i < dataList.length;i++) {
+                data[dataList[i].vendor_desc] = [];
+            }
+            for (var i = 0;i < dataList.length;i++) {
+                data[dataList[i].vendor_desc].push(dataList[i]);
+            }
+            log(dataList.length);
+            //是否降价报价
+            var is_down_price = '是';
+            var tableListAll = new CompositeMap('tableListAll');
+            for (var name in data) {
+                var record = new CompositeMap('record');
+                var tableList = new CompositeMap('TableList');
+                var loginName = new CompositeMap('loginName');
+                loginName.setText(para.userName);
+                var tCode = new CompositeMap('tCode');
+                var tcodeValue = $ctx.model.getChild('tcode').getChild('record').quote_code;
+                tCode.setText(tcodeValue);
+                var title = new CompositeMap('title');
+                title.setText('采购报价申请单');
+                tableList.addChild(loginName);
+                tableList.addChild(tCode);
+                tableList.addChild(title);
+                var table1 = new CompositeMap('Table');
+                table1['isson'] = '1';
+                tableList.addChild(table1);
+                var nameList = {
+                    "报价ID": data[name][0].feedback_header_id,
+                    "报价单号": data[name][0].feedback_header_id,
+                    "业务实体": data[name][0].business_unit_name,
+                    "发起者": para.userName,
+                    "报价单日期": data[name][0].creation_date_desc,
+                    "供应商名称": data[name][0].vendor_desc,
+                    "是否寄售": data[name][0].source_type_desc,
+                    "税码": data[name][0].tax_type_code_desc,
+                    "币种": data[name][0].currency_code,
+                    "是否集采": data[name][0].is_cen_pur,
+                    "供应商代码": data[name][0].display_vendor_code,
+                    "付款条件": data[name][0].terms_name,
+                    "预约报价日期": data[name][0].creation_date_desc,
+                    "供应商地点": data[name][0].vendor_site_code
+                };
+                for (var tempName in nameList) {
+                    var field = new CompositeMap('Field');
+                    field.name = tempName;
+                    if (nameList[tempName]) {
+                        field.value = nameList[tempName];
+                    } else {
+                        field.value = '';
+                    }
+                    table1.addChild(field);
+                }
+                var table2 = new CompositeMap('Table');
+                table2['isson'] = '2';
+                tableList.addChild(table2);
+                var row = [];
+                for (var i = 0;i < data[name].length;i++) {
+                    log(data[name].length);
+                    row.push(new CompositeMap('row'));
+                    table2.addChild(row[i]);
+                    var temp_i = i + 1;
+                    var is_min_amount = 'N';
+            
+                    if (data[name][i].min_amount >= data[name][i].untax_price) {
+                        is_min_amount = 'Y';
+                    }
+                    var nameList1 = {
+                        "序号": '' + temp_i,
+                        "物料名称": data[name][i].item_desc,
+                        "数量": data[name][i].ladder_quantity,
+                        "含税单价": data[name][i].valid_fb_retail_price,
+                        "不含税单价": data[name][i].untax_price,
+                        "库存单位": data[name][i].uom_desc,
+                        "采购单位": data[name][i].pur_uom_desc,
+                        "物料编码": data[name][i].item_code,
+                        "一级物料": data[name][i].i1_category_name,
+                        "二级物料": data[name][i].i2_category_name,
+                        "最近采购单价": data[name][i].min_tax_amount,
+                        "最近采购币种": data[name][i].blank_currency_code,
+                        "历史采购供应商": data[name][i].blank_site_name,
+                        "变化幅度": data[name][i].blank_range,
+                        "同供应商历史单价": data[name][i].vendor_min_tax_amount,
+                        "同供应商变动幅度": data[name][i].vendor_range,
+                        "平均用量": data[name][i].month_quantity_avg,
+                        "最低价": is_min_amount
+                    }
+                    if (data[name][i].blank_range >= 0) {
+                        is_down_price = '否';
+                    }else if(!data[name][i].blank_range){
+                        is_down_price = '';
+                    }
+                    for (var tempName in nameList1) {
+                        var field = new CompositeMap('Field');
+                        field.name = tempName;
+                        if (nameList1[tempName]) {
+                            if (tempName.indexOf('幅度') != -1) {
+                                field.value = nameList1[tempName] + '%';
+                            } else {
+            					field.value = nameList1[tempName];
+                               }
+                        } else {
+                            field.value = '';
+                        }
+                        row[i].addChild(field);
+                    }
+                }
+                //降价报价回写头
+                var field = new CompositeMap('Field');
+                field.name = "是否降价报价";
+                if(is_down_price == '是'){
+                	field.value = data[name][0].yse_value;
+                }else{
+                    field.value = data[name][0].no_value;
+                }
+            	table1.addChild(field);
+            	
+                record.setText(tableList.toXML());
+                log(tableList.toXML());
+                tableListAll.addChild(record);
+                var url = $ctx.model.getChild('url').getChild('record').post_url + '&key=BD2B0CCCBC954FA6';
+                try {
+                    var is = Packages.com.hand.jw_webservice.HttpUtils.urlPost(url, tableList.toXML(), 'text/xml;charset=utf8', "POST", "UTF-8", "", "");
+                    var ret = Packages.com.hand.jw_webservice.IOUtilsEx.newString(is, "UTF-8");
+                    log(ret);
+                    ret = JSON.parse(ret);
+                    if (ret.status == 'S') {
+                        $ctx.put('/soapResponse/RESPONSE/@status', ret.status);
+                    } else if (ret.status == 'E') {
+                        $ctx.put('/soapResponse/RESPONSE/@status', ret.status);
+                        $ctx.put('/soapResponse/RESPONSE/@message', ret.message);
+                        break;
+                    }
+                } catch (e) {
+                    log(e)
+                }
+            }
+           
+        ]]></s:server-script>
+        <p:echo/>
+        <t:test field="/soapResponse/RESPONSE/@status" message="${/soapResponse/RESPONSE/@message}" operator="!=" value="S"/>
+    </a:init-procedure>
+</a:service>

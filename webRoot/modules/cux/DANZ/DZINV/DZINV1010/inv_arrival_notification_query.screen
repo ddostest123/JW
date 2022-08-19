@@ -1,0 +1,525 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: shenjun  
+    $Date: 2016-10-21 10:19:15 
+    $Revision: 1.0  
+    $Purpose: 丹姿到货通知，入口页面
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+    <a:init-procedure>
+        <a:model-query model="cux.DANZ.DZINV.DZINV1010.dz_inv_get_sysdate" rootPath="current_date"/>
+        <p:echo/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="dzinv1010_asn_operation_record_link" url="${/request/@context_path}/modules/cux/DANZ/DZINV/DZINV1010/inv_asn_operation_record.screen"/>
+        <a:link id="dzinv1010_asn_header_create_link" url="${/request/@context_path}/modules/cux/DANZ/DZINV/DZINV1010/inv_arrival_notify_create.screen"/>
+        <a:link id="dzinv1010_asn_cancel_link" url="${/request/@context_path}/modules/cux/DANZ/DZINV/DZINV1010/inv_asn_cancel.svc"/>
+        <a:link id="dzinv1010_asn_print_insert_link" url="${/request/@context_path}/modules/cux/DANZ/DZINV/DZINV1010/dz_inv_asn_print.svc"/>
+        <a:link id="dzinv1010_asn_print_link" url="${/request/@context_path}/modules/cux/DANZ/DZINV/DZINV1010/dz_inv_asn_print.screen"/>
+        <a:link id="dzinv1010_asn_details_link" url="${/request/@context_path}/modules/cux/DANZ/DZINV/DZINV1010/inv_asn_details_query.screen"/>
+        <a:link id="dzinv1010_asn_edit_link" url="${/request/@context_path}/modules/cux/DANZ/DZINV/DZINV1010/inv_asn_details_edit.screen"/>
+        <script><![CDATA[
+        
+            function dzinv1010_query() {
+                $('dzinv1010_arrival_result_ds').query();
+            }
+
+			function dzinv1010_edit_query(){
+			    $('dzinv1010_asn_edit_header_result_ds').query();
+			}
+
+            function dzinv1010_operation_records_render(value, record, name) {
+                var asn_header_id = record.get('asn_header_id');
+                return '<a href="javascript:dzinv1010_go_operation_records(' + asn_header_id + ');">${l:PROMPT.OPERATION_RECORD}</a>';
+            }
+            
+            function dzinv1010_go_operation_records(asn_header_id) {
+                new Aurora.Window({
+                    id: 'dzinv1010_asn_operation_record_window',
+                    title: '${l:PROMPT.OPERATION_RECORD}',
+                    url: $('dzinv1010_asn_operation_record_link').getUrl() + '?asn_header_id=' + asn_header_id + '&table_name=DZ_INV_ASN_HEADERS',
+                    height: 450,
+                    width: 600
+                });
+            
+            }
+
+            // 勾选时所做的操作
+            function dzinv1010_result_select(ds, record) {
+                var list_ds = $('dzinv1010_asn_selected_list_ds');
+                var arrival_notice_id = record.get('arrival_notice_id');
+                var result_record = list_ds.find('arrival_notice_id', arrival_notice_id);
+                if (Aurora.isEmpty(result_record)) {
+                    $('dzinv1010_asn_selected_list_ds').create(record.data);
+                }
+            }
+            
+            // 勾选去掉时所做的操作
+            function dzinv1010_result_unselect(ds, record) {
+                var list_ds = $('dzinv1010_asn_selected_list_ds');
+                var arrival_notice_id = record.get('arrival_notice_id');
+                var result_record = list_ds.find('arrival_notice_id', arrival_notice_id);
+                if (!Aurora.isEmpty(result_record)) {
+                    list_ds.remove(result_record);
+                }
+            }
+
+            // 页面执行重新查询时所做的操作
+            
+            function dzinv1010_arrival_result_grid_render(grid) {
+                var ds = $('dzinv1010_arrival_result_ds');
+                var records = ds.getAll();
+                var list_ds = $('dzinv1010_asn_selected_list_ds');
+                var list_records = list_ds.getAll();
+                for (var i = 0;i < records.length;i++) {
+                    var select_record = list_ds.find('arrival_notice_id', records[i].get('arrival_notice_id'));
+                    if (!Aurora.isEmpty(select_record)) {
+                        ds.select(records[i]);
+                    }
+                }
+            }
+
+            function dzinv1010_checkRuleSame(record) {
+                var header_record = $('dzinv1010_asn_header_ds').getAt(0);
+                if (
+                	//header_record.get('pur_header_id') != record.get('pur_header_id') || 
+                	header_record.get('ship_to_org_id') != record.get('ship_to_org_id') || 
+                	header_record.get('ship_date_fmt') != record.get('ship_date_fmt')) {
+                    return false;
+                }
+                return true;
+            }
+
+            function dzinv1010_inv_asn_header_create() {
+                var list_ds = $('dzinv1010_asn_selected_list_ds');
+                var records = list_ds.getAll();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:INV_ASN_HEADERS.UNSELECT_ERROR}');
+                    return;
+                }
+                
+                var header_ds = $('dzinv1010_asn_header_ds');
+                var line_ds = $('dzinv1010_asn_line_ds');
+                header_ds.removeAll();
+                line_ds.removeAll();
+                header_ds.create(records[0].data);
+            
+                //校验
+                for (var i = 0;i < records.length;i++) {
+                    if (!dzinv1010_checkRuleSame(records[i])) {
+		                Aurora.showMessage('${l:PROMPT}', '${l:DZINV1010.SELECTED_RECORDS_BE_SAME}');
+                        return false;
+                    }
+                    
+                    if (records[i].get('status') != 'NEW') {
+		                Aurora.showMessage('${l:PROMPT}', '${l:DZINV1010.STATUS_ERR_MSG}');
+                        return false;
+                    }
+                    
+                    if (records[i].get('frozen_flag') != 'N') {
+		                Aurora.showMessage('${l:PROMPT}', '冻结的行无法发货，请检查！');
+                        return false;
+                    }
+                    line_ds.create({
+					'arrival_notice_id':records[i].get('arrival_notice_id'),
+					'change_after_ship_flag':records[i].get('change_after_ship_flag'),
+					'company_code':records[i].get('company_code'),
+					'company_id':records[i].get('company_id'),
+					'company_name':records[i].get('company_name'),
+					'coop_business_group':records[i].get('coop_business_group'),
+					'coop_company_id':records[i].get('coop_company_id'),
+					'item_code':records[i].get('item_code'),
+					'item_id':records[i].get('item_id'),
+					'item_name':records[i].get('item_name'),
+					'line_num':records[i].get('line_num'),
+					'line_sequence':records[i].get('line_sequence'),
+					'owner_business_group':records[i].get('owner_business_group'),
+					'owner_company_id':records[i].get('owner_company_id'),
+					'po_line_num':records[i].get('po_line_num'),
+					'po_number':records[i].get('po_number'),
+					'pur_header_id':records[i].get('pur_header_id'),
+					'received_quantity':records[i].get('received_quantity'),
+					'revision_num':records[i].get('revision_num'),
+					'ship_date':records[i].get('ship_date'),
+					'ship_date_fmt':records[i].get('ship_date_fmt'),
+					'ship_quantity':records[i].get('ship_quantity'),
+					'ship_to_org_code':records[i].get('ship_to_org_code'),
+					'ship_to_org_id':records[i].get('ship_to_org_id'),
+					'ship_to_org_name':records[i].get('ship_to_org_name'),
+					'status':records[i].get('status'),
+					'status_display':records[i].get('status_display'),
+					'total_quantity':records[i].get('total_quantity'),
+					'uom_code':records[i].get('uom_code'),
+					'vendor_code':records[i].get('vendor_code'),
+					'vendor_id':records[i].get('vendor_id'),
+					'vendor_name':records[i].get('vendor_name'),
+					'line_desc':records[i].get('line_desc'),
+					'asn_line_num':i+1
+                    });
+                }
+
+                $('dzinv1010_inv_asn_header_create_btn').disable();
+                Aurora.Masker.mask(Ext.getBody(), '${l:LOADING}');
+                new Aurora.Window({
+                    id: 'dzinv1010_asn_header_window',
+                    url: $('dzinv1010_asn_header_create_link').getUrl(),
+                    title: '${l:DZINV1010.ASN_PREVIEW}',
+                    fullScreen: true
+                }).on('close', function() {
+                    Aurora.Masker.unmask(Ext.getBody());
+	                $('dzinv1010_asn_header_ds').removeAll();
+	                $('dzinv1010_asn_line_ds').removeAll();
+	                dzinv1010_query();
+                    $('dzinv1010_inv_asn_header_create_btn').enable();
+                });
+                
+            }
+
+            function dzinv1010_asnEditHeaderResultDsGridRenderer(value, record, name){
+                if (name == 'asn_number') {
+                    return '<a href="javascript:dzinv1010_asnEditHeaderLines_open(' + record.get('asn_header_id') + ',&quot;' + record.get('status') + '&quot;);">' + value + '</a>';
+                }
+            }
+            
+            function dzinv1010_asnEditHeaderLines_open(asn_header_id, status) {
+                var link;
+                var id;
+                if(status == "NEW"){
+                    link = $('dzinv1010_asn_edit_link').getUrl() + '?asn_header_id=' + asn_header_id;
+                    id = 'dzinv1010_asn_edit_window';
+                }else{
+					link = $('dzinv1010_asn_details_link').getUrl() + '?asn_header_id=' + asn_header_id;
+                    id = 'dzinv1010_asn_query_window';
+                }
+                new Aurora.Window({
+                    id: id,
+                    title: '${l:DZINV1010.ASN_DETAILS}',
+                    url: link,
+                    fullScreen: true
+                }).on('beforeclose',function(){
+	                $('dzinv1010_asn_header_ds').removeAll();
+	                $('dzinv1010_asn_line_ds').removeAll();
+	                $('dzinv1010_asn_selected_list_ds').removeAll();
+	                dzinv1010_query();
+                    dzinv1010_edit_query();
+                });
+            }
+			
+			
+			function dzinv1010_inv_asn_header_edit_cancel(){
+                Aurora.showConfirm('${l:PROMPT}', '${l:DZINV1010.CANCEL_CONFIRM}', function() {
+                    Aurora.Masker.mask(Ext.getBody(),'${l:LOADING}');
+                    var records = $('dzinv1010_asn_edit_header_result_ds').getSelected();
+                    var datas = [];
+                    for (var i = 0;i < records.length;i++) {
+                        datas.push(records[i].data);
+                    }
+                    Aurora.request({
+                        url: $('dzinv1010_asn_cancel_link').getUrl(),
+                        para: datas,
+                        success: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            Aurora.showMessage('${l:PROMPT}', '${l:DZINV1010.CANCELLED}', function() {});
+			                $('dzinv1010_asn_header_ds').removeAll();
+			                $('dzinv1010_asn_line_ds').removeAll();
+			                $('dzinv1010_asn_selected_list_ds').removeAll();
+			                dzinv1010_query();
+                            dzinv1010_edit_query();
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            return;
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            return;
+                        }
+                    });
+                });
+			}
+			
+            //按单打印操作
+            
+            function dzinv1010_inv_asn_print() {
+                var ds = $('dzinv1010_asn_edit_header_result_ds');
+                var records = ds.getSelected();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SELECT_ONE_RECORD_AT_LEAST}!');
+                    return false;
+                }
+                var datas = [];
+                for (var i = 0;i < records.length;i++) {
+                    datas.push(records[i].data);
+                }
+                Aurora.Masker.mask(Ext.getBody());
+                Aurora.request({
+                    url: $('dzinv1010_asn_print_insert_link').getUrl(),
+                    para: datas,
+                    success: function(res) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        window.open($('dzinv1010_asn_print_link').getUrl(), '_blank');
+                        dzinv1010_edit_query();
+                    },
+                    failure: function(res) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    error: function(res) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    scope: this
+                });
+            }
+            
+            function dzinv1010_lineGridRenderer(value, record, name) {
+                if (name == 'status_display' ||  name == 'revision_num') {
+                    if (record.get('change_after_ship_flag') == 'Y') {
+                        return '<div style="color:#FF0000;font-weight:bold;">' + value + '<div>';
+                    }else{
+                        return value;
+                    }
+                }
+            }
+            
+            function dzinv1010_asn_line_ds_validator(record, name, value){debugger;
+                  if (name == 'ship_quantity') {
+	                var records = $('dzinv1010_asn_line_ds').getAll();
+	                var arrival_notice_id = record.get('arrival_notice_id');
+	                var sum_ship_quantity = 0;
+	                for (var i = 0;i < records.length;i++) {
+	                    if(records[i].get('arrival_notice_id') == arrival_notice_id){
+	                    	sum_ship_quantity = sum_ship_quantity + records[i].get('ship_quantity');
+	                    }
+                	}
+                	
+                	var origin_ship_quantity = $('dzinv1010_asn_selected_list_ds').find('arrival_notice_id', arrival_notice_id).get('ship_quantity');
+                	if(origin_ship_quantity != sum_ship_quantity){
+                	    return '拆分后的数量之和必须等于原数量！';
+                	}
+                	return true;
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="dzinv1010_arrival_notify_status_ds" lookupCode="DZ_ARRIVAL_NOTIFY_STATUS"/>
+            <a:dataSet id="dzinv1010_inv_asn_status_ds" lookupCode="DZ_INV_ASN_STATUS"/>
+            <a:dataSet id="dzinv1010_inv_asn_contact_name_ds" lookupCode="DZ_INV_ASN_CONTACT_NAME"/>
+            <a:dataSet id="dzinv1010_inv_asn_ship_address_ds" lookupCode="DZ_INV_ASN_SHIP_ADDRESS"/>
+            <a:dataSet id="dzinv1010_asn_header_ds">
+                <a:fields>
+                    <a:field name="ship_address"/>
+                    <a:field name="ship_address_desc" displayField="code_value_name" options="dzinv1010_inv_asn_ship_address_ds" returnField="ship_address" valueField="code_value"/>
+                    <a:field name="contact_name"/>
+                    <a:field name="contact_name_desc" displayField="code_value_name" options="dzinv1010_inv_asn_contact_name_ds" returnField="contact_name" valueField="code_value"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="dzinv1010_asn_line_ds">
+                <a:fields>
+                    <a:field name="ship_quantity" required="true" validator="dzinv1010_asn_line_ds_validator"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="dzinv1010_asn_selected_list_ds">
+                <a:fields>
+                    <a:field name="quantity_shipped"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="dzinv1010_arrival_query_ds">
+                <a:fields>
+                    <a:field name="ship_date_from" defaultValue="${/model/current_date/record/@current_date}"/>
+                    <a:field name="ship_date_to"/>
+                    <!-- <a:field name="item_code" autoComplete="true" autoCompleteField="item_code_name" lovGridHeight="320" lovHeight="500" lovService="inv.INV5010.inv_items_lov_by_client_business_group" lovWidth="1000" title="MTL_SYSTEM_ITEMS.ITEM">
+                        <a:mapping>
+                            <a:map from="item_id" to="item_id"/>
+                            <a:map from="item_code" to="item_code"/>
+                            <a:map from="item_name" to="item_name"/>
+                        </a:mapping>
+                    </a:field> -->
+                    <a:field name="status"/>
+                    <a:field name="po_number"/>
+                    <a:field name="status_display" displayField="code_value_name" options="dzinv1010_arrival_notify_status_ds" returnField="status" valueField="code_value"/>
+                    <a:field name="ship_to_org_name" autoComplete="true" autoCompleteField="inv_organization_name" lovHeight="500" lovLabelWidth="100" lovService="public.inv_organizations_lov_by_client_business_group" lovWidth="540" title="INV_ASN_HEADERS.SHIP_TO_ORGANIZATION_ID">
+                        <a:mapping>
+                            <a:map from="inv_organization_id" to="ship_to_org_id"/>
+                            <a:map from="inv_organization_name" to="ship_to_org_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="frozen_flag" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="dzinv1010_arrival_result_ds" autoCount="true" autoPageSize="true" model="cux.DANZ.DZINV.DZINV1010.inv_arrival_notify_query" modifiedCheck="false" queryDataSet="dzinv1010_arrival_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="quantity_shipped"/>
+                    <!-- <a:field name="status_display" displayField="code_value_name" options="dzinv1010_arrival_notify_status_ds" returnField="status" valueField="code_value"/> -->
+                </a:fields>
+                <a:events>
+                    <a:event name="select" handler="dzinv1010_result_select"/>
+                    <a:event name="unselect" handler="dzinv1010_result_unselect"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="dzinv1010_asn_edit_header_query_ds">
+                <a:fields>
+                    <a:field name="po_number"/>
+                    <!--<a:field name="item_code" autoComplete="true" autoCompleteField="item_code_name" lovGridHeight="320" lovHeight="500" lovService="inv.INV5010.inv_items_lov_by_client_business_group" lovWidth="1000" title="MTL_SYSTEM_ITEMS.ITEM">
+                        <a:mapping>
+                            <a:map from="item_id" to="item_id"/>
+                            <a:map from="item_code" to="item_code"/>
+                            <a:map from="item_name" to="item_name"/>
+                        </a:mapping>
+                    </a:field> -->
+                    <a:field name="ship_date_from"/>
+                    <a:field name="ship_date_to"/>
+                    <a:field name="status" defaultValue="SUBMIT"/>
+                    <a:field name="status_display" displayField="code_value_name" options="dzinv1010_inv_asn_status_ds" returnField="status" valueField="code_value"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="dzinv1010_asn_edit_header_result_ds" autoCount="true" autoPageSize="true" model="cux.DANZ.DZINV.DZINV1010.dz_inv_asn_headers" queryDataSet="dzinv1010_asn_edit_header_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="status"/>
+                    <a:field name="status_display" displayField="code_value_name" options="dzinv1010_inv_asn_status_ds" returnField="status" valueField="code_value"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:tabPanel marginHeight="100" marginWidth="70">
+                <a:tabs>
+                    <a:tab prompt="DZINV1010.ARRIVAL_NOTIFY_QUERY" width="100">
+                        <a:screenTopToolbar>
+                            <a:toolbarButton id="dzinv1010_inv_asn_header_create_btn" click="dzinv1010_inv_asn_header_create" text="DZINV1010.CREATE_ASN" width="100"/>
+                            <a:gridButton bind="dzinv1010_asn_codes_grid" className="item-rbtn-blue button-excel" type="excel" width="100"/>
+                        </a:screenTopToolbar>
+                        <a:queryForm bindTarget="dzinv1010_arrival_query_ds" defaultQueryField="journal_num" resultTarget="dzinv1010_arrival_result_ds" style="width:100%;border:none;">
+                            <a:formToolBar>
+                                <a:hBox labelWidth="100">
+                                    <a:textField name="po_number" bindTarget="dzinv1010_arrival_query_ds" prompt="PUR_HEADERS_ALL.SEGMENT1">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="dzinv1010_query"/>
+                                        </a:events>
+                                    </a:textField>
+                                    <a:comboBox name="status_display" bindTarget="dzinv1010_arrival_query_ds" prompt="DZINV1010.STATUS">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="dzinv1010_query"/>
+                                        </a:events>
+                                    </a:comboBox>
+                                    <a:datePicker name="ship_date_from" bindTarget="dzinv1010_arrival_query_ds" prompt="DZINV1010.SHIP_DATE_FROM">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="dzinv1010_query"/>
+                                        </a:events>
+                                    </a:datePicker>
+                                    <a:datePicker name="ship_date_to" bindTarget="dzinv1010_arrival_query_ds" prompt="DZINV1010.SHIP_DATE_TO">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="dzinv1010_query"/>
+                                        </a:events>
+                                    </a:datePicker>
+                                </a:hBox>
+                            </a:formToolBar>
+                            <a:formBody>
+                                <a:hBox labelWidth="100">
+                                    <a:textField name="item_code" bindTarget="dzinv1010_arrival_query_ds" prompt="MTL_SYSTEM_ITEMS.ITEM">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="dzinv1010_query"/>
+                                        </a:events>
+                                    </a:textField>
+                                    <a:lov name="ship_to_org_name" bindTarget="dzinv1010_arrival_query_ds" prompt="PUR_HEADERS_ALL.SHIP_TO_ORGANIZATION_ID">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="dzinv1010_query"/>
+                                        </a:events>
+                                    </a:lov>
+                                    <a:label width="80"/>
+                                    <a:checkBox name="frozen_flag" bindTarget="dzinv1010_arrival_query_ds" label="过滤冻结的行">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="dzinv1010_query"/>
+                                        </a:events>
+                                    </a:checkBox>
+                                </a:hBox>
+                            </a:formBody>
+                        </a:queryForm>
+                        <a:grid id="dzinv1010_asn_codes_grid" autoAppend="false" bindTarget="dzinv1010_arrival_result_ds" marginHeight="240" marginWidth="90" navBar="true" style="margin:5px;">
+                            <a:columns>
+                                <a:column name="status_display" align="center" prompt="DZINV1010.STATUS" renderer="dzinv1010_lineGridRenderer" sortable="true" width="50"/>
+                                <a:column name="revision_num" align="center" prompt="INV_ASN_LINES_TEMP.REVISION_NUM" renderer="dzinv1010_lineGridRenderer" sortable="true" width="30"/>
+                                <a:column name="po_number" prompt="PUR_HEADERS_ALL.SEGMENT1" sortable="true" width="50"/>
+                                <a:column name="po_line_num" align="center" prompt="INV_ASN_HEADERS.LINE_NUM" sortable="true" width="40"/>
+                                <a:column name="line_num" align="center" prompt="DZINV1010.PLAN_LINE_NUM" sortable="true" width="40"/>
+                                <a:column name="item_code" align="left" prompt="MTL_SYSTEM_ITEMS.CLIENT_ITEM_CODE" sortable="true" width="60"/>
+                                <a:column name="item_name" align="left" prompt="MTL_SYSTEM_ITEMS.CLIENT_ITEM_NAME" sortable="true" width="100"/>
+                                <a:column name="ship_quantity" align="right" prompt="DZINV1010.SHIP_QUANTITY" renderer="Aurora.formatNumber" sortable="true" width="40"/>
+                                <a:column name="uom_code" align="left" prompt="INV_ASN_LINES_TEMP.UNIT_MEAS_LOOKUP_CODE" sortable="true" width="50"/>
+                                <a:column name="ship_to_org_name" align="left" prompt="INV_ASN_LINES_TEMP.SHIP_TO_ORGANIZATION_NAME" sortable="true" width="100"/>
+                                <!-- <a:column name="ship_to_location_address" align="left" prompt="INV_ASN_LINES_TEMP.SHIP_TO_LOCATION_ADDRESS" sortable="true" width="80"/> -->
+                                <a:column name="ship_date_fmt" align="center" prompt="DZINV1010.SHIP_DATE" sortable="true" width="70"/>
+                                <!-- <a:column name="request_arrival_date_fmt" align="left" prompt="PUR_LINE_LOCATIONS_ALL.REQUEST_ARRIVAL_DATE" sortable="true" width="70"/> -->
+                                <a:column name="total_quantity" align="right" prompt="DZINV1010.TOTAL_QUANTITY" renderer="Aurora.formatNumber" sortable="true" width="30"/>
+                                <!-- <a:column name="received_quantity" align="right" prompt="DZINV1010.RECEIVED_QUANTITY" renderer="Aurora.formatNumber" sortable="true" width="50"/> -->
+                                <a:column name="line_desc" align="left" prompt="DZINV1010.LINE_DESC" sortable="true" width="80"/>
+                                <a:column name="frozen_flag_desc" align="left" prompt="冻结" sortable="true" width="30"/>
+                            </a:columns>
+                            <a:events>
+                                <a:event name="render" handler="dzinv1010_arrival_result_grid_render"/>
+                            </a:events>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab prompt="DZINV1010.ASN" width="100">
+                        <a:screenTopToolbar>
+                            <a:toolbarButton id="dzinv1010_inv_asn_header_edit_cancel_btn" click="dzinv1010_inv_asn_header_edit_cancel" text="DZINV1010.CANCEL" width="100"/>
+                            <a:toolbarButton id="dzinv1010_inv_asn_header_edit_print_btn" click="dzinv1010_inv_asn_print" style="margin-left:10px;" text="DZINV1010.PRINT" width="100"/>
+                            <a:gridButton bind="dzinv1010_asn_edit_header_result_ds_grid" className="item-rbtn-blue button-excel" type="excel" width="100"/>
+                        </a:screenTopToolbar>
+                        <a:queryForm bindTarget="dzinv1010_asn_edit_header_query_ds" resultTarget="dzinv1010_asn_edit_header_result_ds" style="width:100%;border:none;">
+                            <a:formToolBar>
+                                <a:hBox labelWidth="100">
+                                    <a:textField name="asn_number" bindTarget="dzinv1010_asn_edit_header_query_ds" prompt="INV_ASN_HEADERS.ASN_NUMBER">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="dzinv1010_edit_query"/>
+                                        </a:events>
+                                    </a:textField>
+                                    <a:textField name="po_number" bindTarget="dzinv1010_asn_edit_header_query_ds" prompt="PUR_HEADERS_ALL.SEGMENT1">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="dzinv1010_edit_query"/>
+                                        </a:events>
+                                    </a:textField>
+                                    <a:comboBox name="status_display" bindTarget="dzinv1010_arrival_query_ds" prompt="DZINV1010.STATUS">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="dzinv1010_edit_query"/>
+                                        </a:events>
+                                    </a:comboBox>
+                                </a:hBox>
+                            </a:formToolBar>
+                            <a:formBody>
+                                <a:hBox labelWidth="100">
+                                    <a:datePicker name="ship_date_from" bindTarget="dzinv1010_asn_edit_header_query_ds" prompt="DZINV1010.SHIP_DATE_FROM">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="dzinv1010_edit_query"/>
+                                        </a:events>
+                                    </a:datePicker>
+                                    <a:datePicker name="ship_date_to" bindTarget="dzinv1010_asn_edit_header_query_ds" prompt="DZINV1010.SHIP_DATE_TO">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="dzinv1010_edit_query"/>
+                                        </a:events>
+                                    </a:datePicker>
+                                    <!--                                     <a:lov name="item_code" bindTarget="dzinv1010_asn_edit_header_query_ds" prompt="MTL_SYSTEM_ITEMS.ITEM">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="dzinv1010_edit_query"/>
+                                        </a:events>
+                                    </a:lov> -->
+                                </a:hBox>
+                            </a:formBody>
+                        </a:queryForm>
+                        <a:grid id="dzinv1010_asn_edit_header_result_ds_grid" autoAppend="false" bindTarget="dzinv1010_asn_edit_header_result_ds" marginHeight="250" marginWidth="90" navBar="true" style="margin:5px;">
+                            <a:columns>
+                                <a:column name="status_display" align="center" prompt="DZINV1010.STATUS" sortable="true" width="50"/>
+                                <a:column name="asn_number" align="center" prompt="INV_ASN_HEADERS.ASN_NUMBER" renderer="dzinv1010_asnEditHeaderResultDsGridRenderer" sortable="true" width="80"/>
+                                <a:column name="vendor_name" align="left" prompt="PUR_VENDORS.VENDOR" sortable="true" width="100"/>
+                                <a:column name="company_name" align="center" prompt="DZINV1010.CLIENT" sortable="true" width="80"/>
+                                <a:column name="ship_date_fmt" align="left" prompt="DZINV1010.SHIP_DATE" sortable="true" width="80"/>
+                                <a:column name="ship_to_org_name" align="left" prompt="INV_ASN_HEADERS.SHIP_TO_ORGANIZATION_ID" sortable="true" width="100"/>
+                                <a:column name="comments" prompt="DZINV1010.COMMENTS" sortable="true" width="80"/>
+                                <!-- <a:column name="po_number" prompt="PUR_HEADERS_ALL.SEGMENT1" sortable="true" width="80"/> -->
+                                <a:column name="creation_date_fmt" align="center" prompt="INV_ASN_HEADERS.CREATION_DATE" sortable="true" width="100"/>
+                                <a:column name="operation_record" align="center" prompt="PROMPT.OPERATION_RECORD" renderer="dzinv1010_operation_records_render" width="50"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+    </a:view>
+</a:screen>

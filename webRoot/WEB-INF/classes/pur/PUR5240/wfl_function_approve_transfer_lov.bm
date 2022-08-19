@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wangcheng
+    $Date: 2015-09-29
+    $Revision: 1.0  
+    $Purpose: 转交人选择
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.user_id,
+                    v.user_name,
+                    v.user_desc,
+                    v.user_desc
+                    ||'('
+                    ||v.user_name
+                    ||')' AS approval_person,
+                    v.comments
+                FROM
+                    (SELECT
+                        a.user_id,
+                        a.user_name,
+                        a.description AS user_desc,
+                        a.comments,
+                        (
+                            CASE
+                                    (SELECT
+                                        COUNT(1)
+                                    FROM
+                                        sys_user_assign
+                                    WHERE
+                                        assign_type  =${@assign_type} AND
+                                        assign_value = ${@rfx_header_id} AND
+                                        user_id      =a.user_id AND
+                                        ENABLED_FLAG = 'Y' 
+                                    )
+                                WHEN 0
+                                THEN 'Y'
+                                ELSE 'N'
+                            END) AS assign_flag
+                    FROM
+                        sys_user a
+                    where a.business_group=${/session/@business_group}
+                    and a.user_id != ${/session/@user_id}    
+                    ) v #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+                DECLARE
+                    v_count NUMBER;
+                BEGIN
+                    SELECT
+                        COUNT(1)
+                    INTO
+                        v_count
+                    FROM
+                        sys_user_assign
+                    WHERE
+                        user_id      = ${@user_id} AND
+                        assign_type  = ${@assign_type} AND
+                        assign_value = ${@rfx_header_id};
+                    IF v_count      <=0 THEN
+                        INSERT
+                        INTO
+                            sys_user_assign
+                            (
+                                assign_id,
+                                user_id,
+                                assign_type,
+                                assign_value,
+                                ENABLED_FLAG,
+                                CREATION_DATE,
+                                CREATED_BY,
+                                LAST_UPDATE_DATE,
+                                LAST_UPDATED_BY
+                            )
+                            VALUES
+                            (
+                                sys_user_assign_S.Nextval,
+                                ${@user_id},
+                                ${@assign_type},
+                                ${@rfx_header_id},
+                                'Y',
+                                sysdate,
+                                ${/session/@user_id},
+                                sysdate,
+                                ${/session/@user_id}
+                            );
+                    ELSE
+                        UPDATE
+                            sys_user_assign
+                        SET
+                            ENABLED_FLAG = 'Y'
+                        WHERE
+                            user_id      = ${@user_id} AND
+                            assign_type  = ${@assign_type} AND
+                            assign_value = ${@rfx_header_id};
+                    END IF;
+                END;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+                UPDATE
+                    sys_user_assign
+                SET
+                    ENABLED_FLAG = 'N'
+                WHERE
+                    user_id      = ${@user_id} AND
+                    assign_type  =${@assign_type} AND
+                    assign_value = ${@rfx_header_id}
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="user_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="user_name" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="200" forDisplay="true" forQuery="true" prompt="用户名"/>
+        <bm:field name="user_desc" databaseType="VARCHAR2" datatype="java.lang.String" displayWidth="200" forDisplay="true" forQuery="true" prompt="用户描述"/>
+        <bm:field name="approval_person" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="comments" databaseType="VARCHAR2" datatype="java.lang.String"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field name="assign_flag" queryExpression="v.assign_flag = ${@assign_flag}"/>
+        <bm:query-field name="user_name_desc" queryExpression="(v.user_name like &apos;%&apos;||trim(UPPER(${@user_name_desc}))||&apos;%&apos; or v.user_desc like &apos;%&apos;||trim(${@user_name_desc})||&apos;%&apos;)"/>
+        <bm:query-field name="company_id" queryExpression="((${@company_id} = -1) or (${@company_id} &gt; -1 and EXISTS (SELECT 1 FROM fnd_user_authority fua,fnd_companies fc WHERE fua.authority_type = &apos;COMPANY&apos; AND fua.assign_id = ${@company_id} AND fua.assign_id = fc.company_id AND fc.enabled_flag = &apos;Y&apos; AND fua.user_id = v.user_id)))"/>
+    </bm:query-fields>
+</bm:model>

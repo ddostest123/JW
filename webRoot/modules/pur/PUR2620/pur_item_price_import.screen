@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: FelixDru
+    $Date: 2014-10-16 上午10:55:29  
+    $Revision: 1.0  
+    $Purpose:物料价格导入
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="v.imp_template_code = &apos;PUR_ITEM_PRICE_IMPORT&apos;" fetchAll="true" model="public.get_fnd_excel_import_template" rootPath="import_template"/>
+        <a:model-query defaultWhereClause="v.flex_value_set_code = &apos;DATA_SOURCE&apos;" fetchAll="true" model="public.fnd_flex_value_v_lov" rootPath="data_source"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="pur2620_itemPriceImportUpload_link" url="${/request/@context_path}/modules/pur/PUR2620/pur_item_price_import_upload.screen"/>
+        <a:link id="pur2620_itemPriceCheckSubmit_link" model="pur.PUR2620.pur_item_price_import_check_and_submit" modelaction="execute"/>
+        <a:link id="pur2620_itemPrice_excel_import_template_uploadtimes_link" model="public.get_fnd_excel_import_template" modelaction="execute"/>
+        <script><![CDATA[
+            //Close
+            
+            function pur2620_itemPriceImportCancelData() {
+                window.close();
+            }
+            
+            function pur2620_itemPriceImportLoadData() {
+                new Aurora.Window({
+                    id: 'pur2620_itemPriceImportUpload_window',
+                    url: $('pur2620_itemPriceImportUpload_link').getUrl(),
+                    title: '${l:PROMPT.BATCH_IMPORT}',
+                    width: 450,
+                    height: 300
+                });
+            }
+            
+            function pur2620_itemPriceImportCheckData() {
+                var allData = $('pur2620_itemPrice_import_temp_ds').getAll();
+                if (allData.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.NO_DATA_TO_IMPORT}');
+                    return;
+                } else {
+                    if (!$('pur2620_externalSystem_ds').validate()) {
+                    	return;
+                    }
+                    //锁定界面
+                    Aurora.Masker.mask(Ext.getBody());
+                    var external_system_id = $('pur2620_externalSystem_ds').getAt(0).get('external_system_id');
+                    var data_source = $('pur2620_externalSystem_ds').getAt(0).get('data_source');
+                    Aurora.request({
+                        url: $('pur2620_itemPriceCheckSubmit_link').getUrl(),
+                        para: {
+                            'external_system_id': external_system_id,
+                            'data_source':data_source
+                        },
+                        success: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SUBMIT_SUCCESS}');
+                            $('pur2620_itemPrice_import_temp_ds').query();
+                            $('pur2620_itemPrice_import_error_ds').query();
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            $('pur2620_itemPrice_import_error_ds').query();
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            $('pur2620_itemPrice_import_error_ds').query();
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            function pur2620_itemPriceImportRrrorDsLoad(ds) {
+                var error_lines = ds.getAll().length;
+                if (error_lines > 0) {
+                    $('pur2620_itemPriceImportTab').setEnabled(1);
+                }
+            }
+            
+            function pur2620_itemPriceImportTemplateDownload() {
+                var attachment_id = '${/model/import_template/record/@attachment_id}';
+                if (attachment_id == undefined || Aurora.isEmpty(attachment_id)) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PUR5611_VENDOR_IMPORT.NO_IMPORT_TEMPLATE_TO_DOWNLOAD}');
+                    return;
+                } else {
+                    Aurora.request({
+                        url: $('pur2620_itemPrice_excel_import_template_uploadtimes_link').getUrl(),
+                        para: {
+                            imp_template_code: 'PUR_ITEM_PRICE_IMPORT'
+                        },
+                        success: function() {
+                            document.getElementById('attachment_id').value = attachment_id;
+                            document.downloadform.submit();
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            function pur2620_itemPriceErrorDs_indexChangeFun(ds, record) {
+                document.getElementById('pur2620_ErrorMsgDiv').innerHTML = record.get('error_message');
+            }
+            
+            function pur2620_externalSystemOnUpdate(ds, record, name, value, oldvalue) {
+                if (name == 'data_source') {
+                    if (value == 'ERP') {
+                        record.getField("external_system_name").setRequired(true);
+                    } else {
+                        record.getField("external_system_name").setRequired(false);
+                    }
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="pur2620_data_source_list_query_ds" autoCreate="true">
+                <a:datas dataSource="/model/data_source"/>
+            </a:dataSet>
+            <a:dataSet id="pur2620_externalSystemList_ds" fetchAll="true" loadData="true" model="public.fnd_bg_external_system_query"/>
+            <a:dataSet id="pur2620_externalSystem_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="external_system_id"/>
+                    <a:field name="external_system_name" displayField="external_system_name" options="pur2620_externalSystemList_ds" prompt="PUR2620.EXTERNAL_SYSTEM" returnField="external_system_id" valueField="external_system_id"/>
+                    <a:field name="data_source"/>
+                    <a:field name="data_source_display" displayField="flex_desc" options="pur2620_data_source_list_query_ds" returnField="data_source" valueField="flex_value"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="pur2620_externalSystemOnUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="pur2620_itemPrice_import_error_ds" autoCount="true" autoQuery="true" model="pur.PUR2620.pur_item_price_import_errors">
+                <a:events>
+                    <a:event name="load" handler="pur2620_itemPriceImportRrrorDsLoad"/>
+                    <a:event name="indexchange" handler="pur2620_itemPriceErrorDs_indexChangeFun"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="pur2620_itemPrice_import_temp_ds" autoCount="true" autoPageSize="true" autoQuery="true" model="pur.PUR2620.pur_item_price_imports"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="pur2620_itemPriceImportTemplateDownload" style="margin-left:20px;" text="PROMPT.DOWNLOAD_IMPORT_TEMPLATE" width="100"/>
+                <a:toolbarButton click="pur2620_itemPriceImportLoadData" style="margin-left:20px;" text="PROMPT.LOADDATA" width="100"/>
+                <a:toolbarButton click="pur2620_itemPriceImportCheckData" style="margin-left:20px;" text="PROMPT.CHECK_AND_SUBMIT" width="100"/>
+                <a:toolbarButton click="pur2620_itemPriceImportCancelData" style="margin-left:20px;" text="HAP_BACK" width="100"/>
+            </a:screenTopToolbar>
+            <a:hBox style="margin-top:10px;margin-left:20px">
+                <a:comboBox name="data_source_display" bindTarget="pur2620_externalSystem_ds" prompt="PROMPT.DATA_SOURCE" width="150"/>
+                <a:comboBox name="external_system_name" bindTarget="pur2620_externalSystem_ds" width="150"/>
+                <label for="male"><![CDATA[${l:PUR2620.ERP_DATA_NEED_CHOOSE_EXTERNAL_SYSTEM}]]></label>
+            </a:hBox>
+            <a:tabPanel id="pur2620_itemPriceImportTab" marginHeight="100" marginWidth="100">
+                <a:tabs>
+                    <a:tab prompt="PUR2620.IMPORTS_DATA" width="130">
+                        <a:grid id="pur2620_itemPrice_import_temp_ds_grid" autoAppend="false" bindTarget="pur2620_itemPrice_import_temp_ds" marginHeight="140" marginWidth="120" navBar="true" style="margin-top:5px;">
+                            <a:columns>
+                                <a:column name="line_number" align="center" lock="true" prompt="PROMPT.LINE_NUMBER" width="30"/>
+                                <a:column name="company_code" align="left" prompt="FND_COMPANIES.COMPANY_CODE" width="120"/>
+                                <a:column name="company_name" align="left" prompt="FND_COMPANIES.COMPANY_NAME" width="120"/>
+                                <a:column name="business_unit_code" align="left" prompt="FND_BUSINESS_UNITS.BUSINESS_UNIT_CODE" width="120"/>
+                                <a:column name="business_unit_name" align="left" prompt="FND_BUSINESS_UNITS.BUSINESS_UNIT_NAME" width="120"/>
+                                <a:column name="vendor_code" align="left" prompt="PUR_VENDORS.VENDOR_CODE" width="120"/>
+                                <a:column name="vendor_name" align="left" prompt="PUR_VENDORS.VENDOR_NAME" width="120"/>
+                                <a:column name="item_code" align="left" prompt="MTL_SYSTEM_ITEMS.ITEM_CODE" width="120"/>
+                                <a:column name="item_name" align="left" prompt="MTL_SYSTEM_ITEMS.ITEM_NAME" width="120"/>
+                                <a:column name="start_date" align="left" prompt="PUR_ITEM_PRICE_DATE_LINES.START_DATE" width="120"/>
+                                <a:column name="end_date" align="left" prompt="PUR_ITEM_PRICE_DATE_LINES.END_DATE" width="120"/>
+                                <a:column name="quantity_from" align="left" prompt="PUR_ITEM_PRICE_DETAIL_LINES.QUANTITY_FROM" width="120"/>
+                                <a:column name="quantity_to" align="left" prompt="PUR_ITEM_PRICE_DETAIL_LINES.QUANTITY_TO" width="120"/>
+                                <a:column name="unit_price" align="left" prompt="PUR_ITEM_PRICE_DETAIL_LINES.UNIT_PRICE" width="120"/>
+                                <a:column name="price_adjustment_method" align="left" prompt="PUR_ITEM_PRICE_DETAIL_LINES.PRICE_ADJUSTMENT_METHOD" width="120"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab disabled="true" prompt="PUR2620.IMPORT_ERROR_DATA" width="130">
+                        <a:fieldSet height="100" marginWidth="120" title="PROMPT.CHECK_IMPORT_ERROR">
+                            <div id="pur2620_ErrorMsgDiv"/>
+                        </a:fieldSet>
+                        <a:grid id="pur2620_itemPrice_import_error_ds_grid" autoAppend="false" bindTarget="pur2620_itemPrice_import_error_ds" marginHeight="250" marginWidth="120" navBar="true" style="margin-top:5px;">
+                            <a:columns>
+                                <a:column name="line_number" align="center" lock="true" prompt="PROMPT.LINE_NUMBER" width="30"/>
+                                <a:column name="company_code" align="left" prompt="FND_COMPANIES.COMPANY_CODE" width="120"/>
+                                <a:column name="company_name" align="left" prompt="FND_COMPANIES.COMPANY_NAME" width="120"/>
+                                <a:column name="business_unit_code" align="left" prompt="FND_BUSINESS_UNITS.BUSINESS_UNIT_CODE" width="120"/>
+                                <a:column name="business_unit_name" align="left" prompt="FND_BUSINESS_UNITS.BUSINESS_UNIT_NAME" width="120"/>
+                                <a:column name="vendor_code" align="left" prompt="PUR_VENDORS.VENDOR_CODE" width="120"/>
+                                <a:column name="vendor_name" align="left" prompt="PUR_VENDORS.VENDOR_NAME" width="120"/>
+                                <a:column name="item_code" align="left" prompt="MTL_SYSTEM_ITEMS.ITEM_CODE" width="120"/>
+                                <a:column name="item_name" align="left" prompt="MTL_SYSTEM_ITEMS.ITEM_NAME" width="120"/>
+                                <a:column name="start_date" align="left" prompt="PUR_ITEM_PRICE_DATE_LINES.START_DATE" width="120"/>
+                                <a:column name="end_date" align="left" prompt="PUR_ITEM_PRICE_DATE_LINES.END_DATE" width="120"/>
+                                <a:column name="quantity_from" align="left" prompt="PUR_ITEM_PRICE_DETAIL_LINES.QUANTITY_FROM" width="120"/>
+                                <a:column name="quantity_to" align="left" prompt="PUR_ITEM_PRICE_DETAIL_LINES.QUANTITY_TO" width="120"/>
+                                <a:column name="unit_price" align="left" prompt="PUR_ITEM_PRICE_DETAIL_LINES.UNIT_PRICE" width="120"/>
+                                <a:column name="price_adjustment_method" align="left" prompt="PUR_ITEM_PRICE_DETAIL_LINES.PRICE_ADJUSTMENT_METHOD" width="120"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+            <form name="downloadform" action="${/request/@context_path}/atm_download.svc" enctype="multipart/form-data" method="get" style="display:none;">
+                <input name="attachment_id" id="attachment_id" type="hidden"/>
+            </form>
+        </a:screenBody>
+    </a:view>
+</a:screen>

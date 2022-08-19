@@ -1,0 +1,951 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao $ 
+    $Date: 2014-11-25 下午03:14:06 $  
+    $Revision: 1.0 $ 
+    $Purpose: 非寄销开票单审批，开票单行信息页面 $
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="cbi.config_classify_code = &apos;INVOICE&apos; AND cbi.config_item_code = &apos;INVOICE_08&apos;" fetchAll="true" model="public.get_fnd_config_center_bg_item_value" rootPath="bg_item_invoice_08"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="acp5270_bill_details_link" url="${/request/@context_path}/modules/acp/ACP5270/acp_bill_details.screen"/>
+        <a:link id="acp5270_detail_return_link" url="${/request/@context_path}/modules/acp/ACP5270/acp_bill_detail_return.svc"/>
+        <a:link id="acp5270_detail_confirm_link" url="${/request/@context_path}/modules/acp/ACP5270/acp_bill_detail_confirm.svc"/>
+        <a:link id="acp5270_detail_save_link" url="${/request/@context_path}/modules/acp/ACP5270/acp_bill_detail_save.svc"/>
+        <a:link id="acp5270_detail_return_vendor_link" model="acp.ACP5270.acp_bill_headers" modelaction="update"/>
+        <a:link id="acp5270_detail_save_deduction_link" model="acp.ACP5270.acp_bill_details" modelaction="update"/>
+        <script><![CDATA[
+            //加法
+            
+            function acp5270_accAdd(arg1, arg2) {
+                var r1, r2, m, c;
+                try {
+                    r1 = arg1.toString().split(".")[1].length;
+                } catch (e) {
+                    r1 = 0;
+                }
+                try {
+                    r2 = arg2.toString().split(".")[1].length;
+                } catch (e) {
+                    r2 = 0;
+                }
+                c = Math.abs(r1 - r2);
+                m = Math.pow(10, Math.max(r1, r2));
+                if (c > 0) {
+                    var cm = Math.pow(10, c);
+                    if (r1 > r2) {
+                        arg1 = Number(arg1.toString().replace(".", ""));
+                        arg2 = Number(arg2.toString().replace(".", "")) * cm;
+                    } else {
+                        arg1 = Number(arg1.toString().replace(".", "")) * cm;
+                        arg2 = Number(arg2.toString().replace(".", ""));
+                    }
+                } else {
+                    arg1 = Number(arg1.toString().replace(".", ""));
+                    arg2 = Number(arg2.toString().replace(".", ""));
+                }
+                return (arg1 + arg2) / m;
+            }
+            
+            
+            //减法
+            
+            function acp5270_accSub(arg1, arg2) {
+                var r1, r2, m, n;
+                try {
+                    r1 = arg1.toString().split(".")[1].length;
+                } catch (e) {
+                    r1 = 0;
+                }
+                try {
+                    r2 = arg2.toString().split(".")[1].length;
+                } catch (e) {
+                    r2 = 0;
+                }
+                m = Math.pow(10, Math.max(r1, r2)); //last modify by deeka //动态控制精度长度
+                n = (r1 >= r2) ? r1 : r2;
+                return ((arg1 * m - arg2 * m) / m).toFixed(n);
+            }
+            
+            //乘法
+            
+            function acp5270_accMul(arg1, arg2) {
+                var m = 0,
+                    s1 = arg1.toString(),
+                    s2 = arg2.toString();
+                try {
+                    m += s1.split(".")[1].length;
+                } catch (e) {}
+                try {
+                    m += s2.split(".")[1].length;
+                } catch (e) {}
+                return Number(s1.replace(".", "")) * Number(s2.replace(".", "")) / Math.pow(10, m);
+            
+            }
+            
+            //除法
+            
+            function acp5270_accDiv(arg1, arg2) {
+                var t1 = 0,
+                    t2 = 0,
+                    r1, r2;
+                try {
+                    t1 = arg1.toString().split(".")[1].length;
+                } catch (e) {}
+                try {
+                    t2 = arg2.toString().split(".")[1].length;
+                } catch (e) {}
+            
+                r1 = Number(arg1.toString().replace(".", ""));
+                r2 = Number(arg2.toString().replace(".", ""));
+                return (r1 / r2) * Math.pow(10, t2 - t1);
+            
+            
+            }
+            
+            
+            function acp5270_back() {
+                $('acp5270_lines_window').close();
+            }
+            
+            // 确认
+            
+            function acp5270_detail_confirm() {
+            
+                if ($('acp5270_header_ds').validate() && $('acp5270_line_ds').validate() && $('acp5270_subject_ds').validate()) {
+            
+                    Aurora.showConfirm('${l:PROMPT}', '${l:ACP_BILL.CONFIRM_CONFIRM}', function() {
+            
+                        var headers_ds = $('acp5270_header_ds');
+                        var header_record = headers_ds.getCurrentRecord();
+            
+                        var datas;
+                        datas = {
+                            header_id: ${/parameter/@bill_header_id},
+                            header_desc: header_record.get('header_desc')
+                        };
+            
+                        var lines = [];
+                        var ds = $('acp5270_line_ds');
+                        var records = ds.getAll();
+                        for (var i = 0;i < records.length;i++) {
+            
+                            var data = {
+                                'line_id': records[i].get('line_id'),
+                                'line_desc': records[i].get('line_desc'),
+                                'unit_price': records[i].get('unit_price'),
+                                'tax_unit_price': records[i].get('tax_unit_price')
+                            };
+                            lines.push(data);
+                        }
+            
+                        var subjects = [];
+                        var sub_ds = $('acp5270_subject_ds');
+                        var sub_records = sub_ds.getAll();
+                        for (var j = 0;j < sub_records.length;j++) {
+                            sub_records[j].set('bill_header_id', ${/parameter/@bill_header_id});
+                            subjects.push(sub_records[j].data);
+                        }
+            
+                        datas['lines'] = lines;
+                        datas['subjects'] = subjects;
+            
+                        Aurora.Masker.mask($('acp5270_lines_window').wrap, '${l:LOADING}');
+                        Aurora.request({
+                            url: $('acp5270_detail_confirm_link').getUrl(),
+                            para: datas,
+                            success: function(res) {
+                                Aurora.Masker.unmask($('acp5270_lines_window').wrap);
+                                acp5270_back();
+                                acp5270_query();
+                            },
+                            failure: function(res) {
+                                Aurora.Masker.unmask($('acp5270_lines_window').wrap);
+            
+                            },
+                            error: function(res) {
+                                Aurora.Masker.unmask($('acp5270_lines_window').wrap);
+                            },
+                            scope: this
+                        });
+                    });
+                }
+            }
+            //退回供应商确认
+            
+            function acp5270_return_vendor() {
+                var headers_ds = $('acp5270_header_ds');
+                if (!headers_ds.validate()) {
+                    return;
+                }
+                var detail_ds = $('acp5270_detail_ds');
+                if (detail_ds.isModified()) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:请先保存行信息}', function() {});
+                    return;
+                }
+                Aurora.showConfirm('${l:PROMPT}', '确认退回供应商确认？', function() {
+                    var header_record = headers_ds.getCurrentRecord();
+                    var operation = 'UPDATE';
+                    Aurora.Masker.mask($('acp5270_lines_window').wrap, '${l:LOADING}');
+                    Aurora.request({
+                        url: $('acp5270_detail_return_vendor_link').getUrl(),
+                        para: {
+                            header_id: header_record.get('header_id'),
+                            return_reason: header_record.get('return_reason'),
+                            operation: operation
+                        },
+                        success: function(res) {
+                            Aurora.Masker.unmask($('acp5270_lines_window').wrap);
+                            acp5270_back();
+                            acp5270_query();
+                        },
+                        failure: function(res) {
+                            Aurora.Masker.unmask($('acp5270_lines_window').wrap);
+            
+                        },
+                        error: function(res) {
+                            Aurora.Masker.unmask($('acp5270_lines_window').wrap);
+                        },
+                        scope: this
+                    });
+                });
+            }
+            //确认有误
+            
+            
+            function acp5270_confirm_mistake() {
+                var headers_ds = $('acp5270_header_ds');
+                var detail_ds = $('acp5270_detail_ds');
+                if (detail_ds.isModified()) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:请先保存行信息}', function() {});
+                    return;
+                }
+                Aurora.showConfirm('${l:PROMPT}', '是否确认有误？', function() {
+                    var header_record = headers_ds.getCurrentRecord();
+                    var operation = 'EXECUTE';
+                    Aurora.Masker.mask($('acp5270_lines_window').wrap, '${l:LOADING}');
+                    Aurora.request({
+                        url: $('acp5270_detail_return_vendor_link').getUrl(),
+                        para: {
+                            header_id: header_record.get('header_id'),
+                            operation: operation
+                        },
+                        success: function(res) {
+                            Aurora.Masker.unmask($('acp5270_lines_window').wrap);
+                            acp5270_back();
+                            acp5270_query();
+                        },
+                        failure: function(res) {
+                            Aurora.Masker.unmask($('acp5270_lines_window').wrap);
+            
+                        },
+                        error: function(res) {
+                            Aurora.Masker.unmask($('acp5270_lines_window').wrap);
+                        },
+                        scope: this
+                    });
+                });
+            }
+            // 退回
+            
+            function acp5270_detail_return() {
+                Aurora.showConfirm('${l:PROMPT}', '${l:ACP_BILL.CONFIRM_RETUEN}', function() {
+                    var headers_ds = $('acp5270_header_ds');
+                    var header_record = headers_ds.getCurrentRecord();
+                    var datas;
+                    datas = {
+                        header_id: ${/parameter/@bill_header_id},
+                        header_desc: header_record.get('header_desc')
+                    };
+                    var lines = [];
+                    var ds = $('acp5270_line_ds');
+                    var records = ds.getAll();
+                    for (var i = 0;i < records.length;i++) {
+            
+                        var data = {
+                            'line_id': records[i].get('line_id'),
+                            'line_desc': records[i].get('line_desc')
+                        };
+                        lines.push(data);
+                    }
+                    datas['lines'] = lines;
+            
+                    Aurora.Masker.mask($('acp5270_lines_window').wrap, '${l:LOADING}');
+                    Aurora.request({
+                        url: $('acp5270_detail_return_link').getUrl(),
+                        para: datas,
+                        success: function(res) {
+                            Aurora.Masker.unmask($('acp5270_lines_window').wrap);
+                            acp5270_back();
+                            acp5270_query();
+                        },
+                        failure: function(res) {
+                            Aurora.Masker.unmask($('acp5270_lines_window').wrap);
+            
+                        },
+                        error: function(res) {
+                            Aurora.Masker.unmask($('acp5270_lines_window').wrap);
+                        },
+                        scope: this
+                    });
+                });
+            
+            }
+            
+            
+            function acp5270_line_operation_record() {
+                new Aurora.Window({
+                    id: 'acp_operation_record_win',
+                    url: $('acp5270_header_operation_record_link').getUrl() + '?operation_table_id=' + ${/parameter/@bill_header_id} + '&operation_table=ACP_BILL_HEADERS',
+                    title: '${l:ACP_BILL.OPERATION_RECORD}',
+                    height: 450,
+                    width: 600
+                });
+            
+            
+            }
+            
+            function acp5270_lineGridRenderer(value, record, name) {
+                var line_id = record.get('line_id');
+                if (name == 'bill_line_num') {
+                    return '<a href="javascript:openacp5270_billMaintainDetail(' + line_id + ')">' + value + '</a>';
+                }
+            
+                if (name == 'original_unit_price' || name == 'unit_price' || name == 'line_amount' || name == 'original_tax_unit_price' || name == 'tax_unit_price' || name == 'tax_line_amount') {
+                    if (value == '***') {
+                        return value;
+                    } else {
+                        return Aurora.formatNumber(value);
+                    }
+                }
+            
+                if (name == 'compare_result') {
+            
+                    //获取配置项INVOICE_08的配置值
+                    var item_value = '${/model/bg_item_invoice_08/record/@bg_config_item_value}';
+            
+                    //返回字符
+                    var return_show = '';
+            
+                    //根据配置，勾选则进行含税价对比，不勾选进行净价对比
+                    if (!Aurora.isEmpty(item_value) && item_value == 'Y') {
+                        //含税价与原含税价差异
+                        if (!Aurora.isEmpty(record.get('tax_unit_price'))) {
+                            var tax_unit_price = record.get('tax_unit_price') * 1;
+                            var original_tax_unit_price = record.get('original_tax_unit_price') * 1;
+                            var difference_tax_price = acp5270_accSub(tax_unit_price, original_tax_unit_price);
+                            if (difference_tax_price != 0) {
+                                return_show = '${l:ACP5270.TAX_INCLUSIVE_PRICE_VARIANCE}' + difference_tax_price;
+                            }
+                        }
+            
+                    } else {
+                        //净价与原净价差异
+                        if (!Aurora.isEmpty(record.get('unit_price'))) {
+                            var unit_price = record.get('unit_price') * 1;
+                            var original_unit_price = record.get('original_unit_price') * 1;
+                            var difference_price = acp5270_accSub(unit_price, original_unit_price);
+                            if (difference_price != 0) {
+                                return_show = '${l:ACP5270.NET_PRICE_VARIANCE}' + difference_price;
+                            }
+                        }
+                    }
+            
+                    if (!Aurora.isEmpty(return_show)) {
+                        return '<div style="background:#FF0000;">' + return_show + '</div>';
+                    } else {
+                        return '<div style="background:#00FF00;">${l:ACP5270.NORMAL}</div>';
+                    }
+                }
+            }
+            
+            function openacp5270_billMaintainDetail(line_id) {
+                new Aurora.Window({
+                    id: 'acp5270_bill_details_window',
+                    url: $('acp5270_bill_details_link').getUrl() + '?bill_line_id=' + line_id,
+                    title: '${l:ACP_BILL.APPROVE_DETAIL_TITLE}',
+                    fullScreen: true
+                });
+            }
+            
+            function acp5270_lineDsUpdate(dataSet, record, name, value, oldvalue) {
+            
+                //获取配置项INVOICE_08的配置值
+                var item_value = '${/model/bg_item_invoice_08/record/@bg_config_item_value}';
+            
+                //税率、数量
+                var tax_rate = record.get('tax_rate');
+                var quantity = record.get('quantity');
+            
+                //净价调整
+                if (name == 'unit_price') {
+                    if (value == '***') {
+                        return;
+                    } else {
+            
+                        value = value * 1;
+            
+                        if (Aurora.isEmpty(item_value) || item_value == 'N') {
+            
+                            //更新净价行金额 = 净价*数量
+                            if (Aurora.isEmpty(quantity)) {
+                                quantity = 0;
+                            } else {
+                                quantity = quantity * 1;
+                            }
+                            var line_amount = acp5270_accMul(value, quantity);
+                            line_amount = line_amount.toFixed(2);
+                            record.set('line_amount', line_amount);
+            
+                            //更新含税价 = 净价*(1+税率)
+                            if (Aurora.isEmpty(tax_rate)) {
+                                tax_rate = 0;
+                            } else {
+                                tax_rate = acp5270_accDiv(tax_rate * 1, 100);
+                            }
+                            var modify_tax_unit_price = acp5270_accMul(value, acp5270_accAdd(1, tax_rate));
+                            modify_tax_unit_price = modify_tax_unit_price.toFixed(8);
+                            record.set('tax_unit_price', modify_tax_unit_price);
+            
+                            //更新含税行金额 = 净价*(1+税率)*数量
+                            var modify_tax_line_amount = acp5270_accMul(acp5270_accMul(value, acp5270_accAdd(1, tax_rate)), quantity);
+                            modify_tax_line_amount = modify_tax_line_amount.toFixed(2);
+                            record.set('tax_line_amount', modify_tax_line_amount);
+                        }
+                    }
+                }
+            
+                //含税价调整
+                if (name == 'tax_unit_price') {
+                    if (value == '***') {
+                        return;
+                    } else {
+            
+                        value = value * 1;
+            
+                        if (!Aurora.isEmpty(item_value) && item_value == 'Y') {
+            
+                            //更新含税行金额
+                            if (Aurora.isEmpty(quantity)) {
+                                quantity = 0;
+                            } else {
+                                quantity = quantity * 1;
+                            }
+                            var tax_line_amount = acp5270_accMul(value, quantity);
+                            tax_line_amount = tax_line_amount.toFixed(2);
+                            record.set('tax_line_amount', tax_line_amount);
+            
+                            //更新净价 = 含税价/(1+税率)
+                            if (Aurora.isEmpty(tax_rate)) {
+                                tax_rate = 0;
+                            } else {
+                                tax_rate = acp5270_accDiv(tax_rate * 1, 100);
+                            }
+                            var modify_unit_price = acp5270_accDiv(value, acp5270_accAdd(1, tax_rate));
+                            modify_unit_price = modify_unit_price.toFixed(8);
+                            record.set('unit_price', modify_unit_price);
+            
+                            //更新净价行金额 = 含税价*数量/(1+税率)
+                            var modify_line_amount = acp5270_accDiv(acp5270_accMul(value, quantity), acp5270_accAdd(1, tax_rate));
+                            modify_line_amount = modify_line_amount.toFixed(2);
+                            record.set('line_amount', modify_line_amount);
+                        }
+            
+                    }
+                }
+            }
+            
+            function acp5270_detail_save() {
+            
+                if ($('acp5270_header_ds').validate() && $('acp5270_line_ds').validate() && $('acp5270_subject_ds').validate()) {
+                    var headers_ds = $('acp5270_header_ds');
+                    var header_record = headers_ds.getCurrentRecord();
+                    var datas;
+                    datas = {
+                        header_id: ${/parameter/@bill_header_id},
+                        header_desc: header_record.get('header_desc')
+                    };
+                    var lines = [];
+                    var ds = $('acp5270_line_ds');
+                    var records = ds.getAll();
+                    for (var i = 0;i < records.length;i++) {
+                        var data = {
+                            'line_id': records[i].get('line_id'),
+                            'line_desc': records[i].get('line_desc'),
+                            'unit_price': records[i].get('unit_price'),
+                            'tax_unit_price': records[i].get('tax_unit_price')
+                        };
+                        lines.push(data);
+                    }
+            
+                    var subjects = [];
+                    var sub_ds = $('acp5270_subject_ds');
+                    var sub_records = sub_ds.getAll();
+                    for (var j = 0;j < sub_records.length;j++) {
+                        sub_records[j].set('bill_header_id', ${/parameter/@bill_header_id});
+                        subjects.push(sub_records[j].data);
+                    }
+            
+                    datas['lines'] = lines;
+                    datas['subjects'] = subjects;
+            
+                    Aurora.Masker.mask($('acp5270_lines_window').wrap, '${l:LOADING}');
+                    Aurora.request({
+                        url: $('acp5270_detail_save_link').getUrl(),
+                        para: datas,
+                        success: function(res) {
+                            $('acp5270_header_ds').query();
+                            $('acp5270_line_ds').query();
+                            $('acp5270_subject_ds').query();
+                            $('acp5270_detail_ds').query();
+                            Aurora.Masker.unmask($('acp5270_lines_window').wrap);
+                        },
+                        failure: function(res) {
+                            Aurora.Masker.unmask($('acp5270_lines_window').wrap);
+            
+                        },
+                        error: function(res) {
+                            Aurora.Masker.unmask($('acp5270_lines_window').wrap);
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            function getMaxLineNum(ds) {
+                var records = ds.getAll();
+                var max_line_num = 0;
+                for (var i = 0;i < records.length;i++) {
+                    max_line_num = records[i].get('line_num') > max_line_num ? records[i].get('line_num') : max_line_num;
+                }
+                max_line_num++;
+                return max_line_num;
+            }
+            
+            function acp5270_subjectDsAdd(dataSet, record, index) {
+                var line_num = getMaxLineNum(dataSet);
+                record.set('line_num', line_num);
+                record.getField('subject_document_number').setLovPara('vendor_id', $('acp5270_header_ds').getCurrentRecord().get('vendor_id'));
+            }
+            
+            function acp5270_lineGridEditorFunction(record, name) {
+            
+                //获取配置项INVOICE_08的配置值
+                var item_value = '${/model/bg_item_invoice_08/record/@bg_config_item_value}';
+            
+                if (name == 'unit_price') {
+                    if (!Aurora.isEmpty(item_value) && item_value == 'Y') {
+                        record.getMeta().getField('unit_price').setRequired(false);
+                        return '';
+                    } else {
+                        record.getMeta().getField('unit_price').setRequired(true);
+                        return 'acp5270_line_grid_numberField';
+                    }
+                }
+            
+                if (name == 'tax_unit_price') {
+                    if (!Aurora.isEmpty(item_value) && item_value == 'Y') {
+                        record.getMeta().getField('tax_unit_price').setRequired(true);
+                        return 'acp5270_line_grid_numberField';
+                    } else {
+                        record.getMeta().getField('tax_unit_price').setRequired(false);
+                        return '';
+                    }
+                }
+            }
+            
+            function acp5270_subjectDs_updateFun(dataSet, record, name, value, oldvalue) {
+                if (name == 'subject_document_id') {
+                    if (Ext.isEmpty(value)) {
+                        record.getField('subject_name_display').setReadOnly(false);
+                        record.getField('debit_credit_display').setReadOnly(false);
+                        record.getField('standard_money').setReadOnly(false);
+                        record.getField('note').setReadOnly(false);
+                        record.getField('tax_included_flag').setReadOnly(false);
+            
+                        if (record.get('tax_included_flag') == 'Y') {
+                            record.getField('tax_type_rate').setReadOnly(false);
+                            record.getField('tax_type_rate').setRequired(true);
+                            record.getField('amount_include_tax').setReadOnly(false);
+                            record.getField('amount_include_tax').setRequired(true);
+            
+                            record.getField('voucher_money').setReadOnly(true);
+                        } else {
+                            record.getField('tax_type_rate').setRequired(false);
+                            record.getField('tax_type_rate').setReadOnly(true);
+                            record.getField('amount_include_tax').setRequired(false);
+                            record.getField('amount_include_tax').setReadOnly(true);
+            
+                            record.getField('voucher_money').setReadOnly(false);
+                        }
+                    } else {
+                        record.getField('subject_name_display').setReadOnly(true);
+                        record.getField('debit_credit_display').setReadOnly(true);
+                        record.getField('voucher_money').setReadOnly(true);
+                        record.getField('standard_money').setReadOnly(true);
+                        record.getField('note').setReadOnly(true);
+                        record.getField('tax_included_flag').setReadOnly(true);
+                        record.getField('tax_type_rate').setReadOnly(true);
+                        record.getField('amount_include_tax').setReadOnly(true);
+                    }
+                } else if (name == 'tax_included_flag') {
+                    record.set('tax_type_id', '');
+                    record.set('tax_type_code', '');
+                    record.set('tax_type_rate', '');
+                    record.set('amount_include_tax', '');
+                    if (value == 'Y') {
+                        record.getField('tax_type_rate').setReadOnly(false);
+                        record.getField('tax_type_rate').setRequired(true);
+                        record.getField('amount_include_tax').setReadOnly(false);
+                        record.getField('amount_include_tax').setRequired(true);
+            
+                        record.set('voucher_money', '');
+                        record.getField('voucher_money').setReadOnly(true);
+                    } else {
+                        record.getField('tax_type_rate').setRequired(false);
+                        record.getField('tax_type_rate').setReadOnly(true);
+                        record.getField('amount_include_tax').setRequired(false);
+                        record.getField('amount_include_tax').setReadOnly(true);
+            
+                        record.getField('voucher_money').setReadOnly(false);
+                    }
+                } else if (name == 'tax_type_rate' || name == 'amount_include_tax') {
+                    if (!Ext.isEmpty(record.get('tax_type_rate')) && !Ext.isEmpty(record.get('amount_include_tax'))) {
+                        record.set('voucher_money', parseFloat((record.get('amount_include_tax') / (1 + (record.get('tax_type_rate') / 100))).toFixed(2)));
+                    } else {
+                        record.set('voucher_money', '');
+                    }
+                }
+            }
+            
+            function acp5270_subjectDs_loadFun(ds) {
+                var records = ds.getAll();
+                var vendor_id = $('acp5270_header_ds').getCurrentRecord().get('vendor_id');
+                for (var i = 0;i < records.length;i++) {
+                    var record = records[i];
+                    record.getField('subject_document_number').setLovPara('vendor_id', vendor_id);
+                    if (Ext.isEmpty(record.get('subject_document_id'))) {
+                        record.getField('subject_name_display').setReadOnly(false);
+                        record.getField('debit_credit_display').setReadOnly(false);
+                        record.getField('voucher_money').setReadOnly(false);
+                        record.getField('note').setReadOnly(false);
+                        record.getField('tax_included_flag').setReadOnly(false);
+            
+                        if (record.get('tax_included_flag') == 'Y') {
+                            record.getField('tax_type_rate').setReadOnly(false);
+                            record.getField('tax_type_rate').setRequired(true);
+                            record.getField('amount_include_tax').setReadOnly(false);
+                            record.getField('amount_include_tax').setRequired(true);
+            
+                            record.getField('voucher_money').setReadOnly(true);
+                        } else {
+                            record.getField('tax_type_rate').setRequired(false);
+                            record.getField('tax_type_rate').setReadOnly(true);
+                            record.getField('amount_include_tax').setRequired(false);
+                            record.getField('amount_include_tax').setReadOnly(true);
+            
+                            record.getField('voucher_money').setReadOnly(false);
+                        }
+                    } else {
+                        record.getField('subject_name_display').setReadOnly(true);
+                        record.getField('debit_credit_display').setReadOnly(true);
+                        record.getField('voucher_money').setReadOnly(true);
+                        record.getField('standard_money').setReadOnly(true);
+                        record.getField('note').setReadOnly(true);
+                        record.getField('tax_included_flag').setReadOnly(true);
+                        record.getField('tax_type_rate').setReadOnly(true);
+                        record.getField('amount_include_tax').setReadOnly(true);
+                    }
+                }
+            }
+            
+            function acp5270_detailGridRenderer(ds) {
+                //获取配置项INVOICE_08的配置值
+                var item_value = '${/model/bg_item_invoice_08/record/@bg_config_item_value}';
+                
+                //根据配置，勾选则显示含税价
+                if (Aurora.isEmpty(item_value) || item_value == 'N') {
+                    $('acp5270_detail_grid').hideColumn('tax_line_amount');
+                    $('acp5270_detail_grid').hideColumn('tax_unit_price');
+                }
+                var records = ds.getAll();
+                 for (var i = 0;i < records.length;i++) {
+                    var record = records[i];
+                    if (record.get('differ_amount')==0) {
+                        record.getField('performance_deduction').setReadOnly(true);
+                    } else {
+                        record.getField('performance_deduction').setReadOnly(false);
+                    }
+                } 
+            }
+            
+            function acp5270_amount_render() {
+                return '***';
+            }
+            
+            function acp5270_lineGridEditorFunction(record, name) {
+                record.dirty = false;
+                    if (record.get('differ_amount') == '0') {
+                        return '';
+                    } else {
+                        return 'acp5270_detail_grid_cb';
+                    }
+            }
+            function acp5270_performance_deduction_save() {
+                debugger;
+			    var ds = $('acp5270_detail_ds');
+                var records = ds.getAll();
+                var datas = [];
+                for (var i = 0;i < records.length;i++) {
+                    records[i].set('_status', 'update');
+                    //records[i].set('detail_id', records[i].get('detail_id'));
+                    //records[i].set('performance_deduction', records[i].get('performance_deduction'));
+                    datas.push(records[i].data);
+                
+                	Aurora.request({
+                         url: $('acp5270_detail_save_deduction_link').getUrl(),
+                         para: {detail_id:records[i].get('detail_id'),
+                         		performance_deduction:records[i].get('performance_deduction')},
+                         success: function(res1) {
+                            $('acp5270_detail_ds').query();
+                             }
+                         });
+                }
+                }
+        ]]></script>
+        <a:dataSets>
+            <!-- 头结构的ds,对应与acp_bill_headers表,查询结果为页面1点击的信息 -->
+            <a:dataSet id="acp5270_header_ds" fetchAll="true" loadData="true" model="acp.ACP5270.acp_bill_headers" queryUrl="${/request/@context_path}/autocrud/acp.ACP5270.acp_bill_headers/query?bill_header_id=${/parameter/@bill_header_id}">
+                <a:fields>
+                    <a:field name="return_reason" required="true"/>
+                    <a:field name="header_id"/>
+                    <a:field name="bill_number" readOnly="true"/>
+                    <a:field name="company_name" readOnly="true"/>
+                    <a:field name="vendor_name" readOnly="true"/>
+                    <a:field name="vendor_site_name" readOnly="true"/>
+                    <a:field name="status"/>
+                    <a:field name="amount" readOnly="true"/>
+                    <a:field name="currency_code" readOnly="true"/>
+                    <a:field name="creation_date" readOnly="true"/>
+                    <a:field name="confirm_date" readOnly="true"/>
+                    <a:field name="confirm_date" readOnly="true"/>
+                    <a:field name="data_source" readOnly="true"/>
+                    <a:field name="vendor_desc"/>
+                    <a:field name="header_desc"/>
+                    <a:field name="created_by" readOnly="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="acp5270_line_query_ds">
+                <a:fields>
+                    <a:field name="bill_header_id" defaultValue="${/parameter/@bill_header_id}"/>
+                </a:fields>
+            </a:dataSet>
+            <!-- 行结构的ds,对应acp_bill_lines表,与acp_bill_headers表为多对一关系 -->
+            <a:dataSet id="acp5270_line_ds" autoCount="true" autoPageSize="true" autoQuery="true" fetchAll="false" model="acp.ACP5270.acp_bill_lines" queryDataSet="acp5270_line_query_ds" selectable="false">
+                <a:fields>
+                    <a:field name="line_id"/>
+                    <a:field name="line_desc"/>
+                    <a:field name="vendor_desc"/>
+                    <a:field name="unit_price" requiredMessage="${l:ACP5270.NET_PRICE_CANNOT_BE_EMPTY}"/>
+                    <a:field name="tax_unit_price" requiredMessage="${l:ACP5270.TAX_INCLUSIVE_PRICE_CANNOT_BE_EMPTY}"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="acp5270_lineDsUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 行结构的ds,对应acp_bill_details表,与acp_bill_headers,acp_bill_lines表为多对一关系 -->
+            <a:dataSet id="acp5270_detail_ds" autoCount="true" autoPageSize="true" autoQuery="true" model="acp.ACP5270.acp_bill_details" queryUrl="${/request/@context_path}/autocrud/acp.ACP5270.acp_bill_details/query?header_id=${/parameter/@bill_header_id}" selectable="false">
+                <a:fields>
+                    <a:field name="performance_deduction" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="acp5270_detailGridRenderer"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="acp5270_subject_list_ds" loadData="true" model="acp.PUBLIC.acp_subject_define_query"/>
+            <a:dataSet id="acp5270_debit_credit_list_ds" loadData="true" model="acp.ACP5270.get_debit_credit_list"/>
+            <a:dataSet id="acp5270_subject_ds" autoPageSize="true" autoQuery="true" model="acp.ACP5270.acp_bill_line_subject" queryUrl="${/request/@context_path}/autocrud/acp.ACP5270.acp_bill_line_subject/query?header_id=${/parameter/@bill_header_id}" selectable="true">
+                <a:fields>
+                    <a:field name="subject_document_number" lovHeight="500" lovService="acp.PUBLIC.acp_subject_documents_lov?vendor_id=-1" lovWidth="600" title="ACP_SUBJECT_DOCUMENTS.SUBJECT_DOCUMENT">
+                        <a:mapping>
+                            <a:map from="subject_document_id" to="subject_document_id"/>
+                            <a:map from="subject_document_number" to="subject_document_number"/>
+                            <a:map from="subject_code" to="subject_code"/>
+                            <a:map from="subject_name_display" to="subject_name_display"/>
+                            <a:map from="debit_credit" to="debit_credit"/>
+                            <a:map from="debit_credit_name" to="debit_credit_display"/>
+                            <a:map from="voucher_money" to="voucher_money"/>
+                            <a:map from="standard_money" to="standard_money"/>
+                            <a:map from="tax_included_flag" to="tax_included_flag"/>
+                            <a:map from="tax_type_rate" to="tax_type_rate"/>
+                            <a:map from="tax_type_id" to="tax_type_id"/>
+                            <a:map from="tax_type_code" to="tax_type_code"/>
+                            <a:map from="amount_include_tax" to="amount_include_tax"/>
+                            <a:map from="note" to="note"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="subject_name_display" displayField="subject_desc" options="acp5270_subject_list_ds" required="true" requiredMessage="ACP_BILL.SUBJECT_NAME_NOT_NULL" returnField="subject_code" valueField="subject_code"/>
+                    <a:field name="debit_credit_display" displayField="debit_credit_name" options="acp5270_debit_credit_list_ds" required="true" returnField="debit_credit" valueField="debit_credit"/>
+                    <a:field name="voucher_money" required="true"/>
+                    <a:field name="standard_money" required="true"/>
+                    <a:field name="tax_included_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="tax_type_rate" autoComplete="true" autoCompleteField="tax_type_code" lovHeight="480" lovService="public.fnd_tax_type_code_lov?business_group=${/session/@business_group}" lovWidth="500" readOnly="true" title="ACP_WEB_INVOICE.TAX_RATE">
+                        <a:mapping>
+                            <a:map from="tax_type_id" to="tax_type_id"/>
+                            <a:map from="tax_type_code" to="tax_type_code"/>
+                            <a:map from="tax_type_rate" to="tax_type_rate"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="amount_include_tax" readOnly="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="acp5270_subjectDsAdd"/>
+                    <a:event name="update" handler="acp5270_subjectDs_updateFun"/>
+                    <a:event name="load" handler="acp5270_subjectDs_loadFun"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <!-- <a:toolbarButton click="acp5270_detail_save" text="PROMPT.SAVE" width="100"/>
+                <a:toolbarButton click="acp5270_detail_confirm" text="ACP_BILL.CONFIRM" width="100"/>
+                <a:toolbarButton click="acp5270_detail_return" text="ACP_BILL.RETURN" width="100"/>
+                <a:toolbarButton click="acp5270_line_operation_record" text="ACP_BILL.OPERATION_RECORD" width="100"/>
+                <a:gridButton bind="acp5270_line_grid" text="ACP_BILL.EXPORT_LINES" type="excel" width="100"/>
+                <a:gridButton bind="acp5270_detail_grid" text="ACP_BILL.EXPORT_DETAILS" type="excel" width="100"/> -->
+                <a:toolbarButton click="acp5270_confirm_mistake" text="确认对账单有误" width="100"/>
+                <a:toolbarButton click="acp5270_return_vendor" text="退回供应商确认" width="100"/>
+                <a:toolbarButton click="acp5270_back" text="返回" width="100"/>
+            </a:screenTopToolbar>
+            <a:form marginWidth="80">
+                <a:hBox>
+                    <a:label name="vendor_code" bindTarget="acp5270_header_ds" prompt="供应商代码" width="150"/>
+                    <a:label name="vendor_site_name" bindTarget="acp5270_header_ds" prompt="供应商地点" width="150"/>
+                    <a:label name="bill_number" bindTarget="acp5270_header_ds" prompt="ACP_BILL_HEADERS.BILL_NUMBER" width="150"/>
+                    <a:label name="status_display" bindTarget="acp5270_header_ds" prompt="对账状态" width="150"/>
+                    <a:label name="invoice_num" bindTarget="acp5270_header_ds" prompt="发票号" width="150"/>
+                </a:hBox>
+                <a:hBox>
+                    <a:label name="vendor_name" bindTarget="acp5270_header_ds" prompt="ACP_BILL_SOURCE.VENDOR_NAME" width="150"/>
+                    <a:label name="currency_code" bindTarget="acp5270_header_ds" prompt="ACP_BILL_SOURCE.CURRENCY_CODE" width="150"/>
+                    <a:label name="tax_amount" bindTarget="acp5270_header_ds" prompt="未含税金额总计" renderer="acp5270_amount_render" width="150"/>
+                    <a:label name="tax_total_amount" bindTarget="acp5270_header_ds" prompt="含税金额总计" renderer="acp5270_amount_render" width="150"/>
+                    <a:label name="invoice_date" bindTarget="acp5270_header_ds" prompt="发票日期" width="150"/>
+                </a:hBox>
+                <a:hBox>
+                    <!-- <a:label name="gl_date" bindTarget="acp5270_header_ds" prompt="GL_日期" width="150"/> -->
+                    <a:label name="loan_month" bindTarget="acp5270_header_ds" prompt="货款月份" width="150"/>
+                    <a:label name="ebs_status" bindTarget="acp5270_header_ds" prompt="对账单状态" width="150"/>
+                    <a:label name="quantity_total" bindTarget="acp5270_header_ds" prompt="数量总计" width="150"/>
+                </a:hBox>
+                <a:hBox>
+                    <a:label name="differ_total_amount" bindTarget="acp5270_header_ds" prompt="差异金额" width="150"/>
+                    <a:textField name="return_reason" bindTarget="acp5270_header_ds" prompt="退回原因" width="450"/>
+                </a:hBox>
+            </a:form>
+            <a:tabPanel id="acp5270_bill_tabPanel" marginHeight="310" marginWidth="80">
+                <a:tabs>
+                    <!-- <a:tab prompt="ACP_BILL_LINES.TITLE" width="100">
+                        <a:grid id="acp5270_line_grid" autoAppend="false" bindTarget="acp5270_line_ds" marginHeight="345" marginWidth="85" navBar="true">
+                            <a:columns>
+                                <a:column name="compare_result" align="center" lock="true" prompt="ACP_WEB_INVOICE.CHECK_RESULT" renderer="acp5270_lineGridRenderer" width="80"/>
+                                <a:column name="bill_line_num" align="center" prompt="ACP_BILL_LINES.BILL_LINE_NUM" width="60"/>
+                                <a:column name="item_code" align="center" prompt="ACP_BILL_SOURCE.ITEM_CODE" width="80"/>
+                                <a:column name="item_name" align="left" prompt="ACP_BILL_SOURCE.ITEM_NAME" width="100"/>
+                                <a:column name="ean_code" align="left" prompt="PUR_LINES_ALL.EAN_CODE" sortable="true" width="80"/>
+                                <a:column name="quantity" align="right" prompt="ACP_BILL_SOURCE.QUANTITY" width="60"/>
+                                <a:column name="unit_meas_lookup_code" prompt="ACP_BILL_SOURCE.UNIT_MEAS_LOOKUP_CODE" width="50"/>
+                                <a:column name="original_unit_price" align="right" prompt="ACP_BILL.ORIGINAL_PRICE" renderer="acp5270_lineGridRenderer" width="60"/>
+                                <a:column name="unit_price" align="right" editorFunction="acp5270_lineGridEditorFunction" prompt="ACP_BILL.NET_PRICE" renderer="acp5270_lineGridRenderer" width="60"/>
+                                <a:column name="line_amount" align="right" prompt="ACP_BILL.NET_LINE_AMOUNT" renderer="acp5270_lineGridRenderer" width="60"/>
+                                <a:column name="tax_rate" align="right" prompt="FND_TAX_TYPE_CODES.TAX_TYPE_RATE" sortable="true" width="60"/>
+                                <a:column name="original_tax_unit_price" align="right" prompt="ACP_BILL.ORIGINAL_TAX_PRICE" renderer="acp5270_lineGridRenderer" sortable="true" width="60"/>
+                                <a:column name="tax_unit_price" align="right" editorFunction="acp5270_lineGridEditorFunction" prompt="ACP_BILL.TAX_PRICE" renderer="acp5270_lineGridRenderer" sortable="true" width="60"/>
+                                <a:column name="tax_line_amount" align="right" prompt="ACP_BILL.TAX_LINE_AMOUNT" renderer="acp5270_lineGridRenderer" sortable="true" width="60"/>
+                                <a:column name="used_item_code" align="center" prompt="MTL2060.USED_ITEM_CODE" width="60"/>
+                                <a:column name="vendor_desc" align="left" prompt="ACP_BILL_HEADERS.VENDOR_DESC" width="120"/>
+                                <a:column name="line_desc" align="left" editor="line_desc_tf" prompt="ACP_BILL_LINES.LINE_DESC" width="120"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:numberField id="acp5270_line_grid_numberField" allowDecimals="true" allowFormat="false" allowNegative="false" decimalPrecision="8"/>
+                                <a:textField id="line_desc_tf"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab> -->
+                    <a:tab prompt="ACP_BILL_DETAILS.TITLE" width="100">
+                        <a:grid id="acp5270_detail_grid" autoAppend="false" bindTarget="acp5270_detail_ds" marginHeight="345" marginWidth="85" navBar="true">
+                            <a:toolBar>
+                                <a:button  text="保存"  click="acp5270_performance_deduction_save" />
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="organization_name" align="left" prompt="ACP_BILL_DETAILS.INV_ORGANIZATION_NAME" width="80"/>
+                                <a:column name="performance_deduction" align="center" editorFunction="acp5270_lineGridEditorFunction" prompt="绩效考核扣分" width="50"/>
+                                <a:column name="business_unit_name" align="center" prompt="业务实体" width="50"/>
+                                <a:column name="organization_code" align="center" prompt="事业部" width="50"/>
+                                <!-- <a:column name="bill_type" align="center" prompt="对账类型" width="50"/> -->
+                                <a:column name="segment1" align="center" prompt="PO编号" width="80"/>
+                                <!-- <a:column name="line_num" align="center" prompt="订单行号" width="40"/> -->
+                                <a:column name="pur_type" align="center" prompt="采购类别" width="40"/>
+                                <a:column name="term_name" align="center" prompt="付款条件" width="40"/>
+                                <!-- <a:column name="trade_method" align="center" prompt="贸易方式" width="40"/> -->
+                                <a:column name="receipt_date" align="center" prompt="接受日期" width="50"/>
+                                <a:column name="receipt_num" align="center" prompt="ACP_BILL_DETAILS.RECEIPT_NUM" width="50"/>
+                                <!-- <a:column name="receipt_line_num" align="center" prompt="ACP_BILL_DETAILS.RECEIPT_LINE_NUM" width="50"/> -->
+                                <a:column name="item_code" align="center" prompt="ACP_BILL_SOURCE.ITEM_CODE" width="80"/>
+                                <a:column name="item_name" align="left" prompt="ACP_BILL_SOURCE.ITEM_NAME" width="100"/>
+                                <!-- <a:column name="unit_price" align="left" prompt="不含税单价" width="80"/> -->
+                                <a:column name="tax_unit_price" align="left" prompt="含税单价" width="80"/>
+                                <!-- <a:column name="quantity" align="left" prompt="采购数量" width="80"/> -->
+                                <a:column name="billed_quantity" align="left" prompt="对账数量" width="80"/>
+                                <a:column name="unit_meas_lookup_code" prompt="ACP_BILL_SOURCE.UNIT_MEAS_LOOKUP_CODE" width="50"/>
+                                <!-- <a:column name="tax_rate" align="left" prompt="税率" width="100"/> -->
+                                <!-- <a:column name="no_tax_amount" align="left" prompt="不含税金额（原币）" width="100"/> -->
+                                <a:column name="tax_amount" align="left" prompt="含税金额（本币）" width="100"/>
+                                <!-- <a:column name="invoice_num" align="center" prompt="发票号" width="80"/>
+                                <a:column name="invoice_date" align="center" prompt="发票日期" width="80"/> 
+                                <a:column name="gl_date" align="center" prompt="GL日期" width="80"/>
+                                <a:column name="com_subject" align="center" prompt="科目组合" width="80"/>
+                                <a:column name="com_subject_desc" align="center" prompt="科目组合说明" width="80"/>
+                                <a:column name="remark" align="center" prompt="摘要" width="80"/> -->
+                                <a:column name="vendor_comments" align="left" prompt="供应商备注" width="100"/>
+                                <a:column name="differ_amount" align="left" prompt="差异金额" width="60"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:checkBox id="acp5270_detail_grid_cb"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                    <!-- <a:tab prompt="ACP_BILL.SUBJECT_NAME" width="100">
+                        <a:grid id="acp5270_subject_grid" autoAppend="false" bindTarget="acp5270_subject_ds" marginHeight="350" marginWidth="85" navBar="true">
+                            <a:toolBar>
+                                <a:button type="add"/>
+                                <a:button type="delete"/>
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="line_num" align="center" prompt="ACP_BILL_SOURCE.LINE_NUM" width="40"/>
+                                <a:column name="subject_document_number" align="center" editor="acp5270_subject_grid_lov" prompt="ACP_SUBJECT_DOCUMENTS.SUBJECT_DOCUMENT_NUMBER" width="100"/>
+                                <a:column name="subject_name_display" align="center" editor="acp5270_subject_grid_comboBox" prompt="ACP_BILL.SUBJECT_NAME" width="70"/>
+                                <a:column name="debit_credit_display" align="center" editor="acp5270_subject_grid_comboBox" prompt="ACP_BILL.DEBIT_CREDIT" width="70"/>
+                                <a:column name="voucher_money" align="right" editor="acp5270_subject_grid_numberField" prompt="ACP_BILL.VOUCHER_MONEY" width="70"/>
+                                <a:column name="standard_money" align="right" editor="acp5270_subject_grid_numberField" prompt="ACP_BILL.STANDARD_MONEY" width="70"/>
+                                <a:column name="tax_included_flag" align="center" editor="acp5270_subject_grid_cb" prompt="ACP_INVOICE_LINES.TAX_INCLUDED_FLAG" width="40"/>
+                                <a:column name="tax_type_rate" align="right" editor="acp5270_subject_grid_lov" prompt="ACP_WEB_INVOICE.TAX_RATE" width="40"/>
+                                <a:column name="amount_include_tax" align="right" editor="acp5270_subject_grid_numberField" prompt="ACP_SUBJECT_DOCUMENTS.AMOUNT_INCLUDE_TAX" width="60"/>
+                                <a:column name="note" align="left" editor="acp5270_subject_grid_textField" prompt="ACP_BILL.SUBJECT_NOTE" width="70"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:lov id="acp5270_subject_grid_lov"/>
+                                <a:comboBox id="acp5270_subject_grid_comboBox"/>
+                                <a:numberField id="acp5270_subject_grid_numberField" allowDecimals="true" allowFormat="false" allowNegative="false" decimalPrecision="2"/>
+                                <a:textField id="acp5270_subject_grid_textField"/>
+                                <a:checkBox id="acp5270_subject_grid_cb"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab> -->
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+    </a:view>
+</a:screen>

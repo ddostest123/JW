@@ -1,0 +1,489 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: tony  
+    $Date: 2013-5-3 下午5:02:35  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query model="blt.BLT1010.blt_bulletin_list" rootPath="bulletin_info"/>
+        <!--  <a:model-query fetchAll="true" model="blt.BLT1010.fnd_flex_value_sets_query" rootPath="blt1010_after_type_data"/> -->
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;BLT_TYPE&apos;" fetchAll="true" model="blt.BLT1010.fnd_flex_value_sets_query" rootPath="blt1010_after_type_data"/>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;BLT_OBJECT&apos; and ((${/session/@business_group} is null and flex_value = &apos;ALL&apos;) or (flex_value != &apos;ALL&apos;))" fetchAll="true" model="public.fnd_flex_value_sets_query" rootPath="blt1010_object_data"/>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;BLT_PLACE_CATEGORY&apos;" fetchAll="true" model="public.fnd_flex_value_sets_query" rootPath="blt1010_object_place_data"/>
+    </a:init-procedure>
+    <a:view>
+        <link href="${/request/@context_path}/index/css/blt_bulletin.css" rel="stylesheet" type="text/css"/>
+        <a:link id="blt1010_blt_attachment_file_upload_link" url="${/request/@context_path}/attachment_file_upload.screen"/>
+        <a:link id="blt1010_blt_query_link" url="${/request/@context_path}/modules/blt/BLT1010/blt_bulletin_query.screen"/>
+        <a:link id="blt1010_blt_edit_link" url="${/request/@context_path}/modules/blt/BLT1010/blt_bulletin_edit.screen"/>
+        <a:link id="blt1010_edit_release_template_link" url="${/request/@context_path}/modules/blt/BLT1010/blt_blletin_template.svc"/>
+        <a:link id="blt1010_edit_release_template_admin_link" url="${/request/@context_path}/modules/blt/BLT1010/blt_blletin_template_admin.svc"/>
+        <script src="${/request/@context_path}/ueditor-jsp/ueditor.config.js" type="text/javascript"/>
+        <script src="${/request/@context_path}/ueditor-jsp/ueditor.all.js" type="text/javascript"/>
+        <script><![CDATA[
+            var blt1010_ue;
+            var blt1010_object = [];
+            var blt1010_place = [];
+            
+            function objectDataSet(type) {
+                var ds = $('blt1010_bulletin_object_category_ds');
+                var records = ds.getAll();
+                var d = [];
+                // if (!Aurora.isEmpty('${/session/@business_group}')) {
+                    if (blt1010_object.length == 0) {
+                        //加载发布对象数据
+                        for (var i = 0;i < records.length;i++) {
+                            var data = records[i].data;
+                            blt1010_object.push({
+                                'parent_flex_value': data.parent_flex_value,
+                                'flex_value': data.flex_value,
+                                'flex_desc': data.flex_desc
+                            });
+                        }
+                    }
+            
+                    for (i = 0;i < blt1010_object.length;i++) {
+            
+                        if ((blt1010_object[i].flex_value == 'ALL' && type == 'HOMEPAGE_BULLETIN') || (blt1010_object[i].flex_value != 'ALL' && type == 'LOGINED_BULLETIN')) {
+                            d.push({
+                                'flex_value': blt1010_object[i].flex_value,
+                                'flex_desc': blt1010_object[i].flex_desc
+                            });
+                        }
+                    }
+                    ds.removeAll();
+                    for (i = 0;i < d.length;i++) {
+                        ds.create(d[i]);
+                    }
+                // }
+                // //发布对象
+                // var ulI = jDawn.getElementById('blt_inside_type_list');
+                // var ulO1 = jDawn.getElementById('blt_outside_type_list1');
+                // var ulO2 = jDawn.getElementById('blt_outside_type_list2');
+                // var ulN = jDawn.getElementById('blt_news_type_list');
+                // if (type == 'HOMEPAGE_BULLETIN' || type == 'PLATFORM_BULLETIN') {
+                // ulI.style.display = 'none';
+                // ulO1.style.display = 'none';
+                // ulO2.style.display = 'none';
+                // ulN.style.display = 'block';
+                // } else {
+                // ulI.style.display = 'block';
+                // ulO1.style.display = 'block';
+                // ulO2.style.display = 'block';
+                // ulN.style.display = 'none';
+                // }
+            }
+            
+            function bulletinTypeAfterClickShow(_this) {
+                var obj = _this.nextSibling;
+                if (obj.style.display == 'block') {
+                    obj.style.display = 'none';
+                } else {
+                    obj.style.display = 'block';
+                }
+            }
+            
+            function bulletinAfterTypeDisplay(display) {
+                var obj = jDawn.getElementById('blt1010_bulletin_mask');
+                obj.style.display = display;
+                if (display == 'block') {
+                    obj.parentNode.style.background = '#fff';
+                    var uParent = jDawn.getElementById('blt_inside_type_list').parentNode;
+                    uParent.style.display = 'none';
+                } else {
+                    obj.parentNode.style.background = '#fffde3';
+                }
+            }
+            
+            function blt1010_list_update(ds, record, name, value, oldvalue) {
+                bulletinAfterTypeDisplay('none');
+                if (name == 'object_category') {
+                    //alert(value);
+                    record.getField('blt_place_category_desc').setReadOnly(false);
+                    record.set('blt_place_category', '');
+                    record.set('blt_place_category_desc', '');
+                    placeDataSet(value);
+                }
+            }
+            
+            function placeDataSet(value) {
+                var place_ds = $('blt1010_bulletin_object_place_ds');
+                var place_records = place_ds.getAll();
+                var dataSet = [];
+                if (blt1010_place.length == 0) {
+                    for (var i = 0;i < place_records.length;i++) {
+                        blt1010_place.push({
+                            'parent_flex_value': place_records[i].data.parent_flex_value,
+                            'flex_value': place_records[i].data.flex_value,
+                            'flex_desc': place_records[i].data.flex_desc
+                        });
+                    }
+                }
+                for (i = 0;i < blt1010_object.length;i++) {
+            
+                    if (blt1010_object[i].flex_value == value) {
+                        //alert(blt1010_object[i].flex_value+" and "+blt1010_object[i].parent_flex_value);
+                        var object_parent_value = blt1010_object[i].parent_flex_value;
+                    }
+                }
+                for (i = 0;i < blt1010_place.length;i++) {
+            
+                    if (blt1010_place[i].parent_flex_value == 'NEWS' && object_parent_value == 'NEWS') {
+            
+                        dataSet.push({
+                            'flex_value': blt1010_place[i].flex_value,
+                            'flex_desc': blt1010_place[i].flex_desc
+                        });
+                    } else if (blt1010_place[i].parent_flex_value == 'OUTSIDE' && object_parent_value == 'OUTSIDE') {
+                        dataSet.push({
+                            'flex_value': blt1010_place[i].flex_value,
+                            'flex_desc': blt1010_place[i].flex_desc
+                        });
+                    } else if (blt1010_place[i].parent_flex_value == 'INSIDE' && object_parent_value == 'INSIDE') {
+                        dataSet.push({
+                            'flex_value': blt1010_place[i].flex_value,
+                            'flex_desc': blt1010_place[i].flex_desc
+                        });
+                    }
+                }
+                place_ds.removeAll();
+                for (i = 0;i < dataSet.length;i++) {
+                    place_ds.create(dataSet[i]);
+                }
+            }
+            
+            function blt_edit_init() {
+                blt1010_ue = UE.getEditor('context_id');
+                var content = '${/model/bulletin_info/record/@bulletin_context}';
+                blt1010_ue.ready(function() {
+                    blt1010_ue.setContent('${/model/bulletin_info/record/@bulletin_context}');
+                });
+                if (!Aurora.isEmpty('${/session/@business_group}')) {
+                    $('blt1010_blt_category_ds').removeAll();
+                    var data = {
+                        'code_value': 'LOGINED_BULLETIN',
+                        'code_value_name': '登入后公告'
+                    };
+                    $('blt1010_blt_category_ds').create(data);
+                }
+                //渲染登入后公告类别
+                bltSetListTypeHtml();
+                bltSetListInner();
+            }
+            
+            function blt1010_date_Validator(record, name, value) {
+                if (name == 'date_from_desc' || name == 'date_to_desc') {
+                    var date_from_desc = record.get('date_from_desc');
+                    var date_to_desc = record.get('date_to_desc');
+                    if (typeof(date_to_desc) != 'undefined' && !Ext.isEmpty(date_to_desc)) {
+                        if (!blt1010_compareDate(date_from_desc, date_to_desc)) {
+                            return '${l:BLT.START_END_DATE_VALI_ERROR}';
+                        }
+                    }
+                    return true;
+                }
+            }
+            
+            function blt1010_compareDate(start, end) {
+                if (start > end) {
+                    return false;
+                }
+                return true;
+            }
+            
+            function blt1010_return_query() {
+                // var url = $('blt1010_blt_query_link').getUrl();
+                // window.open(url, '_self');
+                window.close();
+            }
+            
+            function blt1010_save() {
+                var blt1010_bulletin_list_ds = $('blt1010_bulletin_list_ds');
+                var record = blt1010_bulletin_list_ds.getCurrentRecord();
+                record.set('bulletin_context', blt1010_ue.getContent());
+                var bulletin_context_view = blt1010_ue.getContentTxt().replace(/<(img|embed).*>/ig, '').substr(0, 500);
+                record.set('bulletin_context_view', bulletin_context_view);
+                if (!blt1010_bulletin_list_ds.validate()) {
+                    return;
+                }
+                Aurora.request({
+                    url: '${/request/@context_path}/autocrud/blt.BLT1010.blt_bulletin_list/update',
+                    para: record.data,
+                    success: function(res) {
+                        var bulletin_id = res.result.bulletin_id;
+                        var url = $('blt1010_blt_edit_link').getUrl() + '?bulletin_id=' + bulletin_id;
+                        window.open(url, '_self');
+                    },
+                    scope: this
+                });
+            }
+            
+            function blt1010_release() {
+                var blt1010_bulletin_list_ds = $('blt1010_bulletin_list_ds');
+                var record = blt1010_bulletin_list_ds.getCurrentRecord();
+                if (record.dirty) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:BLT.PLEASE_SAVE_DATE}');
+                    return;
+                }
+                var bulletin_id = record.get('bulletin_id');
+                if (record.get('status') == 'RELEASED') {
+                    if (!Ext.isEmpty(bulletin_id)) {
+                        var confirm_again = new Aurora.showConfirm("${l:PROMPT}", "是否确认再次发布", function() {
+                            //confirm.close();
+                            Aurora.Masker.mask(Ext.getBody(), '${l:BLT_BULLETIN.LOAD}');
+                            blt1010_doRelease(record.get('bulletin_id'), record.get('bulletin_category'), record.get('object_category'));
+                        });
+                    }
+                } else {
+                    if (!Ext.isEmpty(bulletin_id)) {
+                        var confirm = new Aurora.showConfirm("${l:PROMPT}", "是否确认发布", function() {
+                            //confirm.close();
+                            Aurora.Masker.mask(Ext.getBody(), '${l:BLT_BULLETIN.LOAD}');
+                            blt1010_doRelease(record.get('bulletin_id'), record.get('bulletin_category'), record.get('object_category'));
+                        });
+                    }
+                }
+            
+            }
+            
+            function blt1010_doRelease(id, type, object_category) {
+                Aurora.request({
+                    url: '${/request/@context_path}/autocrud/blt.BLT1010.blt_bulletin_list/execute',
+                    para: {
+                        bulletin_id: id
+                    },
+                    success: function() {
+                        /* if (type == 'HOMEPAGE_BULLETIN' || (type == 'LOGINED_BULLETIN' && object_category == 'COOP')) {
+                         blt1010_releaseModifyScreenInEdit(id);
+                         } else { */
+                        blt1010_releaseSuccess();
+                        //}
+            
+                    },
+                    failure: Aurora.Masker.unmask(Ext.getBody()),
+                    error: Aurora.Masker.unmask(Ext.getBody()),
+                    scope: this
+                });
+            }
+            
+            function blt1010_releaseModifyScreenInEdit(id) {
+                var url = $('blt1010_edit_release_template_link').getUrl();
+                if (Aurora.isEmpty('${/session/@business_group}')) {
+                    url = $('blt1010_edit_release_template_admin_link').getUrl();
+                }
+                Aurora.request({
+                    url: url,
+                    para: {
+                        'template_url': 'modules/blt/login_bg_news.screen',
+                        'bulletin_id': id
+                    },
+                    success: function() {
+                        blt1010_releaseSuccess();
+                    },
+                    scope: this
+                });
+            }
+            
+            function blt1010_releaseSuccess() {
+                Aurora.Masker.unmask(Ext.getBody());
+                Aurora.showMessage('${l:PROMPT}', '${l:BLT_BULLETIN.RELEASED_SUCCEED}');
+                blt1010_return_query();
+            }
+            
+            function blt1010_uploadFile() {
+                var blt1010_bulletin_list_ds = $('blt1010_bulletin_list_ds');
+                var record = blt1010_bulletin_list_ds.getCurrentRecord();
+                var bulletin_id = record.get('bulletin_id');
+                if (!Ext.isEmpty(bulletin_id)) {
+                    new Aurora.Window({
+                        url: $('blt1010_blt_attachment_file_upload_link').getUrl() + '?pkvalue=' + bulletin_id + '&table_name=BLT_BULLETIN_LIST',
+                        title: '${l:HAP_UPLOAD_TITLE}',
+                        id: 'blt1010_bulletin_upload_file_window',
+                        width: 850,
+                        height: 500
+                    });
+                }
+            
+            }
+            
+            function blt1010_update_submitsuccess(ds) {
+                Aurora.showMessage('${l:PROMPT}', '${l:BLT.MODIFY_SUCCESS}');
+                $('blt1010_bulletin_list_ds').query();
+            }
+            
+            function bltSetListInner() {
+                var input = jDawn.getElementById('blt1010_bulletin_type_input');
+                var release_btn = jDawn.getElementById('blt1010_release_btn');
+                if('${/model/bulletin_info/record/@status}'=='RELEASED')
+                {
+                release_btn.style.background ='red';
+                }
+                input.value = '${/model/bulletin_info/record/@bulletin_list_type_desc}';
+            }
+            
+            function bltSetListTypeHtml() {
+                var records = $('blt1010_blt_list_type_ds').getAll();
+                var ulI = jDawn.getElementById('blt_inside_type_list');
+                var ulO1 = jDawn.getElementById('blt_outside_type_list1');
+                var ulO2 = jDawn.getElementById('blt_outside_type_list2');
+                var ulN = jDawn.getElementById('blt_news_type_list');
+                for (var i = 0;i < records.length;i++) {
+                    var data = records[i].data;
+                    if (data.flex_value_set_code == 'BLT_TYPE') {
+                        bltCreateLiOut(ulI, records, data);
+                    }
+            
+                    // if (data.parent_flex_value == 'INSIDE') {
+                    // bltCreateLi(ulI, data);
+                    // } else if (data.parent_flex_value == 'NEWS') {
+                    // bltCreateLi(ulN, data);
+                    // } else if (data.parent_flex_value == 'OUTSIDE') {
+            
+                    // if(data.flex_value == 'BID_INVITATION')
+                    // {
+                    // bltCreateLiOut(ulO1, records, data);
+                    // }
+                    // else if(data.flex_value == 'USUAL_BULLETIN')
+                    // {
+                    // bltCreateLiOut(ulO2, records, data);
+                    // }
+            
+                    // }
+                }
+            }
+            
+            function bltCreateLi(ul, data) {
+                var li = document.createElement('LI');
+                li.innerHTML = data.flex_desc;
+                li.setAttribute('code', data.flex_value);
+                li.setAttribute('id', data.flex_value);
+                li.onclick = bltTypeLiClick;
+                ul.appendChild(li);
+            }
+            
+            function bltCreateLiOut(ul, records, data) {
+                var li = document.createElement('LI');
+                li.className = 'title';
+                li.innerHTML = data.flex_desc;
+                ul.appendChild(li);
+                for (var i = 0;i < records.length;i++) {
+                    var d = records[i].data;
+                    if (d.parent_flex_value == data.flex_value) {
+                        bltCreateLi(ul, d);
+                    }
+                }
+            }
+            
+            function bltTypeLiClick() {
+                var input = jDawn.getElementById('blt1010_bulletin_type_input');
+                input.value = this.innerHTML;
+                this.parentNode.parentNode.style.display = 'none';
+                var record = $('blt1010_bulletin_list_ds').getAt(0);
+                record.set('bulletin_list_type', this.getAttribute('code'));
+            }
+            
+            function blt1010_list_load(ds) {
+                var records = ds.getAll();
+                objectDataSet(records[0].data.bulletin_category);
+                placeDataSet(records[0].data.object_category);
+                //alert(records[0].data.bulletin_category);
+            
+            
+            
+            }
+        ]]></script>
+        <a:dataSets>
+            <!-- <a:dataSet id="blt1010_bulletin_object_category_ds" lookupCode="BLT_BULLETIN_OBJECT_CATEGORY"/> -->
+            <a:dataSet id="blt1010_bulletin_object_category_ds" fetchAll="true" model="public.fnd_flex_value_sets_query">
+                <a:datas dataSource="/model/blt1010_object_data"/>
+            </a:dataSet>
+            <a:dataSet id="blt1010_bulletin_object_place_ds" fetchAll="true" model="public.fnd_flex_value_sets_query">
+                <a:datas dataSource="/model/blt1010_object_place_data"/>
+            </a:dataSet>
+            <a:dataSet id="blt1010_blt_list_type_ds">
+                <a:datas dataSource="/model/blt1010_after_type_data"/>
+            </a:dataSet>
+            <a:dataSet id="blt1010_blt_category_ds" lookupCode="BLT_BULLETIN_CATEGORY"/>
+            <a:dataSet id="blt1010_blt_type_ds" lookupCode="BLT_BULLETIN_TYPE"/>
+            <a:dataSet id="blt1010_bulletin_list_ds">
+                <a:datas dataSource="/model/bulletin_info"/>
+                <a:fields>
+                    <a:field name="bulletin_context_view"/>
+                    <a:field name="bulletin_id" defaultValue="${/parameter/@bulletin_id}"/>
+                    <a:field name="bulletin_title" required="true"/>
+                    <a:field name="bulletin_category"/>
+                    <a:field name="bulletin_category_desc" displayField="code_value_name" options="blt1010_blt_category_ds" prompt="BLT_BULLETIN_LIST.BULLETIN_CATEGORY" readOnly="true" required="true" returnField="bulletin_category" valueField="code_value"/>
+                    <a:field name="bulletin_type"/>
+                    <a:field name="bulletin_type_desc" displayField="code_value_name" options="blt1010_blt_type_ds" prompt="BLT_BULLETIN_LIST.BULLETIN_TYPE" readOnly="true" returnField="bulletin_type" valueField="code_value"/>
+                    <a:field name="date_from_desc" required="true" validator="blt1010_date_Validator"/>
+                    <a:field name="date_to_desc" validator="blt1010_date_Validator"/>
+                    <a:field name="bulletin_context" required="true"/>
+                    <a:field name="created_by"/>
+                    <a:field name="created_by_desc" readOnly="true"/>
+                    <a:field name="status"/>
+                    <a:field name="status_desc" readOnly="true"/>
+                    <a:field name="object_category_desc" displayField="flex_desc" options="blt1010_bulletin_object_category_ds" prompt="BLT_BULLETIN.BULLETIN_OBJECT_CATEGORY" readOnly="false" required="true" returnField="object_category" valueField="flex_value"/>
+                    <a:field name="object_category"/>
+                    <a:field name="blt_place_category"/>
+                    <a:field name="blt_place_category_desc" displayField="flex_desc" options="blt1010_bulletin_object_place_ds" prompt="BLT_BULLETIN.BULLETIN_OBJECT_CATEGORY" readOnly="false" required="true" returnField="blt_place_category" valueField="flex_value"/>
+                    <a:field name="creation_date_desc" readOnly="true"/>
+                    <a:field name="last_update_date_desc" readOnly="true"/>
+                    <a:field name="release_date_desc" readOnly="true"/>
+                    <a:field name="attachment_id"/>
+                    <!--  <a:field name="business_group_code"/>
+                    <a:field name="business_group_name" autoComplete="true" displayField="business_group_name" options="blt1010_business_groups_ds" prompt="集团" readOnly="true" required="true" returnField="business_group_code" valueField="business_group_code"/> -->
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="blt1010_list_update"/>
+                    <a:event name="load" handler="blt1010_list_load"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenTopToolbar>
+            <a:screenTitle/>
+            <a:gridButton id="bld1010_save_btn" click="blt1010_save" text="PROMPT.SAVE"/>
+            <a:gridButton click="blt1010_return_query" text="HAP_BACK"/>
+            <a:gridButton id="blt1010_release_btn" click="blt1010_release" text="BLT.RELEASE"/>
+            <a:gridButton id="blt1010_upload_btn" click="blt1010_uploadFile" text="ATM.UPLOAD_ATTACHMENT"/>
+        </a:screenTopToolbar>
+        <a:fieldSet marginWidth="450" style="margin-top:10px;margin-bottom:10px;">
+            <a:vBox>
+                <a:hBox labelWidth="100">
+                    <a:textField name="bulletin_title" bindTarget="blt1010_bulletin_list_ds" prompt="BLT_BULLETIN_LIST.BULLETIN_TITLE" width="666"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:comboBox name="object_category_desc" bindTarget="blt1010_bulletin_list_ds" prompt="BLT_BULLETIN_LIST.OBJECT_CATEGORY"/>
+                    <a:comboBox name="blt_place_category_desc" bindTarget="blt1010_bulletin_list_ds" prompt="公告类别"/>
+                    <!-- <a:comboBox name="bulletin_category_desc" bindTarget="blt1010_bulletin_list_ds" prompt="BLT_BULLETIN_LIST.BULLETIN_CATEGORY"/> -->
+                    <div class="bulletin-type-after">
+                        <div class="left-prompt"><![CDATA[公告类型:]]></div>
+                        <div class="right-div">
+                            <div id="blt1010_bulletin_mask" class="mask"/>
+                            <input id="blt1010_bulletin_type_input"/>
+                            <i class="icon-caret-down" onclick="bulletinTypeAfterClickShow(this)"/>
+                            <div class="type-list">
+                                <ul id="blt_news_type_list"/>
+                                <ul id="blt_inside_type_list"/>
+                                <ul id="blt_outside_type_list1"/>
+                                <ul id="blt_outside_type_list2"/>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- <a:comboBox name="bulletin_type_desc" id="blt1010_homePage_type_id" bindTarget="blt1010_bulletin_list_ds" prompt="BLT_BULLETIN_LIST.BULLETIN_TYPE"/> -->
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:datePicker name="date_from_desc" bindTarget="blt1010_bulletin_list_ds" prompt="BLT_BULLETIN_LIST.DATE_FROM" renderer="Aurora.formatDate"/>
+                    <a:datePicker name="date_to_desc" bindTarget="blt1010_bulletin_list_ds" prompt="BLT_BULLETIN_LIST.DATE_TO" renderer="Aurora.formatDate"/>
+                </a:hBox>
+            </a:vBox>
+        </a:fieldSet>
+        <script id="context_id" style="width:99%;height:350px;margin:0 auto;position:relative;z-index:40" type="text/plain"/>
+        <script><![CDATA[
+          Aurora.onReady(function(){
+              blt_edit_init();
+          });
+        ]]></script>
+    </a:view>
+</a:screen>

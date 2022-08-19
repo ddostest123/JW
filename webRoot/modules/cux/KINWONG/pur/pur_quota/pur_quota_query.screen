@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <a:model-query model="cux.KINWONG.pur.pur_quota.pur_quota_query" rootPath="column_name"/>
+        <a:model-query model="cux.KINWONG.pur.pur_quota.pur_quota_vendor_all_query" rootPath="vendor_all"/>
+        <s:server-script import="lib.js"><![CDATA[
+            var array = $ctx.get('/model/column_name').getChildren();
+            var vendor_array = $ctx.get('/model/vendor_all').getChildren();
+            var columns = CompositeUtil.findChild(config, 'grid', 'id', 'pur_quota_result_grid').getChild('columns');
+            for (var i = 0;i < array.length;i++) {
+                if (i == array.length - 1 || array[i].property_name != array[i + 1].property_name) {
+                    var first_node = {
+                        'prompt': array[i].property_name,
+                        'align': 'center',
+                        'resizable': "center",
+                        'autoadjust': "true",
+                        'name': array[i].colunmn_name
+                    };
+                    var column = addAllProperty(new CompositeMap('column'), first_node);
+                    columns.addChild(column.getData());
+                }
+            }
+            var parent_node = {
+                'prompt': '分数',
+                'align': 'center',
+                'resizable': "center",
+                'autoadjust': "true",
+            };
+            var parent_column = addAllProperty(new CompositeMap('column'), parent_node);
+            for (var i = 0;i < vendor_array.length;i++) {
+                var first_node = {
+                    'prompt': vendor_array[i].vendor_name,
+                    'align': 'center',
+                    'resizable': "center",
+                    'autoadjust': "true",
+                    'name': vendor_array[i].vendor_id + '_score'
+                };
+                var column = addAllProperty(new CompositeMap('column'), first_node);
+                parent_column.addChild(column.getData());
+            }
+            columns.addChild(parent_column.getData());
+        ]]></s:server-script>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="build_data_link" url="pur_quota_build_data.svc"/>
+        <script><![CDATA[
+            function pur_quota_query() {
+                $('pur_quota_result_ds').query();
+            }
+            
+            function pur_quota_submit_success_handler(ds, res) {
+                ds.query();
+            }
+            
+            function test() {
+                var ds = $('pur_quota_result_ds');
+                var records = ds.getAll();
+                var datas = [];
+                for (var i = 0;i < records.length;i++) {
+                    var header_temp_data = {};
+                    header_temp_data = records[i].data;
+                    header_temp_data['rating_code'] = '${/parameter/@rating_classify_code}';
+                    var line_temp = {};
+                    for (rec in records[i].data) {
+                        var arr = rec.split('_');
+                        if (arr[1] == 'score') {
+                            if (line_temp[arr[0]]) {
+                                line_temp[arr[0]]['score'] = records[i].get(rec);
+                            } else {
+                                line_temp[arr[0]] = {};
+                                line_temp[arr[0]]['score'] = records[i].get(rec);
+                            }
+                        } else if (arr[1] == 'price') {
+                            if (line_temp[arr[0]]) {
+                                line_temp[arr[0]]['price'] = records[i].get(rec);
+                                line_temp[arr[0]]['vendor_id'] = arr[0];
+                            } else {
+                                line_temp[arr[0]] = {};
+                                line_temp[arr[0]]['price'] = records[i].get(rec);
+                                line_temp[arr[0]]['vendor_id'] = arr[0];
+                            }
+                        } else if (arr[1] == 'allprice') {
+                            if (line_temp[arr[0]]) {
+                                line_temp[arr[0]]['allprice'] = records[i].get(rec);
+                            } else {
+                                line_temp[arr[0]] = {};
+                                line_temp[arr[0]]['allprice'] = records[i].get(rec);
+                            }
+                        } else if (arr[1] == 'rank') {
+                            if (line_temp[arr[0]]) {
+                                line_temp[arr[0]]['rank'] = records[i].get(rec);
+                            } else {
+                                line_temp[arr[0]] = {};
+                                line_temp[arr[0]]['rank'] = records[i].get(rec);
+                            }
+                        }
+                    }
+                    header_temp_data['line'] = [];
+                    for (rec in line_temp) {
+                        var temp_rec = line_temp[rec];
+                        temp_rec['vendor_id'] = rec;
+                        header_temp_data['line'].push(temp_rec);
+                    }
+                    datas.push(header_temp_data);
+                }
+                console.log(datas);
+                Aurora.Masker.mask(Ext.getBody(), '${l:LOADING}');
+                Aurora.request({
+                    url: $('build_data_link').getUrl(),
+                    para: datas,
+                    success: function(res) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        Aurora.showMessage('${l:PROMPT}', '生成成功', function() {
+                            $('pur1010_compare_result_ds').query();
+                        });
+                    },
+                    error: function(res) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    failure: function(res) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    scope: this
+                });
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="pur_quota_query_ds">
+                <a:fields>
+                    <a:field name="rating_classify_code" defaultValue="${/parameter/@rating_classify_code}"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="pur_quota_result_ds" autoCount="true" queryDataSet="pur_quota_query_ds" queryUrl="${/request/@context_path}/modules/cux/KINWONG/pur/pur_quota/pur_quota_query.svc" selectable="true">
+                <a:events>
+                    <a:event name="submitsuccess" handler="pur_quota_submit_success_handler"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:queryForm bindTarget="pur_quota_query_ds" resultTarget="pur_quota_result_ds" style="width:100%;">
+                <a:formToolBar>
+                    <a:hBox labelWidth="100">
+                        <!-- <a:lov name="rating_classify_code" prompt="评级分组"/> --><![CDATA[
+                        
+                        
+                        
+                        
+                        
+                        
+                    ]]></a:hBox>
+                </a:formToolBar>
+            </a:queryForm>
+            <a:grid id="pur_quota_result_grid" autoAppend="false" bindTarget="pur_quota_result_ds" marginHeight="80" marginWidth="80" navBar="true">
+                <a:toolBar>
+                    <a:button click="test" text="生成"/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="business_unit_name" align="center" prompt="OU"/>
+                    <a:column name="category_code_3" align="center" prompt="三级品类"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Lin.Chen
+    $Date: 2017-04-17  
+    $Revision: 1.0  
+    $Purpose: 商品维护
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:fields>
+        <bm:field name="contract_item_flag_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="contract_header_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="contract_line_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="contract_number" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="line_num" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="source_num_line" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="item_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="item_code" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="item_desc" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="item_type" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="unit_price" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="warranty" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="item_detail" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="deliver_date" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="start_date" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="end_date" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="catelog_udf_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="catelog_name" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="out_of_stock_flag" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="invalid_flag" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="assign_flag" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="business_group" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="created_by" databaseType="NUMBER" datatype="java.lang.Long"/>
+    </bm:fields>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT t.*
+                FROM (SELECT t3.contract_item_flag_id
+                              ,t1.contract_header_id
+						      ,t2.contract_line_id
+						      ,t1.contract_number
+						      ,t2.line_num
+						      ,(SELECT decode(t2.source_ref_type
+						                     ,'RFX'
+						                     ,(SELECT h.rfx_number || '-' || t2.ref_doc_line_num
+						                      FROM   pur_rfx_headers h
+						                      WHERE  h.rfx_header_id = t2.source_ref_id)
+						                     ,'BID'
+						                     ,(SELECT h.entrustment_header_number || '-' || t2.ref_doc_line_num
+						                      FROM   bid_entrustment_headers h
+						                      WHERE  h.entrustment_header_id = t2.source_ref_id))
+						        FROM   dual) AS source_num_line
+						      ,t2.item_id
+						      ,t2.item_code
+						      ,t2.item_desc
+						      ,(SELECT udv.category_name
+							    FROM mtl_categories_user_defined_vl udv
+							    WHERE udv.category_udf_id = t2.item_category_id) AS item_type
+						      ,t2.unit_price
+						      ,t2.warranty
+						      ,'商品详情' AS item_detail
+						      ,to_char(t2.deliver_date
+						              ,'YYYY-MM-DD') AS deliver_date
+						      ,to_char(t2.feedback_start_time
+               							,'yyyy-mm-dd hh24:mi:ss') AS start_date
+							  ,to_char(t2.feedback_end_time
+           								,'yyyy-mm-dd hh24:mi:ss') AS end_date
+						      ,t3.catelog_udf_id
+						      ,(SELECT f3.catelog_name
+						        FROM   pur_catelogs_user_defined_vl f3
+						        WHERE  f3.catelog_udf_id = t3.catelog_udf_id) AS catelog_name
+						      ,t3.out_of_stock_flag
+						      ,t3.invalid_flag
+						      ,t3.assign_flag
+						      ,t3.business_group
+						      ,t3.created_by
+						      ,(SELECT nvl((SELECT fv2.company_full_name
+							                   FROM   fnd_companies_vl fv2
+							                   WHERE  fv2.company_id = pvv.coop_company_id)
+							                  ,pvv.full_name)
+							        FROM   pur_vendors_vl pvv
+							        WHERE  pvv.vendor_id = t1.vendor_id) AS vendor_name
+						FROM   con_contract_headers_new t1
+						      ,con_contract_lines_new   t2
+						      ,pur_contract_item_flag   t3
+						WHERE  t1.contract_header_id = t2.contract_header_id
+						AND    t1.contract_header_id = t3.contract_header_id
+						AND    t2.contract_line_id = t3.contract_line_id) t #WHERE_CLAUSE#
+                ORDER BY
+                    t.contract_number DESC,t.line_num
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+    			BEGIN
+                pur_contract_item_maintain_pkg.save_contract_item_flag
+                (
+                  p_contract_item_flag_id=>${@contract_item_flag_id},
+                  p_catelog_udf_id=>${@catelog_udf_id},
+                  p_out_of_stock_flag=>${@out_of_stock_flag},
+                  p_invalid_flag=>${@invalid_flag},
+                  p_user_id=>${/session/@user_id}
+                );
+              END;
+    		]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+				BEGIN
+	            	DELETE FROM pur_contract_item_flag t3
+					WHERE  t3.contract_item_flag_id = ${@contract_item_flag_id};
+                END;
+    		]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter name="f1" expression="t.assign_flag = &apos;Y&apos;"/>
+        <bm:data-filter name="f2" expression="t.vendor_name=pur_contract_item_maintain_pkg.get_business_group(${/session/@user_id})"/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field name="item_code" queryExpression="upper(t.item_code) = upper(${@item_code})"/>
+        <bm:query-field name="item_desc" queryExpression="t.item_desc like &apos;%&apos;||${@item_desc}||&apos;%&apos;"/>
+        <bm:query-field name="out_of_stock_flag" queryExpression="t.out_of_stock_flag=${@out_of_stock_flag}"/>
+        <bm:query-field name="invalid_flag" queryExpression="t.invalid_flag=${@invalid_flag}"/>
+        <bm:query-field name="item_type" queryExpression="t.item_type like &apos;%&apos;||${@item_type}||&apos;%&apos;"/>
+        <bm:query-field name="deliver_date" queryExpression="t.deliver_date like &apos;%&apos;||${@deliver_date}||&apos;%&apos;"/>
+        <bm:query-field name="start_date" queryExpression="t.start_date like &apos;%&apos;||${@start_date}||&apos;%&apos;"/>
+        <bm:query-field name="end_date" queryExpression="t.end_date like &apos;%&apos;||${@end_date}||&apos;%&apos;"/>
+    </bm:query-fields>
+</bm:model>

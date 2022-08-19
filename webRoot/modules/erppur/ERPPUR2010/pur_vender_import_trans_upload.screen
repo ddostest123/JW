@@ -1,0 +1,441 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 完成 （上传下载）-->
+<a:screen xmlns:c="aurora.application.action" xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure outputPath="/parameter">
+        <a:model-query model="public.get_fnd_interface_header_id" rootPath="erppur_2010_header_id"/>
+        <a:import-excel header_id="${/parameter/@header_id}" separator="," status_field="/parameter/@ImportSuccess" template_code="ERPPUR_VENDER_IMPORT" user_id="${/session/@user_id}"/>
+        <a:model-query model="db.erpfnd_parameter_pkg.get_amount_precision" rootPath="erppur_2010_import_amount_percision"/>
+        <a:model-query model="public.get_default_information" rootPath="erppur_2010_import_default_inf"/>
+        <a:model-query defaultWhereClause="template_code=&apos;Com_Vendors_G&apos;" model="erpsys.public.sys_attachment_template" rootPath="erppur2010_attachment_template_root"/>
+        <a:model-query defaultWhereClause="template_code=&apos;Com_Vendors_S&apos;" model="erpsys.public.sys_attachment_template" rootPath="erppur2010_attachment_small_template_root"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="erppur_2010_import_save_data_link" url="${/request/@context_path}/modules/erppur/ERPPUR2010/pur_vender_import_save.svc"/>
+        <a:link id="erppur2010_gld_initialize_error_log_link" url="${/request/@context_path}/modules/erppur/ERPPUR2010/pur_initialize_error_log.screen"/>
+        <a:link id="erppur2010_initialize_link" url="${/request/@context_path}/modules/erppur/ERPPUR2010/pur_vender_main.screen"/>
+        <a:link id="erppur_2010_import_submit_link" url="${/request/@context_path}/modules/erppur/ERPPUR2010/pur_vender_import_submit.svc"/>
+        <a:link id="erppur2010_vender_import_check" model="erppur.ERPPUR2010.pur_vender_import_check" modelaction="execute"/>
+        <a:link id="erppur2010_atm_download_link" url="${/request/@context_path}/atm_download.svc"/>
+        <script><![CDATA[
+            function erppur2010_saveClick() {
+                if (document.getElementById('erppur2010_importFile').value) {
+                    var fileName = document.getElementById('erppur2010_importFile').value;
+                    var fileType = fileName.substr(fileName.lastIndexOf("."));
+                    if (fileType != '.xls' && fileType != '.xlsx') {
+                        alert('${l:ERPPUR.MESSAGE5}');
+                    } else {
+                        document.getElementById('erppur2010_importForm').submit();
+                    }
+                }
+            }
+            
+            function erppur2010_download_file(value, record, name) {
+                return value + '<img src="${/request/@context_path}/images/excel_16.png"><a href="javascript:erppur2010_downloadFile();">'+'${l:ERPPUR.TEMPLATE_FILE}'+'</a>' + '。';
+            }
+            
+            function erppur2010_submit() {
+                var ds = $('erppur_vender_import_result_ds');
+                var records = $('erppur_vender_import_result_ds').getAll();
+                if (records.length == 0 || !ds.validate()) {
+                    return;
+                }
+                var param = {};
+                param['header_id'] = '${/parameter/@header_id}';
+                if ($('erppur_vender_import_result_ds').isModified()) {
+                    Aurora.showMessage('${l:MASCLOUD.PROMPT}', '${l:ERPPUR.MESSAGE6}');
+                } else {
+                    Aurora.Masker.mask(Ext.getBody(), '${l:MASCLOUD.SUBMITTING}');
+                    Aurora.request({
+                        url: $('erppur_2010_import_submit_link').getUrl(),
+                        para: param,
+                        success: function(res) {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            if (res.result.error_flag == 'Y') {
+                                erppur2010_error();
+                            } else {
+                                Aurora.go($('erppur2010_initialize_link').getUrl());
+                            }
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            /* function createEditor(record) {
+             var obj = {};
+             var gid = 'gld2040_upload_grid';
+             var dataindex = 'reference_display';
+             obj.html = ['<table cellpadding="0" cellspacing="1" border="0" class="cmp_table" style="border:none;background-color:#ccc">', '<tr>', '<td class="label" style="width:120px;">', '(' + record.get('reference_name') + ')', '</td>', '<td dataindex="' + dataindex + '" recordid="' + record.id + '" atype="grid-cell">', '<div style="width: 150px;float:left" id="' + gid + '_' + dataindex + '_' + record.id + '" class="grid-cell cell-editor" ><span>' + (record.get(dataindex) || "") + '</span></div>', '</td>', '</tr>', '</table>'].join('');
+             obj.height = 52;
+             return obj;
+             } */
+            
+            /* function inv2010_upload_onCreateRow(grid, row, record, map, columns) {
+             var field = record.getField('reference_display');
+             var value = record.get('reference');
+             field.setReadOnly(false);
+             field.setRequired(true);
+             if (value != null && value != '') {
+             var obj = createEditor(record);
+             grid.createCompositeRow('account_code', map, obj, 6, record, columns);
+             } else {
+             field.setReadOnly(true);
+             field.setRequired(false);
+             }
+             } */
+            
+            function erppur2010_error() {
+                new Aurora.Window({
+                    id: 'erppur2010_error_log_window',
+                    url: $('erppur2010_gld_initialize_error_log_link').getUrl() + '?header_id=' + '${/parameter/@header_id}',
+                    title: '${l:ERPPUR.ERROR_MESSAGE}',
+                    height: 350,
+                    width: 540
+                });
+            }
+            
+            function erppur2010_back() {
+                Aurora.go($('erppur2010_initialize_link').getUrl());
+            }
+            
+            function erppur_2010_import_ds_update(ds, record, name, value, oldvalue) {
+                if (name == 'province_id') {
+                    record.set('city', '');
+                    record.set('district', '');
+                    record.set('city_id', '');
+                    record.set('district_id', '');
+                    if (!Ext.isEmpty(value)) {
+                        record.getField('city').setLovPara('province_id', value);
+                    } else {
+                        record.getField('city').setLovService('');
+                    }
+                    record.getMeta().getField('district').setLovService('');
+                }
+            
+                if (name == 'city_id') {
+                    record.set('district', '');
+                    record.set('district_id', '');
+                    var address_province_id = record.get('province_id');
+                    if (!Ext.isEmpty(value)) {
+                        record.getField('district').setLovPara('province_id', address_province_id);
+                        record.getField('district').setLovPara('city_id', value);
+                    } else {
+                        record.getField('district').setLovService('');
+                    }
+                }
+            
+                if (name == 'contact_province_id') {
+                    record.set('contact_city', '');
+                    record.set('contact_district', '');
+                    record.set('contact_city_id', '');
+                    record.set('contact_district_id', '');
+                    if (!Ext.isEmpty(value)) {
+                        record.getField('contact_city').setLovPara('province_id', value);
+                    } else {
+                        record.getField('contact_city').setLovService('');
+                    }
+                    record.getMeta().getField('contact_district').setLovService('');
+                }
+            
+                if (name == 'contact_city_id') {
+                    record.set('contact_district', '');
+                    record.set('contact_district_id', '');
+                    var contact_address_province_id = record.get('contact_province_id');
+                    if (!Ext.isEmpty(value)) {
+                        record.getField('contact_district').setLovPara('province_id', contact_address_province_id);
+                        record.getField('contact_district').setLovPara('city_id', value);
+                    } else {
+                        record.getField('contact_district').setLovService('');
+                    }
+                }
+                if (name == 'company_id') {
+                var metadata = record.getMeta();
+                    var f1 = metadata.getField('vender_type_desc');
+                    // var customer_type_id = '${/parameter/@customer_type_id}';
+                    if (!record.get('company_id') || record.get('company_id') == '') {
+                        f1.setLovService('');
+                    } else {
+                        f1.setLovService('erppur.ERPPUR1010.fnd_business_partner_types');
+                        f1.setLovPara('enabled_flag','Y');
+                        f1.setLovPara('company_id', record.get('company_id') || '');
+                        // f1.setLovPara('customer_type_id', customer_type_id);
+                    }
+                }
+            }
+            
+            function erppur2010_check() {
+                var url = $('erppur2010_vender_import_check').getUrl();
+                if ($('erppur_vender_import_result_ds').isModified()) {
+                    Aurora.showMessage('${l:MASCLOUD.PROMPT}', '${l:ERPPUR.MESSAGE6}');
+                } else {
+                    if (!$('erppur_vender_import_result_ds').validate()) {
+                        return;
+                    }
+                    Aurora.Masker.mask(Ext.getBody(), '${l:MASCLOUD.CHECKING}');
+                    Aurora.request({
+                        url: url,
+                        para: {
+                            'header_id': '${/parameter/@header_id}'
+                        },
+                        success: function(res) {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            if (res.result.error_flag == 'Y') {
+                                erppur2010_error();
+                            } else {
+                                Aurora.showMessage('${l:MASCLOUD.PROMPT}', '${l:ERPPUR.MESSAGE7}');
+                            }
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        }
+                    });
+                }
+            }
+            
+            function erppur_2010_import_number_ef(record, name) {
+                if (record.isNew) {
+                    return 'erppur_2010_import_number';
+                }
+                return '';
+            }
+            
+            function erppur2010_import_partner_code_validator(record, name, value) {
+                var partner_code = record.get('partner_code');
+                var regex = /^[\dA-Z\-]+$/;
+                if (!regex.test(partner_code)) {
+                    return '${l:ERPPUR.MESSAGE8}';
+                }
+                return true;
+            }
+            
+            function erppur2010_import_tax_rate_validator(record, name, value) {
+                if (value > 100) {
+                    return '${l:ERPPUR.MESSAGE9}';
+                }
+                return true;
+            }
+            
+            //模版
+            
+            function erppur2010_downloadFile() {
+                var attachment_id;
+                var template_id;
+                var tax_nature = '${/model/erppur_2010_import_default_inf/record/@tax_nature}';
+                if (tax_nature == 'SMALL_SCALE_TAXPAYERS') {
+                    attachment_id = '${/model/erppur2010_attachment_small_template_root/record/@attachment_id}';
+                    template_id = '${/model/erppur2010_attachment_small_template_root/record/@template_id}';
+                } else {
+                    attachment_id = '${/model/erppur2010_attachment_template_root/record/@attachment_id}';
+                    template_id = '${/model/template_id/record/@template_id}';
+                }
+            
+                if (Aurora.isEmpty(attachment_id)) {
+                    return;
+                }
+            
+                var url = $('erppur2010_atm_download_link').getUrl() + '?attachment_id=' + attachment_id + '&table_name=ERPSYS_ATTACHMENT_TEMPLATE&table_pk_value=' + template_id;
+                window.location.href = url;
+            }
+            function erppur_2010_import_lov_ef(record, name){
+               if (record.isNew){
+                   return 'erppur_2010_import_lov';
+               } 
+            }
+            function erppur_2010_tax_renderer(value, record, name) {
+                return Aurora.formatNumber(value, '${/model/erppur_2010_import_amount_percision/record/@value}');
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="erppur_2010_assign_company_ds" loadData="true" model="public.fnd_company_list"/>
+            <a:dataSet id="erppur_vender_import_result_ds" autoPageSize="true" model="erppur.ERPPUR2010.pur_vender_import" queryUrl="${/request/@context_path}/autocrud/erppur.ERPPUR2010.pur_vender_import/query?header_id=${/parameter/@header_id}" selectable="true">
+                <a:fields>
+                    <a:field name="company_id"/>
+                    <a:field name="company_id" defaultValue="${/session/@default_company_id}"/>
+                    <a:field name="company_name" defaultValue="${/session/@default_company_name}" displayField="company_full_name" options="erppur_2010_assign_company_ds" required="true" returnField="company_id" valueField="company_id"/>
+                    <a:field name="line_number" required="true"/>
+                    <a:field name="session_id" defaultValue="${/parameter/@header_id}"/>
+                    <a:field name="partner_code" prompt="ERPINV2010.ITEM_VENDER_CODE" required="true" typeCase="upper" validator="erppur2010_import_partner_code_validator"/>
+                    <a:field name="partner_id"/>
+                    <a:field name="vender_customer_flag" checkedValue="Y" defaultValue="N" prompt="ERPPUR2010.ERPPUR_VENDER_CUSTOMER_FLAG" uncheckedValue="N"/>
+                    <a:field name="partner_name" prompt="ERPPUR2010.ERPPUR_VENDER_NAME" required="true"/>
+                    <a:field name="province" autoComplete="true" autoCompleteField="province_code_name" autoCompleteSize="1" lovGridHeight="350" lovHeight="500" lovService="erpsys.public.sys_region_province_lov" lovWidth="450" prompt="ERPFND_BUSINESS_PARTNER_INTERF.PROVINCE" title="ERPFND1010.PROVINCE_INFO">
+                        <a:mapping>
+                            <a:map from="province_name" to="province"/>
+                            <a:map from="province_id" to="province_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="city" autoComplete="true" autoCompleteField="city_code_name" autoCompleteSize="1" lovGridHeight="350" lovHeight="500" lovService="erpsys.public.sys_region_city_lov" lovWidth="450" prompt="ERPFND_BUSINESS_PARTNER_INTERF.CITY" title="ERPFND1010.CITY_INFO">
+                        <a:mapping>
+                            <a:map from="city_name" to="city"/>
+                            <a:map from="city_id" to="city_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="district" autoComplete="true" autoCompleteField="district_code_name" autoCompleteSize="1" lovGridHeight="350" lovHeight="500" lovService="erpsys.public.sys_region_district_lov" lovWidth="500" prompt="ERPFND_BUSINESS_PARTNER_INTERF.DISTRICT" title="ERPFND1010.COUNTRY_INFO">
+                        <a:mapping>
+                            <a:map from="district_name" to="district"/>
+                            <a:map from="district_id" to="district_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="detail_address" prompt="ERPPUR2010.ERPPUR_VENDER_DETAIL_ADDRESS"/>
+                    <a:field name="legal_representative" prompt="ERPFND_BUSINESS_PARTNERS.LEGAL_REPRESENTATIVE"/>
+                    <a:field name="tax_number" prompt="ERPFND_BUSINESS_PARTNERS.TAX_NUMBER"/>
+                    <a:field name="bank_name" prompt="ERPFND_BUSINESS_PARTNERS.BANK_NAME"/>
+                    <a:field name="bank_account" prompt="ERPFND_BUSINESS_PARTNERS.BANK_ACCOUNT"/>
+                    <a:field name="homepage" prompt="ERPFND_BUSINESS_PARTNERS.HOMEPAGE"/>
+                    <a:field name="management_flag" checkedValue="Y" defaultValue="N" prompt="ERPFND_BUSINESS_PARTNERS.MANAGEMENT_FLAG" uncheckedValue="N"/>
+                    <a:field name="enabled_flag" checkedValue="Y" defaultValue="N" prompt="ERPFND_BUSINESS_PARTNERS.ENABLED_FLAG" uncheckedValue="N"/>
+                    <a:field name="default_flag" checkedValue="Y" defaultValue="N" prompt="ERPPUR2010.ERPPUR_CUSTOMER_DEFAULT_FLAG" uncheckedValue="N"/>
+                    <a:field name="contact_name" prompt="ERPFND_ADDRESSES.CONTACT_NAME"/>
+                    <a:field name="contact_province" autoComplete="true" autoCompleteField="province_code_name" autoCompleteSize="1" lovGridHeight="350" lovHeight="500" lovService="erpsys.public.sys_region_province_lov" lovWidth="450" prompt="ERPPUR.CONTACT_PROVINCE" title="ERPFND1010.PROVINCE_INFO">
+                        <a:mapping>
+                            <a:map from="province_name" to="contact_province"/>
+                            <a:map from="province_id" to="contact_province_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="contact_city" autoComplete="true" autoCompleteField="city_code_name" autoCompleteSize="1" lovGridHeight="350" lovHeight="500" lovService="erpsys.public.sys_region_city_lov" lovWidth="450" prompt="ERPPUR.CONTACT_CITY" title="ERPFND1010.CITY_INFO">
+                        <a:mapping>
+                            <a:map from="city_name" to="contact_city"/>
+                            <a:map from="city_id" to="contact_city_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="contact_district" autoComplete="true" autoCompleteField="district_code_name" autoCompleteSize="1" lovGridHeight="350" lovHeight="500" lovService="erpsys.public.sys_region_district_lov" lovWidth="500" prompt="ERPPUR.CONTACT_DISTRICT" title="ERFND1010.COUNTRY_INFO">
+                        <a:mapping>
+                            <a:map from="district_name" to="contact_district"/>
+                            <a:map from="district_id" to="contact_district_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="contact_contact_address" prompt="ERPFND_ADDRESSES.ADDRESS"/>
+                    <a:field name="post_code" prompt="ERPFND_ADDRESSES.POST_CODE"/>
+                    <a:field name="phone_number" prompt="ERPFND_ADDRESSES.PHONE_NUMBER"/>
+                    <a:field name="mobile_phone" prompt="ERPFND_ADDRESSES.MOBILE_PHONE"/>
+                    <a:field name="fax_number" prompt="ERPFND_ADDRESSES.FAX_NUMBER"/>
+                    <a:field name="email" prompt="ERPFND_ADDRESSES.EMAIL"/>
+                    <a:field name="vender_type_desc" autoComplete="true" autoCompleteField="code_name" autoCompleteSize="1" lovGridHeight="350" lovHeight="500" lovLabelWidth="100" lovWidth="550" prompt="ERPPUR.VENDER_TYPE_DESC" title="ERPPUR.VENDER_TYPE_DESC">
+                        <a:mapping>
+                            <a:map from="code_name" to="vender_type_desc"/>
+                            <a:map from="partner_type_id" to="partner_type_id"/>
+                            <a:map from="partner_type_code" to="partner_type_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <!-- <a:field name="tax_rate" defaultValue="${/model/erppur_2010_import_default_inf/record/@tax_rate}" prompt="ERPPUR.TAX_RATE" validator="erppur2010_import_tax_rate_validator"/> -->
+                    <a:field name="tax_rate"/>
+                    <a:field name="tax_code_desc" autoComplete="true" autoCompleteField="tax_type_code" autoCompleteSize="1" lovGridHeight="320" lovHeight="450" lovService="public.fnd_tax_type_code_lov?business_group=${/session/@business_group}" lovWidth="500" required="true" title="税率查询">
+                        <a:mapping>
+                            <a:map from="tax_type_id" to="tax_code_id"/>
+                            <a:map from="tax_type_code" to="tax_code"/>
+                            <a:map from="description" to="tax_code_desc"/>
+                            <a:map from="tax_type_rate" to="tax_rate"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="erppur_2010_import_ds_update"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenTopToolbar>
+            <a:screenTitle/>
+            <a:toolbarButton className="item-rbtn-blue template" click="erppur2010_downloadFile" style="margin-left:20px;" text="ERPHAP_TEMPLATE" width="100"/>
+            <a:toolbarButton className="item-rbtn-blue import" click="erppur2010_saveClick" text="PROMPT.IMPORT" width="100"/>
+            <a:toolbarButton className="item-rbtn-blue verify" click="erppur2010_check" text="PROMPT.VERIFY" width="100"/>
+            <a:toolbarButton className="item-rbtn-blue submit" click="erppur2010_submit" text="PROMPT.SUBMIT" width="100"/>
+            <a:toolbarButton className="item-rbtn-blue error" click="erppur2010_error" text="PROMPT.ERROR" width="100"/>
+            <a:toolbarButton className="item-rbtn-blue back" click="erppur2010_back" text="PROMPT.BACK" width="100"/>
+        </a:screenTopToolbar>
+        <a:hBox style="margin-top:10px">
+            <form name="upload" id="erppur2010_importForm" action="${/request/@context_path}/modules/erppur/ERPPUR2010/pur_vender_import_trans_upload.screen?header_id=${/model/erppur_2010_header_id/record/@header_id}" enctype="multipart/form-data" method="post">
+                <label style="margin-left:10px;margin-top:10px;"><![CDATA[选择要引入的数据文件：]]></label>
+                <input name="CONTENT" id="erppur2010_importFile" type="file"/>
+            </form>
+        </a:hBox>
+        <a:grid id="erppur_vender_import_result" bindTarget="erppur_vender_import_result_ds" marginHeight="140" marginWidth="40" navBar="true" style="border:none" width="900">
+            <a:toolBar>
+                <a:button type="add"/>
+                <a:button type="save"/>
+                <a:button type="delete"/>
+                <a:button type="excel"/>
+            </a:toolBar>
+            <a:columns>
+                <a:column name="line_number" align="right" editorFunction="erppur_2010_import_number_ef" lock="true" prompt="ERPFND_BUSINESS_PARTNER_INTERF.LINE_NUMBER" width="40"/>
+                <a:column name="company_name" align="center" editor="erppur_2010_import_cmb" lock="true" prompt="公司" width="80"/>
+                <a:column name="partner_code" align="center" editor="erppur_2010_import_text_f1" lock="true" width="80"/>
+                <a:column name="vender_customer_flag" editor="erppur_2010_import_ckb" lock="true" width="50"/>
+                <a:column name="partner_name" editor="erppur_2010_import_text_f1" lock="true" width="140"/>
+                <a:column name="vender_type_desc" editor="erppur_2010_import_lov" width="140"/>
+                <a:column name="tax_code_desc" align="right" editor="erppur_2010_import_lov" prompt="默认税率" width="70"/>
+                <a:column name="province" editor="erppur_2010_import_lov" width="80"/>
+                <a:column name="city" editor="erppur_2010_import_lov" width="80"/>
+                <a:column name="district" editor="erppur_2010_import_lov" width="80"/>
+                <a:column name="detail_address" editor="erppur_2010_import_text_f1" width="100"/>
+                <a:column name="legal_representative" editor="erppur_2010_import_text_f1" width="80"/>
+                <a:column name="tax_number" editor="erppur_2010_import_text_f1" width="70"/>
+                <a:column name="bank_name" editor="erppur_2010_import_text_f1" width="100"/>
+                <a:column name="bank_account" editor="erppur_2010_import_text_f1" width="100"/>
+                <a:column name="homepage" editor="erppur_2010_import_text_f1" width="100"/>
+                <a:column name="management_flag" editor="erppur_2010_import_ckb" width="100"/>
+                <a:column name="enabled_flag" editor="erppur_2010_import_ckb" width="100"/>
+                <a:column name="contact_name" editor="erppur_2010_import_text_f1" width="100"/>
+                <a:column name="default_flag" editor="erppur_2010_import_ckb" width="100"/>
+                <a:column name="contact_province" editor="erppur_2010_import_lov" prompt="ERPFND_BUSINESS_PARTNER_INTERF.CONTACT_PROVINCE" width="100"/>
+                <a:column name="contact_city" editor="erppur_2010_import_lov" prompt="ERPFND_BUSINESS_PARTNER_INTERF.CONTACT_CITY" width="100"/>
+                <a:column name="contact_district" editor="erppur_2010_import_lov" prompt="ERPFND_BUSINESS_PARTNER_INTERF.CONTACT_DISTRICT" width="100"/>
+                <a:column name="contact_address" editor="erppur_2010_import_text_f1" prompt="ERPFND_BUSINESS_PARTNER_INTERF.CONTACT_ADDRESS" width="100"/>
+                <a:column name="post_code" editor="erppur_2010_import_text_f1" width="100"/>
+                <a:column name="phone_number" editor="erppur_2010_import_text_f1" width="100"/>
+                <a:column name="mobile_phone" editor="erppur_2010_import_text_f1" width="100"/>
+                <a:column name="fax_number" editor="erppur_2010_import_text_f1" width="100"/>
+                <a:column name="email" editor="erppur_2010_import_text_f1" width="100"/>
+            </a:columns>
+            <a:editors>
+                <a:numberField id="erppur_2010_import_number" allowDecimals="false" allowNegative="false"/>
+                <a:lov id="erppur_2010_import_lov"/>
+                <a:textField id="erppur_2010_import_text_f1"/>
+                <a:checkBox id="erppur_2010_import_ckb"/>
+                <a:comboBox id="erppur_2010_import_cmb"/>
+                <a:numberField id="erppur_2010_import_number_tax" allowNegative="false" decimalPrecision="${/model/erppur_2010_import_amount_percision/record/@value}"/>
+            </a:editors>
+        </a:grid>
+        <script><![CDATA[
+            function erppur_2010_init() {
+                //alert('saving...');
+                var url = $('erppur_2010_import_save_data_link').getUrl();
+                var tax_nature = '${/model/erppur_2010_import_default_inf/record/@tax_nature}';
+        	    if(tax_nature=='SMALL_SCALE_TAXPAYERS'){
+        	        $('erppur_vender_import_result').hideColumn('tax_rate');
+        	    }
+        	    
+        	    Aurora.Masker.mask(Ext.getBody(), '${l:MASCLOUD.IMPORTING}');
+                Aurora.request({
+                    url: url,
+                    para: {'header_id':'${/parameter/@header_id}'},
+                    success: function(res) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        var error_flag = res.result.error_flag;
+                        if (error_flag == 'Y') {
+                            erppur2010_error();
+                        }
+                        $('erppur_vender_import_result_ds').query();
+                    },
+                    error: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    failure: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    scope: this
+                });
+            }
+            
+            erppur_2010_init();
+        ]]></script>
+    </a:view>
+</a:screen>

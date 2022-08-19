@@ -1,0 +1,673 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: jack
+    $Date: 2015-1-05 下午13:46:29  
+    $Revision: 1.0  
+    $Purpose: 立项单明细
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="pay.PAY6015.bid_online_bidding_owner_user" rootPath="user_query_ds"/>
+    </a:init-procedure>
+    <a:view>
+        <!-- <a:link id="pay6015_project_insert_link" model="pay.PAY6015.bid_online_bidding_headers" modelaction="insert"/> -->
+        <!-- <a:link id="pay6015_project_update_link" model="pay.PAY6015.bid_online_bidding_headers" modelaction="update"/> -->
+        <a:link id="pay6015_project_delete_link" model="pay.PAY6015.bid_online_bidding_headers" modelaction="delete"/>
+        <a:link id="pay6015_project_submit_link" model="pay.PAY6015.bid_online_bidding_headers" modelaction="execute"/>
+        <a:link id="pay6015_project_upload_link" url="${/request/@context_path}/attachment_file_upload.screen"/>
+        <a:link id="pay6015_bid_save_link" url="${/request/@context_path}/modules/pay/PAY6015/bid_online_save.svc"/>
+        <script><![CDATA[
+        	function init(){
+        	    var bid_header_id = '${/parameter/@bid_header_id}';
+        	    if(bid_header_id){
+        	        queryAll(bid_header_id);
+        	        $('pay6015_delivery_excel_id').enable();
+        	    }else{
+        	        var record = $('pay6015_online_bidding_ds').create();
+        	        var user_record = $('pay6015_users_ds').create();
+        	        user_record.set('user_id', '${/model/user_query_ds/record/@user_id}');
+        	        user_record.set('user_name', '${/model/user_query_ds/record/@user_name}');
+        	        user_record.set('user_desc', '${/model/user_query_ds/record/@description}');
+        	        var currency_record = $('pay6015_currency_ds').create();
+        	        currency_record.set('currency_code', 'CNY');
+        	        currency_record.set('currency_name', '人民币');
+        	        currency_record.set('currency_unit', '￥');
+        	        currency_record.set('exchange_rate', 1);
+        	        currency_record.getField('currency_name').setReadOnly(true);
+        	        currency_record.getField('exchange_rate').setReadOnly(true);
+        	        $('pay6015_weight_set_ds').query();
+        	    }
+        	}
+        	function queryAll(bid_header_id){
+        	    $('pay6015_online_bidding_ds').setQueryParameter('bid_header_id', bid_header_id);
+    	        $('pay6015_users_ds').setQueryParameter('bid_header_id', bid_header_id);
+    	        $('pay6015_vendors_ds').setQueryParameter('bid_header_id', bid_header_id);
+    	        $('pay6015_weight_set_ds').setQueryParameter('bid_header_id', bid_header_id);
+    	        $('pay6015_quote_detail_ds').setQueryParameter('bid_header_id', bid_header_id);
+    	        $('pay6015_currency_ds').setQueryParameter('bid_header_id', bid_header_id);
+    	        $('pay6015_online_bidding_ds').query();
+    	        $('pay6015_users_ds').query();
+    	        $('pay6015_vendors_ds').query();
+    	        $('pay6015_weight_set_ds').query();
+    	        $('pay6015_quote_detail_ds').query();
+    	        $('pay6015_currency_ds').query();
+        	}
+        	function pay6015_project_maintain_return(){
+        	    $('pay6015_online_bidding_window').close();
+        	}
+        	
+        	function pay6015_project_maintain_upload(){
+        	    var bid_header_id = $('pay6015_online_bidding_ds').getCurrentRecord().get('bid_header_id');
+        	    if(bid_header_id){
+        	        new Aurora.Window({
+	                    id: 'pay6015_project_upload_win',
+	                    title: '${l:ATM.UPLOAD_ATTACHMENT}',
+	                    url: $('pay6015_project_upload_link').getUrl()+'?pkvalue='+bid_header_id+'&table_name=PUR_PROJECT_ATT',
+	                    width: 850,
+	                    height: 500
+	                });
+        	    }else{
+        	        Aurora.showMessage('${l:PROMPT}', '${l:INV5110.DATA_HAS_NT_BEEN_SAVED}');
+        	        return;
+        	    }
+        	}
+        	
+        	//保存
+        	function pay6015_project_save(){
+        	    var ds = $('pay6015_online_bidding_ds');
+        	    var ds2 = $('pay6015_users_ds');
+        	    var ds3 = $('pay6015_vendors_ds');
+        	    var ds4 = $('pay6015_currency_ds');
+        	    var ds5 = $('pay6015_quote_detail_ds');
+        	    var ds6 = $('pay6015_weight_set_ds');
+        	    if(ds.validate()){
+	        	    // var record = ds.getCurrentRecord();
+	        	    var record_data= ds.getJsonData();
+	        	    //褚福详：权重以百分数展示，存储时再变回小数
+	        	    // for(var i=0;i<record_data.length;i++){
+	        	        // //record_data[i]['weight'] = parseFloat(record_data[i]['weight'])/100;
+	        	        // //权重默认为0
+	        	        // record_data[i]['weight'] = parseFloat(0.0);
+	        	    // }
+	        	    var records2= ds2.getAll();
+	        	    if(records2.length<1){
+	        	        Aurora.showMessage('${l:PROMPT}', '${l:请保证至少有一位小组成员！}'); 
+		             	return ;  
+	        	    }
+	        	    var records3= ds3.getAll();
+	        	    if(records3.length<1){
+	        	        Aurora.showMessage('${l:PROMPT}', '${l:请保证至少邀请一家供应商！}'); 
+		             	return ;  
+	        	    }
+	        	    var records5= ds5.getAll();
+	        	    if(records5.length<1){
+	        	        Aurora.showMessage('${l:PROMPT}', '${l:请保证至少有一条报价明细！}'); 
+		             	return ;  
+	        	    }
+	        	    //校验权重
+	        	    if(record_data[0].weight_flag =='Y'){
+	        	        if(ds6.validate()){
+			        	    var records6= ds6.getAll();
+			        	    var weightSum = 0 ;
+			        	    for(var i =0;i<records6.length;i++){
+		                        weightSum = weightSum+records6[i].get('weight_scale');
+		                	}
+		                	if (weightSum != 100){
+		                	    Aurora.showMessage('${l:PROMPT}', '${l:请保证权重比例合计为100%！}'); 
+				             	return ;  
+		                	}
+	        	        }	
+	        	    }
+	        	    // var recors1 = ds.getJsonData(true);
+	        	    var url;
+	        	    // if(record.isNew){
+	        	        // url = $('pay6015_project_insert_link').getUrl();
+	        	    // }else{
+	        	        // url = $('pay6015_project_update_link').getUrl();
+	        	    // }
+	        	    url=$('pay6015_bid_save_link').getUrl();
+	        	    Aurora.Masker.mask($('pay6015_online_bidding_window').wrap,'${l:SYS_ALERT_RULE_JOBS.IS_RUNNING}'); 
+	        	    Aurora.request({
+	        	        url:url,
+	        	        para:record_data[0],
+	        	        success:function(res){
+	        	            var bid_header_id = res.result.bid_header_id?res.result.bid_header_id:'${/parameter/@bid_header_id}';
+	        	            bid_header_id=bid_header_id?bid_header_id:ds.getCurrentRecord().get('bid_header_id');
+        	                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SAVE_SUCCESS}', function(){
+	        	                queryAll(bid_header_id);
+	        	                Aurora.Masker.unmask($('pay6015_online_bidding_window').wrap);
+	        	                $('pay6015_delivery_excel_id').enable();
+        	                });  
+	        	        },
+	        	        failure:function(){
+	        	        	Aurora.Masker.unmask($('pay6015_online_bidding_window').wrap);    
+	        	        },
+	        	        error:function(){
+	        	         	Aurora.Masker.unmask($('pay6015_online_bidding_window').wrap);   
+	        	        },
+	        	        scope:this
+	        	    });
+        	    }
+        	}
+        	
+        	function pay6015_rendererDay(cell,date,text,currentMonth){
+				var today=new Date();
+				if(date < new Date(today.getFullYear(),today.getMonth(),today.getDate())){
+					cell.disabled=true;
+				}
+				return text;
+			}
+			
+			function pay6015_project_delete(){
+		        var record = $('pay6015_online_bidding_ds').getCurrentRecord();
+		        if(record.get('bid_header_id')){
+				    Aurora.showConfirm('${l:PROMPT}', '${l:INV5010.SURE_TO DELETE}', function(){
+				        Aurora.Masker.mask($('pay6015_online_bidding_window').wrap,'${l:PROMPT.SUBMITING}'); 
+				        Aurora.request({
+		        	        url:$('pay6015_project_delete_link').getUrl(),
+		        	        para:{'bid_header_id':record.get('bid_header_id')},
+		        	        success:function(){
+	        	                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function(){
+	        	                    Aurora.Masker.unmask($('pay6015_online_bidding_window').wrap); 
+		        	                pay6015_project_maintain_return();
+	        	                });
+		        	        },
+		        	        error:function(){
+		        	        	Aurora.Masker.unmask($('pay6015_online_bidding_window').wrap);     
+		        	        },
+		        	        failure:function(){
+		        	         	Aurora.Masker.unmask($('pay6015_online_bidding_window').wrap);    
+		        	        },
+		        	        scope:this
+		        	    });
+				    }, function(){}, 300, 100);
+			    }else{
+        	        Aurora.showMessage('${l:PROMPT}', '${l:INV5110.DATA_HAS_NT_BEEN_SAVED}');
+        	        return;
+        	    }
+			}
+        	
+        	function pay6015_project_submit(){
+        	    var record = $('pay6015_online_bidding_ds').getCurrentRecord();
+        	    var records2 = $('pay6015_users_ds').getAll();
+        	    var records3 = $('pay6015_vendors_ds').getAll();
+		        if(record.get('bid_header_id')){
+		            if(record.dirty){
+		             	Aurora.showMessage('${l:PROMPT}', '${l:INV5110.DATA_HAS_NT_BEEN_SAVED}'); 
+		             	return ;  
+		            }
+		            if(records2.length<1){
+	        	        Aurora.showMessage('${l:PROMPT}', '${l:请保证至少有一位小组成员！}'); 
+		             	return ;  
+	        	    }
+		            if(records3.length<1){
+	        	        Aurora.showMessage('${l:PROMPT}', '${l:请保证至少邀请一家供应商！}'); 
+		             	return ;  
+	        	    }
+		            Aurora.showConfirm('${l:PROMPT}','${l:ACP5160.COMMIT_CONFIRM}',function(){
+				        Aurora.request({
+		        	        url:$('pay6015_project_submit_link').getUrl(),
+		        	        para:{'bid_header_id':record.get('bid_header_id')},
+		        	        success:function(){
+	        	                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function(){
+	        	                    Aurora.Masker.unmask($('pay6015_online_bidding_window').wrap);  
+		        	                pay6015_project_maintain_return();
+	        	                });
+		        	        },
+		        	        error:function(){
+		        	        	Aurora.Masker.unmask($('pay6015_online_bidding_window').wrap);     
+		        	        },
+		        	        failure:function(){
+		        	         	Aurora.Masker.unmask($('pay6015_online_bidding_window').wrap);    
+		        	        },
+		        	        scope:this
+		        	    });		 
+		            },function(){},300,100);
+			    }else{
+        	        Aurora.showMessage('${l:PROMPT}', '${l:INV5110.DATA_HAS_NT_BEEN_SAVED}');
+        	        return;
+        	    }
+        	}
+        	
+        	
+        	//更新处理
+        	function pay6015_project_update_handler(dataSet,record,name,value,oldvalue){
+        		if(name == "weight_flag"){
+        		    var weight_records = $('pay6015_weight_set_ds').getAll();
+        		    var vendors_records = $('pay6015_vendors_ds').getAll();
+        		    if(value == 'Y'){
+        		        $('bid_tabs_id').setEnabled(3);
+        		        for(var i =0;i<weight_records.length;i++){
+	                        weight_records[i].getMeta().getField('weight_scale').setRequired(true);
+	                        if(weight_records[i].get('scoring_elements_desc')=='技术评分'){
+	                            weight_records[i].getMeta().getField('highest_score').setRequired(true);
+	                        }
+	                	}
+	                	for(var i =0;i<vendors_records.length;i++){
+	                        vendors_records[i].getMeta().getField('score').setRequired(true);
+	                	}
+        		    }else{
+        		        $('bid_tabs_id').setDisabled(3);
+        		        for(var i =0;i<weight_records.length;i++){
+	                        weight_records[i].getMeta().getField('weight_scale').setRequired(false);
+	                        weight_records[i].set('weight_scale',0);
+	                        if(weight_records[i].get('scoring_elements_desc')=='技术评分'){
+	                            weight_records[i].getMeta().getField('highest_score').setRequired(false);
+	                        }
+	                	}
+	                	for(var i =0;i<vendors_records.length;i++){
+	                        vendors_records[i].getMeta().getField('score').setRequired(false);
+	                	}
+        		    }
+        		} 	   
+        	}
+        	//更新权重内容
+        	function pay6015_weight_set_update(dataSet,record,name,value,oldvalue){
+        	    if(name == 'weight_scale'){
+        	        // value = value + '%';
+        	        record.set('weight_scale',value+'%');
+        	    }
+        	}
+        	//加载完成
+        	function pay6015_project_load_handler(dataSet){
+        	 	   var record = dataSet.getCurrentRecord();
+        	 	   	   // unit_code = record.get('unit_code');
+        	 	   // if(record.get('status') == 'APPROVED' ||record.get('status') == 'APPROVING' ){
+        	 	    	// record.getField('coop_company_code').setReadOnly(true); 
+        	 	    	// record.getField('inv_organization_code').setReadOnly(true); 
+        	 	    	// record.getField('item_code').setReadOnly(true);
+        	 	    	// record.getField('company_desc').setReadOnly(true);
+        	 	    	// record.getField('display_po_number').setReadOnly(true);
+        	 	    	// record.getField('asn_number').setReadOnly(true);   
+        	 	   // }else{
+        	 	       // if(unit_code){
+        	 	           // record.getField('company_desc').setLovPara('unit_code',unit_code);
+        	 	       // }
+        	 	   // }
+        	 	   // var weight_records = $('pay6015_weight_set_ds').getAll();
+        	 	   // var vendors_records = $('pay6015_vendors_ds').getAll();
+        	 	   if(record.get('weight_flag') == 'Y' ){
+    	 	         	$('bid_tabs_id').setEnabled(3);
+    	 	         	// for(var i =0;i<weight_records.length;i++){
+	                        // weight_records[i].getMeta().getField('weight_scale').setRequired(true);
+	                        // if(weight_records[i].get('scoring_elements_desc')=='技术评分'){
+	                            // weight_records[i].getMeta().getField('highest_score').setRequired(true);
+	                        // }
+	                	// }
+    	 	         	// for(var i =0;i<vendors_records.length;i++){
+	                        // vendors_records[i].getMeta().getField('score').setRequired(true);
+	                	// }
+    		    	}else{
+    		     	   $('bid_tabs_id').setDisabled(3);
+    		     	   // for(var i =0;i<weight_records.length;i++){
+	                        // weight_records[i].getMeta().getField('weight_scale').setRequired(false);
+	                        // weight_records[i].set('weight_scale',0);
+	                        // if(weight_records[i].get('scoring_elements_desc')=='技术评分'){
+	                            // weight_records[i].getMeta().getField('highest_score').setRequired(false);
+	                        // }
+	                	// }
+	                	// for(var i =0;i<vendors_records.length;i++){
+	                        // vendors_records[i].getMeta().getField('score').setRequired(false);
+	                	// }
+    		    	}
+        	}
+        	function pay6015_weight_set_load_function(ds){
+        	   var weight_records = ds.getAll();
+        	    var record = $('pay6015_online_bidding_ds').getCurrentRecord();
+        	    if(record.get('weight_flag') == 'Y' ){
+        	       for(var i =0;i<weight_records.length;i++){
+                        weight_records[i].getMeta().getField('weight_scale').setRequired(true);
+                        if(weight_records[i].get('scoring_elements_desc')=='技术评分'){
+                            weight_records[i].getMeta().getField('highest_score').setRequired(true);
+                        }
+                	} 
+        	    }else{
+        	        for(var i =0;i<weight_records.length;i++){
+                        weight_records[i].getMeta().getField('weight_scale').setRequired(false);
+                        weight_records[i].set('weight_scale',0);
+                        if(weight_records[i].get('scoring_elements_desc')=='技术评分'){
+                            weight_records[i].getMeta().getField('highest_score').setRequired(false);
+                        }
+                	}
+        	    }
+        	}
+        	function pay6015_vendors_load_function(ds){
+        	    var vendors_records = ds.getAll();
+        	    var record = $('pay6015_online_bidding_ds').getCurrentRecord();
+        	    if(record.get('weight_flag') == 'Y' ){
+        	       for(var i =0;i<vendors_records.length;i++){
+                        vendors_records[i].getMeta().getField('score').setRequired(true);
+                	}
+        	    }else{
+        	        for(var i =0;i<vendors_records.length;i++){
+                        vendors_records[i].getMeta().getField('score').setRequired(false);
+                	}
+        	    }
+        	}
+			 function bid_weight_validate_fun(record, name, value) {
+	                var quantity_enable_shipped = record.get('quantity_enable_shipped');
+	                if (name == 'weight') {
+	                    if (value < 0) {
+	                        return '${l:权重不可维护成负值}';
+	                    } else {
+	                        if (100 < value) {
+	                            return '${l:权重区间为[0~100]}';
+	                        }
+	                    }
+	                }
+	                return true;
+	            }
+	            function pay_currency_unselect_fun(record){
+	                if(record.get('currency_code')=='CNY'){
+	                    return false;
+	                }
+	            }
+	            function pay6015_currency_load_function(ds){
+	                var records = ds.getAll();
+	                for(var i =0;i<records.length;i++){
+	                    if(records[i].get('currency_code')=='CNY'){
+	                        records[i].getField('currency_name').setReadOnly(true);
+	                        records[i].getField('exchange_rate').setReadOnly(true);
+	                    }
+	                }
+	            }
+	            function pay6015_weight_set_grid_renderer(value, record, name){
+	                if(name=='weight_scale'){
+	                    if(value){
+	                        return value+'%';
+	                    }
+	                }
+	            }
+	            function pay5040_ln_expert_weight_grid_editorF(record, name){
+	                if(name == 'highest_score'){
+	                    // if(record.get('scoring_elements_desc') == '商务评分'){
+	                        // return '';
+	                    // }
+	                    return 'pay5040_ln_expert_weight_grid_number';
+	                }
+	                
+	            }
+	            function getMaxLineNum(ds) {
+		            var records = ds.getAll();
+		            var max_line_num = 0;
+		            for (var i = 0;i < records.length;i++) {
+		                max_line_num = records[i].get('line_num') > max_line_num ? records[i].get('line_num') : max_line_num;
+		            }
+		            max_line_num++;
+		            return max_line_num;
+		        }
+		        
+		        function pay6015_quote_detail_add_function(dataSet, record, index) {
+		            var line_num = getMaxLineNum(dataSet);
+		            record.set('line_num', line_num);
+		            // record.getField('subject_document_number').setLovPara('vendor_id', $('acp5270_header_ds').getCurrentRecord().get('vendor_id'));
+		        }
+		        function pay6015_delivery_excel() {
+					var id = '${/parameter/@bid_header_id}'?'${/parameter/@bid_header_id}':$('pay6015_online_bidding_ds').getCurrentRecord().get('bid_header_id');
+	                var url = "${/request/@context_path}/uploadFile.screen?table_name=BID_BIDDING_PUR_ATT&header_id="+id;
+	                new Aurora.Window({
+	                    url: url,
+	                    title: '${l:ATM.UPLOAD_ATTACHMENT}',
+	                    id: 'pay6018_vendor_attm_window',
+	                    width: 610,
+	                    height: 500
+	                });
+	            }
+	            function pay6015_vendors_add_function(ds, record, index){
+	                var record_data = $('pay6015_online_bidding_ds').getAt(0);
+	                if(record_data.get('weight_flag') == 'Y'){
+	                    record.getMeta().getField('score').setRequired(true);
+	                }else{
+	                    record.getMeta().getField('score').setRequired(false);
+	                }
+	            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="pay6015_tax_flag_ds" lookupCode="YES_OR_NO"/>
+            <a:dataSet id="pay6015_online_bidding_ds" model="pay.PAY6015.bid_online_bidding_headers">
+                <a:fields>
+                    <a:field name="bid_header_id"/>
+                    <a:field name="bid_title" required="true"/>
+                    <!-- <a:field name="weight" required="false" validator="bid_weight_validate_fun"/> -->
+                    <a:field name="bid_matter" required="true"/>
+                    <a:field name="start_date" required="true"/>
+                    <a:field name="tax_flag" defaultValue="Y" required="true"/>
+                    <a:field name="auto_flag" checkedValue="Y" defaultValue="N" tooltip="当前时间到了计划开始时间节点正式竞价将自动开始" uncheckedValue="N"/>
+                    <a:field name="weight_flag" checkedValue="Y" defaultValue="N" tooltip="将会启用评标模型,按权重比率计算排名" uncheckedValue="N"/>
+                    <a:field name="tax_flag_desc" defaultValue="是" displayField="code_value_name" options="pay6015_tax_flag_ds" required="true" returnField="tax_flag" valueField="code_value"/>
+                    <a:field name="time_length_mi" defaultValue="10" required="true"/>
+                    <a:field name="time_length_ss" defaultValue="0" required="true"/>
+                    <a:field name="overtime_length" defaultValue="15" required="true" tooltip="在竞价剩余时长(X)小于超时竞价时长(Y)时进行报价，则竞价剩余时长(X)将延长Y时长:(当X&lt; Y时，则X=X+Y)"/>
+                    <a:field name="min_drop_number" required="true" tooltip="通过+、-号控件来根据最小降价幅度调整报价"/>
+                    <a:field name="company_desc" autoComplete="true" autoCompleteField="code_name" lovHeight="490" lovService="public.fnd_companies_lov" lovWidth="490" required="true" title="ACP_BILL.COMPANY_NAME">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_code" to="company_code"/>
+                            <a:map from="company_full_name" to="company_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="pur_organization_desc" autoComplete="true" autoCompleteField="pur_organization_code_name" lovHeight="480" lovService="public.pur_organization_lov" lovWidth="500" title="PUR_PUR_ORGS_INV_ORGS.PUR_ORGANIZATION_ID">
+                        <a:mapping>
+                            <a:map from="pur_organization_name" to="pur_organization_desc"/>
+                            <a:map from="pur_organization_code" to="pur_organization_code"/>
+                            <a:map from="pur_organization_id" to="pur_organization_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="currency_desc" autoComplete="true" autoCompleteField="currency_code" lovHeight="490" lovService="public.pur_currency_code_lov" lovWidth="490" required="true" title="ACP_BILL_SOURCE.CURRENCY_CODE">
+                        <a:mapping>
+                            <a:map from="currency_code" to="currency_code"/>
+                            <a:map from="currency_name" to="currency_desc"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="pay6015_project_load_handler"/>
+                    <a:event name="update" handler="pay6015_project_update_handler"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="pay6015_users_ds" autoCount="true" bindName="user_lines" bindTarget="pay6015_online_bidding_ds" model="pay.PAY6015.bid_online_bidding_users" queryUrl="${/request/@context_path}/autocrud/pay.PAY6015.bid_online_bidding_users/query?bid_header_id=${/parameter/@bid_header_id}" selectable="true">
+                <a:fields>
+                    <a:field name="user_desc" autoComplete="true" autoCompleteField="user_desc" lovHeight="480" lovService="public.sys_user_lov_by_business_group" lovWidth="500" required="true" title="HRM1030.SELECT_USER">
+                        <a:mapping>
+                            <a:map from="user_id" to="user_id"/>
+                            <a:map from="user_desc" to="user_desc"/>
+                            <a:map from="user_name" to="user_name"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="pay6015_vendors_ds" autoCount="true" bindName="vendor_lists" bindTarget="pay6015_online_bidding_ds" model="pay.PAY6015.bid_online_bidding_vendors" selectable="true">
+                <a:fields>
+                    <a:field name="coop_business_group"/>
+                    <a:field name="vendor_id"/>
+                    <a:field name="vendor_desc" labelWidth="200" lovHeight="490" lovService="public.fnd_companies_whole_cloud_lov?owner_flag=N" lovWidth="540" required="true" title="供应商">
+                        <a:mapping>
+                            <a:map from="company_id" to="vendor_id"/>
+                            <a:map from="business_group" to="coop_business_group"/>
+                            <a:map from="company_full_name" to="vendor_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="score"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="pay6015_vendors_add_function"/>
+                    <a:event name="load" handler="pay6015_vendors_load_function"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="pay6015_weight_set_ds" autoCount="true" bindName="weight_set" bindTarget="pay6015_online_bidding_ds" model="pay.PAY6015.bid_online_bidding_weights" selectable="true">
+                <a:fields>
+                    <a:field name="scoring_elements_desc"/>
+                    <a:field name="scoring_rubric"/>
+                    <a:field name="weight_scale"/>
+                    <a:field name="highest_score" defaultValue="100"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="pay6015_weight_set_load_function"/>
+                    <!-- <a:event name="update"  handler="pay6015_weight_set_update"  /> -->
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="pay6015_quote_detail_ds" autoCount="true" bindName="quote_detail" bindTarget="pay6015_online_bidding_ds" model="pay.PAY6015.bid_online_bidding_quote_detail" selectable="true">
+                <a:fields>
+                    <a:field name="line_num" required="true"/>
+                    <a:field name="item_desc" required="true"/>
+                    <a:field name="quantity" required="true"/>
+                    <a:field name="uom_code"/>
+                    <a:field name="uom_desc" autoComplete="true" autoCompleteField="code_name" lovGridHeight="320" lovHeight="450" lovService="public.fnd_uom_codes_lov" lovWidth="500" required="true" title="BID_ENTRUSTMENT_LN_ITEMS.UOM">
+                        <a:mapping>
+                            <a:map from="uom_code" to="uom_code"/>
+                            <a:map from="uom_desc" to="uom_desc"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="pay6015_quote_detail_add_function"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="pay6015_currency_ds" autoCount="true" bindName="currency_lists" bindTarget="pay6015_online_bidding_ds" model="pay.PAY6015.bid_online_bidding_currency" selectFunction="pay_currency_unselect_fun" selectable="true">
+                <a:fields>
+                    <a:field name="currency_code"/>
+                    <a:field name="currency_unit"/>
+                    <a:field name="currency_name" labelWidth="200" lovHeight="490" lovService="public.pur_currency_code_lov?no_cny_flag=Y" lovWidth="540" required="true" title="ACP_BILL_SOURCE.CURRENCY_CODE">
+                        <a:mapping>
+                            <a:map from="currency_code" to="currency_code"/>
+                            <a:map from="currency_symbol" to="currency_unit"/>
+                            <a:map from="currency_name" to="currency_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="exchange_rate" required="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="pay6015_currency_load_function"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="pay6015_project_save" text="PROMPT.SAVE" width="100"/>
+                <a:toolbarButton click="pay6015_project_submit" text="DZINV1010.SUBMIT" width="100"/>
+                <a:toolbarButton id="pay6015_delivery_excel_id" click="pay6015_delivery_excel" disabled="true" text="附件上传" width="100"/>
+                <a:toolbarButton click="pay6015_project_delete" text="PROMPT.DELETE" width="100"/>
+                <a:toolbarButton click="pay6015_project_maintain_return" text="HAP_BACK" width="100"/>
+            </a:screenTopToolbar>
+            <a:hBox labelWidth="100">
+                <a:textField name="bid_number" bindTarget="pay6015_online_bidding_ds" emptyText="待生成" prompt="竞价单号" readOnly="true" width="150"/>
+                <a:textField name="bid_title" bindTarget="pay6015_online_bidding_ds" prompt="竞价单标题" width="150"/>
+                <a:textField name="entrustment_header_number" bindTarget="pay6015_online_bidding_ds" prompt="招标书编号" width="150"/>
+                <a:textField name="title" bindTarget="pay6015_online_bidding_ds" prompt="招标书名称" width="150"/>
+            </a:hBox>
+            <a:hBox labelWidth="100">
+                <!-- <a:textField name="pur_project_header_number" bindTarget="pay6015_online_bidding_ds" prompt="采购项目编号" renderer="Aurora.formatDate" width="150"/> -->
+                <!-- <a:textField name="pur_project_header_title" bindTarget="pay6015_online_bidding_ds" prompt="采购项目描述" width="150"/> -->
+                <a:lov name="company_desc" bindTarget="pay6015_online_bidding_ds" prompt="ACP_BILL.COMPANY_NAME" width="150"/>
+                <!-- <a:lov name="pur_organization_desc" bindTarget="pay6015_online_bidding_ds" prompt="BID_ENTRUSTMENT_HEADERS.PUR_ORGANIZATION_DESC" width="150"/> -->
+                <a:textField name="created_by_desc" bindTarget="pay6015_online_bidding_ds" prompt="ACP_ACP_REQUISITION_HDS.CREATED_BY" readOnly="true" width="150"/>
+                <a:lov name="currency_desc" bindTarget="pay6015_online_bidding_ds" prompt="ACP_ACP_REQUISITION_HDS.CURRENCY_CODE" width="150"/>
+                <a:comboBox name="tax_flag_desc" bindTarget="pay6015_online_bidding_ds" prompt="CON_CONTRACT_HEADERS.TAX_FLAG" width="150"/>
+            </a:hBox>
+            <a:hBox labelWidth="100">
+                <a:numberField name="min_drop_number" allowNegative="false" bindTarget="pay6015_online_bidding_ds" prompt="最小降价" width="150"/>
+                <a:dateTimePicker name="start_date" bindTarget="pay6015_online_bidding_ds" prompt="计划开始时间" renderer="Aurora.formatDateTime" width="150"/>
+                <a:numberField name="time_length_mi" allowDecimals="false" allowNegative="false" bindTarget="pay6015_online_bidding_ds" min="0" prompt="竞价时长(分)" width="30"/>
+                <a:numberField name="time_length_ss" allowDecimals="false" allowNegative="false" bindTarget="pay6015_online_bidding_ds" max="59" min="0" prompt="竞价时长(秒)" width="30"/>
+                <a:numberField name="overtime_length" allowDecimals="false" allowNegative="false" bindTarget="pay6015_online_bidding_ds" min="1" prompt="超时竞价时长(秒)" width="135"/>
+            </a:hBox>
+            <a:hBox labelWidth="100">
+                <a:textField name="bid_matter" bindTarget="pay6015_online_bidding_ds" prompt="竞价事项" width="540"/>
+                <a:checkBox name="auto_flag" bindTarget="pay6015_online_bidding_ds" prompt="是否自动开始" width="30"/>
+                <a:checkBox name="weight_flag" bindTarget="pay6015_online_bidding_ds" prompt="启用评标模型" width="30"/>
+                <a:numberField name="weight" allowNegative="false" bindTarget="pay6015_online_bidding_ds" decimalPrecision="2" hidden="true" prompt="BLT_QUESTION.QUESTION_WEIGHT" width="150"/>
+                <!-- <span><![CDATA[%]]></span>-->
+            </a:hBox>
+            <!--     <a:hBox labelWidth="100">
+            </a:hBox> -->
+            <a:tabPanel id="bid_tabs_id" height="350" marginWidth="30">
+                <a:tabs>
+                    <a:tab prompt="招标小组成员" width="100">
+                        <a:grid id="pay6015_users_grid" bindTarget="pay6015_users_ds" height="300" marginWidth="55" navBar="true">
+                            <a:toolBar>
+                                <a:button type="add"/>
+                                <a:button type="delete"/>
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="user_name" align="center" prompt="ACP_REQUISITION.PARTNER_BANK_ACC_CODE" width="120"/>
+                                <a:column name="user_desc" align="left" editor="bid5040_ln_expert_1_grid_lov" prompt="ACP_OPERATION_HISTORY.USER_NAME" width="300"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:lov id="bid5040_ln_expert_1_grid_lov"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab prompt="供应商列表" width="100">
+                        <a:grid id="pay6015_vendors_grid" bindTarget="pay6015_vendors_ds" height="300" marginWidth="55" navBar="true">
+                            <a:toolBar>
+                                <a:button type="add"/>
+                                <a:button type="delete"/>
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="vendor_desc" align="center" editor="bid5040_ln_expert_grid_lov" prompt="供应商" width="300"/>
+                                <a:column name="score" align="right" editor="bid5040_ln_expert_1_grid_number" prompt="技术得分" width="30"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:lov id="bid5040_ln_expert_grid_lov"/>
+                                <a:numberField id="bid5040_ln_expert_1_grid_number"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab prompt="币种配置" width="100">
+                        <a:grid id="pay6015_currency_grid" bindTarget="pay6015_currency_ds" height="300" marginWidth="55" navBar="true">
+                            <a:toolBar>
+                                <a:button type="add"/>
+                                <a:button type="delete"/>
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="currency_name" align="center" editor="pay5040_ln_expert_grid_lov" prompt="ACP_BILL_SOURCE.CURRENCY_CODE" width="100"/>
+                                <a:column name="exchange_rate" align="center" editor="pay5040_ln_expert_1_grid_number" prompt="汇率(外币/人民币)" width="100"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:lov id="pay5040_ln_expert_grid_lov"/>
+                                <a:numberField id="pay5040_ln_expert_1_grid_number" decimalPrecision="4"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab disabled="true" prompt="评标模型配置" width="100">
+                        <a:grid id="pay6015_weight_set_grid" bindTarget="pay6015_weight_set_ds" height="300" marginWidth="55" navBar="true">
+                            <a:columns>
+                                <a:column name="scoring_elements_desc" align="center" prompt="评分要素定义" width="100"/>
+                                <a:column name="scoring_rubric" align="center" editor="pay5040_ln_expert_grid_textF" prompt="评分细则" width="100"/>
+                                <a:column name="weight_scale" align="center" editor="pay5040_ln_expert_weight_grid_number" prompt="权重比例(%)" renderer="pay6015_weight_set_grid_renderer" width="100"/>
+                                <a:column name="highest_score" align="center" editorFunction="pay5040_ln_expert_weight_grid_editorF" prompt="最高分" width="100"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:textField id="pay5040_ln_expert_grid_textF"/>
+                                <a:numberField id="pay5040_ln_expert_weight_grid_number" allowDecimals="false" max="100"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab prompt="报价明细" width="100">
+                        <a:grid id="pay6015_quote_detail_grid" bindTarget="pay6015_quote_detail_ds" height="300" marginWidth="55" navBar="true">
+                            <a:toolBar>
+                                <a:button type="add"/>
+                                <a:button type="delete"/>
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="line_num" align="center" editor="pay5040_ln_expert_quote_detail_numberField" prompt="序号" width="30"/>
+                                <a:column name="item_desc" align="center" editor="pay5040_ln_quote_detail_textF" prompt="设备名称" width="100"/>
+                                <a:column name="quantity" align="center" editor="pay5040_ln_expert_quote_detail_number" prompt="数量" width="50"/>
+                                <a:column name="uom_desc" align="center" editor="pay5040_ln_quote_detail_lov" prompt="单位" width="50"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:lov id="pay5040_ln_quote_detail_lov"/>
+                                <a:textField id="pay5040_ln_quote_detail_textF"/>
+                                <a:numberField id="pay5040_ln_expert_quote_detail_numberField" allowDecimals="false"/>
+                                <a:numberField id="pay5040_ln_expert_quote_detail_number" decimalPrecision="1"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+        <script><![CDATA[
+        	init();
+        ]]></script>
+    </a:view>
+</a:screen>

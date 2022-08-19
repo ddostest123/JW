@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+	$Author: 曾志豪
+    $Date: 2017/08/31 
+    $Revision: 1.0  
+    $Purpose: 
+     modify:周维嘉
+   $Date 2017/09/10
+-->
+<a:service xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="a.api_code=&apos;PRODUCT_SELL_PRICE&apos;" fetchAll="true" model="api.PUBLIC.jd_sku_method" rootPath="mes"/>
+        <!--  关键字查询结果  -->
+        <a:model-query model="GoingBuy.JD.jd_product_detail_query_by_keyword" rootPath="jd_detail_keyword"/>
+        <s:server-script import="request.js"><![CDATA[
+            //从数据库查询接口表拼接url
+            var record = $ctx.model.getChild('mes').getChildren()[0];
+            var d_str = record.url + record.app_key + record.access_token + record.timestamp + record.method;
+            //获取关键字查询结果
+            var detail = $ctx.model.getChild('jd_detail_keyword').getChildren();
+            //查询商品列表及详情
+            var pre_str = '&param_json={%22sku%22:%22'
+            var last_str = '%22}';
+            var mid_str = [];
+            if (detail.length > 0) {
+                for (var k = 0;k < detail.length;k = k + 1) {
+                    //封装jd参数
+                    mid_str += detail[k].sku + ',';
+                }
+                var api_url = d_str + pre_str + mid_str + last_str;
+            
+                var item_price_list = [];
+                request({
+                    url: api_url,
+                    //para: para,
+                    success: function(args) {
+                        if (args.biz_price_sellPrice_get_response.success == true) {
+                            var result = args.biz_price_sellPrice_get_response.result;
+                            for (var i = 0;i < detail.length;i++) {
+                                for (var j = 0;j < result.length;j++) {
+                                    var fuc = (function(i, j) {
+                                        if (detail[i].sku == result[j].skuId && (result[j].price)) {
+            
+                                            detail[i].price = result[j].price;
+                                            detail[i].jdPrice = result[j].jdPrice;
+                                        }
+                                    }(i, j));
+            
+                                }
+                            };
+                        } else {
+                            raise_app_error(args.biz_price_sellPrice_get_response.resultMessage);
+                        }
+                    },
+                    failure: function(args) {
+                        raise_app_error(args.error.message);
+                    }
+                });
+            }
+            /* else{
+             raise_app_error('抱歉！没有您要找的商品。')
+             } */
+        ]]></s:server-script>
+        <p:echo/>
+    </a:init-procedure>
+    <a:service-output output="/model/jd_detail_keyword"/>
+</a:service>

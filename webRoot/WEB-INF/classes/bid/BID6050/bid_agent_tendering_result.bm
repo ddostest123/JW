@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <!-- <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[SELECT *
+  FROM (SELECT r.result_id,
+               r.entrustment_header_id,
+               r.entrustment_line_item_id,
+               r.bidder_company_id,
+               fc.company_code            bidder_code,
+               fc.company_full_name       bidder_desc,
+               r.prequal_pass_flag,
+               r.bidding_flag,
+               r.bidding_price,
+               r.success_bid_quantity,
+               r.bidding_price * r.success_bid_quantity bid_amount,
+               i.quantity,
+               round(r.success_bid_quantity * 100/i.quantity,2)||'%' success_proportion,
+               h.prequal_flag
+          FROM bid_entrustment_headers    h,
+               bid_entrustment_ln_items   i,
+               bid_agent_tendering_result r,
+               fnd_companies_vl           fc
+         WHERE r.bidder_company_id = fc.company_id
+               AND r.entrustment_line_item_id = i.line_item_id
+               AND i.line_item_id = ${@line_item_id}
+               AND i.entrustment_header_id = ${@entrustment_header_id}
+               AND h.entrustment_header_id = i.entrustment_header_id) v
+  #WHERE_CLAUSE# ORDER BY bidder_code]]></bm:query-sql>
+        </bm:operation> -->
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+		SELECT * FROM (                
+				SELECT
+                    dh.bid_header_id,
+                    dh.bid_header_number,
+                    dh.bidder_id,
+                    dh.bidder_company_id,
+                    bid_entrustment_pkg.get_bidder_code( dh.bidder_id ,dh.bidder_company_id) AS bidder_code,
+                    bid_entrustment_pkg.get_bidder_desc( dh.bidder_id ,dh.bidder_company_id) AS bidder_desc,
+                    dh.created_by,
+                    su.description AS bidder_user_desc,
+                    (SELECT
+                        SUM(NVL(dl.unit_price, 0) * dl.quantity)
+                    FROM
+                        bid_bidding_docm_lines dl
+                    WHERE
+                        dl.bid_header_id       = dh.bid_header_id AND
+                        dl.bidding_submit_flag = 'Y'
+                    ) AS sum_unit_price,
+                    bid_score_pkg.get_min_price_weight(dh.bid_header_id, ${/session/@user_id}) AS min_price_weight,
+                    bid_score_pkg.get_bidding_score(dh.bid_header_id, ${/session/@user_id}) AS bidding_score,
+                    dh.round ,
+                    dh.version,
+                    NVL(dl.success_bid_quantity,0) success_bid_quantity,
+                    DECODE(dl.bargain_flag,'Y',dl.unit_price,dl.unit_price*dh.bargain_amount/
+                    (SELECT
+                        SUM(dll.success_bid_quantity*dll.unit_price)
+                    FROM
+                        bid_bidding_docm_headers dhh,
+                        bid_bidding_docm_lines dll
+                    WHERE
+                        dhh.bid_header_id         = dll.bid_header_id AND
+                        dll.bidding_submit_flag   = 'Y' AND
+                        dhh.entrustment_header_id = eh.entrustment_header_id AND
+                        dhh.bidder_company_id     = dh.bidder_company_id
+                    )) unit_price,
+                    dl.unit_price * dl.success_bid_quantity success_bid_amount,
+                    NVL(dl.online_unit_price,dl.unit_price) bidding_price,
+                    dl.success_bid_status as bidding_flag,
+                    dl.bid_line_id
+                FROM
+                    bid_bidding_docm_lines dl,
+                    bid_entrustment_headers eh,
+                    bid_bidding_docm_headers dh,
+                    sys_user su
+                WHERE
+                    dl.entrustment_line_item_id = ${@line_item_id} AND
+                    dl.bid_header_id            = dh.bid_header_id AND
+                    dh.entrustment_header_id    = ${@entrustment_header_id} AND
+                    dh.created_by               = su.user_id AND
+                    eh.entrustment_header_id    = dh.entrustment_header_id AND
+                    dh.status                   = 'SUBMITTED' AND
+                    dl.bidding_submit_flag      = 'Y') v
+  #WHERE_CLAUSE# ORDER BY bidder_code
+  		]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:update-sql><![CDATA[
+                BEGIN
+  bid_entrustment_pkg.save_agent_tendering_result(p_result_id                => ${@result_id},
+                                                  p_entrustment_header_id    => ${@entrustment_header_id},
+                                                  p_entrustment_line_item_id => nvl(${@entrustment_line_item_id},${../../@line_item_id}),
+                                                  p_bidder_company_id        => ${@bidder_company_id},
+                                                  p_prequal_pass_flag        => ${@prequal_pass_flag},
+                                                  p_bidding_flag             => ${@bidding_flag},
+                                                  p_bidding_price            => ${@bidding_price},
+                                                  p_success_bid_quantity     => ${@success_bid_quantity},
+                                                  p_user_id                  => ${/session/@user_id});
+END;
+        ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+				BEGIN
+				  -- Call the procedure
+				  bid_bidding_docm_pkg.modify_bidding_docm_line(p_bid_line_id   => ${@bid_line_id},
+				                                                p_bid_header_id => ${@bid_header_id},
+				                                                p_quantity      => ${@success_bid_quantity},
+				                                                p_base_price    => ${@bidding_price},
+				                                                p_unit_price               => ${@bidding_price},
+				                                                p_tax_included_flag        => ${@tax_included_flag},
+				                                                p_tax_type_id   => ${@tax_type_id},
+				                                                p_tax_type_code => ${@tax_type_code},
+				                                                p_tax_type_rate => ${@tax_type_rate},
+				                                                p_promised_date => to_date(${@promised_date},'YYYY-MM-DD HH24:MI:SS'),
+				                                                p_bidding_submit_flag      => 'Y',
+				                                                p_production_cycle         => ${@production_cycle},
+				                                                p_implementation_cycle     => ${@implementation_cycle},
+				                                                p_technical_deviation      => ${@technical_deviation},
+				                                                p_comments                 => ${@comments},
+				                                                p_user_id       => ${/session/@user_id});
+				END;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

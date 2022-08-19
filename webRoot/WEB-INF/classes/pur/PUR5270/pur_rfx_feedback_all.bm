@@ -1,0 +1,251 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="false">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        (SELECT
+                            ic.category_name
+                        FROM
+                            mtl_categories_user_defined_vl ic
+                        WHERE
+                            ic.category_udf_id = li.item_category_id
+                        ) item_category_desc,
+                        NVL(li.item_code, '-') AS item_code,
+                        li.item_desc,
+                        (SELECT
+                            fv.uom_desc
+                        FROM
+                            fnd_uom_codes_vl fv
+                        WHERE
+                            fv.uom_code       = li.uom_code AND
+                            fv.business_group = rh.owner_business_group
+                        ) uom_desc,
+                        li.line_num,
+                        (SELECT
+                            fc.company_code
+                        FROM
+                            fnd_companies fc
+                        WHERE
+                            fc.company_id = fh.coop_company_id
+                        ) vendor_code,
+                        fh.coop_company_id,
+                        fh.coop_business_group,
+                        NVL(
+                        (SELECT
+                            fc.company_full_name
+                        FROM
+                            fnd_companies_vl fc
+                        WHERE
+                            fc.company_id = fh.coop_company_id
+                        ),NVL(
+                        (SELECT
+                            pvv.full_name
+                        FROM
+                            PUR_VENDORS_VL pvv
+                        WHERE
+                            pvv.vendor_id = fh.vendor_id
+                        ),fh.vendor_desc)) vendor_desc,
+                        (SELECT
+                            pvv.display_vendor_code
+                        FROM
+                            PUR_VENDORS_VL pvv
+                        WHERE
+                            pvv.vendor_id = fh.vendor_id
+                        ) erp_vendor_code,
+                        (SELECT
+                            quote_header_id
+                        FROM
+                            pur_rfx_quote_headers rqh
+                        WHERE
+                            rqh.rfx_line_item_id = li.rfx_line_item_id AND
+                            rownum               =1
+                        ) quote_header_id,
+                        fl.abandoned_flag,
+                        fl.valid_fb_retail_price,
+                        (
+                            CASE
+                                WHEN fl.valid_fb_retail_price <=
+                                    (SELECT
+                                        MIN(fll.valid_fb_retail_price)
+                                    FROM
+                                        pur_rfx_feedback_headers fhh,
+                                        pur_rfx_feedback_lines fll
+                                    WHERE
+                                        fhh.feedback_header_id = fll.feedback_header_id AND
+                                        fhh.rfx_header_id      = rh.rfx_header_id AND
+                                        fhh.rfx_round          = rh.round AND
+                                        fhh.rfx_version        = rh.version AND
+                                        fll.RFX_LINE_ITEM_ID   = li.RFX_LINE_ITEM_ID
+                                    )
+                                THEN 'Y'
+                                ELSE 'N'
+                            END) lowest_flag,
+                        NVL(TO_CHAR(pur_rfx_feedback_pkg.get_last_round_price(fh.rfx_header_id, fh.owner_business_group, fh.coop_company_id, li.item_id, ${/session/@user_id}),'fm99999999990.9999'),'无') AS last_valid_fb_retail_price,
+                        pur_rfx_feedback_pkg.get_floating_percentage(fh.rfx_header_id, fl.valid_fb_retail_price, fh.owner_business_group, fh.coop_company_id, li.item_id, ${/session/@user_id}) AS floating_percentage,
+                        rh.rfx_header_id,
+                        fh.feedback_header_id,
+                        fl.feedback_line_id,
+                        fl.suggested_note,
+                        fl.suggested_flag,
+                        NVL(fl.price_batch_quantity,1) AS price_batch_quantity,
+                        TO_CHAR(fl.feedback_expiry_date_from, 'yyyy-mm-dd') feedback_expiry_date_from,
+                        TO_CHAR(fl.feedback_expiry_date_to, 'yyyy-mm-dd') feedback_expiry_date_to,
+                        fl.allotted_quantity,
+                        (
+                            CASE
+                                WHEN li.quantity IS NOT NULL AND
+                                    li.quantity  != 0
+                                THEN TO_CHAR(ROUND((fl.allotted_quantity / li.quantity), 4) * 100)
+                                ELSE '-'
+                            END) AS allotted_percentage,
+                        TO_CHAR(li.need_by_date, 'yyyy-mm-dd') need_by_date,
+                        li.feedback_range,
+                        li.item_note,
+                        li.item_parameter_config,
+                        li.quantity,
+                        (SELECT
+                            io.description
+                        FROM
+                            inv_organizations_vl io
+                        WHERE
+                            io.inv_organization_id = li.inv_organization_id
+                        ) inv_organization_desc,
+                        li.req_number,
+                        li.req_line_num,
+                        li.work_num,
+                        li.rfx_line_item_id,
+                        li.bom_num,
+                        li.suggested_operation,
+                        li.cost_price,
+                        CASE
+                            WHEN NVL(fl.valid_fb_retail_price, 0) > NVL(li.cost_price, 0)
+                            THEN (
+                                    CASE
+                                        WHEN li.cost_price IS NOT NULL AND
+                                            li.cost_price  != 0
+                                        THEN TO_CHAR(ROUND((NVL(fl.valid_fb_retail_price, 0) - NVL(li.cost_price, 0)) / li.cost_price,4) * 100)
+                                        ELSE '-'
+                                    END)
+                            ELSE '-'
+                        END AS super_cost,
+                        (NVL(li.cost_total_price, (
+                        (SELECT
+                            SUM(fll.allotted_quantity)
+                        FROM
+                            pur_rfx_feedback_lines fll
+                        WHERE
+                            fll.rfx_line_item_id = li.rfx_line_item_id
+                        ) * li.cost_price))) AS cost_total_price,
+                        (SELECT
+                            COUNT(1)
+                        FROM
+                            pur_rfx_feedback_lines l,
+                            pur_rfx_feedback_headers h,
+                            pur_rfx_ln_items rl
+                        WHERE
+                            h.feedback_header_id    = l.feedback_header_id AND
+                            l.rfx_line_item_id      = rl.rfx_line_item_id AND
+                            rl.cancel_flag          = 'N' AND
+                            rl.rfx_finished_flag    = 'N' AND
+                            l.cancel_flag           = 'N' AND
+                            rl.rfx_line_item_id     = li.rfx_line_item_id AND
+                            h.rfx_round             =rl.current_round AND
+                            h.rfx_version           =rl.current_version AND
+                            l.valid_fb_retail_price > 0
+                        ) AS vendor_price_count,
+                        NVL(li.ladder_inquiry_flag,'Y') ladder_inquiry_flag,
+                        TO_CHAR(fl.promised_date, 'yyyy-mm-dd') promised_date,
+                        fl.delivery_cycle,
+                        fl.valid_fb_reason,
+                        fl.valid_fb_wholesale_price,
+                        fl.min_purchase,
+                        fl.min_package,
+                        fl.feedback_time,
+                        DECODE(fh.source_from,'OFFLINE','手工录入','供应商报价') source_from,
+                        fh.source_from source_from_code,
+                        li.tax_type_rate,
+                        rh.version,
+                        rh.round,
+                        fh.vendor_id
+                    FROM
+                        pur_rfx_headers rh,
+                        pur_rfx_ln_items li,
+                        pur_rfx_feedback_headers fh,
+                        pur_rfx_feedback_lines fl
+                    WHERE
+                        rh.rfx_header_id      = li.rfx_header_id AND
+                        li.cancel_flag        = 'N' AND
+                        li.rfx_finished_flag  = 'N' AND
+                        fl.cancel_flag        = 'N' AND
+                        fh.feedback_header_id = fl.feedback_header_id AND
+                        fh.rfx_header_id      = rh.rfx_header_id AND
+                        fh.rfx_round          = rh.round AND
+                        fh.rfx_version        = rh.version AND
+                        fl.rfx_line_item_id   = li.rfx_line_item_id AND
+                        rh.rfx_header_id      = ${@rfx_header_id}
+                    ) v #WHERE_CLAUSE#
+                ORDER BY
+                    v.source_from,
+                    v.line_num
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+        	begin
+        		pur_rfx_feedback_pkg.save_offline_vendor
+  (
+    p_rfx_line_item_id          =>${@rfx_line_item_id},
+    p_feedback_header_id        =>${@feedback_header_id},
+    p_feedback_line_id          =>${@feedback_line_id},
+    p_coop_business_group       =>${@coop_business_group},
+    p_coop_company_id           =>${@coop_company_id},
+    p_vendor_id                 =>${@vendor_id},
+    p_vendor_desc               =>${@vendor_desc},
+    p_suggested_operation       =>${@suggested_operation},
+    p_suggested_flag            =>${@suggested_flag},
+    p_suggested_note            =>${@suggested_note},
+    p_allotted_quantity         =>${@allotted_quantity},
+    p_price_batch_quantity      =>${@price_batch_quantity},
+    p_cost_price                =>${@cost_price},
+    p_cost_total_price          =>${@cost_total_price},
+    p_need_by_date              =>to_date(${@need_by_date},'yyyy-mm-dd'),
+    p_valid_fb_retail_price     =>${@valid_fb_retail_price},
+    p_feedback_expiry_date_from =>to_date(${@feedback_expiry_date_from},'yyyy-mm-dd'),
+    p_feedback_expiry_date_to   =>to_date(${@feedback_expiry_date_to},'yyyy-mm-dd'),
+    p_promised_date             =>to_date(${@promised_date},'yyyy-mm-dd'),
+    p_delivery_cycle            =>${@delivery_cycle},
+    p_valid_fb_reason           =>${@valid_fb_reason},
+    p_valid_fb_wholesale_price  =>${@valid_fb_wholesale_price},
+    p_min_purchase              =>${@min_purchase},
+    p_min_package               =>${@min_package},
+    p_source_from               =>${@source_from_code},
+    p_user_id                   =>${/session/@user_id}
+  );
+        	end;
+		      ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+        	begin
+        	
+        	
+pur_rfx_feedback_pkg.delete_offline_vendor
+  (
+    p_rfx_header_id      =>${@rfx_header_id},
+    p_feedback_header_id =>${@feedback_header_id},
+    p_feedback_line_id   =>${@feedback_line_id},
+    p_source_from        =>${@source_from_code},
+    p_user_id            =>${/session/@user_id}
+  );
+                                     
+              
+              END;
+		      ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields/>
+</bm:model>

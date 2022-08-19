@@ -1,0 +1,566 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="v.vendor_id=${/parameter/@vendor_id}" model="pur.PUR5770.pur_vendors_lov" rootPath="pur5770_vendor_query"/>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;PUR_DOWNGRADE_TATUS&apos; " fetchAll="true" model="public.fnd_flex_value_v_lov" rootPath="pur5770_downgrade_status_data"/>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;PUR_VENDOR_LIFE_CYCLE&apos; " fetchAll="true" model="public.fnd_flex_value_v_lov" rootPath="pur5770_vendor_life_cycle_data"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="pur5770_com_supplier_detail_link" url="${/request/@context_path}/modules/pur/PUR5660/pur_com_supplier_detail.screen"/>
+        <a:link id="pur5770_downgrade_vendor_create_link" model="pur.PUR5770.pur_downgrade_vendors" modelaction="insert"/>
+        <a:link id="pur5770_downgrade_vendor_update_link" model="pur.PUR5770.pur_downgrade_vendors" modelaction="update"/>
+        <a:link id="pur5770_downgrade_vendor_delete_link" model="pur.PUR5770.pur_downgrade_vendors" modelaction="delete"/>
+        <a:link id="pur5770_downgrade_vendor_execute_link" model="pur.PUR5770.pur_downgrade_vendors" modelaction="execute"/>
+        <a:link id="pur5770_downgrade_vendor_srm_to_oa_link" url="${/request/@context_path}/modules/pur/PUR5770/pur5770_downgrade_vendor_submit_to_oa.svc"/>
+        <a:link id="put5770_attachment_file_download_link" url="${/request/@context_path}/atm_download.svc"/>
+        <a:link id="pur5770_upload_link" url="${/request/@context_path}/attachment_file_upload.screen"/>
+        <a:link id="pur5770_com_supplier_detail_link2" url="${/request/@context_path}/modules/pur/PUR5660/pur_com_supplier_detail.screen"/>
+        <script><![CDATA[
+            function init() {
+                var downgrade_id = '${/parameter/@downgrade_id}';
+                if (downgrade_id) {
+                    $('pur5770_downgrade_vendor_maintain_ds').setQueryParameter('downgrade_id', downgrade_id);
+                    $('pur5770_downgrade_vendor_maintain_ds').query();
+                    //附件加载
+                    $('pur5770_attachment_info_ds').setQueryParameter('table_name', 'PUR_DOWNGRADE_VENDOR_FILE');
+                    $('pur5770_attachment_info_ds').setQueryParameter('pk_value', '${/parameter/@downgrade_id}');
+                    $('pur5770_attachment_info_ds').query();
+                } else {
+                    $('pur5770_downgrade_vendor_maintain_ds').create();
+                }
+            
+                var vendor_id = '${/parameter/@vendor_id}';
+                var process_type = '${/parameter/@process_type}';
+                var downgrade_to = '${/parameter/@downgrade_to}';
+            
+                if (vendor_id) {
+                    var record = $('pur5770_downgrade_vendor_maintain_ds').getCurrentRecord();
+                    record.set('vendor_id', '${/model/pur5770_vendor_query/record/@vendor_id}');
+                    record.set('vendor_code', '${/model/pur5770_vendor_query/record/@vendor_code}');
+                    record.set('vendor_desc', '${/model/pur5770_vendor_query/record/@vendor_name}');
+                    record.set('stage_code', '${/model/pur5770_vendor_query/record/@stage_code}');
+            
+                    record.set('stage_code_display', '${/model/pur5770_vendor_query/record/@stage_code_display}');
+            
+                    record.set('authorize_flag', '${/model/pur5770_vendor_query/record/@authorize_flag}');
+                    record.set('sequence_number', '${/model/pur5770_vendor_query/record/@sequence_number}');
+                    record.set('coop_business_group', '${/model/pur5770_vendor_query/record/@coop_business_group}');
+                    record.set('coop_company_id', '${/model/pur5770_vendor_query/record/@coop_company_id}');
+                    record.set('supplier_id', '${/model/pur5770_vendor_query/record/@supplier_id}');
+            
+            
+                    record.set('process_type', process_type);
+                    if (process_type == 'ELIMINATE') {
+                        record.set('process_type_display', '淘汰');
+                    } else {
+                        record.set('process_type_display', '降级');
+                    }
+            
+                    if (downgrade_to != 'ELIMINATE') {
+                        record.set('downgrade_to', downgrade_to);
+                        if (downgrade_to == 'REGISTER') {
+                            record.set('downgrade_to_display', '注册');
+                        } else if (downgrade_to == 'RECOMMEND') {
+                            record.set('downgrade_to_display', '推荐');
+                        } else if (downgrade_to == 'POTENTIAL') {
+                            record.set('downgrade_to_display', '潜在');
+                        }
+                    }
+            
+                    record.getField('vendor_code').setReadOnly(true);
+                    record.getField('process_type_display').setReadOnly(true);
+                    record.getField('downgrade_to_display').setReadOnly(true);
+                }
+            }
+            
+            //保存
+            
+            function pur5770_downgrade_vendor_maintain_save() {
+                var ds = $('pur5770_downgrade_vendor_maintain_ds');
+                if (ds.validate()) {
+                    var record = ds.getCurrentRecord();
+                    var url;
+            
+                    //供应商降级状态校检
+                    var process_type = record.get('process_type') || '',
+                        stage_code = record.get('stage_code') || '',
+                        authorize_flag = record.get('authorize_flag') || '',
+                        sub_sequence_number = record.get('sub_sequence_number') || 0,
+                        downgrade_to = record.get('downgrade_to') || '';
+                    if (process_type == 'DOWNGRATE') {
+                        //推荐供应商可以只可以降级至注册
+                        if (stage_code == 'RECOMMEND') {
+                            if (downgrade_to != 'REGISTER') {
+                                Aurora.showMessage('${l:PROMPT}', '${l:PUR5770.RECOMMENDED_ONLY_TO_REGISTERED}');
+                                return;
+                            }
+                        }
+                        //潜在供应商可以降级至推荐和注册
+                        if (stage_code == 'POTENTIAL') {
+                            if (downgrade_to != 'REGISTER' && downgrade_to != 'RECOMMEND') {
+                                Aurora.showMessage('${l:PROMPT}', '${l:PUR5770.POTENTIAL_ONLY_TO_RECOMMENDED_REGISTERED}');
+                                return;
+                            }
+                        }
+                        //合格供应商  --特准只允许降级至注册供应商
+                        //非特准需校检上一节点状态
+                        if (stage_code == 'QUALIFIED') {
+                            if (authorize_flag == 'Y') {
+                                if (downgrade_to != 'REGISTER') {
+                                    Aurora.showMessage('${l:PROMPT}', '${l:PUR5770.AUTHORIZED_ONLY_TO_REGISTERED}');
+                                    return;
+                                }
+                            } else {
+                                if (sub_sequence_number == '30') {
+                                    if (downgrade_to != 'REGISTER' && downgrade_to != 'RECOMMEND') {
+                                        Aurora.showMessage('${l:PROMPT}', '${l:PUR5770.THIS_VENDOR_ONLY_TO_RECOMMENDED_REGISTERED}');
+                                        return;
+                                    }
+                                } else if (sub_sequence_number == '20') {
+                                    if (downgrade_to != 'REGISTER') {
+                                        Aurora.showMessage('${l:PROMPT}', '${l:PUR5770.THIS_VENDOR_ONLY_TO_REGISTERED}');
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }
+            
+                    if (record.isNew) {
+                        url = $('pur5770_downgrade_vendor_create_link').getUrl();
+                    } else {
+                        url = $('pur5770_downgrade_vendor_update_link').getUrl();
+                    }
+                    Aurora.Masker.mask($('pur5770_downgrade_vendor_maintain_win').wrap, '${l:PUR5770.BEING_SUBMITTED}');
+                    Aurora.request({
+                        url: url,
+                        para: record.data,
+                        success: function(res) {
+                            var downgrade_id = res.result.downgrade_id ? res.result.downgrade_id : '${/parameter/@downgrade_id}';
+                            Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SAVE_SUCCESS}', function() {
+                                ds.setQueryParameter('downgrade_id', downgrade_id);
+                                ds.query();
+                                Aurora.Masker.unmask($('pur5770_downgrade_vendor_maintain_win').wrap);
+                            });
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask($('pur5770_downgrade_vendor_maintain_win').wrap);
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask($('pur5770_downgrade_vendor_maintain_win').wrap);
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            //提交
+            
+            function pur5770_downgrade_vendor_maintian_submit() {
+                //降级至淘汰时提交OA审批，其他走原来的流程 add by lhh
+                var record = $('pur5770_downgrade_vendor_maintain_ds').getCurrentRecord();
+                if (record.get('downgrade_id')) {
+                    if (record.dirty) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:PUR5720.SAVE_DATA_FIRST}');
+                        return;
+                    }
+                    var process_type = record.get('process_type');
+                    var url;
+                    if (process_type == 'ELIMINATE') {
+                        url = $('pur5770_downgrade_vendor_srm_to_oa_link').getUrl();
+                    } else {
+                        url = $('pur5770_downgrade_vendor_execute_link').getUrl();
+                    }
+                    Aurora.showConfirm('${l:PROMPT}', '${l:PUR5770.CONFIRM_TO_SUBMIT}', function() {
+                        Aurora.Masker.mask($('pur5770_downgrade_vendor_maintain_win').wrap, '${l:PUR5770.BEING_SUBMITTED}');
+                        Aurora.request({
+                            url: url,
+                            para: record.data,
+                            success: function() {
+                                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                    Aurora.Masker.unmask($('pur5770_downgrade_vendor_maintain_win').wrap);
+                                    pur5770_downgrade_vendor_maintain_return();
+                                });
+                            },
+                            error: function() {
+                                Aurora.Masker.unmask($('pur5770_downgrade_vendor_maintain_win').wrap);
+                            },
+                            failure: function() {
+                                Aurora.Masker.unmask($('pur5770_downgrade_vendor_maintain_win').wrap);
+                            },
+                            scope: this
+                        });
+                    }, function() {}, 300, 100);
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PUR5720.SAVE_DATA_FIRST}');
+                    return;
+                }
+            }
+            
+            //删除
+            
+            function pur5770_downgrade_vendor_maintain_delete() {
+                var record = $('pur5770_downgrade_vendor_maintain_ds').getCurrentRecord();
+                if (record.get('downgrade_id')) {
+                    if (record.dirty) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:PUR5720.SAVE_DATA_FIRST}');
+                        return;
+                    }
+                    Aurora.showConfirm('${l:PROMPT}', '${l:PUR5770.CONFIRM_TO_DELETE}', function() {
+                        Aurora.Masker.mask($('pur5770_downgrade_vendor_maintain_win').wrap, '${l:PUR5770.BEING_SUBMITTED}');
+                        Aurora.request({
+                            url: $('pur5770_downgrade_vendor_delete_link').getUrl(),
+                            para: record.data,
+                            success: function() {
+                                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                    Aurora.Masker.unmask($('pur5770_downgrade_vendor_maintain_win').wrap);
+                                    pur5770_downgrade_vendor_maintain_return();
+                                });
+                            },
+                            error: function() {
+                                Aurora.Masker.unmask($('pur5770_downgrade_vendor_maintain_win').wrap);
+                            },
+                            failure: function() {
+                                Aurora.Masker.unmask($('pur5770_downgrade_vendor_maintain_win').wrap);
+                            },
+                            scope: this
+                        });
+                    }, function() {}, 300, 100);
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PUR5720.SAVE_DATA_FIRST}');
+                    return;
+                }
+            }
+            
+            //供应商信息
+            
+            function pur5770_downgrade_vendor_maintain_info() {
+                var record = $('pur5770_downgrade_vendor_maintain_ds').getCurrentRecord();
+                if (record.get('vendor_id')) {
+                    pur5770_com_supplier_info_detial(record.get('vendor_id'));
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PUR5720.SELECT_VENDOR_FIRST}');
+                }
+            }
+            
+            function pur5770_com_supplier_info_detial(coop_company_id) {
+                /* if(vendor_id && supplier_id){
+                 new Aurora.Window({
+                 url: $('pur5770_com_supplier_detail_link').getUrl() + '?coop_company_id=' + vendor_id+'&supplier_id=' + supplier_id,
+                 id: 'pur5660_com_supplier_window',
+                 title: '${l:PUR5660.VENDOR_DETAIL_TITLE}',
+                 fullScreen: true
+                 });
+                 } */
+                new Aurora.Window({
+                    url: $('pur5770_com_supplier_detail_link2').getUrl() + '?coop_company_id=' + coop_company_id,
+                    id: 'pur5660_com_supplier_window',
+                    fullScreen: true
+                });
+            }
+            
+            /*
+             function pur5770_vendor_survey_manufacturer_detail(id) {
+             new Aurora.Window({
+             id: 'pur7210_vendor_survey_manufacturer_detail_win',
+             title: '最新调查表明细',
+             url: $('pur5770_vendor_survey_manufacturer_detail_link').getUrl() + '?survey_header_id=' + id,
+             fullScreen: true
+             });
+             }
+             function pur5770_vendor_survey_merchant_detail(id) {
+             new Aurora.Window({
+             id: 'pur7210_vendor_survey_merchant_detail_win',
+             title: '最新调查表明细',
+             url: $('pur5770_vendor_survey_merchant_detail_link').getUrl() + '?survey_header_id=' + id,
+             fullScreen: true
+             });
+             } */
+            
+            //供应商调查表
+            
+            function pur5770_downgrade_vendor_maintain_search() {
+                /*if ($('pur5770_survey_query_ds').getAll().length) {
+                 var record = $('pur5770_survey_query_ds').getAt(0);
+                 var survey_header_id = record.get('survey_header_id');
+                 var syrvey_type_code = record.get('survey_header_id');
+                 if (syrvey_type_code == '10_MANUFACTURER') {
+                 pur5770_vendor_survey_manufacturer_detail(survey_header_id);
+                 } else {
+                 pur5770_vendor_survey_merchant_detail(survey_header_id);
+                 }
+                 } else {
+                 Aurora.showMessage('${l:PROMPT}', '没有数据!');
+                 }  */
+                if ($('pur5770_survey_query_ds').getAll().length) {
+                    var record = $('pur5770_survey_query_ds').getAt(0);
+                    var url = '${/request/@context_path}/' + record.get('service_name') + '?survey_header_id=' + record.get('survey_header_id');
+                    pur5770_vendor_survey_detail(url);
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PUR5720.SELECT_VENDOR_FIRST}');
+                }
+            }
+            
+            function pur5770_vendor_survey_detail(url) {
+                new Aurora.Window({
+                    id: 'pur7210_vendor_survey_detail_win',
+                    title: '${l:PUR_VENDOR_SURVEY.SURVEY_DETAIL}',
+                    url: url,
+                    fullScreen: true
+                });
+            }
+            
+            //附件上传
+            
+            function pur5770_downgrade_vendor_maintain_attachments() {
+                var downgrade_id = $('pur5770_downgrade_vendor_maintain_ds').getCurrentRecord().get('downgrade_id');
+                if (downgrade_id) {
+                    new Aurora.Window({
+                        id: 'pur5770_downgrade_vendor_upload_win',
+                        title: '${l:ATM.UPLOAD_ATTACHMENT}',
+                        url: $('pur5770_upload_link').getUrl() + '?pkvalue=' + downgrade_id + '&table_name=PUR_DOWNGRADE_VENDOR_FILE',
+                        width: 850,
+                        height: 500
+                    });
+                    $('pur5770_downgrade_vendor_upload_win').on('close', function() {
+                        //附件加载
+                        $('pur5770_attachment_info_ds').setQueryParameter('table_name', 'PUR_DOWNGRADE_VENDOR_FILE');
+                        $('pur5770_attachment_info_ds').setQueryParameter('pk_value', '${/parameter/@downgrade_id}');
+                        $('pur5770_attachment_info_ds').query();
+                    });
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PUR5720.SAVE_DATA_FIRST}');
+                    return;
+                }
+            }
+            
+            //返回
+            
+            function pur5770_downgrade_vendor_maintain_return() {
+                $('pur5770_downgrade_vendor_maintain_win').close();
+            }
+            
+            //附件渲染
+            
+            function pur5770_downgrade_vendor_atm_file_download_renderer(value, record, name) {
+                var attachment_id = record.get('attachment_id'); //附件ID
+                if (name == "file_name") {
+                    if (attachment_id) {
+                        return '<a href="' + $('put5770_attachment_file_download_link').getUrl() + '?attachment_id=' + attachment_id + '">' + value + '</a>';
+                    }
+                }
+            }
+            
+            //数据集更新操作
+            
+            function pur5770_downgrade_vendor_maintain_ds_update(dataSet, record, name, value, oldvalue) {
+                //更改操作类型
+                if (name == 'process_type') {
+                    var process_type = record.get('process_type');
+                    //降级操作，降级至必输
+                    if (process_type == 'DOWNGRATE') {
+                        record.getField('downgrade_to_display').setRequired(true);
+                        record.getField('downgrade_to_display').setReadOnly(false);
+                        record.getField('black_list_flag').setReadOnly(true);
+                    } else if (process_type == 'ELIMINATE') {
+                        record.getField('downgrade_to_display').setReadOnly(true);
+                        record.set('downgrade_to_display', '');
+                        record.set('downgrade_to', '');
+                        record.getField('black_list_flag').setReadOnly(false);
+                    } else {
+                        record.getField('black_list_flag').setReadOnly(true);
+                    }
+                }
+            
+                //更改供应商 ，注册供应商不可以选择降级操作
+                if (name == 'stage_code') {
+                    if (value == 'REGISTER') {
+                        record.getField('process_type_display').setReadOnly(true);
+                        record.set('process_type_display', '淘汰');
+                        record.set('process_type', 'ELIMINATE');
+                    } else {
+                        record.getField('process_type_display').setReadOnly(false);
+                        record.set('process_type_display', '');
+                        record.set('process_type', '');
+                    }
+                }
+            
+                if (name == 'vendor_id') {
+                    $('pur5770_source_vendor_class_query').setQueryParameter('vendor_id', value);
+                    $('pur5770_source_vendor_class_query').query();
+            
+                    $('pur5770_survey_query_ds').setQueryParameter('vendor_id', value);
+                    $('pur5770_survey_query_ds').query();
+                }
+            
+                if (name == 'black_list_flag') {
+                    if (value == 'Y') {
+                        record.getField('black_list_expiry_date').setReadOnly(false);
+                    } else if (value == 'N') {
+                        record.set('black_list_expiry_date', '');
+                        record.getField('black_list_expiry_date').setReadOnly(true);
+                    }
+                }
+            
+            }
+            
+            //数据集加载成功
+            
+            function pur5770_downgrade_vendor_maintian_ds_load(dataSet) {
+                var record = dataSet.getCurrentRecord();
+                var process_type = record.get('process_type');
+                var black_list_flag = record.get('black_list_flag');
+                var user_id = '${/session/@user_id}';
+                if (record.get('status') == 'RELEASED' || record.get('created_by') != user_id) {
+                    record.getField('black_list_expiry_date').setReadOnly(true);
+                    record.getField('black_list_flag').setReadOnly(true);
+                    record.getField('downgrade_reason').setReadOnly(true);
+                    record.getField('comments').setReadOnly(true);
+                }
+                if (record.get('downgrade_id')) {
+                    //降级操作，降级至必输
+                    /*
+                     if( process_type == 'DOWNGRATE') {
+                     record.getField('downgrade_to_display').setRequired(true);
+                     record.getField('downgrade_to_display').setReadOnly(false);
+                     } else if( process_type == 'ELIMINATE') {
+                     record.getField('downgrade_to_display').setReadOnly(true);
+                     record.getField('downgrade_to_display').setRequired(false);
+                     }   */
+                    record.getField('vendor_code').setReadOnly(true);
+                    record.getField('process_type_display').setReadOnly(true);
+                    record.getField('downgrade_to_display').setReadOnly(true);
+                }
+                //查询供应商分类信息
+                if (record.get('vendor_id')) {
+                    $('pur5770_source_vendor_class_query').setQueryParameter('vendor_id', record.get('vendor_id'));
+                    $('pur5770_source_vendor_class_query').query();
+            
+                    $('pur5770_survey_query_ds').setQueryParameter('vendor_id', record.get('vendor_id'));
+                    $('pur5770_survey_query_ds').query();
+                }
+            
+                if (process_type == 'ELIMINATE' && black_list_flag == 'Y') {
+                    record.getField('black_list_expiry_date').setReadOnly(false);
+                } else {
+                    record.getField('black_list_expiry_date').setReadOnly(true);
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="pur5770_maintain_downgrade_status_ds">
+                <a:datas dataSource="pur5770_downgrade_status_data"/>
+            </a:dataSet>
+            <a:dataSet id="pur5770_maintain_vendor_life_cycle_ds">
+                <a:datas dataSource="pur5770_vendor_life_cycle_data"/>
+            </a:dataSet>
+            <a:dataSet id="pur5770_survey_query_ds" model="pur.PUR5720.pur_vendor_recommend_survey_query"/>
+            <a:dataSet id="pur5770_downgrade_vendor_maintain_ds" model="pur.PUR5770.pur_downgrade_vendors">
+                <a:fields>
+                    <a:field name="supplier_id"/>
+                    <a:field name="stage_code"/>
+                    <a:field name="stage_code_display" displayField="flex_desc" options="pur5770_vendor_life_cycle_maintain_ds" returnField="stage_code" valueField="flex_value"/>
+                    <a:field name="status_display" displayField="flex_desc" options="pur5770_maintain_downgrade_status_ds" returnField="status" valueField="flex_value"/>
+                    <a:field name="process_type_display" displayField="flex_desc" options="pur5770_downgrade_process_type_ds" required="true" returnField="process_type" valueField="flex_value"/>
+                    <a:field name="vendor_code" autoComplete="true" autoCompleteField="vendor_code_desc" lovHeight="530" lovService="pur.PUR5770.pur_vendors_lov" lovWidth="530" required="true" title="PUR5720.VENDOR_SELECT">
+                        <a:mapping>
+                            <a:map from="vendor_id" to="vendor_id"/>
+                            <a:map from="vendor_code" to="vendor_code"/>
+                            <a:map from="vendor_name" to="vendor_desc"/>
+                            <a:map from="stage_code" to="stage_code"/>
+                            <a:map from="stage_code_display" to="stage_code_display"/>
+                            <a:map from="authorize_flag" to="authorize_flag"/>
+                            <a:map from="sequence_number" to="sequence_number"/>
+                            <a:map from="sub_sequence_number" to="sub_sequence_number"/>
+                            <a:map from="coop_business_group" to="coop_business_group"/>
+                            <a:map from="coop_company_id" to="coop_company_id"/>
+                            <a:map from="supplier_id" to="supplier_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="downgrade_reason" required="true"/>
+                    <a:field name="downgrade_to_display" displayField="flex_desc" options="pur5770_maintain_vendor_life_cycle_ds" returnField="downgrade_to" valueField="flex_value"/>
+                    <a:field name="black_list_flag" defaultValue="N"/>
+                    <a:field name="black_list_expiry_date" readOnly="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="pur5770_downgrade_vendor_maintain_ds_update"/>
+                    <a:event name="load" handler="pur5770_downgrade_vendor_maintian_ds_load"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="pur5770_source_vendor_class_query" autoCount="true" autoPageSize="true" model="pur.PUR5670.pur_vendor_class_assign_query">
+                <a:fields>
+                    <a:field name="enabled_flag" checkedValue="Y" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="pur5770_attachment_info_ds" autoCount="true" autoPageSize="true" autoQuery="true" fetchAll="true" loadData="true" model="public.fnd_attachment_file_mgr"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="pur5770_downgrade_vendor_maintain_save" text="PROMPT.SAVE" width="100"/>
+                <a:toolbarButton click="pur5770_downgrade_vendor_maintian_submit" text="PROMPT.SUBMIT" width="100"/>
+                <a:toolbarButton click="pur5770_downgrade_vendor_maintain_delete" text="PROMPT.DELETE" width="100"/>
+                <a:toolbarButton id="pur5770_downgrade_vendor_maintain_info_btn" click="pur5770_downgrade_vendor_maintain_info" text="PUR5770.VENDOR_INFO" width="100"/>
+                <a:toolbarButton id="pur5770_downgrade_vendor_maintain_search_btn" click="pur5770_downgrade_vendor_maintain_search" text="PUR5720.VENDOR_SURVEY" width="100"/>
+                <a:toolbarButton click="pur5770_downgrade_vendor_maintain_attachments" text="ATM.UPLOAD_ATTACHMENT" width="100"/>
+                <a:toolbarButton click="pur5770_downgrade_vendor_maintain_return" text="HAP_BACK" width="100"/>
+            </a:screenTopToolbar>
+            <a:fieldSet column="1" title="PROMPT.BASIC_INFOMATION" width="1000">
+                <a:hBox labelWidth="100">
+                    <a:textField name="downgrade_code" bindTarget="pur5770_downgrade_vendor_maintain_ds" readOnly="true" width="150"/>
+                    <a:textField name="status_display" bindTarget="pur5770_downgrade_vendor_maintain_ds" prompt="PUR5710.STATUS_DESC" readOnly="true" width="150"/>
+                    <a:textField name="created_by_display" bindTarget="pur5770_downgrade_vendor_maintain_ds" readOnly="true" width="150"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:lov name="vendor_code" bindTarget="pur5770_downgrade_vendor_maintain_ds" width="150"/>
+                    <a:textField name="vendor_desc" bindTarget="pur5770_downgrade_vendor_maintain_ds" readOnly="true" width="150"/>
+                    <a:datePicker name="creation_date" bindTarget="pur5770_downgrade_vendor_maintain_ds" readOnly="true" renderer="Aurora.formatDate" width="150"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:comboBox name="process_type_display" bindTarget="pur5770_downgrade_vendor_maintain_ds" prompt="PUR5770.PROCESS_TYPE_DISPLAY" width="150"/>
+                    <a:textField name="stage_code_display" bindTarget="pur5770_downgrade_vendor_maintain_ds" prompt="PUR5770.STAGE_CODE" readOnly="true" width="150"/>
+                    <a:comboBox name="downgrade_to_display" bindTarget="pur5770_downgrade_vendor_maintain_ds" prompt="PUR5770.DOWNGRADE_TO_DISPLAY" width="150"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:checkBox name="black_list_flag" bindTarget="pur5770_downgrade_vendor_maintain_ds" prompt="PUR5770.JOIN_THE_BLACK_LIST"/>
+                    <a:datePicker name="black_list_expiry_date" bindTarget="pur5770_downgrade_vendor_maintain_ds" prompt="PUR5770.BLACK_LIST_EXPIRY_DATE" width="150"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textArea name="downgrade_reason" bindTarget="pur5770_downgrade_vendor_maintain_ds" height="60" width="666"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textField name="comments" bindTarget="pur5770_downgrade_vendor_maintain_ds" width="669"/>
+                </a:hBox>
+            </a:fieldSet>
+            <a:tabPanel marginHeight="310" marginWidth="100">
+                <a:tabs>
+                    <a:tab prompt="PUR5770.CURRENT_VENDOR_CLASSIFICATION" width="120">
+                        <a:grid bindTarget="pur5770_source_vendor_class_query" marginHeight="348" marginWidth="128" navBar="true" width="1000">
+                            <a:columns>
+                                <a:column name="vendor_class_code" align="center" prompt="PUR_VENDOR_CLASSES.VENDOR_CLASS_CODE" width="120"/>
+                                <a:column name="vendor_class_desc" align="left" prompt="PUR_VENDOR_CLASSES.VENDOR_CLASS_DESC_ID" width="120"/>
+                                <a:column name="evaluation_level" align="center" prompt="PUR_VENDOR_CLASS_ASSIGNS.EVALUATION_LEVEL" width="80"/>
+                                <a:column name="evaluation_score" align="right" prompt="PUR_VENDOR_CLASS_ASSIGNS.EVALUATION_SCORE" width="80"/>
+                                <a:column name="enabled_flag" align="center" prompt="PUR_VENDOR_CLASS_ASSIGNS.ENABLED_FLAG" width="80"/>
+                                <a:column name="alter_reason" prompt="PUR5720.ALTER_REASON" width="130"/>
+                                <a:column name="alter_date_time" align="center" prompt="PUR5720.ALTER_DATE_TIME" width="150"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab prompt="PUR2510.TEMPLATE_UPLOAD" width="100">
+                        <a:grid bindTarget="pur5770_attachment_info_ds" marginHeight="348" marginWidth="128" navBar="true">
+                            <a:columns>
+                                <a:column name="file_name" align="left" renderer="pur5770_downgrade_vendor_atm_file_download_renderer" sortable="true" width="230"/>
+                                <a:column name="file_size" align="center" sortable="true" width="100"/>
+                                <a:column name="upload_user" align="center" prompt="FND_ATM_LINES.UPLOAD_USER_NAME" sortable="true" width="70"/>
+                                <a:column name="upload_date" align="center" prompt="FND_ATM_LINES.UPLOAD_DATE" renderer="Aurora.formatDate" sortable="true" width="80"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+        <script><![CDATA[
+            init();
+        ]]></script>
+    </a:view>
+</a:screen>

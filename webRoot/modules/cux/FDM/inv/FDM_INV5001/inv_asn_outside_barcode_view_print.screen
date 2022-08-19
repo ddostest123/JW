@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao
+    $Date: 2017年6月6日 下午3:40:33  
+    $Revision: 1.0  
+    $Purpose: 方正电机，外箱条码管理
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure/>
+    <a:view>
+        <a:link id="fdm_inv5001_asn_outside_barcode_batch_add_link" url="${/request/@context_path}/modules/cux/FDM/inv/FDM_INV5001/inv_asn_outside_barcode_batch_create.screen"/>
+        <a:link id="fdm_inv5001_asn_outside_barcode_maintain_save_link" url="${/request/@context_path}/modules/cux/FDM/inv/FDM_INV5001/inv_asn_outside_barcode_maintain_save.svc"/>
+        <a:link id="fdm_inv5001_asn_outside_barcode_maintain_delete_link" model="cux.FDM.inv.FDM_INV5001.inv_asn_outside_barcode_maintain" modelaction="batch_update"/>
+        <a:link id="fdm_inv5001_asn_outside_barcode_print_fdm_link" url="${/request/@context_path}/modules/cux/FDM/inv/FDM_INV5001/inv_asn_outside_barcode_print_fdm.screen"/>
+        <a:link id="fdm_inv5001_asn_outside_barcode_print_save_link" model="cux.FDM.inv.FDM_INV5001.inv_asn_outside_barcode_print_query" modelaction="execute"/>
+        <div/>
+        <script><![CDATA[
+            function fdm_inv5001_asnOutsideBarcodeMaintainBack() {
+                $('fdm_inv5001_asn_outside_barcode_view_print_link_window').close();
+            }
+            
+            function fdm_inv5001_asnOutsideBarcodeMaintainSave(packet_level) {
+                if ($('fdm_inv5001_asn_outside_barcode_result_ds').validate()) {
+                    var asn_header_line_record = $('fdm_inv5001_asn_outside_header_line_barcode_result_ds').getCurrentRecord();
+                    var datas = {
+                        'asn_line_id': asn_header_line_record.get('asn_line_id'),
+                        'outside_box_status': asn_header_line_record.get('outside_box_status'),
+                        'level_2_barcode': asn_header_line_record.get('level_2_barcode'),
+                        'level_3_barcode': asn_header_line_record.get('level_3_barcode'),
+                        'level_4_barcode': asn_header_line_record.get('level_4_barcode')
+                    };
+                    var barcode_records = $('fdm_inv5001_asn_outside_barcode_result_ds').getAll();
+                    var line_datas = [];
+                    for (var i = 0;i < barcode_records.length;i++) {
+                        var barcode_record = barcode_records[i];
+                        line_datas.push(barcode_record.data);
+                    }
+                    datas['line_datas'] = line_datas;
+                    Aurora.Masker.mask($('fdm_inv5001_asn_outside_barcode_view_print_link_window').wrap, '${l:LOADING}');
+                    Aurora.request({
+                        url: $('fdm_inv5001_asn_outside_barcode_maintain_save_link').getUrl(),
+                        para: datas,
+                        success: function() {
+                            Aurora.Masker.unmask($('fdm_inv5001_asn_outside_barcode_view_print_link_window').wrap);
+                            if (!Aurora.isEmpty(packet_level)) {
+                                //插打印临时表
+                                Aurora.request({
+                                    url: $('fdm_inv5001_asn_outside_barcode_print_save_link').getUrl(),
+                                    para: {
+                                        'asn_line_id': '${/parameter/@asn_line_id}',
+                                        'packet_level': packet_level
+                                    },
+                                    success: function() {
+                                        window.open($('fdm_inv5001_asn_outside_barcode_print_fdm_link').getUrl(), '_blank');
+                                    },
+                                    failure: function() {},
+                                    error: function() {},
+                                    scope: this
+                                });
+            
+                            } else {
+                                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                    Aurora.Masker.unmask($('fdm_inv5001_asn_outside_barcode_view_print_link_window').wrap);
+                                    fdm_inv5001_asnOutsideBarcodeQuery();
+                                });
+                            }
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask($('fdm_inv5001_asn_outside_barcode_view_print_link_window').wrap);
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask($('fdm_inv5001_asn_outside_barcode_view_print_link_window').wrap);
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            function fdm_inv5001_asnOutsideBarcodeQuery() {
+                $('fdm_inv5001_asn_outside_header_line_barcode_result_ds').query();
+                var header_line_record = $('fdm_inv5001_asn_outside_header_line_barcode_result_ds').getCurrentRecord();
+                $('fdm_inv5001_asn_outside_barcode_result_ds').setQueryParameter('line_num_from', header_line_record.get('line_num_from'));
+                $('fdm_inv5001_asn_outside_barcode_result_ds').setQueryParameter('line_num_to', header_line_record.get('line_num_to'));
+                $('fdm_inv5001_asn_outside_barcode_result_ds').query();
+            }
+            
+            function fdm_inv5001_asnOutsideBarcodePrintCheck() {
+                var record = $('fdm_inv5001_asn_outside_header_line_barcode_result_ds').getCurrentRecord();
+                if (record.get('outside_box_status') != 'IMPORT_SUCCESS') {
+                    Aurora.showMessage('${l:PROMPT}', '状态不是导入成功，无法打印！');
+                    return false;
+                }
+                return true;
+            }
+            
+            function fdm_inv5001_asnOutsideBarcodePrint() {
+                //校验状态是否为导入成功
+                if (fdm_inv5001_asnOutsideBarcodePrintCheck()) {
+                    fdm_inv5001_asnOutsideBarcodeMaintainSave('0001');
+                }
+            }
+            
+            function fdm_inv5001_asnOutsideBarcodeLevel2Print() {
+                //校验状态是否为导入成功
+                if (fdm_inv5001_asnOutsideBarcodePrintCheck()) {
+                    fdm_inv5001_asnOutsideBarcodeMaintainSave('0002');
+                }
+            }
+            
+            function fdm_inv5001_asnOutsideBarcodeLevel3Print() {
+                //校验状态是否为导入成功
+                if (fdm_inv5001_asnOutsideBarcodePrintCheck()) {
+                    fdm_inv5001_asnOutsideBarcodeMaintainSave('0003');
+                }
+            }
+            
+            function fdm_inv5001_asnOutsideBarcodeLevel4Print() {
+                //校验状态是否为导入成功
+                if (fdm_inv5001_asnOutsideBarcodePrintCheck()) {
+                    fdm_inv5001_asnOutsideBarcodeMaintainSave('0004');
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="fdm_inv5001_asn_outside_header_line_barcode_result_ds" autoCount="true" autoPageSize="true" autoQuery="true" model="cux.FDM.inv.FDM_INV5001.inv_asn_header_line_barcode_query" queryUrl="${/request/@context_path}/autocrud/cux.FDM.inv.FDM_INV5001.inv_asn_header_line_barcode_query/query?asn_line_id=${/parameter/@asn_line_id}"/>
+            <a:dataSet id="fdm_inv5001_asn_outside_barcode_result_ds" autoCount="true" autoPageSize="true" autoQuery="true" model="cux.FDM.inv.FDM_INV5001.inv_asn_outside_barcode_query" queryUrl="${/request/@context_path}/autocrud/cux.FDM.inv.FDM_INV5001.inv_asn_outside_barcode_query/query?asn_line_id=${/parameter/@asn_line_id}" selectable="false">
+                <a:fields>
+                    <a:field name="packet_quantity" defaultValue="1" requiredMessage="单包数量不能为空"/>
+                    <a:field name="packet_weight" requiredMessage="单包重量不能为空"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:gridButton bind="fdm_inv5001_asn_outside_barcode_result_ds_grid" text="导出" type="excel" width="100"/>
+                <a:toolbarButton id="fdm_inv5001_asnOutsideBarcodePrint_btn" click="fdm_inv5001_asnOutsideBarcodePrint" text="条码打印" width="100"/>
+                <a:toolbarButton id="fdm_inv5001_asnOutsideBarcodeLevel2Print_btn" click="fdm_inv5001_asnOutsideBarcodeLevel2Print" text="二级条码打印" width="100"/>
+                <a:toolbarButton id="fdm_inv5001_asnOutsideBarcodeLevel3Print_btn" click="fdm_inv5001_asnOutsideBarcodeLevel3Print" text="三级条码打印" width="100"/>
+                <a:toolbarButton id="fdm_inv5001_asnOutsideBarcodeLevel4Print_btn" click="fdm_inv5001_asnOutsideBarcodeLevel4Print" text="四级条码打印" width="100"/>
+                <a:toolbarButton id="fdm_inv5001_asnOutsideBarcodeMaintainBack_btn" click="fdm_inv5001_asnOutsideBarcodeMaintainBack" text="返回" width="100"/>
+            </a:screenTopToolbar>
+            <a:fieldSet marginWidth="250" title="送货单行信息">
+                <a:hBox labelWidth="120">
+                    <a:textField name="outside_box_status_display" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="条码状态" readOnly="true"/>
+                    <a:textField name="asn_number" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="送货单号" readOnly="true"/>
+                    <a:textField name="asn_line_num" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="送货单行号" readOnly="true"/>
+                    <a:textField name="item_code" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="客户物品编码" readOnly="true"/>
+                    <a:textField name="item_name" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="客户物品名称" readOnly="true"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:textField name="barcode_type_display" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="条码类型" readOnly="true"/>
+                    <a:textField name="lots_num" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="批次" readOnly="true"/>
+                    <a:textField name="comments" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="送货单行备注" readOnly="true"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:textField name="outside_box_quantity" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="一级条码数量" readOnly="true"/>
+                    <a:textField name="level_2_barcode" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="二级条码" readOnly="true"/>
+                    <a:textField name="level_3_barcode" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="三级条码" readOnly="true"/>
+                    <a:textField name="level_4_barcode" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="四级条码" readOnly="true"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:textField name="line_num_from" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="行号从"/>
+                    <a:textField name="line_num_to" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="行号至"/>
+                    <a:button click="fdm_inv5001_asnOutsideBarcodeQuery" style="margin-left:20px;" text="查询" width="100"/>
+                </a:hBox>
+            </a:fieldSet>
+            <a:fieldSet marginWidth="250" title="其他信息">
+                <a:hBox labelWidth="120">
+                    <a:textField name="ship_to_organization_name" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="收货工厂" readOnly="true"/>
+                    <a:textField name="need_by_date" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="订单需求日期" readOnly="true"/>
+                    <a:textField name="promised_date" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="订单承诺日期" readOnly="true"/>
+                    <a:textField name="expected_date" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="预计到货日期" readOnly="true"/>
+                    <a:textField name="creation_date" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="送货单创建日期" readOnly="true"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:textField name="po_number" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="订单号" readOnly="true"/>
+                    <a:textField name="po_line_num" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="订单行号" readOnly="true"/>
+                    <a:textField name="my_item_code" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="我的物品编码" readOnly="true"/>
+                    <a:textField name="my_item_name" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="我的物品描述" readOnly="true"/>
+                    <a:textField name="client_business_unit_name" bindTarget="fdm_inv5001_asn_outside_header_line_barcode_result_ds" prompt="客户名称" readOnly="true"/>
+                </a:hBox>
+            </a:fieldSet>
+            <a:grid id="fdm_inv5001_asn_outside_barcode_result_ds_grid" autoAppend="false" bindTarget="fdm_inv5001_asn_outside_barcode_result_ds" height="400" marginWidth="250" navBar="true" style="margin-top:10px;">
+                <a:columns>
+                    <a:column name="line_num" align="center" prompt="行号" sortable="true" width="30"/>
+                    <a:column name="barcode" align="left" prompt="条码编号" sortable="true" width="100"/>
+                    <a:column name="packet_quantity" align="right" prompt="单包数量" sortable="true" width="60"/>
+                    <a:column name="packet_weight" align="right" prompt="单包重量" sortable="true" width="60"/>
+                    <a:column name="packet_level" align="center" prompt="包装级别" sortable="true" width="60"/>
+                    <a:column name="comments" align="left" prompt="条码备注" sortable="true" width="120"/>
+                    <a:column name="print_quantity" align="right" editor="fdm_inv5001_asn_outside_barcode_result_ds_grid_numberField" prompt="打印数量" sortable="true" width="60"/>
+                </a:columns>
+                <a:editors>
+                    <a:numberField id="fdm_inv5001_asn_outside_barcode_result_ds_grid_numberField" allowDecimals="false" allowFormat="false" allowNegative="false" decimalPrecision="0"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

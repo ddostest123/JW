@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <!--
+            <bm:query-sql><![CDATA[
+                SELECT
+                    i.transaction_id,
+                    i.company_id,
+                    i.transaction_num,
+                    TO_CHAR(i.transaction_date, 'yyyy-MM-dd') transaction_date,
+                    i.transaction_type_code,
+                    itt.transaction_type_desc,
+                    (iib.item_code
+                    || '-'
+                    || iib.item_name) AS item_desc,
+                    iib.item_code,
+                    iib.item_name,
+                    i.primary_quantity,
+                    i.primary_uom,
+                    (SELECT
+                        iu.uom_description
+                    FROM
+                        erpinv_uom_codes iu
+                    WHERE
+                        iu.uom_code   = i.primary_uom AND
+                        iu.company_id = i.company_id
+                    ) AS primary_uom_desc,
+                    (iw.warehouse_code
+                    || '-'
+                    || iw.warehouse_name) warehouse_desc,
+                    decode(f.partner_code,null,'',(f.partner_code
+                    ||'-'||f.partner_name)) partner_desc,
+                    i.transaction_price,
+                    i.transaction_amount,
+                    i.real_cost,
+                    NVL(i.reversed_flag, 'N') reversed_flag,
+                    (SELECT
+                        it.transaction_num
+                    FROM
+                        erpinv_transactions it
+                    WHERE
+                        it.transaction_id = i.reversed_transaction_id
+                    ) AS reversed_transaction_num,
+                    TO_CHAR(i.creation_date, 'yyyy-MM-dd') AS creation_date,
+                    i.description,
+                    i.transaction_source_type,
+                    u.description user_description
+                FROM
+                    erpinv_transactions i,
+                    erpinv_trans_types itt,
+                    erpinv_items_basics iib,
+                    erpinv_warehouses iw,
+                    erpfnd_business_partners f,
+                    sys_user                 u
+                    #WHERE_CLAUSE#
+                ORDER BY
+                    i.transaction_num DESC,
+                    i.transaction_type_code
+            ]]></bm:query-sql>
+            -->
+            <bm:query-sql><![CDATA[
+                SELECT
+                    i.transaction_id,
+                    i.company_id,
+                    i.transaction_num,
+                    i.srm_trx_number,
+                    TO_CHAR(i.transaction_date, 'yyyy-MM-dd') transaction_date,
+                    i.transaction_type_code,
+                    itt.transaction_type_desc,
+                    (iib.item_code
+                    || '-'
+                    || iib.item_name) AS item_desc,
+                    iib.item_code,
+                    iib.item_name,
+                    i.primary_quantity,
+                    i.primary_uom,
+                    (SELECT
+                        iu.uom_description
+                    FROM
+                        erpinv_uom_codes iu
+                    WHERE
+                        iu.uom_code   = i.primary_uom AND
+                        iu.company_id = i.company_id
+                    ) AS primary_uom_desc,
+                    (iw.warehouse_code
+                    || '-'
+                    || iw.warehouse_name) warehouse_desc,
+                    DECODE(f.partner_code, NULL, '', (f.partner_code
+                    || '-'
+                    || f.partner_name)) partner_desc,
+                    i.transaction_price,
+                    NULL transaction_amount,
+                    NULL real_cost,
+                    NVL(i.reversed_flag, 'N') reversed_flag,
+                    (SELECT
+                        a.display_number
+                    FROM
+                        inv_trx_headers a,
+                        inv_trx_lines b
+                    WHERE
+                        b.trx_header_id      = a.trx_header_id AND
+                        a.from_document_type = 'SRMERP' AND
+                        a.business_group     = ${/session/@business_group} AND
+                        b.trx_line_id        = i.reversed_transaction_id
+                    ) AS reversed_transaction_num,
+                    TO_CHAR(i.creation_date, 'yyyy-MM-dd') AS creation_date,
+                    i.description,
+                    i.transaction_source_type,
+                    u.description user_description,
+                    i.processed_flag,
+                    iw.warehouse_id
+                FROM
+                    (SELECT
+                        a.trx_header_id,
+                        b.trx_line_id transaction_id,
+                        a.trx_number srm_trx_number,
+                        a.display_number transaction_num,
+                        a.business_group,
+                        a.trx_type transaction_type_code,
+                        a.trx_date transaction_date,
+                        b.from_document_type transaction_source_type,
+                        b.from_document_id,
+                        b.from_document_line_id transaction_source_line_id,
+                        b.item_id,
+                        (SELECT
+                            msi.display_item_code
+                        FROM
+                            mtl_system_items msi
+                        WHERE
+                            msi.item_id = b.item_id
+                        ) item_code,
+                        b.uom_code primary_uom,
+                        a.vendor_id business_partner_id,
+                        b.trx_quantity primary_quantity,
+                        b.trx_price transaction_price,
+                        b.from_warehouse_id,
+                        (SELECT
+                            aa.warehouse_code
+                        FROM
+                            inv_warehouses aa
+                        WHERE
+                            aa.business_group = ${/session/@business_group} AND
+                            aa.warehouse_id   = from_warehouse_id
+                        ) warehouse_code,
+                        b.reverse_flag reversed_flag,
+                        b.reversed_trx_line_id reversed_transaction_id,
+                        b.created_by,
+                        b.creation_date,
+                        b.comments description,
+                        a.from_document_id company_id,
+                        a.processed_flag
+                    FROM
+                        inv_trx_headers a,
+                        inv_trx_lines b
+                    WHERE
+                        b.trx_header_id      = a.trx_header_id AND
+                        a.from_document_type = 'SRMERP' AND
+                        a.business_group     = ${/session/@business_group}
+                    ) i,
+                    erpinv_trans_types itt,
+                    erpinv_items_basics iib,
+                    (SELECT
+                        (warehouse_code
+                        || company_id) srm_warehouses_code,
+                        aaa.warehouse_code,
+                        aaa.warehouse_name,
+                        aaa.warehouse_id
+                    FROM
+                        erpinv_warehouses aaa
+                    WHERE
+                        business_group = ${/session/@business_group}
+                    ) iw,
+                    erpfnd_business_partners f,
+                    sys_user u #WHERE_CLAUSE#
+                ORDER BY
+                    i.transaction_num DESC,
+                    i.transaction_type_code
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <!-- <bm:data-filter enforceOperations="query" expression="i.transaction_type_code = itt.transaction_type_code AND i.company_id = itt.company_id AND i.item_id = iib.item_id AND i.warehouse_id = iw.warehouse_id(+) AND i.business_partner_id = f.partner_id(+) AND itt.source_transaction_type_code is null and itt.business_type_code not in (&apos;ADJ-AMT&apos;, &apos;ADJ-PAC&apos;,&apos;OB&apos;) and i.reversed_flag is null and i.posted_flag = &apos;Y&apos; and (exists (select 1 from erpinv_document_pur_trx_lines idp where idp.document_line_id = i.transaction_source_line_id and i.transaction_type_code = &apos;PR&apos; and nvl(idp.billing_status, &apos;N&apos;) = &apos;N&apos;)  or i.transaction_type_code not in (&apos;PR&apos;)) and i.transaction_source_type not in (&apos;INV_DOCUMENT_DIRECT_GR&apos;) AND i.created_by = u.user_id"/> -->
+        <bm:data-filter enforceOperations="query" expression="i.transaction_type_code = itt.transaction_type_code    and i.company_id = itt.company_id    and i.item_code = iib.item_code    and i.warehouse_code = srm_warehouses_code(+)    and i.business_partner_id = f.srm_vender_id(+)    and itt.source_transaction_type_code is null    and itt.business_type_code not in (&apos;ADJ-AMT&apos;, &apos;ADJ-PAC&apos;, &apos;OB&apos;)    and i.reversed_flag = &apos;N&apos;    and i.processed_flag = &apos;Y&apos;    and (exists (select 1                   from erpinv_document_pur_trx_lines idp                  where idp.document_line_id = i.transaction_source_line_id                    and i.transaction_type_code = &apos;PR&apos;                    and nvl(idp.billing_status, &apos;N&apos;) = &apos;N&apos;) or         i.transaction_type_code not in (&apos;PR&apos;))    and i.transaction_source_type not in (&apos;INV_DOCUMENT_DIRECT_GR&apos;)    and i.created_by = u.user_id"/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field name="transaction_date_from" queryExpression="i.transaction_date &gt;= to_date(${@transaction_date_from},&apos;yyyy-MM-dd&apos;)"/>
+        <bm:query-field name="transaction_date_to" queryExpression="i.transaction_date &lt;= to_date(${@transaction_date_to},&apos;yyyy-MM-dd&apos;)"/>
+        <bm:query-field name="transaction_num" queryExpression="i.transaction_num like ${@transaction_num}||&apos;%&apos;"/>
+        <bm:query-field name="item_code" queryExpression="iib.item_code like ${@item_code}||&apos;%&apos;"/>
+        <bm:query-field name="item_name" queryExpression="iib.item_name like &apos;%&apos;||${@item_name}||&apos;%&apos;"/>
+        <bm:query-field name="transaction_type_code" queryExpression="i.transaction_type_code = ${@transaction_type_code}"/>
+        <bm:query-field name="warehouse_id" queryExpression="iw.warehouse_id = ${@warehouse_id}"/>
+        <bm:query-field name="create_date_from" queryExpression="i.creation_date &gt;= to_date(${@create_date_from},&apos;yyyy-MM-dd&apos;)"/>
+        <bm:query-field name="create_date_to" queryExpression="i.creation_date &lt;= to_date(${@create_date_to},&apos;yyyy-MM-dd&apos;)"/>
+        <bm:query-field name="user_id" queryExpression="i.created_by = ${@user_id}"/>
+        <bm:query-field name="recoil_date" queryExpression="i.transaction_date &lt;= to_date(${@recoil_date},&apos;yyyy-MM-dd&apos;)"/>
+        <bm:query-field name="company_id" queryExpression="i.company_id = ${@company_id}"/>
+    </bm:query-fields>
+</bm:model>

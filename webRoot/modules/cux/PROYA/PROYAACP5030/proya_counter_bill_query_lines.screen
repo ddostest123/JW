@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao
+    $Date: 2018年4月1日 下午6:01:44  
+    $Revision: 1.0  
+    $Purpose: 珀莱雅，柜台类对账审核，明细查询页面
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure/>
+    <a:view>
+        <script><![CDATA[
+            function proyaacp5030_bill_operation_record() {
+                var header_id = '${/parameter/@header_id}';
+                new Aurora.Window({
+                    id: 'proyaacp_bill_operation_record_link_window',
+                    url: $('proyaacp_bill_operation_record_link').getUrl() + '?operation_table_id=' + header_id + '&operation_table=PROYA_COUNTER_BILL_HEADERS',
+                    title: '${l:ACP_BILL.OPERATION_RECORD}',
+                    height: 450,
+                    width: 600
+                });
+            }
+            
+            //返回
+            
+            function proyaacp5030_queryBackToMain() {
+                $('proyaacp5030_bill_query_lines_link_window').close();
+            }
+            
+            function proyaacp5030_counterBillDetailResultDsGridRenderer(value, record, name) {
+                if (name == 'display_unit_price' || name == 'display_amount' || name == 'display_tax_unit_price' || name == 'display_tax_line_amount') {
+                    if (value == '***') {
+                        return value;
+                    } else {
+            
+                        //暂估标识
+                        var provisional_estimate_flag = record.get('provisional_estimate_flag');
+            
+                        if (name == 'display_unit_price' || name == 'display_tax_unit_price') {
+                            if (provisional_estimate_flag == 'Y') {
+                                return '<div style="color:#FF0000;font-weight:bold;">' + Aurora.formatNumber(value) + '</div>';
+                            } else {
+                                return Aurora.formatNumber(value);
+                            }
+                        } else {
+                            return Aurora.formatNumber(value);
+                        }
+                    }
+                }
+            }
+            
+            //导入
+            function proyaacp5030_bill_query_line_import() {
+                var record = $('proyaacp5030_counter_bill_query_result_ds').getCurrentRecord();
+                if (!Aurora.isEmpty(record.get('status')) && record.get('status') != "REVIEWED" && record.get('status') != "IMPORT_FAILED") {
+                    Aurora.showMessage('${l:PROMPT}', '只有"已复核","导入失败"状态的单据才能执行导入!');
+                    return false;
+                }
+                var datas = [];
+                datas.push({
+                    "bill_header_id": record.get('header_id'),
+                    "header_desc": record.get('header_desc')
+                });
+                Aurora.showConfirm('${l:PROMPT}', '确认导入吗？', function() {
+                    Aurora.Masker.mask($('proyaacp5030_bill_query_lines_link_window').wrap, '${l:LOADING}');
+                    Aurora.request({
+                        url: $('proyaacp5030_bill_query_lines_import_link').getUrl(),
+                        para: datas,
+                        success: function(res) {
+                            Aurora.showMessage('${l:PROMPT}', '操作成功，请耐心等待！', function() {
+                                Aurora.Masker.unmask($('proyaacp5030_bill_query_lines_link_window').wrap);
+                                proyaacp5030_counterBillApproveQuery();
+                                proyaacp5030_queryBackToMain();
+                            }, 360, 120);
+                        },
+                        failure: function(res) {
+                            Aurora.Masker.unmask($('proyaacp5030_bill_query_lines_link_window').wrap);
+                        },
+                        error: function(res) {
+                            Aurora.Masker.unmask($('proyaacp5030_bill_query_lines_link_window').wrap);
+                        },
+                        scope: this
+                    });
+                });
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="proyaacp5030_counter_bill_query_detail_result_ds" autoCount="true" autoPageSize="true" autoQuery="true" model="cux.PROYA.PROYAACP5030.proya_counter_bill_details" queryUrl="${/request/@context_path}/autocrud/cux.PROYA.PROYAACP5030.proya_counter_bill_details/query?header_id=${/parameter/@header_id}">
+                <a:fields>
+                    <a:field name="return_flag" checkedValue="Y" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton id="proyaacp5030_bill_query_line_import_btn" click="proyaacp5030_bill_query_line_import" text="导入" width="100"/>
+                <a:toolbarButton id="proyaacp5030_bill_operation_record_btn" click="proyaacp5030_bill_operation_record" text="操作记录" width="100"/>
+                <a:gridButton id="proyaacp5030_detail_maintain_excel_btn" bind="proyaacp5030_counter_bill_query_detail_result_ds_grid" type="excel" width="100"/>
+                <a:toolbarButton click="proyaacp5030_queryBackToMain" text="ACP_BILL.BACK" width="100"/>
+            </a:screenTopToolbar>
+            <a:form marginWidth="80">
+                <a:hBox labelWidth="100">
+                    <a:label name="bill_number" bindTarget="proyaacp5030_counter_bill_query_result_ds" prompt="对账单号" width="200"/>
+                    <a:label name="company_name" bindTarget="proyaacp5030_counter_bill_query_result_ds" prompt="ACP_BILL.COMPANY_NAME" width="200"/>
+                    <a:label name="business_unit_name" bindTarget="proyaacp5030_counter_bill_query_result_ds" prompt="ACP_BILL_DETAILS.BUSINESS_UNIT_ID" width="200"/>
+                    <a:label name="pur_buyer_name" bindTarget="proyaacp5030_counter_bill_query_result_ds" prompt="PUR_HEADERS_ALL.PUR_BUYER" width="200"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:label name="display_tax_bill_amount" bindTarget="proyaacp5030_counter_bill_query_result_ds" prompt="含税总额(系统)" width="200"/>
+                    <a:label name="display_tax_amount" bindTarget="proyaacp5030_counter_bill_query_result_ds" prompt="税额(系统)" width="200"/>
+                    <a:label name="display_system_total_freight" bindTarget="proyaacp5030_counter_bill_query_result_ds" prompt="运费总额(系统)" width="200"/>
+                    <a:label name="currency_code" bindTarget="proyaacp5030_counter_bill_query_result_ds" prompt="ACP_BILL_SOURCE.CURRENCY_CODE" width="200"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:label name="invoice_amount" bindTarget="proyaacp5030_counter_bill_query_result_ds" prompt="发票总额" width="198"/>
+                    <a:label name="invoice_tax_amount" bindTarget="proyaacp5030_counter_bill_query_result_ds" prompt="发票税额" width="198"/>
+                    <a:label name="tax_invoice_num" bindTarget="proyaacp5030_counter_bill_query_result_ds" prompt="税务发票号" width="198"/>
+                    <a:label name="total_freight" bindTarget="proyaacp5030_counter_bill_query_result_ds" prompt="运费发票总额" width="198"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:label name="vendor_desc" bindTarget="proyaacp5030_counter_bill_query_result_ds" prompt="ACP_BILL_HEADERS.VENDOR_DESC" width="1117"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:label name="header_desc" bindTarget="proyaacp5030_counter_bill_query_result_ds" prompt="审批备注" width="1117"/>
+                </a:hBox>
+            </a:form>
+            <a:grid id="proyaacp5030_counter_bill_query_detail_result_ds_grid" autoAppend="false" bindTarget="proyaacp5030_counter_bill_query_detail_result_ds" marginHeight="350" marginWidth="80" navBar="true">
+                <a:columns>
+                    <a:column name="return_flag" prompt="退回" width="30"/>
+                    <a:column name="vendor_desc" align="left" prompt="备注" width="60"/>
+                    <a:column name="receipt_num" align="center" prompt="ACP_BILL_DETAILS.RECEIPT_NUM" sortable="true" width="50"/>
+                    <a:column name="receipt_line_num" align="center" prompt="ACP_BILL_DETAILS.RECEIPT_LINE_NUM" sortable="true" width="35"/>
+                    <a:column name="from_po_display_number" align="center" prompt="ACP_BILL_DETAILS.SEGMENT1" sortable="true" width="60"/>
+                    <a:column name="from_po_line_num" align="center" prompt="ACP_BILL_DETAILS.PO_LINE_NUM" sortable="true" width="50"/>
+                    <a:column name="trx_date_fmt" align="center" prompt="ACP_BILL_DETAILS.TRANSACTION_DATE" sortable="true" width="60"/>
+                    <a:column name="item_code" align="center" prompt="ACP_BILL_LINES.ITEM_CODE" sortable="true" width="60"/>
+                    <a:column name="item_name" align="left" prompt="ACP_BILL_LINES.ITEM_NAME" sortable="true" width="120"/>
+                    <a:column name="terminal_information" align="left" prompt="终端信息" sortable="true" width="80"/>
+                    <a:column name="freight_amount" align="right" prompt="运费金额" sortable="true" width="50"/>
+                    <a:column name="trx_quantity" align="right" prompt="ACP_BILL_DETAILS.AVAILABLE_QUANTITY" sortable="true" width="50"/>
+                    <a:column name="unit_meas_lookup_code" align="left" prompt="ACP_BILL_DETAILS.UNIT_MEAS_LOOKUP_CODE" sortable="true" width="50"/>
+                    <a:column name="actual_receiver_name" align="left" prompt="PUR_LINES_ALL.ACTUAL_RECEIVER_NAME" width="80"/>
+                    <a:column name="display_unit_price" align="right" prompt="ACP_BILL.NET_PRICE" renderer="proyaacp5030_counterBillDetailResultDsGridRenderer" sortable="true" width="50"/>
+                    <a:column name="display_amount" align="right" prompt="ACP_BILL.NET_LINE_AMOUNT" renderer="proyaacp5030_counterBillDetailResultDsGridRenderer" sortable="true" width="50"/>
+                    <a:column name="tax_rate" align="center" prompt="FND_TAX_TYPE_CODES.TAX_TYPE_RATE" sortable="true" width="50"/>
+                    <a:column name="display_tax_unit_price" align="right" prompt="ACP_BILL.TAX_PRICE" renderer="proyaacp5030_counterBillDetailResultDsGridRenderer" sortable="true" width="50"/>
+                    <a:column name="display_tax_line_amount" align="right" prompt="ACP_BILL.TAX_LINE_AMOUNT" renderer="proyaacp5030_counterBillDetailResultDsGridRenderer" sortable="true" width="50"/>
+                    <a:column name="currency_code" align="center" prompt="ACP_BILL_SOURCE.CURRENCY_CODE" sortable="true" width="40"/>
+                    <a:column name="rcv_trx_type_desc" align="left" prompt="ACP_BILL_DETAILS.TRANSACTION_TYPE" sortable="true" width="60"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: zc  
+    $Date: 2018-8-23 ����4:49:14  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:service xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <p:echo/>
+        <a:model-query autoCount="true" fetchAll="true" model="cux.MKWE.pur.PUR8020.pur_delivery_plan_report" rootPath="pur_delivery_all"/>
+        <a:model-query fetchAll="true" model="cux.MKWE.pur.PUR8020.pur_delivery_plan_report_date" rootPath="day_date"/>
+        <s:server-script><![CDATA[
+            var logger = $logger('server-script');
+            
+            function log(msg) {
+                logger.info(msg);
+            }
+            
+            var array1 = $ctx.get('/model/pur_delivery_all').getChildren();
+            var array2 = $ctx.get('/model/day_date').getChildren();
+            time_map = {};
+            var record = new CompositeMap('record');
+            for (var i = 0;i < array2.length;i++) {
+                record['d' + String(i + 1)] = array2[i]['day_date'];
+                time_map[array2[i]['day_date']] = 'd' + String(i + 1);
+            }
+            $ctx.model.addChild(record.getData());
+            var record = new CompositeMap('record');
+            var record1 = new CompositeMap('record');
+            var record2 = new CompositeMap('record');
+            var trx_amount = 0; //已交货数量
+            var un_trx_amount = 0; //未交数量
+            var in_transit = 0; //在途数量
+            for (var i = 0;i < array1.length;i++) {
+                if (i != 0 && (array1[i]['business_unit_name'] != array1[i - 1]['business_unit_name'] || array1[i]['vendor_name'] != array1[i - 1]['vendor_name'] || array1[i]['item_code'] != array1[i - 1]['item_code'])) {
+                    name_list = ['business_unit_name', 'vendor_name','vendor_site_name','online_vender_flg', 'item_code', 'item_name']; //, 'l1_category', 'l2_category', 'l3_category'
+                    for (var j = 0;j < name_list.length;j++) {
+                        if (array1[i - 1][name_list[j]]) {
+                            record[name_list[j]] = array1[i - 1][name_list[j]];
+                        }
+                    }
+                    record['type'] = 'P-排程数量';
+                    record['un_trx_amount'] = un_trx_amount;
+                    record['in_transit'] = in_transit;
+                    record['trx_amount'] = trx_amount;
+                    $ctx.model.addChild(record.getData());
+                    for (var j = 0;j < name_list.length;j++) {
+                        if (array1[i - 1][name_list[j]]) {
+                            record1[name_list[j]] = array1[i - 1][name_list[j]];
+                        }
+                    }
+                    record1['type'] = 'C-ACN数量';
+                    record1['in_transit'] = in_transit;
+                    record1['un_trx_amount'] = un_trx_amount;
+                    record1['trx_amount'] = trx_amount;
+                    
+                    for (var j = 0;j < name_list.length;j++) {
+                        if (array1[i - 1][name_list[j]]) {
+                            record2[name_list[j]] = array1[i - 1][name_list[j]];
+                        }
+                    }
+                    record2['type'] = 'R-入库数量';
+                    record2['un_trx_amount'] = un_trx_amount;
+                    record2['in_transit'] = in_transit;
+                    record2['trx_amount'] = trx_amount; 
+                    
+                    un_trx_amount = 0;
+                    in_transit = 0;
+            	    trx_amount = 0;
+                    $ctx.model.addChild(record2.getData());
+                    record = new CompositeMap('record');
+                    record1 = new CompositeMap('record');
+                    record2 = new CompositeMap('record');
+                }
+            
+                if (array1[i]['type'] == 'P-排程数量') {
+                    record[time_map[array1[i]['unit_date']]] = array1[i]['unit_total'];
+                    un_trx_amount += array1[i]['unit_total'];
+                }else if(array1[i]['type'] == 'R-入库数量') {
+                    record2[time_map[array1[i]['unit_date']]] = array1[i]['unit_total'];
+                    trx_amount += array1[i]['unit_total'];
+                }
+                 else {
+                    record1[time_map[array1[i]['unit_date']]] = array1[i]['unit_total'];
+                    in_transit += array1[i]['unit_total'];
+                }
+                if (i == array1.length - 1) {
+                    name_list = ['business_unit_name', 'vendor_name','vendor_site_name','online_vender_flg', 'item_code', 'item_name']; //, 'l1_category', 'l2_category', 'l3_category'
+                    for (var j = 0;j < name_list.length;j++) {
+                        if (array1[i][name_list[j]]) {
+                            record[name_list[j]] = array1[i][name_list[j]];
+                        }
+                    }
+                    record['type'] = 'P-排程数量';
+                    record['un_trx_amount'] = un_trx_amount;
+                    record['in_transit'] = in_transit;
+                    record['trx_amount'] = trx_amount;
+                    $ctx.model.addChild(record.getData());
+                    for (var j = 0;j < name_list.length;j++) {
+                        if (array1[i][name_list[j]]) {
+                            record1[name_list[j]] = array1[i][name_list[j]];
+                        }
+                    }
+                    record1['type'] = 'C-ACN数量';
+                    record1['in_transit'] = in_transit;
+                    record1['un_trx_amount'] = un_trx_amount;
+                    record1['trx_amount'] = trx_amount;
+                    $ctx.model.addChild(record1.getData());
+                    for (var j = 0;j < name_list.length;j++) {
+                        if (array1[i][name_list[j]]) {
+                            record2[name_list[j]] = array1[i][name_list[j]];
+                        }
+                    }
+                    record2['type'] = 'R-入库数量';
+                    record2['in_transit'] = in_transit;
+                    record2['un_trx_amount'] = un_trx_amount;
+                    record2['trx_amount'] = trx_amount;
+                    trx_amount = 0;
+                    un_trx_amount = 0;
+                    in_transit = 0;
+                   $ctx.model.addChild(record2.getData());
+                }
+            }
+            log($ctx.toXML());
+            
+            $ctx.model.totalCount = $ctx.get('/model/pur_delivery_all').totalCount * 2 +1;
+        ]]></s:server-script>
+    </a:init-procedure>
+    <a:service-output output="/model"/>
+</a:service>

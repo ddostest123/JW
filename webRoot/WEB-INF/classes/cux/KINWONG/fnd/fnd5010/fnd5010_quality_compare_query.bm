@@ -1,0 +1,801 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" trace="true">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    row_number() over(order by 
+                     nvl(t3.fixed_year_score, 0) + nvl(t3.registered_amounts_score, 0) +
+                    nvl(t3.annual_turnover_score, 0) + nvl(t3.staff_count_score, 0) +
+                    nvl(t3.area_score, 0) + nvl(t3.delivery_cycle_sore, 0) +
+                    nvl(t3.disaster_tolerance_score, 0) +
+                    nvl(t3.information_security_score, 0) +
+                    nvl(t3.product_score, 0) +
+                    nvl(t3.financial_risk_assessment, 0)  desc) AS score_rank,
+                    DECODE(
+                    (SELECT
+                        MAX(kwc.vc_version) FROM kw_vendor_qualification_compare kwc WHERE kwc.category_udf_id = ${@category_udf_id} GROUP BY kwc.category_udf_id
+                    ),NULL,1,
+                    (SELECT
+                        MAX(kwc.vc_version) + 1
+                    FROM
+                        kw_vendor_qualification_compare kwc
+                    WHERE
+                        kwc.category_udf_id = ${@category_udf_id}
+                    GROUP BY
+                        kwc.category_udf_id
+                    )) vc_version,
+                  round(nvl(t3.fixed_year_score, 0) + nvl(t3.registered_amounts_score, 0) +
+       nvl(t3.annual_turnover_score, 0) + nvl(t3.staff_count_score, 0) +
+       nvl(t3.area_score, 0) + nvl(t3.delivery_cycle_sore, 0) +
+       nvl(t3.disaster_tolerance_score, 0) +
+     --  nvl(t3.financial_risk_assessment, 0) +
+       nvl(t3.information_security_score, 0) +
+     --  nvl(t3.willingness_to_cooperate_score, 0) +
+       nvl(t3.product_score, 0) +
+        nvl(t3.financial_risk_assessment, 0),2) total_score,
+       case when pur_vendor_pkg.to_numbers(t3.financial_risk_assessment) >=9 and
+           pur_vendor_pkg.to_numbers(t3.financial_risk_assessment) <=10 then
+         'CR1-实力雄厚，抗风险能力很高，资信状况优秀'
+         when pur_vendor_pkg.to_numbers(t3.financial_risk_assessment) >=7.5 and
+           pur_vendor_pkg.to_numbers(t3.financial_risk_assessment) <9
+          then  'CR2-实力较强，抗风险能力较高，资信状况正常'  
+         when pur_vendor_pkg.to_numbers(t3.financial_risk_assessment) >=6 and
+           pur_vendor_pkg.to_numbers(t3.financial_risk_assessment) <7.5
+          then  'CR3-实力一般，抗风险能力一般，资信状况尚佳'
+        when pur_vendor_pkg.to_numbers(t3.financial_risk_assessment) >=4.5 and
+           pur_vendor_pkg.to_numbers(t3.financial_risk_assessment) <6
+          then  'CR4-实力较弱，抗风险能力较低，资信状况欠佳' 
+        when pur_vendor_pkg.to_numbers(t3.financial_risk_assessment) >=3 and
+           pur_vendor_pkg.to_numbers(t3.financial_risk_assessment) <4.5
+          then  'CR5-实力弱，抗风险能力低，资信状况较差'   
+        when pur_vendor_pkg.to_numbers(t3.financial_risk_assessment) >=0 and
+           pur_vendor_pkg.to_numbers(t3.financial_risk_assessment) <3
+          then  'CR6-实力很弱，抗风险能力很低，资信状况差'         
+         end  fin_risk
+             ,       t3.*
+                FROM
+                    (SELECT
+                      --  (NVL(t2.fixed_year_score,0)+NVL(t2.registered_amounts_score,0)+NVL(t2.staff_count_score,0)+NVL(t2.area_score,0)+NVL(t2.annual_turnover_score,0)+NVL(t2.account_period_score,0)+NVL(t2.site_audit_score,0)) total_score,
+                       
+                       case when  t2.delivery_cycle / decode(t2.avg_delivery_cycle,0,1,t2.avg_delivery_cycle)  < 0.9 then 
+                         5 
+                         when   t2.delivery_cycle / decode(t2.avg_delivery_cycle,0,1,t2.avg_delivery_cycle) >= 0.9 and
+                            t2.delivery_cycle / decode(t2.avg_delivery_cycle,0,1,t2.avg_delivery_cycle) < 1.5
+                          then 2
+                         when   t2.delivery_cycle / decode(t2.avg_delivery_cycle,0,1,t2.avg_delivery_cycle) >= 1.5  
+                          then 0
+                       end delivery_cycle_sore,
+                        round(t2.annual_turnover * decode(t2.vendor_catagory, 'A', 2, 'B', 2, 'C', 5, 'D', 5) / decode(nvl(t2.max_annual_turnover, 1), 0, 1,  nvl(t2.max_annual_turnover, 1)),2)  fixed_year_score,
+                        t2.*
+                    FROM
+                        (SELECT
+                            DECODE(t1.fixed_year_flag,'Y',(
+                                CASE
+                                    WHEN t1.vendor_catagory = 'A'
+                                    THEN (
+                                            CASE
+                                                WHEN t1.year_amplitude >= 8
+                                                THEN '2'
+                                                WHEN t1.year_amplitude >= 5 AND
+                                                    t1.year_amplitude   < 8
+                                                THEN '1'
+                                                ELSE '0'
+                                            END)
+                                    WHEN t1.vendor_catagory IN ('B','C')
+                                    THEN (
+                                            CASE
+                                                WHEN t1.year_amplitude >= 5
+                                                THEN '2'
+                                                WHEN t1.year_amplitude >= 3 AND
+                                                    t1.year_amplitude   <5
+                                                THEN '1'
+                                                ELSE '0'
+                                            END)
+                                    WHEN t1.vendor_catagory = 'D'
+                                    THEN (
+                                            CASE
+                                                WHEN t1.year_amplitude >= 5
+                                                THEN '2'
+                                                WHEN t1.year_amplitude >= 2 AND
+                                                    t1.year_amplitude   <5
+                                                THEN '1'
+                                                ELSE '0'
+                                            END)
+                                    ELSE (
+                                            CASE
+                                                WHEN t1.year_amplitude >= 10
+                                                THEN '5'
+                                                WHEN t1.year_amplitude >= 8 AND
+                                                    t1.year_amplitude   < 10
+                                                THEN '4'
+                                                WHEN t1.year_amplitude >= 5 AND
+                                                    t1.year_amplitude   < 8
+                                                THEN '3'
+                                                WHEN t1.year_amplitude >= 3 AND
+                                                    t1.year_amplitude   < 5
+                                                THEN '2'
+                                                WHEN t1.year_amplitude > 1 AND
+                                                    t1.year_amplitude  < 3
+                                                THEN '1'
+                                                ELSE '0'
+                                            END)
+                                END ),0) fixed_year_score_old,
+                            DECODE(t1.registered_amounts_flag,'Y',(
+                                CASE
+                                    WHEN t1.enterprise_nature IN('FORINVES_ENTER','HKMT_ENTER')
+                                    THEN (
+                                            CASE
+                                                WHEN t1.vendor_catagory IN ('A','B','C','D')
+                                                THEN '2'
+                                                ELSE '5'
+                                            END)
+                                    ELSE (
+                                            CASE
+                                                WHEN t1.vendor_catagory = 'A'
+                                                THEN (
+                                                        CASE
+                                                            WHEN t1.registered_amounts >= 1000
+                                                            THEN '2'
+                                                            WHEN t1.registered_amounts < 500
+                                                            THEN '0'
+                                                            ELSE '1'
+                                                        END)
+                                                WHEN t1.vendor_catagory = 'B'
+                                                THEN (
+                                                        CASE
+                                                            WHEN t1.registered_amounts >= 500
+                                                            THEN '2'
+                                                            WHEN t1.registered_amounts < 100
+                                                            THEN '0'
+                                                            ELSE '1'
+                                                        END)
+                                                WHEN t1.vendor_catagory IN ('C','D')
+                                                THEN (
+                                                        CASE
+                                                            WHEN t1.registered_amounts >= 300
+                                                            THEN '2'
+                                                            WHEN t1.registered_amounts < 50
+                                                            THEN '0'
+                                                            ELSE '1'
+                                                        END)
+                                                ELSE (
+                                                        CASE
+                                                            WHEN t1.registered_amounts >= 1000
+                                                            THEN '5'
+                                                            WHEN t1.registered_amounts >= 800 AND
+                                                                t1.registered_amounts   < 1000
+                                                            THEN '4'
+                                                            WHEN t1.registered_amounts >= 500 AND
+                                                                t1.registered_amounts   < 800
+                                                            THEN '3'
+                                                            WHEN t1.registered_amounts >= 300 AND
+                                                                t1.registered_amounts   < 500
+                                                            THEN '2'
+                                                            WHEN t1.registered_amounts > 100 AND
+                                                                t1.registered_amounts  < 300
+                                                            THEN '1'
+                                                            ELSE '0'
+                                                        END)
+                                            END)
+                                END ),0) registered_amounts_score_old,
+                               CASE WHEN t1.out_work_flg = '是' THEN
+                                        CASE WHEN t1.registered_amounts / 200 * 2 > 2 THEN  2
+                                        ELSE t1.registered_amounts / 200 * 2
+                                        END
+                                   WHEN t1.out_work_flg = '否' AND t1.vendor_catagory IN ('A', 'B') THEN
+                                      CASE  WHEN t1.registered_amounts / decode(t1.vendor_catagory, 'A', 5000, 'B', 1000, 0) * 2 > 2 THEN 2
+                            ELSE t1.registered_amounts / decode(t1.vendor_catagory, 'A', 5000, 'B', 1000, 0) * 2
+                          END
+                         WHEN t1.out_work_flg = '否' AND t1.vendor_catagory IN ('C', 'D') THEN
+                          CASE
+                            WHEN t1.registered_amounts / decode(t1.vendor_catagory, 'C', 100, 'D', 100, 0) * 5 > 5 THEN
+                             5 ELSE t1.registered_amounts / decode(t1.vendor_catagory, 'C', 100, 'D', 100, 0) * 5
+                          END ELSE 0 END  registered_amounts_score,
+                         CASE WHEN t1.out_work_flg = '是' THEN
+                           CASE WHEN round(t1.staff_count / 30 * 2, 2) > 2 
+                               THEN 2 ELSE round(t1.staff_count / 30 * 2, 2)   END
+                           WHEN t1.out_work_flg = '否' AND t1.vendor_catagory IN ('A','B') THEN  
+                              CASE WHEN  decode(t1.vendor_catagory, 'A', t1.staff_count / 500 * 2, 'B', t1.staff_count / 200 * 2)  > 2 
+                                  THEN 2 ELSE round(decode(t1.vendor_catagory, 'A', t1.staff_count / 500 * 2, 'B', t1.staff_count / 200 * 2), 2) 
+                              END   
+                           WHEN   t1.out_work_flg = '否' AND  t1.vendor_catagory IN ('C','D') THEN
+                               CASE WHEN  round(t1.staff_count / 50 * 5)  > 5 
+                                       THEN 5 
+                                  ELSE round(t1.staff_count / 50 * 5, 2) 
+                                   END 
+                          end staff_count_score , 
+                            DECODE(t1.area_flag,'Y',ROUND((
+                                    CASE
+                                        WHEN t1.vendor_catagory IN ('A','B','C','D')
+                                        THEN ( t1.factory_area/t1.max_factory_area) * 2
+                                        WHEN t1.vendor_catagory = 'EQUIPMENT'
+                                        THEN ( t1.factory_area/t1.building_area) * 5
+                                        ELSE NULL
+                                    END ),1),0) area_score1,
+                            decode(t1.annual_turnover_flag, 'Y',
+                              round((CASE
+                                      WHEN t1.vendor_catagory IN ('A', 'B') THEN
+                                       (t1.catogary_annual_turnover /
+                                       t1.max_catogary_annual_turnover) * 2
+                                      WHEN t1.vendor_catagory IN ('C', 'D') THEN
+                                       (t1.catogary_annual_turnover /
+                                       t1.max_catogary_annual_turnover) * 5
+                                    END),
+                                    1),
+                              0) annual_turnover_score,
+                            0 account_period_score,
+                            DECODE(t1.site_audit_flag,'Y',ROUND((
+                                    CASE
+                                        WHEN t1.vendor_catagory IN ('A','B','EQUIPMENT')
+                                        THEN t1.total_scores * 0.3
+                                        WHEN t1.vendor_catagory IN ('C','D')
+                                        THEN t1.total_scores * 0.2
+                                        WHEN t1.vendor_catagory = 'ENGINEERING'
+                                        THEN t1.total_scores * 0.5
+                                        ELSE NULL
+                                    END ),1),0) site_audit_score,
+                            t1.*
+                        FROM
+                            (SELECT
+                                (SELECT MAX(to_number(ppv.c_attribute18))
+                                  FROM pur_vendor_survey_basic_info ppv
+                                 WHERE ppv.survey_header_id  IN (${:@survey_header_ids})  
+                                ) max_annual_turnover,
+                                (SELECT
+                                    MAX(
+                                    (SELECT
+                                        to_number(pb.staff_count)
+                                    FROM
+                                        pur_vendor_survey_basic_info pb
+                                    WHERE
+                                        pb.survey_header_id = pur.survey_header_id
+                                    ))
+                                FROM
+                                    pur_vendor_survey_headers pur
+                                WHERE
+                                    pur.survey_header_id IN (${:@survey_header_ids})
+                                ) max_staff_count,
+                                (SELECT
+                                    MAX(
+                                    (SELECT
+                                        to_number(fd.factory_area)
+                                    FROM
+                                        fnd_companies_vl fd
+                                    WHERE
+                                        fd.company_id = pur.supplier_company_id
+                                    ))
+                                FROM
+                                    pur_vendor_survey_headers pur
+                                WHERE
+                                    pur.require_business_group = ${/session/@business_group} AND
+                                    pur.survey_header_id      IN (${:@survey_header_ids})
+                                ) max_factory_area,
+                                pvs.survey_header_id,
+                                pvs.survey_number,
+                                (SELECT
+                                    NVL(pd.fixed_year_flag,'Y')
+                                FROM
+                                    pur_vendor_compare_define pd
+                                WHERE
+                                    pd.tmpl_hds_id = ${@tmpl_hds_id}
+                                ) fixed_year_flag,
+                                (SELECT
+                                    NVL(pd.registered_amounts_flag,'Y')
+                                FROM
+                                    pur_vendor_compare_define pd
+                                WHERE
+                                    pd.tmpl_hds_id = ${@tmpl_hds_id}
+                                ) registered_amounts_flag,
+                                (SELECT
+                                    NVL(pd.annual_turnover_flag,'Y')
+                                FROM
+                                    pur_vendor_compare_define pd
+                                WHERE
+                                    pd.tmpl_hds_id = ${@tmpl_hds_id}
+                                ) annual_turnover_flag,
+                                (SELECT
+                                    NVL(pd.staff_count_flag,'Y')
+                                FROM
+                                    pur_vendor_compare_define pd
+                                WHERE
+                                    pd.tmpl_hds_id = ${@tmpl_hds_id}
+                                ) staff_count_flag,
+                                (SELECT
+                                    NVL(pd.area_flag,'Y')
+                                FROM
+                                    pur_vendor_compare_define pd
+                                WHERE
+                                    pd.tmpl_hds_id = ${@tmpl_hds_id}
+                                ) area_flag,
+                                (SELECT
+                                    NVL(pd.price_competiy_flag,'Y')
+                                FROM
+                                    pur_vendor_compare_define pd
+                                WHERE
+                                    pd.tmpl_hds_id = ${@tmpl_hds_id}
+                                ) price_competiy_flag,
+                                (SELECT
+                                    NVL(pd.customer_share_flag,'Y')
+                                FROM
+                                    pur_vendor_compare_define pd
+                                WHERE
+                                    pd.tmpl_hds_id = ${@tmpl_hds_id}
+                                ) customer_share_flag,
+                                (SELECT
+                                    NVL(pd.site_audit_flag,'Y')
+                                FROM
+                                    pur_vendor_compare_define pd
+                                WHERE
+                                    pd.tmpl_hds_id = ${@tmpl_hds_id}
+                                ) site_audit_flag,
+                                (SELECT
+                                    NVL(pd.account_period_flag,'Y')
+                                FROM
+                                    pur_vendor_compare_define pd
+                                WHERE
+                                    pd.tmpl_hds_id = ${@tmpl_hds_id}
+                                ) account_period_flag,
+                                (SELECT
+                                    NVL(pd.delivery_time_flag,'Y')
+                                FROM
+                                    pur_vendor_compare_define pd
+                                WHERE
+                                    pd.tmpl_hds_id = ${@tmpl_hds_id}
+                                ) delivery_time_flag,
+                                (SELECT
+                                    NVL(pd.financial_risk_assessment_flag,'Y')
+                                FROM
+                                    pur_vendor_compare_define pd
+                                WHERE
+                                    pd.tmpl_hds_id = ${@tmpl_hds_id}
+                                ) financial_risk_assessment_flag,
+                                fcv.enterprise_nature,
+                                pvs.supplier_business_group,
+                                pvs.supplier_company_id,
+                                (SELECT
+                                    kfs.total_scores
+                                FROM
+                                    kw_fnd_scene_audit_header kfs
+                                WHERE
+                                    kfs.vendor_code    = fcv.company_code AND
+                                    kfs.status        IN('60_REPIL','30_FEEDBACK','70_WAITING_FEEDBACK','40_REFORM_PASS') AND
+                                    kfs.application_id =
+                                    (SELECT
+                                        MAX(to_number(kf.application_id))
+                                    FROM
+                                        kw_fnd_scene_audit_header kf
+                                    WHERE
+                                        kf.vendor_code = fcv.company_code AND
+                                        kf.status     IN ('60_REPIL', '30_FEEDBACK', '70_WAITING_FEEDBACK', '40_REFORM_PASS')
+                                    GROUP BY
+                                        kf.vendor_code
+                                    )
+                                ) total_scores,
+                                fcv.company_code vendor_code,
+                                fcv.company_full_name vendor_name,
+                                fcv.company_id,
+                                pvs.survey_type_code,
+                                TRUNC(months_between(SYSDATE, to_date(
+                                (SELECT
+                                    pb.c_attribute3
+                                FROM
+                                    pur_vendor_survey_basic_info pb
+                                WHERE
+                                    pb.survey_header_id = pvs.survey_header_id
+                                ), 'yyyy/mm/dd')) / 12) year_amplitude,
+                                (SELECT
+                                    psc.annual_turnover
+                                FROM
+                                    pur_vendor_survey_pro_capacity psc
+                                WHERE
+                                    psc.c_attribute2     = ${@category_udf_id} AND
+                                    psc.survey_header_id = pvs.survey_header_id
+                                ) catogary_annual_turnover,
+                                (SELECT max(psc.annual_turnover)
+                                    FROM pur_vendor_survey_pro_capacity psc
+                                   WHERE psc.c_attribute2  = ${@category_udf_id}
+                                     AND psc.survey_header_id IN (${:@survey_header_ids})) max_catogary_annual_turnover,
+                                (SELECT
+                                    pbs.c_attribute18
+                                FROM
+                                    pur_vendor_survey_basic_info pbs
+                                WHERE
+                                    pbs.survey_header_id = pvs.survey_header_id
+                                ) annual_turnover,
+                                (SELECT
+                                    pbs.c_attribute16
+                                FROM
+                                    pur_vendor_survey_basic_info pbs
+                                WHERE
+                                    pbs.survey_header_id = pvs.survey_header_id
+                                ) account_period,
+                                 (SELECT pvspc.c_attribute8 || ',' ||
+                                       pvspc.c_attribute10 || ',' ||
+                                       pvspc.c_attribute12 || ',' ||
+                                       pvspc.c_attribute14 || ',' ||
+                                       pvspc.c_attribute16
+                                  FROM pur_vendor_survey_pro_capacity pvspc
+                                 WHERE pvspc.survey_header_id =
+                                       pvs.survey_header_id
+                                   AND rownum = 1) typical_customers,
+                                ${@category_udf_id} category_udf_id,
+                                (SELECT
+                                    md.vendor_catagory
+                                FROM
+                                    mtl_categories_user_defined md
+                                WHERE
+                                    md.category_udf_id = ${@category_udf_id}
+                                ) vendor_catagory,
+                                (SELECT
+                                    pb.c_attribute3
+                                FROM
+                                    pur_vendor_survey_basic_info pb
+                                WHERE
+                                    pb.survey_header_id = pvs.survey_header_id
+                                ) founding_time,
+                                (SELECT
+                                    pb.c_attribute4
+                                FROM
+                                    pur_vendor_survey_basic_info pb
+                                WHERE
+                                    pb.survey_header_id = pvs.survey_header_id
+                                ) registered_amounts,
+                                (SELECT
+                                    pb.c_attribute5
+                                FROM
+                                    pur_vendor_survey_basic_info pb
+                                WHERE
+                                    pb.survey_header_id = pvs.survey_header_id
+                                ) website,
+                                (SELECT
+                                    pb.staff_count
+                                FROM
+                                    pur_vendor_survey_basic_info pb
+                                WHERE
+                                    pb.survey_header_id = pvs.survey_header_id
+                                ) staff_count,
+                                (SELECT
+                                    pb.production_staff_count
+                                FROM
+                                    pur_vendor_survey_basic_info pb
+                                WHERE
+                                    pb.survey_header_id = pvs.survey_header_id
+                                ) production_staff_count,
+                                (SELECT
+                                    pb.building_area
+                                FROM
+                                    pur_vendor_survey_basic_info pb
+                                WHERE
+                                    pb.survey_header_id = pvs.survey_header_id
+                                ) building_area,
+                                fcv.business_scope,
+                                fcv.factory_area,
+                                (SELECT
+                                    (SELECT
+                                        v.flex_desc
+                                    FROM
+                                        fnd_flex_values_v v
+                                    WHERE
+                                        v.flex_value_set_code = 'PUR_VENDOR_LIFE_CYCLE' AND
+                                        v.flex_value          = l.stage_code
+                                    )
+                                FROM
+                                    pur_vendor_life_cycle l
+                                WHERE
+                                    l.coop_company_id = fcv.company_id AND
+                                    l.current_flag    = 'Y'
+                                ) stage_desc,
+                                (SELECT
+                                    l.stage_code
+                                FROM
+                                    pur_vendor_life_cycle l
+                                WHERE
+                                    l.coop_company_id = fcv.company_id AND
+                                    l.current_flag    = 'Y'
+                                ) stage_code,
+                                pvs.status,
+                                pvs.tmpl_hds_id,
+                                (SELECT
+                                    pt.template_name
+                                FROM
+                                    pur_survey_atm_tmpl_hds_vl pt
+                                WHERE
+                                    pt.tmpl_hds_id = pvs.tmpl_hds_id
+                                ) template_name,
+                                pvs.survey_description,
+                                pvs.created_by,
+                                (SELECT su.description FROM sys_user su WHERE su.user_id = pvs.created_by
+                                ) created_by_desc,
+                                TO_CHAR(pvs.creation_date, 'yyyy-mm-dd') creation_date,
+                                TO_CHAR(pvs.creation_date, 'yyyy-mm-dd') creation_date_desc,
+                                TO_CHAR(pvs.submit_date, 'yyyy-mm-dd') submit_date,
+                                NULL useless_id
+                                ,(SELECT v.flex_desc
+                                  FROM fnd_flex_values_vl  v
+                                      ,fnd_flex_value_sets s
+                                 WHERE v.flex_value_set_id =
+                                       s.flex_value_set_id
+                                   AND v.enabled_flag = 'Y'
+                                   AND s.flex_value_set_code =
+                                       'OUT_WORK_FLG'
+                                   AND v.flex_value = pvs.c_attribute4) out_work_flg --是否工序外协
+                              , -- pvs.c_attribute5
+                               (SELECT v.flex_desc
+                                  FROM fnd_flex_values_vl  v
+                                      ,fnd_flex_value_sets s
+                                 WHERE v.flex_value_set_id =
+                                       s.flex_value_set_id
+                                   AND v.enabled_flag = 'Y'
+                                   AND s.flex_value_set_code =
+                                       'PRODUCT_EVALUATE'
+                                   AND v.flex_value = pvs.c_attribute5) product_evaluate --产能评价
+                              , decode(pvs.c_attribute5,'产能充足',5,'产能比较充足',3,'产能受限',1,0) product_score
+                              ,(SELECT v.flex_desc
+                                  FROM fnd_flex_values_vl  v
+                                      ,fnd_flex_value_sets s
+                                 WHERE v.flex_value_set_id =
+                                       s.flex_value_set_id
+                                   AND v.enabled_flag = 'Y'
+                                   AND s.flex_value_set_code =
+                                       'DISASTER_TOLERANCE'
+                                   AND v.flex_value = pvs.c_attribute6) disaster_tolerance -- 供应商容灾能力
+                              ,(SELECT v.flex_desc
+                                  FROM fnd_flex_values_vl  v
+                                      ,fnd_flex_value_sets s
+                                 WHERE v.flex_value_set_id =
+                                       s.flex_value_set_id
+                                   AND v.enabled_flag = 'Y'
+                                   AND s.flex_value_set_code =
+                                       'SUPPLY_PRODUCT'
+                                   AND v.flex_value = pvs.c_attribute7) supply_product --供应商供应
+                              ,(SELECT v.flex_desc
+                                  FROM fnd_flex_values_vl  v
+                                      ,fnd_flex_value_sets s
+                                 WHERE v.flex_value_set_id =
+                                       s.flex_value_set_id
+                                   AND v.enabled_flag = 'Y'
+                                   AND s.flex_value_set_code =
+                                       'OUT_WORK_FLG'
+                                   AND v.flex_value = pvs.c_attribute8)  property_disputes --受限贸易合规、具有知识产权纠纷
+                              ,(SELECT v.flex_desc
+                                  FROM fnd_flex_values_vl  v
+                                      ,fnd_flex_value_sets s
+                                 WHERE v.flex_value_set_id =
+                                       s.flex_value_set_id
+                                   AND v.enabled_flag = 'Y'
+                                   AND s.flex_value_set_code =
+                                       'INFORMATION_SECURITY'
+                                   AND v.flex_value = pvs.c_attribute9) information_security --供应商信息安全评估结论
+                              , pvs.c_attribute10  information_security_score  --分数
+                              ,(SELECT v.flex_desc
+                                  FROM fnd_flex_values_vl  v
+                                      ,fnd_flex_value_sets s
+                                 WHERE v.flex_value_set_id =
+                                       s.flex_value_set_id
+                                   AND v.enabled_flag = 'Y'
+                                   AND s.flex_value_set_code =
+                                       'WILLINGNESS_TO_COOPERATE'
+                                   AND v.flex_value = pvs.c_attribute11) willingness_to_cooperate --合作意愿
+                               ,capacity.cust_type --该品类客户群
+                               ,capacity.delivery_cycle --交期天数
+                               ,scene.review_conclusion--现场审核结论
+                               ,scene.area_score -- 现场审核（分数）
+                               ,case when pvs.c_attribute8 = '否' then
+                                  decode(pvs.c_attribute7,'10',2,'20',1,0 )+
+                                  decode(pvs.c_attribute6,'10',3,'20',2,0)
+                               else
+                               0
+                               end disaster_tolerance_score --供应风险评估
+                               , AVG(pur_vendor_pkg.to_numbers(capacity.delivery_cycle)) over(partition by pvs.survey_type_code) avg_delivery_cycle
+                            --  ,finance.turnover
+                            --  ,finance.max_turnover
+                                ,pvf.financial_risk_assessment
+                            FROM
+                                pur_vendor_survey_headers pvs,
+                                fnd_companies_vl fcv,
+                                (SELECT pvspc.survey_header_id,
+                                      pvspc.c_attribute8  || ',' ||
+                                      pvspc.c_attribute10 || ',' ||
+                                      pvspc.c_attribute12 || ',' ||
+                                      pvspc.c_attribute14 || ',' ||
+                                      pvspc.c_attribute16 cust_type --该品类客户群
+                                     ,pvspc.c_attribute5 delivery_cycle --交期天数
+                                 FROM pur_vendor_survey_pro_capacity pvspc
+                                WHERE pvspc.survey_header_id IN (${:@survey_header_ids}) AND
+                                      pvspc.c_attribute1 =${@category_name} ) capacity,
+                               (SELECT  a.review_conclusion --优良
+                                       ,(a.total_scores / 100) * 30 area_score --综合总分
+                                       ,a.vendor_code
+                                       ,row_number() over(partition by a.vendor_code order by a.creation_date desc ) rn
+                                  FROM kw_fnd_scene_audit_header a
+                                 WHERE 1=1
+                                   --and  a.status IN ('30_FEEDBACK', '90_CONFIRMED')
+                                   and instr('${:@vendor_code}',a.vendor_code) > 0    ) scene
+                              ,(SELECT
+                    --资产负债率
+                     CASE
+                        WHEN pur_vendor_pkg.to_numbers(pv.total_liabilities) /
+                             pur_vendor_pkg.to_numbers(pv.total_assets, 1) <= 0.7 THEN
+                         1.5
+                        WHEN pur_vendor_pkg.to_numbers(pv.total_liabilities) /
+                             pur_vendor_pkg.to_numbers(pv.total_assets, 1) > 0.7 AND
+                             pur_vendor_pkg.to_numbers(pv.total_liabilities) /
+                             pur_vendor_pkg.to_numbers(pv.total_assets, 1) < 0.8 THEN
+                         1
+                        WHEN pur_vendor_pkg.to_numbers(pv.total_liabilities) /
+                             pur_vendor_pkg.to_numbers(pv.total_assets, 1) >= 0.8 THEN
+                         0
+                      END
+                     -- 固定资产
+                      + CASE
+                        WHEN pur_vendor_pkg.to_numbers(pv.c_attribute4) >= 1000 THEN
+                         1.5
+                        WHEN pur_vendor_pkg.to_numbers(pv.c_attribute4) < 1000 AND
+                             pur_vendor_pkg.to_numbers(pv.c_attribute4) > 300 THEN
+                         1
+                        WHEN pur_vendor_pkg.to_numbers(pv.c_attribute4) <= 300 THEN
+                         0.25
+                      END
+                     -- 销售收入 营业额
+                      + CASE
+                        WHEN pur_vendor_pkg.to_numbers(pv.c_attribute1) >=
+                             10000 THEN
+                         1.5
+                        WHEN pur_vendor_pkg.to_numbers(pv.c_attribute1) <
+                             10000 AND
+                             pur_vendor_pkg.to_numbers(pv.c_attribute1) > 3000 THEN
+                         1
+                        WHEN pur_vendor_pkg.to_numbers(pv.c_attribute1) <= 3000 THEN
+                        0.5
+                      END
+                     --净利润
+                      + CASE
+                        WHEN pur_vendor_pkg.to_numbers(pv.net_profit) >= 2000 THEN
+                         1.5
+                        WHEN pur_vendor_pkg.to_numbers(pv.net_profit) < 2000 AND
+                             pur_vendor_pkg.to_numbers(pv.net_profit) > 500 THEN
+                         1
+                        WHEN pur_vendor_pkg.to_numbers(pv.net_profit) <= 500 THEN
+                         0.5
+                      END
+                     --销售收入增长率
+                      + CASE
+                        WHEN pur_vendor_pkg.to_numbers(pv.c_attribute6) >= 0.11 THEN
+                         1
+                        WHEN pur_vendor_pkg.to_numbers(pv.c_attribute6) < 0.11 AND
+                             pur_vendor_pkg.to_numbers(pv.c_attribute6) > 0.05 THEN
+                         0.8
+                        WHEN pur_vendor_pkg.to_numbers(pv.c_attribute6) < 0.05 THEN
+                         0.25
+                      END
+                     --销售毛利率
+                      + CASE
+                        WHEN pur_vendor_pkg.to_numbers(pv.c_attribute7) >= 0.2 THEN
+                         1
+                        WHEN pur_vendor_pkg.to_numbers(pv.c_attribute7) < 0.2 AND
+                             pur_vendor_pkg.to_numbers(pv.c_attribute7) > 0.1 THEN
+                         0.8
+                        WHEN pur_vendor_pkg.to_numbers(pv.c_attribute7) <= 0.1 THEN
+                         0.25
+                      END
+                     --应收账款周转率
+                      + CASE
+                        WHEN pur_vendor_pkg.to_numbers(pv.c_attribute8) >= 3 THEN
+                         1
+                        WHEN pur_vendor_pkg.to_numbers(pv.c_attribute8) < 3 AND
+                             pur_vendor_pkg.to_numbers(pv.c_attribute8) > 2 THEN
+                         0.8
+                        WHEN pur_vendor_pkg.to_numbers(pv.c_attribute8) < 2 THEN
+                         0.25
+                      END
+                     --应付账款周转率
+                      + CASE
+                        WHEN pur_vendor_pkg.to_numbers(pv.c_attribute9) >= 3 THEN
+                         1
+                        WHEN pur_vendor_pkg.to_numbers(pv.c_attribute9) < 3 AND
+                             pur_vendor_pkg.to_numbers(pv.c_attribute9) > 2 THEN
+                         0.8
+                        WHEN pur_vendor_pkg.to_numbers(pv.c_attribute9) <= 2 THEN
+                         0.25
+                      END financial_risk_assessment
+                    ,pv.year_period
+                    ,pv.survey_header_id
+                    ,row_number() over(PARTITION BY pv.survey_header_id ORDER BY pv.year_period DESC) rn
+                      FROM pur_vendor_survey_finance pv
+                     WHERE pv.survey_header_id IN (${:@survey_header_ids}) ) pvf  
+                            WHERE
+                                pvs.status                 = '40_APPROVED' AND
+                                pvs.supplier_company_id    = fcv.company_id AND
+                                pvs.require_business_group = ${/session/@business_group} AND
+                                pvs.survey_header_id =capacity.survey_header_id(+) AND
+                                fcv.company_code = scene.vendor_code(+) and
+                                1 = scene.rn(+) 
+                                and pvf.survey_header_id(+) = pvs.survey_header_id
+                                and pvf.rn(+) = 1
+                                and  pvs.survey_header_id in (${:@survey_header_ids})
+                            ORDER BY
+                                pvs.last_update_date DESC
+                            ) t1
+                        )t2
+                    ) t3 #WHERE_CLAUSE#
+                    ORDER BY (nvl(t3.fixed_year_score, 0) + nvl(t3.registered_amounts_score, 0) +
+       nvl(t3.annual_turnover_score, 0) + nvl(t3.staff_count_score, 0) +
+       nvl(t3.area_score, 0) + nvl(t3.delivery_cycle_sore, 0) +
+       nvl(t3.disaster_tolerance_score, 0) +
+       nvl(t3.information_security_score, 0) +
+       nvl(t3.product_score, 0) + nvl(t3.financial_risk_assessment, 0)) desc
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+                begin
+                    pur_vendor_pkg.insert_kw_vendor_qualification_compare(p_survey_header_id     =>${@survey_header_id},
+                                                   p_tmpl_hds_id                 =>${@tmpl_hds_id},
+                                                   p_category_udf_id             =>${@category_udf_id},
+                                                   p_vendor_name                 =>${@vendor_name},
+                                                   p_vendor_code                 =>${@vendor_code},
+                                                   p_founding_time               =>to_date(${@founding_time},'yyyy-mm-dd'),
+                                                   p_registered_amounts          =>${@registered_amounts},
+                                                   p_business_scope              =>${@business_scope},
+                                                   p_material_coverage_rate      =>${@material_coverage_rate},
+                                                   p_annual_turnover             =>${@annual_turnover},
+                                                   p_catogary_annual_turnover    =>${@catogary_annual_turnover},
+                                                   p_factory_area                =>${@factory_area},
+                                                   p_staff_count                 =>${@staff_count},
+                                                   p_typical_customers           =>${@typical_customers},
+                                                   p_process_cost                =>${@process_cost},
+                                                   p_website                     =>${@website},
+                                                   p_vc_version                  =>${@vc_version},
+                                                   p_fixed_year_score            =>${@fixed_year_score},
+                                                   p_registered_amounts_score    =>${@registered_amounts_score},
+                                                   p_annual_turnover_score       =>${@annual_turnover_score},
+                                                   p_staff_count_score           =>${@staff_count_score},
+                                                   p_area_score                  =>${@area_score},
+                                                   p_price_competitiveness_score =>${@price_competitiveness_score},
+                                                   p_customer_share              =>${@customer_share},
+                                                   p_site_audit                  =>${@site_audit_score},
+                                                   p_account_period              =>${@account_period_score},
+                                                   p_delivery_time               =>${@delivery_time},
+                                                   p_financial_risk_assessment   =>${@financial_risk_assessment},
+                                                   p_total_score                 =>${@total_score},
+                                                   p_score_rank                  =>${@score_rank},
+                                                   p_business_group              =>${/session/@business_group},
+                                                   p_c_attribute1                =>${@c_attribute1},
+                                                   p_c_attribute2                =>${@c_attribute2},
+                                                   p_c_attribute3                =>${@c_attribute3},
+                                                   p_c_attribute4                =>${@c_attribute4},
+                                                   p_c_attribute5                =>${@c_attribute5},
+                                                   p_c_attribute6                =>${@c_attribute6},
+                                                   p_c_attribute7                =>${@c_attribute7},
+                                                   p_c_attribute8                =>${@c_attribute8},
+                                                   p_c_attribute9                =>${@c_attribute9},
+                                                   p_c_attribute10               =>${@c_attribute10},
+                                                   p_out_work_flg                =>${@out_work_flg},
+	                                               p_product_evaluate            =>${@product_evaluate},
+                                                   p_disaster_tolerance	         =>${@disaster_tolerance},
+                                                   p_supply_product	             =>${@supply_product},
+                                                   p_property_disputes           =>${@property_disputes},
+                                                   p_information_security        =>${@information_security},
+                                                   p_information_security_scores =>${@information_security_score},
+                                                   p_willingness_to_cooperate    =>${@willingness_to_cooperate},
+                                                   p_cust_type 			 		 =>${@cust_type},
+                                                   p_delivery_cycle				 =>${@delivery_cycle},
+                                                   p_review_conclusion			 =>${@review_conclusion},
+                                                   p_total_scores			     =>${@total_scores},
+                                                   p_disaster_tolerance_score	 =>${@disaster_tolerance_score},
+                                                   p_turnover				     =>${@turnover},
+                                                   p_max_turnover				 =>${@max_turnover},
+                                                   p_delivery_cycle_sore	     =>${@delivery_cycle_sore},
+                                                   p_fin_risk	                 =>${@fin_risk},
+                                                   p_willingness_to_cooperate_score =>${@willingness_to_cooperate_score},
+                                                   p_product_score	             => ${@product_score},
+                                                   p_user_id                     =>${/session/@user_id});
+                end;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <!-- <bm:query-fields>
+        <bm:query-field name="survey_header_ids" queryExpression="t3.survey_header_id in (${:@survey_header_ids})"/>
+    </bm:query-fields> -->
+</bm:model>

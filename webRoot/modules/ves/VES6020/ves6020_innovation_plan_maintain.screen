@@ -1,0 +1,442 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;FND_VENDOR_SURVEY_TYPE&apos;" fetchAll="true" model="public.fnd_flex_value_v_lov" rootPath="pur5710_vendor_survey_type"/>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;PUR_VENDOR_SURVEY_STATUS&apos; " fetchAll="true" model="public.fnd_flex_value_v_lov" rootPath="ves6010_innovation_plan_status"/>
+        <a:model-query defaultWhereClause="innovation_header_id=${/parameter/@innovation_header_id}" fetchAll="true" model="ves.VES6010.ves6010_innovation_plan_headers" rootPath="ves6010_innovation_headers"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="ves6010_innovation_delete_link" model="ves.VES6010.ves6010_innovation_plan_headers" modelaction="delete"/>
+        <a:link id="ves6010_innovation_approve_link" url="${/request/@context_path}/modules/ves/VES6020/ves6020_innovation_plan_approve.svc"/>
+        <a:link id="ves6010_innovation_rejected_link" model="ves.VES6020.ves6020_innovation_plan_query" modelaction="execute"/>
+        <script><![CDATA[
+            function ves6010_edit_return() {
+                $('ves6020_innovation_plan_edit_win').close();
+            }
+            
+            
+            function ves6020_approve() {
+                debugger;
+                if (!$('ves6020_innovation_score_ds').validate() || !$('ves6020_innovation_headers_ds').validate()) {
+                    return false;
+                }
+                var record = $('ves6020_innovation_headers_ds').getCurrentRecord();
+                var datas = record.data;
+                datas._status = 'update';
+                datas['scores'] = $('ves6020_innovation_score_ds').getJsonData();
+                Aurora.showConfirm('${l:PROMPT}', '是否确认审核通过？', function() {
+                    Aurora.Masker.mask($('ves6020_innovation_plan_edit_win').wrap, '${l:LOADING}');
+                    Aurora.request({
+                        url: $('ves6010_innovation_approve_link').getUrl(),
+                        para: datas,
+                        success: function(res) {
+                            Aurora.Masker.unmask($('ves6020_innovation_plan_edit_win').wrap);
+                            ves6010_edit_return();
+                        },
+                        failure: function(res) {
+                            Aurora.Masker.unmask($('ves6020_innovation_plan_edit_win').wrap);
+                        },
+                        error: function(res) {
+                            Aurora.Masker.unmask($('ves6020_innovation_plan_edit_win').wrap);
+                        },
+                        scope: this
+                    });
+                }, null);
+            }
+            function ves6020_rejected() {
+                debugger;
+                var record = $('ves6020_innovation_headers_ds').getCurrentRecord();
+                var datas = record.data;
+                Aurora.showConfirm('${l:PROMPT}', '是否确认审核拒绝？', function() {
+                    Aurora.Masker.mask($('ves6020_innovation_plan_edit_win').wrap, '${l:LOADING}');
+                    Aurora.request({
+                        url: $('ves6010_innovation_rejected_link').getUrl(),
+                        para: datas,
+                        success: function(res) {
+                            Aurora.Masker.unmask($('ves6020_innovation_plan_edit_win').wrap);
+                            ves6010_edit_return();
+                        },
+                        failure: function(res) {
+                            Aurora.Masker.unmask($('ves6020_innovation_plan_edit_win').wrap);
+                        },
+                        error: function(res) {
+                            Aurora.Masker.unmask($('ves6020_innovation_plan_edit_win').wrap);
+                        },
+                        scope: this
+                    });
+                }, null);
+            }
+            
+            //上传供应商附件
+            
+            function ves6010_innovation_atm_upload_rendererFun(value, record, name) {
+                var attachment_id = record.get('attachment_id');
+                if (record.isNew) {
+                    return '-';
+                }
+                if (record.get('atm_count_vendor') == 0) {
+                    return '<a style="color:blue" href="javascript:pur7210_vendor_survey_uploadFun(' + attachment_id + ')">附件下载</a>';
+                } else {
+                    return '<a style="color:blue" href="javascript:pur7210_vendor_survey_uploadFun(' + attachment_id + ')">附近下载</a>' + '<img id="pur5730_vendor_survey_manufacturer_uploadBtu_img_2" height="12" src="${/request/@context_path}/images/touch/report.png" width="15"/>';
+                }
+            }
+            
+            function pur7210_vendor_survey_uploadFun(id) {
+                var url = "${/request/@context_path}/check_uploadFile.screen?table_name=VES_INNOVATION_ATTACHAMENT&header_id=" + id;
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:HAP_DOWNLOAD}',
+                    id: 'ves6010_download_window',
+                    width: 500,
+                    height: 500
+                });
+            }
+            
+            function ves6020_innovation_cellClickFcn(grid, row, name, record) {
+                 
+                if (name == 'score_standard') {
+                    var score_project = record.get('score_project');
+                    if (score_project) {
+                        record.getMeta().getField('score_standard').setLovPara('parent_project_code', score_project);
+                        record.getMeta().getField('score_standard').setReadOnly(false);
+                        record.getMeta().getField('score_standard').setRequired(true);
+                    } else {
+                        record.getMeta().getField('score_standard').setReadOnly(true);
+                    }
+                }
+            
+            }
+            
+            function ves6020_innovation_score_updateFcn(ds, record, name, value, oldvalue) {
+                if (name == 'score_project') {
+                    record.set('score_standard', '');
+                    record.set('score', '');
+                }
+            }
+            
+            function ves6020_innovation_score_footerRender(datas, name) {
+                debugger;
+                var sum = 0;
+                if (name == 'score_project_desc') {
+                    return '<font>' + '总分：' + '</font>';
+                } else {
+                    for (var i = 0;i < datas.length;i++) {
+                        var r = datas[i];
+                        var d = r.get(name);
+                        var score_project = r.get('score_project');
+                        var sub_project_code = r.get('sub_project_code');
+                        var n;
+                        n = parseFloat(d * 0.05);
+                        /* if (score_project == '01') {
+                            n = parseFloat(d * 0.05);
+                        } else if (score_project == '02') {
+                            n = parseFloat(d * 0.05);
+                            
+                        }   else if (score_project == '03') {
+                            n = parseFloat(d * 0.3);
+                        } else if (score_project == '04') {
+                            n = parseFloat(d * 0.2);
+                        } else if (score_project == '05') {
+                            n = parseFloat(d * 0.1);
+                        } else if (score_project == '06') {
+                            n = parseFloat(d * 0);
+                        } */ 
+                   //     alert('d == '+d);
+                        if (!isNaN(n)) {
+                            sum += n;
+                        }
+                    }
+                   // return '<font>' + (sum * 0.1).toFixed(2) + '</font>';
+                   return '<font>' + sum.toFixed(2) + '</font>';
+                }
+            
+            }
+            
+            function es6020_innovation_score_editorFcn(record, name) {
+                var score_project = record.get('score_project');
+                if (score_project) {
+                    return 'ves6020_innovation_score_lv';
+                }
+                return;
+            }
+            
+            function ves6020_innovation_score_submitsuccessFcn() {
+                $('ves6020_innovation_score_ds').query();
+            }
+            function pur9050_details_checkUploadAttachmentFun(innovation_header_id, table_name) {
+                var url = "${/request/@context_path}/check_uploadFile.screen?table_name=" + table_name + "&header_id=" + innovation_header_id;
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:HAP_DOWNLOAD}',
+                    id: 'pur9050_details_ck_attm_window',
+                    width: 610,
+                    height: 500
+                });
+            }
+            
+            function ves6010_openUploadAttachmentFun(value, record, name) {
+                if (name == 'innovation_headers_proposals') {
+                    return '<a href="javascript:pur9050_details_checkUploadAttachmentFun(' + record.get('innovation_header_id') + ',' + "'INNOVATION_HEADERS_PROPOSALS'" + ')">' + '查看附件' + '</a>';
+                }
+                if (name == 'innovation_headers_technical') {
+                    return '<a href="javascript:pur9050_details_checkUploadAttachmentFun(' + record.get('innovation_header_id') + ',' + "'INNOVATION_HEADERS_TECHNICAL'" + ')">' + '查看附件' + '</a>';
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="ves6010_business_unit_ds" lookupCode="VES_BUSINESS_UNIT"/>
+            <a:dataSet id="ves6010_attachment_typ_ds" lookupCode="VES_ATTACHMENT_TYPE"/>
+            <a:dataSet id="ves6010_technology_make_innovations_ds" lookupCode="VES_TECHNOLOGY_MAKE_INNOVATIONS"/>
+            <a:dataSet id="ves6010_product_scope_ds" lookupCode="VES_PRODUCT_SCOPE"/>
+            <a:dataSet id="ves6010_sorce_ds" lookupCode="VES_6010_SCORE"/>
+            <a:dataSet id="ves6010_technological_innovation_proposal_ds" lookupCode="TECHNOLOGICAL_INNOVATION_PROPOSAL"/>
+            <a:dataSet id="ves6010_technical_exchange_promotion_ds" lookupCode="TECHNICAL_EXCHANGE_PROMOTION"/>
+            <a:dataSet id="ves6010_innovation_plan_status_ds">
+                <a:datas dataSource="ves6010_innovation_plan_status"/>
+            </a:dataSet>
+            <a:dataSet id="ves6020_innovation_headers_ds" autoQuery="true" model="ves.VES6010.ves6010_innovation_plan_headers" queryUrl="${/request/@context_path}/autocrud/ves.VES6010.ves6010_innovation_plan_headers/query?innovation_header_id=${/parameter/@innovation_header_id}">
+                <a:fields>
+                    <!-- <a:field name="deadline" required="true"/> -->
+                    <a:field name="vendor_name"/>
+                    <a:field name="innovation_header_id"/>
+                    <a:field name="innovation_number"/>
+                    <a:field name="created_by_desc"/>
+                    <a:field name="creation_date"/>
+                    <a:field name="status" defaultValue="10_NEW"/>
+                    <a:field name="status_display" displayField="flex_desc" options="ves6010_innovation_plan_status_ds" returnField="status" valueField="flex_value"/>
+                    <a:field name="require_business_group"/>
+                    <a:field name="require_company_id"/>
+                    <a:field name="technology_make_innovations"/>
+                    <a:field name="technology_make_innovations_desc" displayField="code_value_name" options="ves6010_technology_make_innovations_ds" returnField="technology_make_innovations" valueField="code_value"/>
+                    <a:field name="product_scope"/>
+                    <a:field name="product_scope_desc" displayField="code_value_name" options="ves6010_product_scope_ds" returnField="product_scope" valueField="code_value"/>
+                    <a:field name="technology_make_sorce"/>
+                    <a:field name="technology_make_sorce_desc" displayField="code_value_name" options="ves6010_sorce_ds" returnField="technology_make_sorce" valueField="code_value"/>
+                    <a:field name="product_scope_sorce"/>
+                    <a:field name="product_scope_sorce_desc" displayField="code_value_name" options="ves6010_sorce_ds" returnField="product_scope_sorce" valueField="code_value"/>
+                    <a:field name="technological_innovation_proposal"/>
+                    <a:field name="technological_innovation_proposal_desc" displayField="code_value_name" options="ves6010_technological_innovation_proposal_ds" returnField="technological_innovation_proposal" valueField="code_value"/>
+                    <a:field name="technological_innovation_sorce"/>
+                    <a:field name="technical_exchange_promotion"/>
+                    <a:field name="technical_exchange_promotion_desc" displayField="code_value_name" options="ves6010_technical_exchange_promotion_ds" returnField="technical_exchange_promotion" valueField="code_value"/>
+                    <a:field name="technical_exchange_sorce"/>
+                    <a:field name="business_unit"/>
+                    <a:field name="business_unit_desc" displayField="code_value_name" options="ves6010_business_unit_ds" returnField="business_unit" valueField="code_value"/>
+                    <a:field name="company_code" autoComplete="true" autoCompleteField="company_code" lovGridHeight="360" lovHeight="500" lovService="pur.PUR5710.pur5710_company_lov" lovWidth="500" required="true" title="PUR5170.COMPANY_QUERY">
+                        <a:mapping>
+                            <a:map from="owner_business_group" to="require_business_group"/>
+                            <a:map from="owner_company_id" to="require_company_id"/>
+                            <a:map from="company_code" to="company_code"/>
+                            <a:map from="company_name" to="company_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="company_name"/>
+                    <a:field name="vendor_code" autoComplete="true" autoCompleteField="vendor_code" lovGridHeight="360" lovHeight="500" lovService="ves.VES6010.ves6010_innovation_coop_vendor_lov" lovWidth="500" readOnly="true" required="true" title="客户查询">
+                        <a:mapping>
+                            <a:map from="coop_business_group" to="supplier_business_group"/>
+                            <a:map from="coop_company_id" to="supplier_company_id"/>
+                            <a:map from="vendor_code" to="vendor_code"/>
+                            <a:map from="vendor_name" to="vendor_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="supplier_business_group"/>
+                    <a:field name="supplier_company_id"/>
+                    <a:field name="vendor_name"/>
+                    <a:field name="pro_efficiency_flag" checkedValue="Y" defaultValue="Y" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="pro_quality_flag" checkedValue="Y" defaultValue="Y" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="order_capacity_flag" checkedValue="Y" defaultValue="Y" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="energy_saving_flag" checkedValue="Y" defaultValue="Y" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="cost_reduction_flag" checkedValue="Y" defaultValue="Y" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="others_flag" checkedValue="Y" defaultValue="Y" readOnly="true" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="ves6020_innovation_atm_lines_ds" autoQuery="true" model="ves.VES6010.ves6010_innovation_attachments" pageSize="15" queryUrl="${/request/@context_path}/autocrud/ves.VES6010.ves6010_innovation_attachments/query?innovation_header_id=${/parameter/@innovation_header_id}" selectable="true">
+                <a:fields>
+                    <a:field name="attachment_type"/>
+                    <a:field name="attachment_type_desc" displayField="code_value_name" options="ves6010_attachment_typ_ds" required="true" returnField="attachment_type" valueField="code_value"/>
+                    <a:field name="innovation_line_id"/>
+                    <a:field name="innovation_header_id"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="ves6020_innovation_score_ds" autoQuery="true" model="ves.VES6020.ves6020_innovation_score" queryUrl="${/request/@context_path}/autocrud/ves.VES6020.ves6020_innovation_score/query?innovation_header_id=${/parameter/@innovation_header_id}" selectable="true">
+                <a:fields>
+                    <a:field name="innovation_header_id" defaultValue="${/parameter/@innovation_header_id}"/>
+                    <a:field name="score_project_desc" autoComplete="true" autoCompleteField="vendor_code" lovGridHeight="360" lovHeight="500" lovService="ves.VES6020.ves6020_project_lov" lovWidth="500" required="true" title="评审项目查询">
+                        <a:mapping>
+                            <a:map from="project_code" to="score_project"/>
+                            <a:map from="project_name" to="score_project_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="score_standard" autoComplete="true" autoCompleteField="vendor_code" lovGridHeight="360" lovHeight="500" lovService="ves.VES6020.ves6020_project_score_lov" lovWidth="500" required="true" title="评分标准查询">
+                        <a:mapping>
+                            <a:map from="project_name" to="score_standard"/>
+                            <a:map from="project_code" to="sub_project_code"/>
+                            <!-- <a:map from="score" to="score"/> -->
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="ves6020_innovation_score_updateFcn"/>
+                    <a:event name="submitsuccess" handler="ves6020_innovation_score_submitsuccessFcn"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:defaultScreen>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="ves6020_approve" text="审核通过" width="100"/>
+                <a:toolbarButton click="ves6020_rejected" text="审核拒绝" width="100"/>
+                <a:toolbarButton click="ves6010_edit_return" text="HAP_BACK" width="100"/>
+            </a:screenTopToolbar>
+            <a:fieldSet marginWidth="30" style="margin-top:5px;margin-left:2px;" title="PROMPT.BASIC_INFOMATION">
+                <a:hBox labelWidth="120">
+                    <a:lov name="company_code" bindTarget="ves6020_innovation_headers_ds" prompt="FND_COMPANIES.COMPANY_CODE" readOnly="true"/>
+                    <a:textField name="company_name" bindTarget="ves6020_innovation_headers_ds" prompt="FND_COMPANIES.COMPANY_NAME" readOnly="true"/>
+                    <a:textField name="created_by_desc" bindTarget="ves6020_innovation_headers_ds" prompt="申请人" readOnly="true"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:lov name="vendor_code" bindTarget="ves6020_innovation_headers_ds" prompt="客户代码" readOnly="true"/>
+                    <a:textField name="vendor_name" bindTarget="ves6020_innovation_headers_ds" prompt="客户名称" readOnly="true"/>
+                    <a:textField name="status_desc" bindTarget="ves6020_innovation_headers_ds" prompt="PUR5710.STATUS_DESC" readOnly="true"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:textField name="contact_person" bindTarget="ves6020_innovation_headers_ds" prompt="联系人" readOnly="true"/>
+                    <a:textField name="contact_tel" bindTarget="ves6020_innovation_headers_ds" prompt="联系电话" readOnly="true"/>
+                    <a:textField name="contact_mail" bindTarget="ves6020_innovation_headers_ds" prompt="邮箱地址" readOnly="true"/>
+                </a:hBox>
+                <!-- <a:hBox labelWidth="120">
+                    <a:textField name="main_category" bindTarget="ves6020_innovation_headers_ds" prompt="主营产品" readOnly="true" width="710"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:textArea name="trial_process" bindTarget="ves6020_innovation_headers_ds" prompt="试用工艺/工序" readOnly="true" width="702"/>
+                </a:hBox>-->
+                <!--pmj新增 -->
+                <a:hBox labelWidth="120">
+                    <a:textArea name="product_application_areas" bindTarget="ves6020_innovation_headers_ds" prompt="产品应用领域" readOnly="true" width="702"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:textArea name="product_use_main_customers" bindTarget="ves6020_innovation_headers_ds" prompt="产品使用主要客户" readOnly="true" width="702"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:textArea name="product_application_end_customer" bindTarget="ves6020_innovation_headers_ds" prompt="产品应用终端客户" readOnly="true" width="702"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:textField name="business_scale" bindTarget="ves6020_innovation_headers_ds" prompt="事业规模" readOnly="true" width="710"/>
+                </a:hBox>
+                <!-- <a:hBox labelWidth="120">
+                    <a:comboBox name="technology_make_innovations_desc" bindTarget="ves6020_innovation_headers_ds" prompt="技术创新能力" width="420"/>
+                    <a:comboBox name="technology_make_sorce_desc" bindTarget="ves6020_innovation_headers_ds" prompt="技术创新能力分数"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:comboBox name="product_scope_desc" bindTarget="ves6020_innovation_headers_ds" prompt="产品应用范围" width="420"/>
+                    <a:comboBox name="product_scope_sorce_desc" bindTarget="ves6020_innovation_headers_ds" prompt="产品应用范围分数"/>
+                </a:hBox> -->
+                <!-- <a:hBox labelWidth="120">
+                    <a:comboBox name="technological_innovation_proposal_desc" bindTarget="ves6020_innovation_headers_ds" prompt="技术创新提案" readOnly="true" width="420"/>
+                    <a:numberField name="technological_innovation_sorce" bindTarget="ves6020_innovation_headers_ds" decimalPrecision="1" prompt="技术创新提案分数" readOnly="true"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:comboBox name="technical_exchange_promotion_desc" bindTarget="ves6020_innovation_headers_ds" prompt="技术交流与推介" readOnly="true" width="420"/>
+                    <a:numberField name="technical_exchange_sorce" bindTarget="ves6020_innovation_headers_ds" decimalPrecision="1" prompt="技术交流与推介分数" readOnly="true"/>
+                </a:hBox> -->
+                <a:hBox labelWidth="120">
+                    <a:label prompt="本次填写内容" width="0"/>
+                    <a:checkBox name="innovative_proposals_flag" bindTarget="ves6020_innovation_headers_ds" prompt="创新提案信息" readOnly="true" width="0"/>
+                    <a:checkBox name="technology_exchange_flag" bindTarget="ves6020_innovation_headers_ds" prompt="技术交流主题" readOnly="true" width="0"/>
+                    <!-- <a:comboBox name="business_unit_desc" bindTarget="ves6010_innovation_headers_ds" prompt="事业群" readOnly="true"/> -->
+                    <a:lov name="inv_organization_descs" bindTarget="ves6020_innovation_headers_ds" prompt="工厂" readOnly="true" width="330"/>
+                    <!-- <a:datePicker name="deadline" bindTarget="ves6020_innovation_headers_ds" prompt="有效期至"/> -->
+                </a:hBox>
+            </a:fieldSet>
+            <a:fieldSet marginWidth="30" style="margin-top:5px;margin-left:2px;" title="创新提案信息栏">
+                <a:hBox labelWidth="120">
+                    <a:textField name="innovation_name" bindTarget="ves6020_innovation_headers_ds" prompt="提案名称" readOnly="true"/>
+                    <a:textField name="innovation_number" bindTarget="ves6020_innovation_headers_ds" prompt="提案编号" readOnly="true"/>
+                    <a:textField name="creation_date" bindTarget="ves6020_innovation_headers_ds" prompt="申请时间" readOnly="true"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:textField name="proposal_name" bindTarget="ves6020_innovation_headers_ds" prompt="提案内容" readOnly="true" width="710"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:label prompt="预期效果" width="0"/>
+                    <a:checkBox name="pro_efficiency_flag" bindTarget="ves6020_innovation_headers_ds" prompt="提高生产效率" readOnly="true" width="0"/>
+                    <a:checkBox name="pro_quality_flag" bindTarget="ves6020_innovation_headers_ds" prompt="提高产品质量" readOnly="true" width="0"/>
+                    <a:checkBox name="order_capacity_flag" bindTarget="ves6020_innovation_headers_ds" prompt="提高接单能力" readOnly="true" width="0"/>
+                    <a:checkBox name="energy_saving_flag" bindTarget="ves6020_innovation_headers_ds" prompt="节约能源" readOnly="true" width="0"/>
+                    <a:checkBox name="cost_reduction_flag" bindTarget="ves6020_innovation_headers_ds" prompt="降低成本" readOnly="true" width="0"/>
+                    <a:checkBox name="others_flag" bindTarget="ves6020_innovation_headers_ds" prompt="其他" readOnly="true" width="0"/>
+                </a:hBox>
+                <a:hBox labelWidth="100" width="389">
+                    <a:label name="innovation_headers_proposals" bindTarget="ves6020_innovation_headers_ds" prompt="相关附件" renderer="ves6010_openUploadAttachmentFun"/>
+                </a:hBox>
+            </a:fieldSet>
+            <a:fieldSet marginWidth="30" style="margin-top:5px;margin-left:2px;" title="技术交流信息栏">
+                <a:fieldSet marginWidth="30" style="margin-top:5px;margin-left:2px;" title="技术基本信息">
+                    <a:hBox labelWidth="120">
+                        <a:textField name="introduction_technical_capabilities" bindTarget="ves6020_innovation_headers_ds" prompt="技术能力介绍" readOnly="true" width="710"/>
+                    </a:hBox>
+                    <a:hBox labelWidth="120">
+                        <a:textField name="industry_level_introduction" bindTarget="ves6020_innovation_headers_ds" prompt="业内水平介绍" readOnly="true" width="710"/>
+                    </a:hBox>
+                    <a:hBox labelWidth="120">
+                        <a:textField name="number_patents_obtained" bindTarget="ves6020_innovation_headers_ds" prompt="获得专利数量" readOnly="true" width="710"/>
+                    </a:hBox>
+                </a:fieldSet>
+                <a:fieldSet marginWidth="30" style="margin-top:5px;margin-left:2px;" title="技术交流信息">
+                    <a:hBox labelWidth="120">
+                        <a:textField name="technical_communication_topics" bindTarget="ves6020_innovation_headers_ds" prompt="技术交流主题" readOnly="true"/>
+                        <a:datePicker name="exchange_time" bindTarget="ves6020_innovation_headers_ds" prompt="交流时间" readOnly="true"/>
+                        <a:textField name="visiting_personnel_and_level" bindTarget="ves6020_innovation_headers_ds" prompt="来访交流人员及级别" readOnly="true"/>
+                    </a:hBox>
+                    <a:hBox labelWidth="120">
+                        <a:textField name="exchange_place" bindTarget="ves6020_innovation_headers_ds" prompt="交流地点" readOnly="true"/>
+                        <a:textField name="communication_results_output" bindTarget="ves6020_innovation_headers_ds" prompt="交流成果输出" readOnly="true"/>
+                        <a:textField name="introduce_customers" bindTarget="ves6020_innovation_headers_ds" prompt="为我司介绍客户" readOnly="true"/>
+                    </a:hBox>
+                    <a:hBox labelWidth="100" width="389">
+                        <a:label name="innovation_headers_technical" bindTarget="ves6020_innovation_headers_ds" prompt="相关附件" renderer="ves6010_openUploadAttachmentFun"/>
+                    </a:hBox>
+                </a:fieldSet>
+            </a:fieldSet>
+            <a:tabPanel id="ves6020_innovation_plan_tabPanel_id" marginHeight="250" marginWidth="30">
+                <a:tabs>
+                    <a:tab prompt="FND9220.ATTACHMENT_INFORMATION" width="80">
+                        <a:grid id="ves6020_innovation_plan_attachment_grid" bindTarget="ves6020_innovation_atm_lines_ds" marginHeight="300" marginWidth="30" style="margin-top:5px;margin-left:2px;">
+                            <a:columns>
+                                <a:column name="attachment_type_desc" align="center" prompt="VENDOR_SURVEY_TAB.ATTACHMENT_TYPE_DESC" width="100"/>
+                                <a:column name="attachment_name" prompt="VENDOR_SURVEY_TAB.ATTACHMENT_NAME" width="200"/>
+                                <a:column name="last_upload_date" align="center" prompt="VENDOR_SURVEY_TAB.LAST_UPLOAD_DATE" width="130"/>
+                                <a:column name="attachment_id" align="center" prompt="附件信息" renderer="ves6010_innovation_atm_upload_rendererFun" width="70"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+            <a:tabPanel id="ves6020_innovation_score_tabPanel_id" height="180" marginWidth="30">
+                <a:tabs>
+                    <a:tab prompt="评审结果" width="80">
+                        <a:grid id="ves6020_innovation_score_grid" bindTarget="ves6020_innovation_score_ds" height="180" marginWidth="30" style="margin-top:5px;margin-left:2px;">
+                            <a:toolBar>
+                                <!-- <a:button type="add"/> -->
+                                <a:button type="save"/>
+                                <!-- <a:button type="delete"/> -->
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="score_project_desc" align="center" editor="ves6020_innovation_score_lv" footerRenderer="ves6020_innovation_score_footerRender" prompt="评分项目" width="100"/>
+                                <a:column name="score_standard" editorFunction="es6020_innovation_score_editorFcn" prompt="评分" width="200"/>
+                                <a:column name="score" align="center" editor="ves6020_innovation_score_nb" footerRenderer="ves6020_innovation_score_footerRender" prompt="分数" width="130"/>
+                                <a:column name="sub_project_code" hidden="true"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:lov id="ves6020_innovation_score_lv"/>
+                                <a:numberField id="ves6020_innovation_score_nb" max="5" />
+                            </a:editors>
+                            <a:events>
+                                <a:event name="cellclick" handler="ves6020_innovation_cellClickFcn"/>
+                            </a:events>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:defaultScreen>
+    </a:view>
+</a:screen>

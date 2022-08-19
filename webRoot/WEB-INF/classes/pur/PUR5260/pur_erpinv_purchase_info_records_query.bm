@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="v.creation_date desc">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*,
+                    (SELECT
+                        pvv.full_name
+                    FROM
+                        pur_vendors_vl pvv
+                    WHERE
+                        pvv.vendor_id = v.vendor_id
+                    ) vendor_full_name,
+                    (SELECT
+                        pvv.display_vendor_code
+                    FROM
+                        pur_vendors_vl pvv
+                    WHERE
+                        pvv.vendor_id = v.vendor_id
+                    ) display_vendor_code
+                FROM
+                    (SELECT
+                        l.feedback_line_id,
+                        rh.owner_business_group,
+                        rh.owner_company_id,
+                        h.coop_business_group,
+                        h.coop_company_id,
+                        rh.owner_business_unit_id,
+                        rl.inv_organization_id,
+                        rl.item_category_id,
+                        rl.item_id,
+                        rl.item_code,
+                        rl.item_desc,
+                        l.valid_fb_retail_price,
+                        rl.tax_type_id,
+                        (SELECT
+                            vendor_id
+                        FROM
+                            (SELECT
+                                pvv.vendor_id
+                            FROM
+                                pur_vendors_vl pvv
+                            WHERE
+                                pvv.coop_company_id = h.coop_company_id
+                            ORDER BY
+                                pvv.last_update_date DESC
+                            ) t
+                        WHERE
+                            rownum= 1
+                        ) vendor_id,
+                        NVL(rl.tax_type_code,
+                        (SELECT
+                            tt.tax_type_code
+                        FROM
+                            fnd_tax_type_codes tt
+                        WHERE
+                            tt.tax_type_id = rl.tax_type_id
+                        )) tax_type_code,
+                        h.currency_code,
+                        h.exchange_rate,
+                        l.feedback_expiry_date_from,
+                        l.feedback_expiry_date_to,
+                        rh.rfx_number,
+                        rh.created_by,
+                        rh.rfx_header_id,
+                        rh.rfx_method,
+                        rh.source_type,
+                        rh.pur_organization_id,
+                        l.delivery_cycle,
+                        (SELECT
+                            v.pur_organization_code
+                        FROM
+                            pur_organizations_vl v
+                        WHERE
+                            v.pur_organization_id = rh.pur_organization_id
+                        ) AS pur_organization_code,
+                        (SELECT
+                            v.description
+                        FROM
+                            pur_organizations_vl v
+                        WHERE
+                            v.pur_organization_id = rh.pur_organization_id
+                        ) AS pur_organization_name,
+                        l.price_batch_quantity,
+                        rl.line_num,
+                        h.creation_date,
+                        (SELECT
+                            rfx_type_desc
+                        FROM
+                            PUR_BG_RFX_TYPES_VL t
+                        WHERE
+                            t.rfx_type_id= rh.RFX_TYPE_ID
+                        ) rfx_type_desc,
+                        TO_CHAR(rh.approved_date,'YYYY-MM-DD') finish_date,
+                        (SELECT s.description FROM sys_user s WHERE rh.submitted_by = s.user_id
+                        ) submitted_by_name,
+                        (SELECT
+                            cv.currency_name
+                        FROM
+                            gld_currency_bg_v cv
+                        WHERE
+                            cv.business_group = rh.owner_business_group AND
+                            cv.currency_code  = rh.currency_code
+                        ) currency_name,
+                        rh.tax_included_flag,
+                        rh.tax_type_rate,
+                        (SELECT
+                            ud.category_name
+                        FROM
+                            mtl_categories_user_defined_vl ud
+                        WHERE
+                            ud.category_udf_id = rl.item_category_id
+                        ) item_category_name,
+                        (SELECT
+                            bu.business_unit_name
+                        FROM
+                            FND_BUSINESS_UNITS_VL bu
+                        WHERE
+                            bu.business_unit_id = rh.owner_business_unit_id
+                        ) business_unit_name,
+                        (SELECT
+                            io.description
+                        FROM
+                            INV_ORGANIZATIONS_VL io
+                        WHERE
+                            io.inv_organization_id = rl.inv_organization_id
+                        ) inv_orgainzation_name,
+                        l.uom_code,
+                        DECODE(
+                        (SELECT
+                            1 FROM dual WHERE EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                erpinv_rfx_import_records t
+                            WHERE
+                                t.feedback_line_id = l.feedback_line_id
+                            )
+                        ),1,'已导入','未导入') export_status_desc
+                    FROM
+                        pur_rfx_feedback_lines l,
+                        pur_rfx_feedback_headers h,
+                        pur_rfx_ln_items rl,
+                        pur_rfx_headers rh
+                    WHERE
+                        h.feedback_header_id = l.feedback_header_id AND
+                        h.status             = 'FINISHED' AND
+                        l.rfx_line_item_id   = rl.rfx_line_item_id AND
+                        rl.cancel_flag       = 'N' AND
+                        rl.rfx_finished_flag = 'Y' AND
+                        l.cancel_flag        = 'N' AND
+                        h.rfx_header_id      = rh.rfx_header_id AND
+                        l.suggested_flag     = 'Y' AND
+                        rl.rfx_header_id     = rh.rfx_header_id
+                    ) v #AUTHORIY_FROM# #WHERE_CLAUSE# #AUTHORIY_WHERE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="item_code" queryExpression="item_code like &apos;%&apos;||trim(${@item_code})||&apos;%&apos;"/>
+        <bm:query-field name="vendor_id" queryExpression="vendor_id = ${@vendor_id}"/>
+        <bm:query-field name="item_category_id" queryExpression="item_category_id = ${@item_category_id}"/>
+        <bm:query-field name="business_unit_id" queryExpression="owner_business_unit_id = ${@business_unit_id}"/>
+        <!-- <bm:query-field name="export_status" queryExpression="(export_status = ${@export_status} or ${@export_status} = &apos;ALL&apos;)"/> -->
+        <bm:query-field name="rfx_number" queryExpression="rfx_number like &apos;%&apos;||trim(${@rfx_number})||&apos;%&apos;"/>
+        <bm:query-field name="line_num" queryExpression="line_num = ${@line_num}"/>
+        <bm:query-field name="rfx_type_id" queryExpression="(select rh.RFX_TYPE_ID from pur_rfx_headers rh where rh.rfx_header_id = v.rfx_header_id)  = ${@rfx_type_id}"/>
+        <bm:query-field name="inv_organization_id" queryExpression="v.inv_organization_id = ${@inv_organization_id}"/>
+        <bm:query-field name="finish_date" queryExpression="v.finish_date = ${@finish_date}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="1=1           AND ((nvl(${@export_status},&apos;ALL&apos;) = &apos;ALL&apos;) OR        (${@export_status} = &apos;Imported&apos; AND  EXISTS         (SELECT 1 FROM erpinv_rfx_import_records erir WHERE erir.feedback_line_id = v.feedback_line_id)) OR        (${@export_status} = &apos;Unimported&apos; AND NOT EXISTS         (SELECT 1 FROM erpinv_rfx_import_records erir WHERE erir.feedback_line_id = v.feedback_line_id)))"/>
+    </bm:data-filters>
+    <authority foundation_code="RFX">
+        <authority-segment source_alias="v" source_name="owner_company_id" type="COMPANY"/>
+        <authority-segment source_alias="v" source_name="owner_business_unit_id" type="BUSINESS_UNIT"/>
+        <authority-segment source_alias="v" source_name="inv_organization_id" type="INV_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="VENDOR"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="VENDOR_SITE"/>
+        <authority-segment source_alias="v" source_name="created_by" type="CREATER"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="RECEIVER"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="CLIENT"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="CLIENT_SITE"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="PUR_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="SD_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="PURHASE_MATERIAL"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="SALES_PRODUCTION"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+            var cx = Packages.aurora.javascript.Context.getCurrentContext();
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

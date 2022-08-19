@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: FelixDru
+    $Date: 2017-05-03
+    $Revision: 1.0  
+    $Purpose: 工作流待办事项
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[SELECT workflow_type,
+       workflow_id,
+       workflow_category_desc,
+       instance_id,
+       record_id,
+       node_id,
+       document_number,
+       document_id,
+       node_name,
+       previous_approver_name,
+       submit_by_name,
+       document_type,
+       submit_date_desc,
+       workflow_page,
+       (select p.edit_flag from wfl_workflow_page p, wfl_workflow_node n where p.service_name = n.form_name and n.node_id = a1.node_id) edit_flag,
+                             document_title
+  FROM (SELECT v.*,
+               ceil(rownum / nvl(${/parameter/@page_size},
+                                 5)) AS page_num
+          FROM (SELECT *
+                  FROM (SELECT 'WORKFLOW' workflow_type,
+                       t1.workflow_id,
+                       to_char(ww.workflow_id) AS workflow_category,
+                       (SELECT wfl_w.name FROM wfl_workflow_vl wfl_w WHERE wfl_w.workflow_id = ww.workflow_id) AS workflow_category_desc,
+                       t1.instance_id,
+                       r.record_id,
+                       r.node_id,
+                       t1.current_node,
+                       t1.document_number,
+                       t1.instance_param document_id,
+                       wwn.name  AS node_name,
+                       (wfl_common_pkg.get_wfl_user_name((SELECT r.created_by
+                                                           FROM wfl_approve_record r
+                                                          WHERE r.record_id =
+                                                                (SELECT MAX(record_id)
+                                                                   FROM wfl_approve_record
+                                                                  WHERE instance_id = t1.instance_id)))) AS previous_approver_name,
+                       wfl_common_pkg.get_wfl_user_name(t1.created_by) AS submit_by_name,
+                       (SELECT code_value_name
+                          FROM sys_service_lookup_v v
+                         WHERE code = 'WFL_WORKFLOW_CATEGORY'
+                               AND v.enabled_flag = 'Y'
+                               AND LANGUAGE = userenv('LANG')
+                               AND code_value = ww.workflow_category) AS document_type,
+                       t1.creation_date submit_date, 
+                       to_char(t1.creation_date,'yyyy-mm-dd hh24:mi') AS submit_date_desc,       
+                       '' workflow_page,
+       document_title_description document_title
+                  FROM wfl_workflow_instance t1,
+                       wfl_instance_node_recipient r,
+                       wfl_workflow ww,
+                       wfl_workflow_node_vl wwn
+                 WHERE t1.instance_id = r.instance_id
+                  AND t1.workflow_id = ww.workflow_id
+                  AND wwn.node_id = r.node_id
+                  and ww.app_approve_flag = 'Y'
+                  AND (r.user_id = ${/session/@user_id} OR wfl_core_pkg.check_auto_commission(r.record_id,
+                                                                            ${/session/@user_id}) = 'Y')
+                UNION ALL
+                SELECT 'FUNCTION_APPROVE' workflow_type,
+                       adv.approve_document_id,
+                       fal.approve_document_code workflow_category,
+                       adv.approve_document_name workflow_category_desc,
+                       fal.list_id instance_id,
+                       NULL record_id,
+                       NULL node_id,
+                       NULL current_node,
+                       fal.document_code document_number,
+                       fal.document_id,
+                       (SELECT su.description FROM sys_user su WHERE su.user_id = fal.approval_person) current_approver_name,
+                       (SELECT su.description FROM sys_user su WHERE su.user_id = fal.previous_approve_by) previous_approver_name,
+                       (SELECT su.description FROM sys_user su WHERE su.user_id = fal.submit_by) submit_by_name,
+                       (SELECT mv.module_name FROM sys_modules_vl mv WHERE mv.module_code = adv.module_code) AS module_name,
+                       fal.submit_date,
+                       to_char(fal.submit_date,
+                               'yyyy-mm-dd hh24:mi:ss') AS submit_date_desc,
+                            '',
+                             document_title
+                  FROM wfl_function_approve_list fal,
+                       sys_approve_document_vl   adv
+                 WHERE fal.approve_document_code = adv.approve_document_code
+                       AND fal.business_group =  ${/session/@business_group}
+                       AND fal.approval_person = ${/session/@user_id}
+                       and adv.app_approve_flag = 'Y'
+                       AND fal.approval_status = 'APPROVING') 
+                  #WHERE_CLAUSE#     
+                 ORDER BY submit_date_desc DESC) v) a1
+ WHERE ((${@page_num} is NOT NULL AND ${@page_num} = page_num) OR (${@page_num} IS NULL AND 1 = 1))
+]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter inputPath="/parameter/@page_size"/>
+                <bm:parameter inputPath="/session/@user_id"/>
+                <bm:parameter inputPath="/session/@business_group"/>
+                <bm:parameter name="page_num"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="document_number" queryExpression="document_number like &apos;%&apos;||trim(${@document_number})||&apos;%&apos;"/>
+        <bm:query-field name="workflow_category_desc" queryExpression="workflow_category_desc like &apos;%&apos;||trim(${@workflow_category_desc})||&apos;%&apos;"/>
+        <bm:query-field name="submit_date_from" queryExpression="submit_date &gt;= to_date(${@submit_date_from},&apos;YYYY-MM-DD&apos;)"/>
+        <bm:query-field name="submit_date_to" queryExpression="submit_date &lt;= to_date(${@submit_date_to},&apos;YYYY-MM-DD&apos;)+1"/>
+        <bm:query-field name="submit_by_name" queryExpression="submit_by_name like &apos;%&apos;||trim(${@submit_by_name})||&apos;%&apos;"/>
+    </bm:query-fields>
+</bm:model>

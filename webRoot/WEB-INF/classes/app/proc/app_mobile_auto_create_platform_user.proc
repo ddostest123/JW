@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<p:procedure xmlns:s="aurora.plugin.script" xmlns:as="aurora.service" xmlns:t="aurora.application.action" xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+        <a:model-query model="app.main.app_mobile_check_platform_user_count" rootPath="check_send"/>
+        <!-- 判断是否生成实例 -->
+        <p:echo/>
+        <p:switch test="/model/check_send/record/@need_to_send_flag">
+            <p:case value="Y">
+                <s:server-script import="app_mobile_construct_node.js"><![CDATA[
+            //数据处理  /model/push_url/record/@push_url
+            var soapResponse = app_platfrom_user_auto_push();
+            $ctx.addChild(soapResponse);
+        ]]></s:server-script>
+                <p:method-invoke className="uncertain.composite.CompositeUtil" methodName="expand">
+                    <p:arguments>
+                        <p:argument path="/soapResponse" type="uncertain.composite.CompositeMap"/>
+                    </p:arguments>
+                </p:method-invoke>
+                <a:model-query model="app.main.app_mobile_create_platform_user_url" rootPath="push_url"/>
+                <p:echo/>
+                <a:ws-invoker inputPath="/soapResponse/HEADER/REQUEST" raiseExceptionOnError="true" returnPath="/soapResponse/RESPONSE" url="${/model/push_url/record/@push_url}"/>
+                <a:batch-apply sourcepath="/soapResponse/RESPONSE/RESPONSE_CONTEXT/USERS/records">
+                    <s:server-script import="app_mobile_construct_node.js"><![CDATA[
+             $ctx.parameter.user_name = $ctx.current_parameter.getChild('USER_NAME').getText();
+             $ctx.parameter.status = $ctx.current_parameter.getChild('STATUS').getText();
+             $ctx.parameter.message = $ctx.current_parameter.getChild('MESSAGE').getText();
+        ]]></s:server-script>
+                    <p:switch test="/parameter/@status">
+                        <p:case value="SUCCESS">
+                            <a:model-update model="app.main.app_mobile_platform_user_query"/>
+                        </p:case>
+                        <p:case value="*">
+                            <a:model-execute model="app.main.app_mobile_platform_user_query"/>
+                        </p:case>
+                    </p:switch>
+                </a:batch-apply>
+            </p:case>
+        </p:switch>
+</p:procedure>

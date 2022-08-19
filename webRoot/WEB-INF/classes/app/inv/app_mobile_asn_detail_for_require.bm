@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: FelixDru  
+    $Date: 2017-04-13 上10:38:31  
+    $Revision: 1.0  
+    $Purpose: 送货单查询，送货单行查询BM
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT asn_line_num,
+                	   require_item_code item_code,
+                	   require_item_name item_name,
+                	   po_num,
+                       ship_quantity,
+                       uom_desc,
+                       receive_quantity,
+                       on_the_way_quantity,
+                       line_status asn_line_status
+				  FROM (SELECT l.asn_line_id,
+				               h.display_asn_number AS asn_number,
+				               l.asn_line_num,
+				               l.item_id AS require_item_id,
+				               nvl(l.item_code,
+				                   (SELECT m.display_item_code FROM mtl_system_items m WHERE m.item_id = l.item_id)) AS require_item_code,
+				               nvl(l.item_name,
+				                   (SELECT m.item_name FROM mtl_system_items_vl m WHERE m.item_id = l.item_id)) AS require_item_name,
+				               h.coop_company_id AS company_id,
+				               (SELECT pha.display_po_number
+				                  FROM pur_headers_all      pha,
+				                       pur_line_locations_all lla
+				                 WHERE pha.pur_header_id = lla.pur_header_id
+				                       AND lla.pur_line_location_id = l.line_location_id) AS po_num,
+				               (SELECT pla.line_num
+				                  FROM pur_lines_all          pla,
+				                       pur_line_locations_all lla
+				                 WHERE pla.pur_line_id = lla.pur_line_id
+				                       AND lla.pur_line_location_id = l.line_location_id) AS line_num,
+				               l.shipment_num,
+				               l.ship_quantity,
+				               l.uom_code,
+				               nvl((SELECT vl.uom_desc
+				                     FROM fnd_uom_codes_vl vl
+				                    WHERE l.uom_code = vl.uom_code
+				                          AND vl.business_group = h.owner_business_group),
+				                   l.uom_code) uom_desc,
+				               l.unit_price,
+				               decode(fnd_config_cnt_get_pkg.get_bg_item_value_asn_08(p_business_group => h.coop_business_group),
+				                      'Y',
+				                      (public_tools_pkg.get_sum_trx_quantity(p_asn_line_id => l.asn_line_id)),
+				                      (l.receive_quantity)) AS receive_quantity,
+				               decode(fnd_config_cnt_get_pkg.get_bg_item_value_asn_08(p_business_group => h.coop_business_group),
+				                      'Y',
+				                      (l.ship_quantity -
+				                      (public_tools_pkg.get_sum_trx_quantity(p_asn_line_id => l.asn_line_id))),
+				                      (CASE
+				                        WHEN (l.ship_quantity - l.receive_quantity) > 0 THEN
+				                         (l.ship_quantity - l.receive_quantity)
+				                        ELSE
+				                         0
+				                      END)) AS on_the_way_quantity,
+				               l.return_vendor_quantity,
+				               l.deliver_quantity,
+				               (l.receive_quantity - l.deliver_quantity) AS inspection_pending_quantity,
+				               l.return_receive_quantity,
+				               l.status,
+				               (SELECT cvv.code_value_name
+				                  FROM sys_code_values_v cvv
+				                 WHERE cvv.code = 'INV_ASN_LINES_STATUS'
+				                       AND cvv.code_value = l.status) AS line_status,
+				               l.receive_status,
+				               (SELECT cvv.code_value_name
+				                  FROM sys_code_values_v cvv
+				                 WHERE cvv.code = 'INV_ASN_LNS_RECEIVE_STATUS'
+				                       AND cvv.code_value = l.receive_status) AS line_receive_status,
+				               l.deliver_status,
+				               (SELECT cvv.code_value_name
+				                  FROM sys_code_values_v cvv
+				                 WHERE cvv.code = 'INV_ASN_LNS_DELIVER_STATUS'
+				                       AND cvv.code_value = l.receive_status) AS line_deliver_status,
+				               l.cancel_flag,
+				               l.cancel_quantity,
+				               l.cancel_reason,
+				               l.close_flag,
+				               l.closed_quantity,
+				               l.close_code,
+				               l.close_reason,
+				               l.lots_num,
+				               to_char(l.lots_validity_date,
+				                       'yyyy-mm-dd') lots_validity_date,
+				               l.invoice_num,
+				               l.serial_num,
+				               to_char(h.ship_date,
+				                       'yyyy-mm-dd') AS ship_date,
+				               to_char(h.expected_date,
+				                       'yyyy-mm-dd') AS expected_date,
+				               (SELECT to_char(pll.need_by_date,
+				                               'yyyy-mm-dd')
+				                  FROM pur_line_locations_all pll
+				                 WHERE pll.pur_line_location_id = l.line_location_id) AS need_by_date,
+				               (SELECT to_char(pll.promised_date,
+				                               'yyyy-mm-dd')
+				                  FROM pur_line_locations_all pll
+				                 WHERE pll.pur_line_location_id = l.line_location_id) AS promised_date,
+				               l.reversion_num,
+				               (SELECT ph.display_release_num
+				                  FROM pur_headers_all        ph,
+				                       pur_line_locations_all plla
+				                 WHERE ph.pur_header_id = plla.pur_header_id
+				                       AND plla.pur_line_location_id = l.line_location_id) release_num,
+				               h.vendor_site_id,
+				               h.location_id,
+				               l.agent_id,
+				               l.agent_name,
+				               h.ship_to_organization_id,
+				               l.comments,
+				               to_char(l.request_arrival_date,
+						               'yyyy-mm-dd') AS request_arrival_date,
+						       l.contacts_info,
+				               l.packet_quantity,
+				               l.production_batch,
+				               l.environmental_batch,
+				               l.packet_weight,
+				               l.box_weight,
+				               l.heat_number,
+				               l.reel_number,
+				               l.package_number,
+				               l.lpn_number,
+				               l.deliver_weight,
+		               		       l.package_uom_code
+				          FROM inv_asn_headers h,
+				               inv_asn_lines   l
+				         WHERE h.asn_header_id = l.asn_header_id
+				               AND h.asn_header_id = ${@asn_header_id}
+				         ORDER BY asn_line_num ASC) v
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

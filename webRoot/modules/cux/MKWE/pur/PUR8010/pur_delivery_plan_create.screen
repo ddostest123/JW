@@ -1,0 +1,303 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: 9505 $  
+    $Date: 2017-06-20 下午03:45:27 $  
+    $Revision: 1.0 $ 
+    $Purpose: 送货计划创建页面$
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure><![CDATA[
+    ]]></a:init-procedure>
+    <a:view>
+        <a:link id="pur8010_delivery_plan_create_view" url="${/request/@context_path}/modules/cux/MKWE/pur/PUR8010/delivery_plan_create_view.svc"/>
+        <a:link id="pur8010_delivery_plan_temp_view" url="${/request/@context_path}/modules/cux/MKWE/pur/PUR8010/pur_delivery_plan_create_temp.screen"/>
+        <a:link id="pur8010_po_num_muti_select_url" url="${/request/@context_path}/modules/cux/MKWE/pur/PUR8010/pur_po_num_muti_select.screen"/>
+        <a:link id="pur8010_production_num_muti_select_url" url="${/request/@context_path}/modules/cux/MKWE/pur/PUR8010/pur_production_num_muti_select.screen"/>
+        <script><![CDATA[
+            function init() {
+                // var query_record = $('pur8010_delivery_query_ds').getAt(0);
+                // query_record.set('user_id', '${/model/deflaut_agent_name/record/@user_id}');
+                // query_record.set('agent_name', '${/model/deflaut_agent_name/record/@description}');
+                
+            }
+            
+            function pur8010_delivery_plan_query() {
+                $('pur8010_delivery_create_ds').query();
+            }
+            
+            function pur8010_delivery_plan_create() {
+            
+                var select_records = $('pur8010_delivery_create_ds').getSelected();
+                if (select_records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SELECT_ONE_RECORD_AT_LEAST}');
+                    return;
+                }
+            
+                var inv_organization_id = select_records[0].get('inv_organization_id');
+                var inv_organization_name = select_records[0].get('inv_organization_name');
+                var owner_business_group = select_records[0].get('owner_business_group');
+                var vendor_code = select_records[0].get('vendor_code');
+                var vendor_id = select_records[0].get('vendor_id');
+                var vendor_name = select_records[0].get('vendor_name');
+                var coop_company_id = select_records[0].get('coop_company_id');
+                var owner_company_id = select_records[0].get('company_id');
+                var coop_business_group = select_records[0].get('coop_business_group');
+            
+                //工厂、供应商、可拆数量校验
+                for (var i = 0;i < select_records.length;i++) {
+                    if (select_records[i].get('inv_organization_id') != inv_organization_id || select_records[i].get('vendor_code') != vendor_code || select_records[i].get('split_quantity') == 0) {
+                        Aurora.showMessage('${l:PROMPT}', '勾选的记录必须是同一个工厂、同一供应商且剩余可拆数量都不为0');
+                        return;
+                    }
+                }
+                
+                $('pur8010_delivery_plan_create_btn').disable();
+            
+                var datas = {};
+            
+            
+                select_records[0].set('_status', 'insert');
+                datas = select_records[0].data;
+                var details = [];
+                for (var j = 0;j < select_records.length;j++) {
+                    var record = {};
+                    
+                    if(select_records[j].get('agent_group_code') == 'A04' && !Aurora.isEmpty(select_records[j].get('production_date'))){
+                        record.need_arrive_date = select_records[j].get('before_produce_date');
+                    }
+                    record.segment1 = select_records[j].get('segment1');
+                    record.line_num = select_records[j].get('line_num');
+                    record.source_po_header_id = select_records[j].get('pur_header_id');
+                    record.source_po_line_id = select_records[j].get('pur_line_id');
+                    record.item_code = select_records[j].get('item_code');
+                    record.item_name = select_records[j].get('item_name');
+                    record.item_specs = select_records[j].get('item_specs');
+                    record.business_unit_id = select_records[j].get('business_unit_id');
+                    record.business_unit_name = select_records[j].get('business_unit_name');
+                    record.quantity = select_records[j].get('quantity');
+                    record.unit_meas_lookup_code = select_records[j].get('unit_meas_lookup_code');
+                    record.remain_split_quantity = select_records[j].get('remain_split_quantity');
+                    record.po_create_date = select_records[j].get('creation_date');
+                    record.po_need_date = select_records[j].get('need_by_date');
+                    record.job_number = select_records[j].get('production_order_num');
+                    record.packing_standard = select_records[j].get('packing_standard');
+                    record._status = 'insert';
+                    details.push(record);
+            
+                }
+            
+                datas['details'] = details;
+            
+                Aurora.Masker.mask(Ext.getBody(), '${l:LOADING}');
+                Aurora.request({
+                    url: $('pur8010_delivery_plan_create_view').getUrl(),
+                    para: datas,
+                    success: function(res) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        $('pur8010_delivery_plan_create_btn').enable();
+                        var header_id=res.result.header_id;
+                        //alert(res.result.header_id);
+                        new Aurora.Window({
+                            id: 'pur8010_delivery_plan_temp_wdn',
+                            url: $('pur8010_delivery_plan_temp_view').getUrl() + '?header_id=' + header_id,
+                            title: '送货计划创建预览',
+                            fullScreen: true
+                        }).on('beforeclose', function() {
+                            $('pur8010_delivery_create_ds').query();
+                            $('pur8010_delivery_maintain_ds').query();
+                        });
+            
+                    },
+                    failure: function(res) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        $('pur8010_delivery_plan_create_btn').enable();
+                    },
+                    error: function(res) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        $('pur8010_delivery_plan_create_btn').enable();
+                    },
+                    scope: this
+                });
+            }
+            
+            function pur8010_po_num_muti_select_openWdn(){
+                new Aurora.Window({
+                    id: 'pur8010_po_num_muti_select_wdn',
+                    url: $('pur8010_po_num_muti_select_url').getUrl(),
+                    title: '多订单查询',
+                    width: 500,
+                    height: 500
+                }).on('beforeclose',function(){
+                });
+
+            }
+            
+            function pur8010_production_num_muti_select_openWdn(){
+                new Aurora.Window({
+                    id: 'pur8010_production_num_muti_select_wdn',
+                    url: $('pur8010_production_num_muti_select_url').getUrl(),
+                    title: '多生产订单查询',
+                    width: 500,
+                    height: 500
+                }).on('beforeclose',function(){
+                });
+            }
+            
+        ]]></script>
+        <a:dataSets>
+            <!-- 多订单查询ds -->
+            <a:dataSet id="pur8010_po_num_muti_select_ds" selectable="true">
+                <a:fields>
+                    <a:field name="po_num"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="pur8010_production_num_muti_select_ds" selectable="true">
+                <a:fields>
+                    <a:field name="production_num"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="pur8010_delivery_query_ds">
+                <a:fields>
+                    <a:field name="segment1"/>
+                    <a:field name="line_num"/>
+                    <a:field name="vendor_name" autoComplete="true" autoCompleteField="vendor_name" lovGridHeight="320" lovHeight="480" lovService="cux.MKWE.pur.PUR8010.pur_vendor_lov" lovWidth="500" title="请选择供应商">
+                        <a:mapping>
+                            <a:map from="vendor_id" to="vendor_id"/>
+                            <a:map from="vendor_name" to="vendor_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="company_id"/>
+                    <a:field name="item_name" autoComplete="true" autoCompleteField="display_item_code" lovGridHeight="320" lovHeight="480" lovService="cux.MKWE.pur.PUR8010.mtl_system_item_lov" lovWidth="500" title="请选择物品">
+                        <a:mapping>
+                            <a:map from="display_item_code" to="item_code"/>
+                            <a:map from="item_name" to="item_name"/>
+                            <a:map from="item_id" to="item_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="item_code"/>
+                    <a:field name="item_id"/>
+                    <a:field name="agent_name" autoComplete="true" autoCompleteField="description" lovGridHeight="320" lovHeight="480" lovService="cux.MKWE.pur.PUR8010.pur_buyers_lov" lovWidth="500" title="请选择采购员">
+                        <a:mapping>
+                            <a:map from="user_id" to="user_id"/>
+                            <a:map from="description" to="agent_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="user_id"/>
+                    <a:field name="agent_group" autoComplete="true" autoCompleteField="buyer_desc" lovGridHeight="320" lovHeight="480" lovService="cux.MKWE.pur.PUR8010.pur_buyers_group_lov" lovWidth="500" title="请选择采购组">
+                        <a:mapping>
+                            <a:map from="display_code" to="agent_group_code"/>
+                            <a:map from="buyer_desc" to="agent_group"/>
+                            <a:map from="buyer_id" to="agent_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="agent_group_code"/>
+                    <a:field name="inv_organization_name" autoComplete="true" autoCompleteField="inv_organization_code" lovGridHeight="320" lovHeight="480" lovService="cux.MKWE.pur.PUR8010.inv_organizations_lov" lovWidth="500" title="请选择工厂">
+                        <a:mapping>
+                            <a:map from="inv_organization_id" to="inv_organization_id"/>
+                            <a:map from="inv_organization_name" to="inv_organization_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="inv_organization_id"/>
+                    <a:field name="saleno"/>
+                    <a:field name="sale_line_num"/>
+                    <a:field name="production_num"/>
+                    <a:field name="packing_standard"/>
+                    <a:field name="production_order_num"/>
+                    <a:field name="production_machine"/>
+                    <a:field name="created_name"/>
+                    <a:field name="po_num_muti"/>
+                    <a:field name="production_num_muti"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="pur8010_delivery_create_ds" autoCount="true" autoQuery="true" model="cux.MKWE.pur.PUR8010.pur_delivery_create" queryDataSet="pur8010_delivery_query_ds" selectable="true"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton id="pur8010_delivery_plan_create_btn" click="pur8010_delivery_plan_create" text="PUR8010_DELIVERY_PLAN_CREATE_VIEW" width="100"/>
+                <a:gridButton bind="pur8010_delivery_create_grid" text="HAP_EXPORT" type="excel" width="100"/>
+                <a:toolbarButton id="pur8010_po_num_muti_select_btn" click="pur8010_po_num_muti_select_openWdn" text="多订单查询" width="100"/>
+                <a:toolbarButton id="pur8010_production_num_muti_select_btn" click="pur8010_production_num_muti_select_openWdn" text="多生产订单号查询" width="100"/>
+            </a:screenTopToolbar>
+            <a:queryForm id="pur8010_delivery_query_form" bindTarget="pur8010_delivery_query_ds" resultTarget="pur8010_delivery_create_ds" style="width:100%;">
+                <a:formToolBar>
+                    <a:hBox labelWidth="100">
+                        <a:textField name="segment1" bindTarget="pur8010_delivery_query_ds" prompt="PUR_HEADERS_ALL.SEGMENT1">
+                            <a:events>
+                                <a:event name="enterdown" handler="pur8010_delivery_plan_query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:lov name="vendor_name" bindTarget="pur8010_delivery_query_ds" prompt="PUR_HEADERS_ALL.VENDOR_ID"/>
+                        <a:datePicker name="production_date_from" bindTarget="pur8010_delivery_query_ds" prompt="PUR8010_PRODUCTION_DATE_FROM"/>
+                        <a:datePicker name="production_date_to" bindTarget="pur8010_delivery_query_ds" prompt="PUR8010_PRODUCTION_DATE_TO"/>
+                    </a:hBox>
+                </a:formToolBar>
+                <a:formBody style="margin-left:-3px">
+                    <a:hBox labelWidth="100">
+                        <a:lov name="item_name" bindTarget="pur8010_delivery_query_ds" prompt="MTL_SYSTEM_ITEMS.ITEM_DESC"/>
+                        <a:textField name="line_num" bindTarget="pur8010_delivery_query_ds" prompt="PUR_LINES_ALL.LINE_NUM">
+                            <a:events>
+                                <a:event name="enterdown" handler="pur8010_delivery_plan_query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:datePicker name="need_by_date_from" bindTarget="pur8010_delivery_query_ds" prompt="订单交期从"/>
+                        <a:datePicker name="need_by_date_to" bindTarget="pur8010_delivery_query_ds" prompt="订单交期至"/>
+                    </a:hBox>
+                    <a:hBox labelWidth="100">
+                        <!-- <a:lov name="agent_name" bindTarget="pur8010_delivery_query_ds" prompt="PUR_HEADERS_ALL.AGENT_ID"/> -->
+                        <a:lov name="agent_group" bindTarget="pur8010_delivery_query_ds" prompt="采购组"/>
+                        <a:lov name="inv_organization_name" bindTarget="pur8010_delivery_query_ds" prompt="工厂"/>
+                        <a:textField name="saleno" bindTarget="pur8010_delivery_query_ds" prompt="销售单号"/>
+                        <a:textField name="sale_line_num" bindTarget="pur8010_delivery_query_ds" prompt="销售行号"/>
+                    </a:hBox>
+                    <!-- <a:hBox labelWidth="100">
+                        <a:textField name="production_num" bindTarget="pur8010_delivery_query_ds" prompt="产品编号"/>
+                        <a:textField name="packing_standard" bindTarget="pur8010_delivery_query_ds" prompt="包装标准"/>
+                        <a:textField name="production_order_num" bindTarget="pur8010_delivery_query_ds" prompt="生产订单号"/>
+                        <a:textField name="production_machine" bindTarget="pur8010_delivery_query_ds" prompt="生产机台"/>
+                    </a:hBox> -->
+                    <!--  <a:hBox labelWidth="100">
+                        <a:textField name="created_name" bindTarget="pur8010_delivery_query_ds" prompt="订单创建人"/>
+                    </a:hBox> -->
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="pur8010_delivery_create_grid" bindTarget="pur8010_delivery_create_ds" marginHeight="250" marginWidth="80" navBar="true">
+                <a:columns>
+                    <a:column name="vendor_code" align="center" lock="true" prompt="PUR_HEADERS_ALL.VENDOR_CODE" width="80"/>
+                    <a:column name="vendor_name" align="center" lock="true" prompt="PUR_HEADERS_ALL.VENDOR_NAME" sortable="true" width="100"/>
+                    <a:column name="segment1" align="center" lock="true" prompt="PUR_HEADERS_ALL.SEGMENT1" width="80"/>
+                    <a:column name="line_num" align="center" prompt="PUR_LINES_ALL.LINE_NUM" width="50"/>
+                    <a:column name="item_code" align="center" prompt="MLT_SYSTEM_ITEMS.ITEM_CODE" width="80"/>
+                    <a:column name="item_name" align="center" prompt="MTL_SYSTEM_ITEMS.ITEM_DESC" width="100"/>
+                    <a:column name="item_specs" align="center" prompt="MTL_SYSTEM_VENDOR_ITEMS.ITEM_SPECS" width="100"/>
+                    <a:column name="quantity" align="center" prompt="订单数量" width="80"/>
+                    <a:column name="trx_amount" align="center" prompt="已交数量" width="80"/>
+                    <a:column name="un_trx_amount" align="center" prompt="未交数量" width="80"/>
+                    <!--  <a:column name="splitted_quantity" align="center" prompt="已拆单" width="80"/>
+                    <a:column name="shipped_quantity" align="center" prompt="已发货" width="80"/>
+                    <a:column name="storage_quantity" align="center" prompt="已入库" width="80"/> -->
+                    <a:column name="remain_split_quantity" align="center" prompt="剩余可拆" width="80"/>
+                    <a:column name="unit_meas_lookup_code" align="center" prompt="单位" width="50"/>
+                    <a:column name="business_unit_name" align="center" prompt="业务实体" width="80"/>
+                    <a:column name="agent_name" align="center" prompt="采购员" width="80"/>
+                    <!-- <a:column name="erp_created_by_name" align="center" prompt="订单创建人" width="50"/> -->
+                    <!-- <a:column name="creation_date" align="center" prompt="订单创建日期" width="80"/>
+                    <a:column name="need_by_date" align="center" prompt="订单交期" width="80"/> -->
+                    <!-- <a:column name="inv_organization_name" align="center" prompt="工厂" width="80"/> -->
+                    <!-- <a:column name="req_number" align="center" prompt="采购申请" width="80"/>
+                    <a:column name="req_line_num" align="center" prompt="申请行号" width="80"/>
+                    <a:column name="production_date" align="center" prompt="产品生产时间" width="80"/>
+                    <a:column name="saleno" align="center" prompt="销售订单号" width="80"/>
+                    <a:column name="sale_line_num" align="center" prompt="销售行号" width="80"/>
+                    <a:column name="production_num" align="center" prompt="产品编号" width="80"/>
+                    <a:column name="oper_quantity" align="center" prompt="上机数量" width="80"/>
+                    <a:column name="packing_standard" align="center" prompt="包装标准" width="80"/>
+                    <a:column name="production_order_num" align="center" prompt="生产订单号" width="80"/>
+                    <a:column name="production_machine" align="center" prompt="生产机台" width="80"/> -->
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+        <script><![CDATA[
+        	init();
+        ]]></script>
+    </a:view>
+</a:screen>

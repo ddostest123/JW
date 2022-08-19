@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lianghuihao 
+    $Date: 2018年10月19日14:39:52  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        pvs.survey_header_id,
+                        pvs.survey_number,
+                        pvs.require_business_group,
+                        pvs.require_company_id,
+                        (SELECT
+                            fc.company_code
+                        FROM
+                            fnd_companies_vl fc
+                        WHERE
+                            fc.company_id = pvs.require_company_id
+                        ) company_code,
+                        (SELECT
+                            fc.company_full_name
+                        FROM
+                            fnd_companies_vl fc
+                        WHERE
+                            fc.company_id = pvs.require_company_id
+                        ) company_name,
+                        pvs.supplier_business_group,
+                        pvs.supplier_company_id,
+                        fcv.company_code vendor_code,
+                        fcv.company_full_name vendor_name,
+                        pvs.status,
+                        (SELECT
+                            fv.flex_desc
+                        FROM
+                            fnd_flex_values_vl fv,
+                            fnd_flex_value_sets_vl fs
+                        WHERE
+                            fv.flex_value_set_id   = fs.flex_value_set_id AND
+                            fs.flex_value_set_code = 'PUR_VENDOR_SURVEY_STATUS' AND
+                            fv.flex_value          = pvs.status
+                        ) status_desc,
+                        pvs.equipment_type_id,
+                        (SELECT
+                            kt.equipment_type_code
+                        FROM
+                            kw_equipment_type kt
+                        WHERE
+                            kt.equipment_type_id = pvs.equipment_type_id
+                        ) equipment_type_code,
+                        (SELECT
+                            kt.equipment_type
+                        FROM
+                            kw_equipment_type kt
+                        WHERE
+                            kt.equipment_type_id = pvs.equipment_type_id
+                        ) equipment_type,
+                        pvs.equipment_name_id,
+                        (SELECT
+                            kn.equipment_name_code
+                        FROM
+                            kw_equipment_name kn
+                        WHERE
+                            kn.equipment_name_id = pvs.equipment_name_id
+                        ) equipment_name_code,
+                        (SELECT
+                            kn.equipment_name
+                        FROM
+                            kw_equipment_name kn
+                        WHERE
+                            kn.equipment_name_id = pvs.equipment_name_id
+                        ) equipment_name,
+                        pvs.survey_description,
+                        (SELECT su.description FROM sys_user su WHERE su.user_id = pvs.created_by
+                        ) created_by_desc,
+                        TO_CHAR(pvs.creation_date, 'yyyy-mm-dd') creation_date,
+                        TO_CHAR(pvs.submit_date,'YYYY-MM-DD') submit_date
+                    FROM
+                        pur_equipment_survey_headers pvs,
+                        fnd_companies_vl fcv,
+                        fnd_com_sup_infos fcs,
+                        fnd_cooperative_partners fcp
+                    WHERE
+                        pvs.require_business_group = ${/session/@business_group} AND
+                        pvs.release_by             = ${/session/@user_id} AND
+                        pvs.status                 = '30_SUBMITTED' AND
+                        NVL(pvs.approve_flag, 'N') = 'N' AND
+                        pvs.require_company_id     = fcp.owner_company_id AND
+                        pvs.supplier_company_id    = fcv.company_id AND
+                        fcv.company_id             = fcs.company_id(+) AND
+                        fcp.owner_business_group   = pvs.require_business_group AND
+                        fcp.vendor_flag            = 'Y' AND
+                        fcp.coop_company_id        = fcv.company_id AND
+                        fcv.company_id             = fcp.coop_company_id
+                    ORDER BY
+                        pvs.survey_number DESC
+                    ) t1 #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+                begin
+                         pur_equipment_survey_pkg.approve_survey(p_survey_header_id => ${@survey_header_id},
+                                                                 p_action_code      => ${@action_code},
+                                                                 p_comments         => ${@comments},
+                                                                 p_user_id          => ${/session/@user_id});
+                                                                 
+                                                         
+                end;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="survey_number" queryExpression="t1.survey_number like &apos;%&apos;||${@survey_number}||&apos;%&apos;"/>
+        <bm:query-field name="require_company_id" queryExpression="t1.require_company_id=${@require_company_id}"/>
+        <bm:query-field name="supplier_company_id" queryExpression="t1.supplier_company_id=${@supplier_company_id}"/>
+        <bm:query-field name="equipment_type_id" queryExpression="t1.equipment_type_id=${@equipment_type_id}"/>
+        <bm:query-field name="created_by_desc" queryExpression="t1.created_by_desc like &apos;%&apos;||${@created_by_desc}||&apos;%&apos;"/>
+        <bm:query-field name="creation_date_to" queryExpression="t1.creation_date &lt;= ${@creation_date_to}"/>
+        <bm:query-field name="creation_date_from" queryExpression="t1.creation_date &gt;= ${@creation_date_from}"/>
+    </bm:query-fields>
+</bm:model>

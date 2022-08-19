@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*,
+                    ROUND(v.unit_price*v.discount,2) AS discount_unit_price
+                FROM
+                    (SELECT
+                        v.*,
+                        ROUND(cux_po_framework_pkg.get_item_price(p_organization_id => v.inv_organization_id, p_item_id => v.item_id, p_vendor_id => v.coop_company_id, p_currency_code => ${/parameter/@currency_code}),4) AS unit_price,
+                        cux_po_framework_pkg.validate_distcount(p_fw_header_id => v.fw_header_id, p_organization_id => v.inv_organization_id, p_item_id => v.item_id, p_vendor_id => v.coop_company_id) AS discount
+                    FROM
+                        (SELECT
+                            mci.item_id,
+                            h.coop_company_id,
+                            'pre_'
+                            || h.coop_company_id AS pre_company_id,
+                            'after_'
+                            || h.coop_company_id AS after_company_id,
+                            rpf.fw_header_id,
+                            l.inv_organization_id
+                        FROM
+                            pur_rfx_feedback_headers h,
+                            pur_rfx_feedback_lines l,
+                            mtl_category_classify_items mci,
+                            RFX_PO_FRAMEWORK_HEADER rpf,
+                            pur_rcv_trx_lines prl #WHERE_CLAUSE#
+                        ) v
+                    ) v
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter expression="h.rfx_header_id = ${/parameter/@rfx_header_id}"/>
+        <bm:data-filter expression="h.rfx_round =${/parameter/@round}"/>
+        <bm:data-filter expression="h.rfx_version=${/parameter/@version}"/>
+        <bm:data-filter expression="h.feedback_header_id = l.feedback_header_id"/>
+        <bm:data-filter expression="mci.category_udf_id = l.item_category_id"/>
+        <bm:data-filter expression="rpf.quotation_id = ${/parameter/@quotation_id}"/>
+        <bm:data-filter expression="rpf.vendor_id = h.coop_company_id"/>
+        <bm:data-filter expression="prl.item_id = mci.item_id and prl.rcv_trx_type = &apos;RECEIVE_STANDARD&apos; and prl.trx_date BETWEEN TRUNC(add_months(sysdate, -3), &apos;mm&apos;) AND sysdate"/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field name="item_code" queryExpression="mci.item_id = (select ml.item_id from mtl_system_items_vl ml where ml.display_item_code like &apos;%&apos; ||${/parameter/@item_code}|| &apos;%&apos;)"/>
+    </bm:query-fields>
+</bm:model>

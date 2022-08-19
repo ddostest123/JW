@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: WangQiaosen  
+    $Date: 2013-3-27 下午4:49:14  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+				SELECT (case when v1.maybe_end_date> sysdate then 
+						v1.over_time else '' end) over_time,
+						(case when v1.maybe_end_date<= sysdate then 
+						'Y' else 'N' end) new_end_flag,
+				       (CASE
+				         WHEN v1.news IS NOT NULL THEN
+				         '有供应商更新了报价!   '||to_char(news_date,'yyyy-MM-dd HH24:mi:ss')
+				         ELSE
+				          ''
+				       END) news,
+				       v1.end_flag,
+				       v1.try_flag,
+				       v1.round
+				  FROM (SELECT h.re_start_time,
+				  			   h.time_length,
+				  			   to_char(extract(DAY FROM
+				                               numtodsinterval((h.maybe_end_date-sysdate), 'day'))) || '天' ||
+				               to_char(extract(hour FROM
+				                               numtodsinterval((h.maybe_end_date-sysdate), 'day'))) || '时' ||
+				               to_char(extract(minute FROM
+				                               numtodsinterval((h.maybe_end_date-sysdate), 'day'))) || '分' ||
+				               to_char(round(to_number(extract(SECOND FROM
+				                               numtodsinterval((h.maybe_end_date-sysdate),'day'))))) || '秒' AS over_time,
+				             (SELECT pv.vendor_desc
+                          FROM (SELECT v.vendor_desc
+                                  FROM bid_online_bidding_vendors_t v
+                                 WHERE v.bid_header_id = h.bid_header_id
+                                 and h.round = v.round
+                                 ORDER BY v.last_update_date DESC) pv
+                         WHERE  rownum = 1) AS news,
+				             (SELECT pv.last_update_date
+                          FROM (SELECT v.last_update_date
+                                  FROM bid_online_bidding_vendors_t v
+                                 WHERE v.bid_header_id = h.bid_header_id
+                                 	and h.round = v.round
+                                 ORDER BY v.last_update_date DESC) pv
+                         WHERE  rownum = 1) AS news_date,
+                         nvl(h.end_flag,'N') end_flag,
+                         nvl(h.try_flag,'N') try_flag,
+                         h.round,
+                         h.maybe_end_date
+				          FROM bid_online_bidding_headers_t h
+				         WHERE h.bid_header_id = ${@bid_header_id}) v1
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:parameters>
+                <bm:parameter name="bid_detail_id" dataType="java.lang.Long" input="false" output="true" outputPath="/parameter/@bid_detail_id"/>
+            </bm:parameters>
+            <bm:update-sql><![CDATA[
+                begin
+                 bid_online_bidding_t_pkg.create_bid_online_vendors
+	                (
+	                  o_bid_detail_id=>${@bid_detail_id},
+	                  p_business_group=>${/session/@business_group},
+	                  p_quote=>${@quote},
+	                  p_round=>${@round},
+	                  p_bid_header_id=>${@bid_header_id},
+	                  p_user_id=>${/session/@user_id}
+	                );
+                end;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

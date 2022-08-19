@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Wanq  
+    $Date: 2012-10-17 下午4:27:46  
+    $Revision: 1.0  
+    $Purpose: 采购订单，委外页面。
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="erpinv.ERPINV5110.outsouring_warehouses" rootPath="erpinv_5110_outsouring_warehouses_root"/>
+        <!-- <a:model-query model="db.erpfnd_precision_pkg.get_quantity_precision" rootPath="erpinv_5110_get_quantity_accuracy"/> -->
+        <a:model-query defaultWhereClause="parameter_code = &apos;NEGATIVE_STOCK_ALLOWED&apos;" model="erpfnd.ERPFND1130.fnd_parameters" rootPath="negative_stock_allowed"/>
+        <!-- <a:model-query model="db.erpfnd_precision_pkg.get_price_precision" rootPath="erpinv_5110_get_price_precision"/> -->
+    </a:init-procedure>
+    <a:view>
+        <!-- <script src="${/request/@context_path}/modules/inv/inv.js" type="text/javascript"/> -->
+        <script><![CDATA[
+    	var ie_to_save = false;
+    	function erpinv_receive_out_init(){
+    	    var index = ${/parameter/@index};
+    	    //var vender_id = ${/parameter/@vender_id};
+    	    var purchase_order_line_id = '${/parameter/@pur_line_id}';
+    	    var out_para_record = $('erpinv_5110_receive_line_ds').getAt(index);
+    	    var receive_header = $('erpinv_5110_receive_header_ds').getAt(0);
+    	    var header_ds = $('erpinv_5110_outsourcing_head_ds').getAt(0);
+    	    header_ds.set('transaction_num',receive_header.get('transaction_num'));
+    	    header_ds.set('transaction_date',receive_header.get('transaction_date'));
+    	    header_ds.set('vender_code_name',out_para_record.get('vender_code_name'));
+    	    header_ds.set('vender_id',out_para_record.get('vender_id'));
+    	    header_ds.set('item_code_name',out_para_record.get('item_code_name'));
+    	    header_ds.set('item_id',out_para_record.get('item_id'));
+    	    header_ds.set('trade_quantity',out_para_record.get('trade_quantity'));
+    	    header_ds.set('trade_uom_name',out_para_record.get('trade_uom_name'));
+    	    header_ds.set('trade_uom',out_para_record.get('trade_uom'));
+    	    header_ds.set('pur_line_id',out_para_record.get('pur_line_id'));
+
+    	    var negative_stock_allowed_record = $('erpinv_5110_negative_stock_allowed_ds').getAt(0);
+    	    var negative_stock_allowed = negative_stock_allowed_record.get('parameter_value');
+    	    if(negative_stock_allowed!='Y'){
+    	     	$('erpinv_5110_outsouring_add_btn').disable();   
+    	    }
+    	}
+    	function erpinv_5110_outsouring_back(){
+    	    $('erpinv_5110_outsouring_window').close();
+    	}
+    	function erpinv_5110_receive_positive_number(value,record,name){
+		    if(name=="price"){
+		        value = Aurora.formatNumber(value,'${/model/erpinv_5110_outsourcing_temp_ds/record/@value}');
+		    }
+		    // if(name=="trade_quantity"||name=="primary_quantity"||name=="write_off_num"){
+		        // value = show_reserver_num(value,'${/model/erpinv_5110_get_quantity_accuracy/record/@value}');
+		        // // value = Aurora.formatNumber(value,'${/model/erpinv_5110_get_quantity_accuracy/record/@value}');
+		    // }
+		    return value;
+		}
+		function erpinv_5110_out_warehouse_name_editFun(record,name){
+		    if(record.isNew){
+		        return 'erpinv_receive_cbb';
+		    }
+		    return '';
+		}
+		function erpinv_5110_out_item_code_name_editFun(record, name){
+		    if(record.isNew){
+		        return 'erpinv_receive_out_lov';
+		    }
+		    return '';
+		}
+		function erpinv_5110_outsourcing_temp_beforesubmit(dataSet){
+		    var record_arr = dataSet.getAll();
+		    for(var i=0; i<record_arr.length; i++){
+		        var record = record_arr[i];
+		        // record.set('transaction_type','OSI');
+		        record.set('line_number','${/parameter/@line_number}');
+		        record.set('company_id','${/parameter/@company_id}');
+		        if(Aurora.isEmpty(record.get('write_off_num'))){
+		            record.set('write_off_num',0);
+		        }
+		        if(record.get('write_off_num')!=0){
+		            ie_to_save = true;
+		        }
+		    }
+		    if(ie_to_save != true){
+		        Aurora.showMessage("${l:PROMPT}","委外核销信息未维护,不能保存!");
+		     	return false;   
+		    }else{
+		        ie_to_save = false;
+		    }
+		}
+		function erpinv_5110_outsourcing_temp_add(dataSet, record, index){
+		    record.set('primary_quantity','0');
+		}
+		function erpinv_5110_outsourcing_temp_beforeremove(dataSet){
+		    var selected_arr = dataSet.getSelected();
+		    for(var i=0; i<selected_arr.length; i++){
+		     	var record = selected_arr[i];
+		     	var insert_flag = record.get('insert_flag');
+		     	if(insert_flag!='M'){
+		     	    Aurora.showMessage("${l:PROMPT}","委外库房实际库存，不可删除!");
+		     	    return false;
+		     	}   
+		    }
+		}
+		function erpinv5110_out_submit_before(){
+		    // $('erpinv5110_out_save_btn').disable();
+		    Aurora.Masker.mask($('erpinv_5110_outsouring_window').wrap, '正在保存...');
+		}
+		function erpinv5110_out_submit_failed(){
+		    // $('erpinv5110_out_save_btn').enable();
+		    Aurora.Masker.unmask($('erpinv_5110_outsouring_window').wrap);
+		}
+		function erpinv5110_out_submit_success(dataSet, res){
+		    // $('erpinv5110_out_save_btn').enable();
+		    Aurora.Masker.unmask($('erpinv_5110_outsouring_window').wrap);
+		}
+    	]]></script>
+        <a:dataSets>
+            <a:dataSet id="erpinv_5110_outsouring_warehouses_ds">
+                <a:datas dataSource="erpinv_5110_outsouring_warehouses_root"/>
+            </a:dataSet>
+            <a:dataSet id="erpinv_5110_negative_stock_allowed_ds">
+                <a:datas dataSource="negative_stock_allowed"/>
+            </a:dataSet>
+            <a:dataSet id="erpinv_5110_label2_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="order_label_name" defaultValue="委外采购核销"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="erpinv_5110_outsourcing_head_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="transaction_num" readOnly="true"/>
+                    <a:field name="vender_code_name" readOnly="true"/>
+                    <a:field name="transaction_date" readOnly="true"/>
+                    <a:field name="item_code_name" readOnly="true"/>
+                    <a:field name="trade_quantity" readOnly="true"/>
+                    <a:field name="trade_uom_name" readOnly="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="erpinv_5110_outsourcing_temp_ds" autoPageSize="true" autoQuery="true" fetchAll="true" model="erpinv.ERPINV5110.inv_document_os_lns_tmp" queryUrl="${/request/@context_path}/autocrud/erpinv.ERPINV5110.inv_document_os_lns_tmp/query?pur_line_id=${/parameter/@pur_line_id}&amp;vender_id=${/parameter/@vender_id}&amp;line_number=${/parameter/@line_number}&amp;company_id=${/parameter/@company_id}" selectable="true" selectionModel="multiple">
+                <a:fields>
+                    <a:field name="os_ln_tmp_id"/>
+                    <a:field name="company_id" defaultValue="${/parameter/@company_id}"/>
+                    <a:field name="warehouse_id"/>
+                    <a:field name="warehouse_code_name" displayField="code_name" options="erpinv_5110_outsouring_warehouses_ds" returnField="warehouse_id" valueField="warehouse_id"/>
+                    <a:field name="item_id"/>
+                    <a:field name="item_code_name" autoComplete="true" autoCompleteField="item_code_name" autoCompleteSize="1" lovGridHeight="320" lovHeight="450" lovService="erppur.ERPPUR5010.inv_items_basics_lov?enabled_flag=Y" lovWidth="500" required="true" title="物品查询">
+                        <a:mapping>
+                            <a:map from="item_code_name" to="item_code_name"/>
+                            <a:map from="item_id" to="item_id"/>
+                            <a:map from="primary_uom" to="primary_uom"/>
+                            <a:map from="primary_uom_name" to="primary_uom_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="primary_uom"/>
+                    <a:field name="primary_uom_name"/>
+                    <a:field name="purchase_order_line_id" defaultValue="${/parameter/@purchase_order_line_id}"/>
+                    <a:field name="business_partner_id" defaultValue="${/parameter/@vender_id}"/>
+                    <a:field name="write_off_num" defaultValue="0" required="true"/>
+                    <a:field name="insert_flag" defaultValue="M"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="beforeremove" handler="erpinv_5110_outsourcing_temp_beforeremove"/>
+                    <a:event name="add" handler="erpinv_5110_outsourcing_temp_add"/>
+                    <a:event name="beforesubmit" handler="erpinv_5110_outsourcing_temp_beforesubmit"/>
+                    <a:event name="submit" handler="erpinv5110_out_submit_before"/>
+                    <a:event name="submitfailed" handler="erpinv5110_out_submit_failed"/>
+                    <a:event name="submitsuccess" handler="erpinv5110_out_submit_success"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:defaultScreen>
+            <a:screenTopToolbar>
+                <a:gridButton id="erpinv_5110_outsouring_add_btn" bind="erpinv_5110_receive_out_grid" type="add" width="100"/>
+                <a:gridButton id="erpinv5110_out_save_btn" bind="erpinv_5110_receive_out_grid" type="save" width="100"/>
+                <a:gridButton bind="erpinv_5110_receive_out_grid" type="delete" width="100"/>
+                <a:toolbarButton className="item-rbtn-blue back" click="erpinv_5110_outsouring_back" text="返回" width="100"/>
+            </a:screenTopToolbar>
+            <a:hBox>
+                <a:textField name="transaction_num" bindTarget="erpinv_5110_outsourcing_head_ds" prompt="事务号"/>
+                <a:textField name="vender_code_name" bindTarget="erpinv_5110_outsourcing_head_ds" prompt="供应商" width="400"/>
+            </a:hBox>
+            <a:hBox>
+                <a:textField name="item_code_name" bindTarget="erpinv_5110_outsourcing_head_ds" prompt="物品"/>
+                <a:textField name="trade_quantity" bindTarget="erpinv_5110_outsourcing_head_ds" prompt="本次接收" width="100"/>
+                <a:hBox labelWidth="56" padding="0">
+                    <a:textField name="trade_uom_name" bindTarget="erpinv_5110_outsourcing_head_ds" prompt="主单位" width="53"/>
+                </a:hBox>
+                <a:datePicker name="transaction_date" bindTarget="erpinv_5110_outsourcing_head_ds" prompt="事务日期" width="100"/>
+            </a:hBox>
+            <a:grid id="erpinv_5110_receive_out_grid" bindTarget="erpinv_5110_outsourcing_temp_ds" height="320" marginHeight="173" marginWidth="50" width="890">
+                <a:columns>
+                    <a:column name="warehouse_code_name" align="left" editorFunction="erpinv_5110_out_warehouse_name_editFun" prompt="委外库房" width="190"/>
+                    <a:column name="item_code_name" align="left" editorFunction="erpinv_5110_out_item_code_name_editFun" prompt="物品" width="190"/>
+                    <a:column name="write_off_num" align="right" editor="erpinv_receive_numfield" prompt="核销数量" width="90"/>
+                    <a:column name="primary_quantity" align="right" prompt="库存数量" width="90"/>
+                    <a:column name="primary_uom_name" align="left" prompt="主单位" width="90"/>
+                    <a:column name="description" align="left" editor="int_outsourcing_tf" prompt="备注" width="200"/>
+                </a:columns>
+                <a:editors>
+                    <a:lov id="erpinv_receive_out_lov"/>
+                    <a:comboBox id="erpinv_receive_cbb"/>
+                    <a:numberField id="erpinv_receive_numfield" allowNegative="false"/>
+                    <!-- decimalPrecision="${/model/erpinv_5110_outsourcing_temp_ds/record/@value}" -->
+                    <a:textField id="int_outsourcing_tf"/>
+                </a:editors>
+            </a:grid>
+        </a:defaultScreen>
+        <script><![CDATA[
+        erpinv_receive_out_init();
+        ]]></script>
+    </a:view>
+</a:screen>

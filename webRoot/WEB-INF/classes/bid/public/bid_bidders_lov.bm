@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: WangQiaosen  
+    $Date: 2013-8-27 上午10:54:44  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:fields>
+        <bm:field name="bidder_company_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="bidder_code" databaseType="VARCHAR2" datatype="java.lang.String" forDisplay="true" forQuery="true" prompt="BID_ENTRUSTMENT_HEADERS.VENDOR_CODE"/>
+        <bm:field name="bidder_desc" databaseType="VARCHAR2" datatype="java.lang.String" forDisplay="true" forQuery="true" prompt="BID_ENTRUSTMENT_HEADERS.BIDDER_NAME"/>
+        <bm:field name="bidder_business_group"/>
+        <bm:field name="contact_id"/>
+        <bm:field name="contact_name"/>
+        <bm:field name="mobile_phone"/>
+        <bm:field name="telephone"/>
+        <bm:field name="email"/>
+        <bm:field name="coop_company_id"/>
+        <!-- <bm:field name="owner_company_id"/> -->
+    </bm:fields>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT DISTINCT
+                        b.bidder_company_id,
+                        b.bidder_code,
+                        b.bidder_desc,
+                        b.bidder_business_group,
+                        (SELECT
+                            csc.contact_id
+                        FROM
+                            fnd_com_sup_contacts csc
+                        WHERE
+                            csc.company_id           = b.bidder_company_id AND
+                            csc.enabled_flag         = 'Y' AND
+                            csc.default_contact_flag = 'Y' AND
+                            rownum                   = 1
+                        ) AS contact_id,
+                        (SELECT
+                            csc.contact_name
+                        FROM
+                            fnd_com_sup_contacts csc
+                        WHERE
+                            csc.company_id           = b.bidder_company_id AND
+                            csc.enabled_flag         = 'Y' AND
+                            csc.default_contact_flag = 'Y' AND
+                            rownum                   = 1
+                        ) AS contact_name,
+                        (SELECT
+                            csc.mobile_phone
+                        FROM
+                            fnd_com_sup_contacts csc
+                        WHERE
+                            csc.company_id           = b.bidder_company_id AND
+                            csc.enabled_flag         = 'Y' AND
+                            csc.default_contact_flag = 'Y' AND
+                            rownum                   = 1
+                        ) AS mobile_phone,
+                        (SELECT
+                            csc.telephone
+                        FROM
+                            fnd_com_sup_contacts csc
+                        WHERE
+                            csc.company_id           = b.bidder_company_id AND
+                            csc.enabled_flag         = 'Y' AND
+                            csc.default_contact_flag = 'Y' AND
+                            rownum                   = 1
+                        ) AS telephone,
+                        (SELECT
+                            csc.email
+                        FROM
+                            fnd_com_sup_contacts csc
+                        WHERE
+                            csc.company_id           = b.bidder_company_id AND
+                            csc.enabled_flag         = 'Y' AND
+                            csc.default_contact_flag = 'Y' AND
+                            rownum                   = 1
+                        ) AS email,
+                        pvlc.coop_company_id
+                    FROM
+                        bid_bidders_v b,
+                        pur_vendor_life_cycle pvlc,
+                        pur_vendor_class_assigns pvca
+                    WHERE
+                        pvlc.current_flag          = 'Y' AND
+                        pvlc.coop_business_group   = b.bidder_business_group AND
+                        pvlc.coop_company_id       = b.bidder_company_id AND
+                        pvlc.owner_business_group  = b.owner_business_group AND
+                        b.enabled_flag             = 'Y' AND
+                        b.owner_business_group     = ${/session/@business_group} AND
+                        pvca.coop_company_id(+)    = b.bidder_company_id AND
+                        pvca.coop_company_id(+)    = b.bidder_company_id AND
+                        pvca.coop_business_group(+)= b.bidder_business_group AND
+                        pvca.business_group(+)     = b.owner_business_group AND
+                        (
+                            DECODE(
+                            (SELECT
+                                cbi.bg_config_item_value FROM fnd_config_center_bg_item cbi WHERE cbi.config_item_code = 'RFX_13' AND
+                                cbi.business_group                                                                     = ${/session/@business_group}
+                            ),'Y',1,2)                                                                                 = 2 OR
+                            (
+                                EXISTS
+                                (SELECT
+                                    1
+                                FROM
+                                    bid_entrustment_ln_items li,
+                                    pur_supply_ability_lns psal,
+                                    pur_supply_ability_hds psah
+                                WHERE
+                                    psal.supply_flag         = 'Y' AND
+                                    b.bidder_company_id      = psah.vendor_id AND
+                                    psal.ability_hds_id      = psah.ability_hds_id AND
+                                    li.entrustment_header_id = ${@entrustment_header_id} AND
+                                    psal.category_udf_id     = li.item_category_id AND
+                                    psah.business_group      = b.owner_business_group
+                                )
+                            )
+                        )
+                        AND
+                        NOT EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            (SELECT
+                                pscc.supplier_classification
+                            FROM
+                                pur_supplier_control_class pscc
+                            WHERE
+                                pvca.vendor_class_id = to_number(pscc.supplier_classification) AND
+                                pscc.business_group  = ${/session/@business_group} AND
+                                pscc.source_type     = 'BID'
+                            )
+                        ) AND
+                        NOT EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            pur_vendor_black_list fc
+                        WHERE
+                            fc.coop_company_id           = b.bidder_company_id AND
+                            fc.owner_business_group      = b.owner_business_group AND
+                            NVL(fc.black_list_flag, 'N') = 'Y' AND
+                            (
+                                fc.black_list_expiry_date IS NULL OR
+                                (
+                                    fc.black_list_expiry_date >= sysdate
+                                )
+                            )
+                        ) AND
+                        NOT EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            (SELECT
+                                all_stage_code
+                            FROM
+                                (SELECT
+                                    DECODE(psc.registered,'N',NULL,'Y','REGISTER') registered,
+                                    DECODE(psc.recommended ,'N',NULL,'Y','RECOMMEND') recommended,
+                                    DECODE(psc.potential ,'N',NULL,'Y','POTENTIAL') potential,
+                                    DECODE(psc.qualified ,'N',NULL,'Y','QUALIFIED') qualified,
+                                    DECODE(psc.eliminated ,'N',NULL,'Y','ELIMINATED') eliminated
+                                FROM
+                                    pur_sup_control_life_stage psc
+                                WHERE
+                                    business_group                       = ${/session/@business_group} AND
+                                    source_type                          = 'BID'
+                                ) unpivot(all_stage_code FOR stage_code IN(registered, recommended, potential, qualified, eliminated))
+                            ) pscv
+                        WHERE
+                            pscv.all_stage_code = pvlc.stage_code
+                        )
+                    ) v #AUTHORIY_FROM# #WHERE_CLAUSE# #AUTHORIY_WHERE#
+                ORDER BY
+                    bidder_code
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter enforceOperations="query" expression="1 =1"/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field field="bidder_company_id" queryOperator="="/>
+        <bm:query-field field="bidder_code" queryExpression="bidder_code like &apos;%&apos; || ${@bidder_code} || &apos;%&apos;"/>
+        <bm:query-field field="bidder_desc" queryExpression="bidder_desc like &apos;%&apos; || ${@bidder_desc} || &apos;%&apos;"/>
+        <bm:query-field name="code_name" queryExpression="(bidder_code like &apos;%&apos; || ${@code_name} || &apos;%&apos; or bidder_desc like &apos;%&apos; || ${@code_name} || &apos;%&apos;)"/>
+        <bm:query-field name="not_exists_created_bidder" queryExpression="NOT EXISTS (SELECT 1 FROM bid_bidding_docm_headers dh, bid_entrustment_headers  eh WHERE eh.entrustment_header_id = ${@not_exists_created_bidder} AND dh.entrustment_header_id = eh.entrustment_header_id AND dh.round = eh.round AND dh.status NOT IN (&apos;CANCELLED&apos;) AND v.bidder_company_id = dh.bidder_company_id AND dh.coop_company_id = v.owner_company_id)"/>
+        <!-- <bm:query-field field="owner_company_id" queryOperator="="/> -->
+    </bm:query-fields>
+    <authority only_user_authority="Y">
+        <authority-segment source_alias="v" source_name="bidder_company_id" type="VENDOR"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+            var cx = Packages.aurora.javascript.Context.getCurrentContext();
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

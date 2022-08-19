@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao  
+    $Date: 2014-10-10 下午04:38:31  
+    $Revision: 1.0  
+    $Purpose: 送货单查询-供应方，送货单按明细行查询BM
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="asn_number desc" needAccessControl="true">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT *
+				  FROM(
+					select vd.coop_business_group AS vendor_business_group,
+					       vd.coop_company_id AS vendor_company_id,
+					       h.asn_header_id,
+					       h.status,
+					       nvl(h.display_asn_number, h.asn_number) AS asn_number,
+					       atv.asn_type_name AS asn_type_name,
+					       fcv.company_full_name AS company_name,
+					       to_char(h.creation_date, 'yyyy-mm-dd') AS creation_date_fmt,
+					       to_char(h.ship_date, 'yyyy-mm-dd') AS ship_date_fmt,
+					       (select fl.address_line_1 from fnd_locations fl where h.location_id = fl.location_id) as location_name,
+					       (select iov.description from inv_organizations_vl iov where h.ship_to_organization_id = iov.inv_organization_id) as ship_to_organization_name
+					
+					  from inv_asn_headers h,
+					       inv_asn_types_vl atv,
+					       fnd_companies_vl fcv,
+					       (select v2.asn_header_id, v1.coop_business_group, v1.coop_company_id
+					          from pur_vendors_v v1, inv_asn_rlt_vendor_auth v2
+					         where v1.vendor_id = v2.vendor_id) vd
+					
+					 where h.asn_header_id = vd.asn_header_id
+					   and h.asn_type_code = atv.asn_type_code
+					   and h.coop_company_id = fcv.company_id
+					   and exists
+					 (select 1
+					          from inv_asn_lines l
+					         where h.asn_header_id = l.asn_header_id
+					           and l.line_location_id in
+					               (SELECT distinct lla.pur_line_location_id
+					                  FROM pur_line_locations_all lla
+					                 WHERE lla.pur_header_id in ${:@pur_headers}))) v
+            	#AUTHORIY_FROM# 
+            	#WHERE_CLAUSE# 
+            	#AUTHORIY_WHERE# 
+            	#ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="asn_number" queryExpression="v.asn_number like &apos;%&apos;||trim(${@asn_number})||&apos;%&apos;"/>
+        <bm:query-field name="order_num" queryExpression="v.po_num like &apos;%&apos;||trim(${@order_num})||&apos;%&apos;"/>
+        <bm:query-field name="company_id" queryExpression="v.coop_company_id = ${@company_id}"/>
+        <!-- <bm:query-field name="status" queryExpression="v.h_status = ${@status}"/> -->
+        <bm:query-field name="status_tree" queryExpression="(v.receive_status in (decode(${@status},&apos;WAIT_TO_RECEIVE&apos;,&apos;SEND_OUT&apos;,&apos;ALL_RECEIVE&apos;,&apos;ALL_RECEIVE&apos;,&apos;CLOSED&apos;,&apos;ALL_CLOSE&apos;,${@status}),decode(${@status1},&apos;WAIT_TO_RECEIVE&apos;,&apos;SEND_OUT&apos;,&apos;ALL_RECEIVE&apos;,&apos;ALL_RECEIVE&apos;,&apos;CLOSED&apos;,&apos;ALL_CLOSE&apos;,${@status1}))                                                              or (v.close_flag = &apos;Y&apos; and ${@status2} = &apos;CLOSED&apos;)                                                              or v.cancel_process_status in (nvl(${@cancel_process_status_name},&apos;1&apos;),nvl(${@cancel_process_status_name1},&apos;1&apos;),nvl(${@cancel_process_status_name2},&apos;1&apos;))                                                              or v.process_status in (substr(${@send_successed},6),substr(${@send_waiting},6),substr(${@send_failed},6))                                                              or ( v.process_status = &apos;SUCCESSED&apos; and ${@can_print} = &apos;CAN_PRINT&apos;))"/>
+        <bm:query-field name="status" queryExpression="v.receive_status = decode(${@status},&apos;ALL_CLOSE&apos;,&apos;ALL_RECEIVE&apos;,${@status})"/>
+        <bm:query-field name="close_flag" queryExpression="v.close_flag = ${@close_flag}"/>
+        <bm:query-field name="process_status" queryExpression="v.process_status = ${@process_status}"/>
+        <bm:query-field name="cancel_process_status1" queryExpression="v.cancel_process_status = ${@cancel_process_status1}"/>
+        <bm:query-field name="can_print" queryExpression="v.process_status = &apos;SUCCESSED&apos; and ${@can_print} = &apos;CAN_PRINT&apos;"/>
+        <bm:query-field name="vendor_site_id" queryExpression="v.vendor_site_id = ${@vendor_site_id}"/>
+        <bm:query-field name="item_id" queryExpression="v.require_item_id = ${@item_id}"/>
+        <bm:query-field name="ship_to_organization_id" queryExpression="v.ship_to_organization_id = ${@ship_to_organization_id}"/>
+        <bm:query-field name="agent_name" queryExpression="v.agent_name like &apos;%&apos;||trim(${@agent_name})||&apos;%&apos;"/>
+        <bm:query-field name="expected_date_from" queryExpression="v.expected_date &gt;= to_date(${@expected_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="expected_date_to" queryExpression="v.expected_date &lt;= to_date(${@expected_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="creation_date_from" queryExpression="trunc(v.creation_date) &gt;= to_date(${@creation_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="creation_date_to" queryExpression="trunc(v.creation_date) &lt;= to_date(${@creation_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="ship_date_from" queryExpression="v.ship_date &gt;= to_date(${@ship_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="ship_date_to" queryExpression="v.ship_date &lt;= to_date(${@ship_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="exclude_all_close" queryExpression="((${@exclude_all_close} = &apos;Y&apos; and v.h_status != &apos;ALL_CLOSE&apos;) or (${@exclude_all_close} = &apos;N&apos; and 1=1))"/>
+        <bm:query-field name="on_the_way_qty_view" queryExpression="((${@on_the_way_qty_view} = &apos;Y&apos; and v.on_the_way_quantity &gt;= 0 and nvl(v.receive_status,&apos;PART_RECEIVE&apos;) = &apos;PART_RECEIVE&apos; and nvl(v.cancel_flag,&apos;N&apos;) = &apos;N&apos; and nvl(v.close_flag,&apos;N&apos;) = &apos;N&apos;) or (${@on_the_way_qty_view} = &apos;N&apos; and 1=1))"/>
+        <bm:query-field name="line_num" queryExpression="v.line_num = ${@line_num}"/>
+        <bm:query-field name="shipment_num" queryExpression="v.shipment_num = ${@shipment_num}"/>
+        <bm:query-field name="release_num" queryExpression="v.release_num = ${@release_num}"/>
+        <bm:query-field name="cancel_process_status" queryExpression="v.cancel_process_status is null and v.process_status = &apos;SUCCESSED&apos; "/>
+        <bm:query-field name="asn_type_code" queryExpression="v.asn_type_code =${@asn_type_code}"/>
+        <bm:query-field name="vendor_company_id" queryExpression="v.vendor_company_id=${@vendor_company_id}"/>
+        <bm:query-field name="asn_line_ids" queryExpression="asn_line_id in (${:@asn_line_ids})"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="1=1"/>
+        <bm:data-filter expression="v.status != &apos;NEW&apos;"/>
+        <bm:data-filter expression="v.vendor_business_group = ${/session/@business_group}"/>
+    </bm:data-filters>
+    <authority foundation_code="INV_ASN">
+        <authority-segment source_alias="v" source_name="vendor_company_id" type="COMPANY"/>
+        <authority-segment source_alias="v" source_name="business_unit_id" type="BUSINESS_UNIT"/>
+        <authority-segment source_alias="v" source_name="created_by" type="CREATER"/>
+        <authority-segment source_alias="v" source_name="useless_id_1" type="RECEIVER"/>
+        <authority-segment source_alias="v" source_name="useless_id_2" type="CLIENT"/>
+        <authority-segment source_alias="v" source_name="useless_id_3" type="CLIENT_SITE"/>
+        <authority-segment source_alias="v" source_name="useless_id_4" type="VENDOR"/>
+        <authority-segment source_alias="v" source_name="useless_id_5" type="VENDOR_SITE"/>
+        <authority-segment source_alias="v" source_name="useless_id_6" type="PUR_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id_7" type="INV_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id_8" type="SD_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id_9" type="PURHASE_MATERIAL"/>
+        <authority-segment source_alias="v" source_name="useless_id_10" type="SALES_PRODUCTION"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+        	var cx = Packages.aurora.javascript.Context.getCurrentContext();
+      		Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+          	Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

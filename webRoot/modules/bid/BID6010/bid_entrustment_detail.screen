@@ -1,0 +1,604 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: WangQiaosen  
+    $Date: 2013-5-10 下午1:19:01  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:c="aurora.application.action" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="bid.BID6010.bid_expert_belong_team_query" rootPath="belong_teams"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="bid6010_bidding_score_detail_link" url="${/request/@context_path}/modules/bid/BID6010/bid_bidding_score_detail.screen"/>
+        <a:link id="bid6010_bidding_score_link" url="${/request/@context_path}/modules/bid/BID6010/bid_bidding_score.screen"/>
+        <a:link id="bid6010_submit_bidding_score_link" url="${/request/@context_path}/modules/bid/BID6010/bid_bidding_score_submit.svc"/>
+        <a:link id="bid6010_bidding_docm_detail_link" url="${/request/@context_path}/modules/bid/BID7060/bid_bidding_docm_detail_in_auth.screen"/>
+        <a:link id="bid6010_bidding_docm_history_link" url="${/request/@context_path}/modules/bid/BID6010/bid_bidding_docm_history.screen"/>
+        <a:link id="bid6010_biddingSeqTeamAvgScore_detail_link" url="${/request/@context_path}/modules/bid/BID6010/bid_bidding_seq_team_avg_score_detail.screen"/>
+        <a:link id="bid_entrustment_print_link" url="${/request/@context_path}/modules/bid/print/bid_entrustment_print.screen"/>
+        <a:link id="bid_entrustment_print_link_project" url="${/request/@context_path}/modules/bid/print/bid_entrustment_print_project.screen"/>
+        <style><![CDATA[
+.contain {
+padding:3px;
+background:white;
+font-size:9pt;
+border-width:1px 2px 2px 1px;
+border-style:solid;
+left:20; 
+margin-left:-418px;
+margin-top:16px;
+position:absolute;
+display:none;
+z-index:9999;
+overflow:auto;
+max-width:450px;
+max-height:100px;
+}
+]]></style>
+        <script><![CDATA[
+            /* function bid6010Save() {
+             var ds = $('bid6010_bidding_docm_header_ds');
+             ds.submit();
+             } */
+            
+            /* function bid6010BiddingDocmHeaderOnSubmitsuccess(ds) {
+             Aurora.showMessage('${l:PROMPT}', '已保存！');
+             } */
+            
+            
+            function bid6010DetailEntrustmentHeaderOnLoad(ds) {
+                var record = ds.getAt(0);
+                if (record.get('payment_terms')) {
+                    document.getElementById("contain").innerHTML = record.get('payment_terms');
+                }
+            }
+            
+            function bid6010Submit() {
+                Aurora.showConfirm('${l:PROMPT}', '${l:PROMPT.CONFIRM_SUBMIT}？', function() {
+            
+                    var datas = $('bid6010_entrustment_header_ds').getCurrentRecord().data;
+                    var score_headers = [];
+                    var docm_header_records = $('bid6010_bidding_docm_header_ds').getAll();
+                    for (var k = 0;k < docm_header_records.length;k++) {
+                        score_headers.push(docm_header_records[k].data);
+                    }
+            
+                    datas['score_headers'] = score_headers;
+                    Aurora.Masker.mask($('bid6010_entrustment_window').wrap, '${l:LOADING}');
+                    Aurora.request({
+                        url: $('bid6010_submit_bidding_score_link').getUrl(),
+                        para: datas,
+                        success: function() {
+                            Aurora.Masker.unmask($('bid6010_entrustment_window').wrap);
+                            Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SUBMITED}', function() {
+                                bid6010Query();
+                                $('bid6010_entrustment_window').close();
+                            });
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask($('bid6010_entrustment_window').wrap);
+                            return;
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask($('bid6010_entrustment_window').wrap);
+                            return;
+                        },
+                        scope: this
+                    });
+            
+            
+                });
+            }
+            
+            function bid6010Return() {
+                $('bid6010_entrustment_window').close();
+            }
+            
+            function bid6010BiddingDocmDetailRender(value, record, name) {
+                var bid_header_id = record.get('bid_header_id');
+                var entrustment_header_id = record.get('entrustment_header_id');
+                if (name == 'bid_header_number') {
+                    return '<a href="javascript:bid6010BiddingDocmDetail(' + '${/parameter/@entrustment_header_id}' + ',' + bid_header_id + ')">' + value + '</a>';
+                } else if (name == 'bidder_desc') {
+                    var bidder_id = record.get('bidder_id');
+                    var bidder_company_id = record.get('bidder_company_id');
+                    return '<a href="javascript:bid6010BiddingDocmHistory(' + '${/parameter/@entrustment_header_id}' + ',' + '${/parameter/@round}' + ',' + '${/parameter/@version}' + ',' + bidder_id + ',' + bidder_company_id + ')">' + value + '</a>';
+                } else if (name == 'min_price_weight') {
+                    return value + '%';
+                }
+                // else if (name == 'scoring') {
+                // var score_status = record.get('score_status');
+                // if (score_status == 'SUBMITTED') {
+                // return '<a href="javascript:bid6010BiddingScoreDetail(' + record.get('score_header_id') + "," + '${/parameter/@entrustment_header_id}' + "," + record.get('bid_header_id') + ');">评分明细</a>';
+                // } else {
+                // return '<a href="javascript:bid6010BiddingScore(' + record.get('score_header_id') + "," + '${/parameter/@entrustment_header_id}' + "," + record.get('bid_header_id') + ');">评分</a>';
+                // }
+                // }
+                else if (name == 'operation_record') {
+                    var score_flag = 'N';
+                    var score_header_id;
+                    //循环所有组别
+                    var expertTeamRecords = $('bid6010_expertTeams_ds').getAll();
+                    for (var i = 0;i < expertTeamRecords.length;i++) {
+                        var team_seq = expertTeamRecords[i].get('team_seq');
+                        var team = expertTeamRecords[i].get('team');
+                        var sequence_num = expertTeamRecords[i].get('sequence_num');
+            
+                        var team_seq_id = team_seq + '_id';
+                        var team_score_id = team_seq + '_score_id';
+                        var team_seq_score_status = team_seq + '_score_status';
+            
+                        var score_status = record.get(team_seq_score_status);
+            
+                        if (score_status == 'SUBMITTED') {
+                            score_header_id = record.get(team_score_id);
+                            score_flag = 'Y';
+                        }
+                    }
+            
+                    if (score_flag == 'Y') {
+                        return '<a href="javascript:bid6010ScoreOperationRecord(' + score_header_id + ')">${l:PROMPT.OPERATION_RECORD}</a>';
+                    } else {
+                        return '${l:BID_ENTRUSTMENT_HEADERS.NOT_YET_SCORED}';
+                    }
+                } else {
+            
+                    //循环所有组别
+                    var expertTeamRecords = $('bid6010_expertTeams_ds').getAll();
+                    for (var i = 0;i < expertTeamRecords.length;i++) {
+                        var team_seq = expertTeamRecords[i].get('team_seq');
+                        if (name == team_seq) {
+                            var team = expertTeamRecords[i].get('team');
+                            var sequence_num = expertTeamRecords[i].get('sequence_num');
+            
+                            var team_seq_id = team_seq + '_id';
+                            var team_score_id = team_seq + '_score_id';
+                            var team_seq_score_status = team_seq + '_score_status';
+            
+                            var bid_score_sum = record.get(team_seq);
+                            var line_expert_id = record.get(team_seq_id);
+                            var score_header_id = record.get(team_score_id);
+                            var score_status = record.get(team_seq_score_status);
+            
+                            if (score_status == 'SUBMITTED' || score_status == 'CONFIRMED') {
+                                if (score_header_id) {
+                                    return '<a href="javascript:bid6010BiddingScoreDetail(' + score_header_id + "," + '${/parameter/@entrustment_header_id}' + "," + record.get('bid_header_id') + ');">' + bid_score_sum + '</a>';
+                                } else {
+                                    return '<a href="javascript:bid6010BiddingSeqTeamAvgScoreDetail(' + '${/parameter/@entrustment_header_id}' + "," + record.get('bid_header_id') + ',\'' + team + '\',' + sequence_num + ');">' + bid_score_sum + '</a>';
+                                }
+                            } else {
+                                if (bid_score_sum) {
+                                    return '<a href="javascript:bid6010BiddingScore(' + score_header_id + "," + '${/parameter/@entrustment_header_id}' + "," + record.get('bid_header_id') + ',\'' + team + '\',' + sequence_num + ');">' + bid_score_sum + '</a>';
+                                } else {
+                                    return '<a href="javascript:bid6010BiddingScore(' + score_header_id + "," + '${/parameter/@entrustment_header_id}' + "," + record.get('bid_header_id') + ',\'' + team + '\',' + sequence_num + ');">${l:BID_ETSMT_EXPERT_SCR_RULES.SCORE}</a>';
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            function bid6010BiddingDocmDetail(id, bid_header_id) {
+                new Aurora.Window({
+                    id: 'bid7060_bidding_docm_detail_window',
+                    title: '${l:BID_ENTRUSTMENT_HEADERS.BID_DETAIL}',
+                    url: $('bid6010_bidding_docm_detail_link').getUrl() + '?bid_header_id=' + bid_header_id + '&entrustment_header_id=' + id,
+                    fullScreen: true
+                });
+            }
+            
+            function bid6010BiddingDocmHistory(entrustment_header_id, round, version, bidder_id, bidder_company_id) {
+                new Aurora.Window({
+                    id: 'bid6010_bidding_docm_history_window',
+                    title: '${l:BID_ENTRUSTMENT_HEADERS.BID_HISTORY}',
+                    url: $('bid6010_bidding_docm_history_link').getUrl() + '?entrustment_header_id=' + entrustment_header_id + '&round=' + round + '&version=' + version + '&bidder_id=' + bidder_id + '&bidder_company_id=' + bidder_company_id,
+                    height: 410,
+                    width: 570
+                });
+            }
+            
+            function bid6010BiddingScoreDetail(score_header_id, entrustment_header_id, bid_header_id) {
+                new Aurora.Window({
+                    id: 'bid6010_bidding_score_detail_window',
+                    title: '${l:BID_ENTRUSTMENT_HEADERS.EXPERT_SCORE_DETAIL}',
+                    url: $('bid6010_bidding_score_detail_link').getUrl() + '?entrustment_header_id=' + entrustment_header_id + '&score_header_id=' + score_header_id + '&bid_header_id=' + bid_header_id,
+                    width: '580',
+                    height: '480'
+                });
+            }
+            
+            function bid6010BiddingSeqTeamAvgScoreDetail(entrustment_header_id, bid_header_id, team, sequence_num) {
+                new Aurora.Window({
+                    id: 'bid6010_bidding_score_detail_window',
+                    title: '${l:BID_ENTRUSTMENT_HEADERS.EXPERT_SCORE_DETAIL}',
+                    url: $('bid6010_biddingSeqTeamAvgScore_detail_link').getUrl() + '?entrustment_header_id=' + entrustment_header_id + '&bid_header_id=' + bid_header_id + '&sequence_num=' + sequence_num + '&team=' + team,
+                    width: '580',
+                    height: '480'
+                });
+            }
+            
+            function bid6010BiddingScore(score_header_id, entrustment_header_id, bid_header_id, team, sequence_num) {
+                new Aurora.Window({
+                    id: 'bid6010_bidding_score_window',
+                    title: '${l:BID_ENTRUSTMENT_HEADERS.EXPERT_SCORE}',
+                    url: $('bid6010_bidding_score_link').getUrl() + '?entrustment_header_id=' + entrustment_header_id + (Aurora.isEmpty(score_header_id) == true ? '' : ('&score_header_id=' + score_header_id)) + '&bid_header_id=' + bid_header_id + '&sequence_num=' + sequence_num + '&team=' + team,
+                    width: '580',
+                    height: '480'
+                }).on('beforeclose', function() {
+                    $('bid6010_bidding_docm_header_ds').query();
+                });
+            }
+            
+            function bid6010ScoreOperationRecord(score_header_id) {
+                new Aurora.Window({
+                    id: 'bid6010_operation_record_window',
+                    title: '${l:PROMPT.OPERATION_RECORD}',
+                    url: $('bid6010_operation_record_link').getUrl() + '?operation_table=BID_BIDDING_SCORE_HEADERS' + '&operation_table_id=' + score_header_id,
+                    height: 450,
+                    width: 600
+                });
+            }
+            
+            /* function bid6010BiddingDocmHeaderEditor(rec, name) {
+             if (name == 'expert_suggestion') {
+             var score_status = rec.get('score_status');
+             if (score_status == 'SCORED' || score_status == 'RESCORING' || Aurora.isEmpty(score_status)) {
+             return 'bid6010_bidding_docm_header_tf';
+             }
+             return '';
+             }
+             } */
+            
+            function bid6010EntrustmentAtmRender(value, rec, name) {
+                if (name == 'file_download_link') {
+                    var file_download_link = rec.get('file_download_link');
+                    return file_download_link;
+                }
+            }
+            
+            function bid6010EntrustmentItemEditRender(value, rec, name) {
+                if (name == 'quantity') {
+                    if (!Aurora.isEmpty(value)) {
+                        return Aurora.formatNumber(value);
+                    }
+                    return value;
+                } else if (name == 'base_price') {
+                    if (!Aurora.isEmpty(value)) {
+                        return Aurora.formatNumber(value);
+                    }
+                    return value;
+                } else if (name == 'unit_price') {
+                    if (!Aurora.isEmpty(value)) {
+                        return Aurora.formatNumber(value);
+                    }
+                    return value;
+                } else if (name == 'net_price') {
+                    if (!Aurora.isEmpty(value)) {
+                        return Aurora.formatNumber(value);
+                    }
+                    return value;
+                } else if (name == 'net_amount') {
+                    if (!Aurora.isEmpty(value)) {
+                        return Aurora.formatMoney(value);
+                    }
+                    return value;
+                } else if (name == 'tax_amount') {
+                    if (!Aurora.isEmpty(value)) {
+                        return Aurora.formatMoney(value);
+                    }
+                    return value;
+                } else if (name == 'total_amount') {
+                    if (!Aurora.isEmpty(value)) {
+                        return Aurora.formatMoney(value);
+                    }
+                    return value;
+                }
+            }
+            
+            function bid6010_entrustmentDetailInitFun() {
+                var score_method = $('bid6010_entrustment_header_ds').getAt(0).get('score_method');
+                var current_expert_seq_num = $('bid6010_entrustment_header_ds').getAt(0).get('current_expert_seq_num');
+                if (score_method == 'COMPREHENSIVE') {
+                    $('bid6010_bidding_docm_header_grid').hideColumn('min_price_weight');
+                }
+            
+                var prequal_flag = $('bid6010_entrustment_header_ds').getAt(0).get('prequal_flag');
+                if (prequal_flag == 'Y') {
+                    document.getElementById('bid6010_prequal_div').style.display = "block";
+                } else {
+                    document.getElementById('bid6010_prequal_div').style.display = "none";
+                }
+            
+                var submit_btu_flag = $('bid6010_entrustment_header_ds').getAt(0).get('submit_btu_flag');
+                if (submit_btu_flag == 'N') {
+                    $('bid6010_submitBtu').disable();
+                }
+                var expertTeams_ds = $('bid6010_expertTeams_ds');
+                var expertTeams_recs = expertTeams_ds.getAll();
+                for (i = 0;i < expertTeams_recs.length;i++) {
+                    if (current_expert_seq_num == expertTeams_recs[i].get('sequence_num')) {
+                        if (expertTeams_recs[i].get('hidden_flag') == 'Y') {
+                            document.getElementById('bid6010_docm_printBtn').style.display = "none";
+                        }
+                    }
+                }
+            }
+            
+            
+            function bid6010_UploadPrequalAttachmentFun() {
+                var url = "${/request/@context_path}/check_uploadFile.screen?table_name=BID_PREQUAL_HEADERS&header_id=${/parameter/@entrustment_header_id}";
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:PROMPT.VIEW_ATTACHMENT}',
+                    id: 'bid6010_prequal_window',
+                    width: 610,
+                    height: 500
+                });
+            }
+            
+            function tamouseover(a, e) {
+                var head_ds = $('bid6010_entrustment_header_ds');
+                var record = head_ds.getAt(0);
+                if (record.get('payment_terms')) {
+                    document.getElementById("contain").style.display = "inline";
+                }
+            }
+            
+            function tAfocus(a) {
+                document.getElementById("contain").style.display = "none";
+            }
+            
+            
+            function bid_bidding_docm_print() {
+                var entrustment_header_id = '${/parameter/@entrustment_header_id}';
+              //  window.open($('bid_entrustment_print_link').getUrl() + '?entrustment_header_id=' + entrustment_header_id, '_blank');
+            
+               var item_type =  $('bid6010_entrustment_header_ds').getAt(0).get('item_type');
+             //  alert(item_type);
+               if(item_type =='ITEM'){
+               window.open($('bid_entrustment_print_link').getUrl() + '?entrustment_header_id=' + entrustment_header_id, '_blank');
+               }
+               else {
+               window.open($('bid_entrustment_print_link_project').getUrl() + '?entrustment_header_id=' + entrustment_header_id, '_blank');
+               }
+            
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="bid6010_expertTeams_ds">
+                <a:datas dataSource="/model/belong_teams"/>
+            </a:dataSet>
+            <a:dataSet id="bid6010_entrustment_header_ds" fetchAll="true" loadData="true" model="bid.BID6010.bid_entrustment_headers" queryUrl="${/request/@context_path}/autocrud/bid.BID6010.bid_entrustment_headers/query?entrustment_header_id=${/parameter/@entrustment_header_id}">
+                <a:fields>
+                    <a:field name="tax_included_flag" readOnly="true"/>
+                    <a:field name="margin_required_flag" readOnly="true"/>
+                    <a:field name="bidder_qualified_flag" readOnly="true"/>
+                    <a:field name="bidding_file_free_flag" readOnly="true"/>
+                    <a:field name="allowed_part_bidding_flag" readOnly="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="bid6010DetailEntrustmentHeaderOnLoad"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="bid6010_entrustment_ln_items_ds" autoCount="true" autoPageSize="true" autoQuery="true" model="bid.BID6010.bid_entrustment_ln_items_query" queryUrl="${/request/@context_path}/autocrud/bid.BID6010.bid_entrustment_ln_items_query/query?entrustment_header_id=${/parameter/@entrustment_header_id}">
+                <a:fields>
+                    <a:field name="tax_included_flag" checkedValue="Y" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="bid6010_entrustment_ln_bidders_ds" autoCount="true" autoPageSize="true" autoQuery="true" model="bid.BID6010.bid_entrustment_ln_bidders_query" queryUrl="${/request/@context_path}/autocrud/bid.BID6010.bid_entrustment_ln_bidders_query/query?entrustment_header_id=${/parameter/@entrustment_header_id}">
+                <a:fields>
+                    <a:field name="sms_flag" checkedValue="Y" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="bid6010_bidding_docm_header_ds" autoCount="true" autoPageSize="true" autoQuery="true" model="bid.BID6010.bid_bidding_docm_headers_query" queryUrl="${/request/@context_path}/modules/bid/BID6010/bid_bidding_score_query.svc?entrustment_header_id=${/parameter/@entrustment_header_id}&amp;round=${/parameter/@round}&amp;version=${/parameter/@version}"/>
+            <a:dataSet id="bid6010_entrustment_atm_files_ds" autoCount="true" autoQuery="true" fetchAll="true" model="bid.public.bid_entrustment_header_attachment" queryUrl="${/request/@context_path}/autocrud/bid.public.bid_entrustment_header_attachment/query?pk_value=${/parameter/@entrustment_header_id}"/>
+            <a:dataSet id="bid6010_edit_entrustment_prequal" autoQuery="true" model="bid.BID6010.bid_entrustment_prequal" queryUrl="${/request/@context_path}/autocrud/bid.BID6010.bid_entrustment_prequal/query?entrustment_header_id=${/parameter/@entrustment_header_id}">
+                <a:fields>
+                    <a:field name="entrustment_header_id" defaultValue="${/parameter/@entrustment_header_id}"/>
+                    <a:field name="closing_date" readOnly="true"/>
+                    <a:field name="review_method_desc" readOnly="true"/>
+                    <a:field name="qualified_limit" readOnly="true"/>
+                    <a:field name="file_free_flag" checkedValue="Y" defaultValue="N" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="proqual_file_expense" readOnly="true"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <!-- <a:toolbarButton click="bid6010Save" text="保存" width="100"/> -->
+                <a:toolbarButton id="bid6010_submitBtu" click="bid6010Submit" text="PROMPT.SUBMIT" width="100"/>
+                <a:toolbarButton id="bid6010_docm_printBtn" click="bid_bidding_docm_print" text="BID_ENTRUSTMENT_HEADERS.BID_OPENING_LIST" width="100"/>
+                <a:toolbarButton click="bid6010Return" text="PROMPT.RETURN" width="100"/>
+            </a:screenTopToolbar>
+            <a:vBox>
+                <a:hBox labelWidth="100">
+                    <a:textField name="entrustment_header_number" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.ENTRUSTMENT_HEADER_NUMBER" readOnly="true"/>
+                    <a:textField name="round" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.ROUND" readOnly="true"/>
+                    <a:textField name="version" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.VERSION" readOnly="true"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:lov name="entrustment_type_desc" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.ENTRUSTMENT_TYPE_DESC" readOnly="true"/>
+                    <a:comboBox name="suggested_bidding_method_desc" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.SUGGESTED_BIDDING_METHOD" readOnly="true"/>
+                    <a:lov name="agent_company_name" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.AGENT_COMPANY_ID" readOnly="true"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textField name="agent_company_tel" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.AGENT_COMPANY_TEL" readOnly="true"/>
+                    <a:textField name="agent_company_address" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.AGENT_COMPANY_ADDRESS" readOnly="true" width="410"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:comboBox name="bidding_type_desc" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.BID_TYPE" readOnly="true"/>
+                    <a:comboBox name="score_method_desc" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.SCORE_METHOD" readOnly="true"/>
+                    <a:checkBox name="allowed_part_bidding_flag" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.ALLOWED_PART_BIDDING_FLAG" readOnly="true"/>
+                </a:hBox>
+                <a:hBox>
+                    <a:accordionPanel id="bid6010_createAccordion_dim" height="420" showIcon="true" singleMode="false" width="900">
+                        <a:accordions>
+                            <a:accordion prompt="PROMPT.BASIC_INFOMATION" selected="false">
+                                <a:vBox>
+                                    <a:hBox labelWidth="100">
+                                        <a:textField name="project_location" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.PROJECT_LOCATION" readOnly="true"/>
+                                        <a:textField name="title" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.ENTRUSTMENT_TITLE" readOnly="true" width="410"/>
+                                    </a:hBox>
+                                    <a:hBox labelWidth="100">
+                                        <a:lov name="using_company_desc" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.USING_COMPANY_DESC" readOnly="true"/>
+                                        <a:lov name="pur_organization_desc" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.PUR_ORGANIZATION_DESC" readOnly="true"/>
+                                        <a:lov name="inv_organization_desc" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.INV_ORGANIZATION_ID" readOnly="true"/>
+                                    </a:hBox>
+                                    <a:hBox labelWidth="100">
+                                        <a:lov name="tender_agent_desc" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.TENDER_AGENT_ID" readOnly="true"/>
+                                        <a:checkBox name="tax_included_flag" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.TAX_INCLUDED_FLAG" readOnly="true" width="150"/>
+                                        <a:comboBox name="currency_name" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.CURRENCY_CODE" readOnly="true"/>
+                                    </a:hBox>
+                                    <a:hBox labelWidth="100">
+                                        <a:checkBox name="bidding_file_free_flag" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.BIDDING_FILE_FREE_FLAG" readOnly="true" width="150"/>
+                                        <a:numberField name="bid_file_amount" allowDecimals="true" allowNegative="false" bindTarget="bid6010_entrustment_header_ds" decimalPrecision="2" prompt="BID_ENTRUSTMENT_HEADERS.BID_FILE_AMOUNT" readOnly="true" renderer="Aurora.formatNumber"/>
+                                        <a:numberField name="necessary_lead_time" allowDecimals="false" allowNegative="false" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.NECESSARY_LEAD_TIME" readOnly="true"/>
+                                    </a:hBox>
+                                    <a:hBox labelWidth="100">
+                                        <a:checkBox name="margin_required_flag" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.MARGIN_REQUIRED_FLAG" readOnly="true" width="150"/>
+                                        <a:numberField name="deposit_amount" allowDecimals="true" allowNegative="false" bindTarget="bid6010_entrustment_header_ds" decimalPrecision="2" prompt="BID_ENTRUSTMENT_HEADERS.DEPOSIT_AMOUNT" readOnly="true" renderer="Aurora.formatNumber"/>
+                                        <a:datePicker name="complete_date" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.COMPLETE_DATE" readOnly="true"/>
+                                    </a:hBox>
+                                    <a:hBox labelWidth="100">
+                                        <a:numberField name="winning_bidder_maxcount" allowDecimals="false" allowNegative="false" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.WINNING_BIDDER_MAXCOUNT" readOnly="true"/>
+                                        <a:textField name="functional_amount" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.FUNCTIONAL_AMOUNT" readOnly="true" renderer="Aurora.formatMoney"/>
+                                        <a:textField name="entered_amount" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.ENTERED_AMOUNT" readOnly="true" renderer="Aurora.formatMoney"/>
+                                    </a:hBox>
+                                    <a:hBox labelWidth="100">
+                                        <a:lov name="payment_method_desc" bindTarget="bid6010_entrustment_header_ds" prompt="PUR_VENDORS.PAYMENT_METHOD" readOnly="true"/>
+                                        <a:textArea name="payment_terms" bindTarget="bid6010_entrustment_header_ds" height="16" prompt="PUR_VENDORS.TERMS_OF_PAYMENT" readOnly="true" width="400">
+                                            <a:events>
+                                                <a:event name="mouseover" handler="tamouseover"/>
+                                                <a:event name="focus" handler="tAfocus"/>
+                                            </a:events>
+                                        </a:textArea>
+                                        <pre id="contain" class="contain" padding="0"/>
+                                    </a:hBox>
+                                    <a:hBox labelWidth="100">
+                                        <a:textField name="bid_closing_date" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.BID_CLOSING_DATE" readOnly="true" renderer="Aurora.formatDateTime"/>
+                                        <a:textField name="bid_opening_start_date" bindTarget="bid6010_entrustment_header_ds" prompt="BID_OPENING_PLACE_SCHEDULES.DATE_FROM" readOnly="true" renderer="Aurora.formatDateTime"/>
+                                        <a:textField name="opening_place_desc" bindTarget="bid6010_entrustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.OPENING_PLACE_DESC" readOnly="true"/>
+                                    </a:hBox>
+                                    <a:hBox labelWidth="100">
+                                        <a:datePicker name="delivery_term" bindTarget="bid6010_entrustment_header_ds" prompt="交货期限" readOnly="true"/>
+                                        <a:lov name="tax_rate" bindTarget="bid6010_entrustment_header_ds" prompt="税率" readOnly="true"/>
+                                        <a:textField name="commitment_service" bindTarget="bid6010_entrustment_header_ds" prompt="后期承诺服务" readOnly="true"/>
+                                    </a:hBox>
+                                    <a:hBox labelWidth="100">
+                                        <a:dateTimePicker name="calibration_time" bindTarget="bid6010_entrustment_header_ds" prompt="定标时间"/>
+                                    </a:hBox>
+                                    <a:hBox labelWidth="100">
+                                        <a:textArea name="comments" bindTarget="bid6010_entrustment_header_ds" height="40" prompt="BID_ENTRUSTMENT_HEADERS.COMMENTS" readOnly="true" width="750"/>
+                                    </a:hBox>
+                                </a:vBox>
+                            </a:accordion>
+                        </a:accordions>
+                    </a:accordionPanel>
+                </a:hBox>
+                <a:vBox>
+                    <div id="bid6010_prequal_div" style="display:none">
+                        <a:accordionPanel id="bid6010_prequal_div_dim" height="170" showIcon="true" singleMode="false" width="900">
+                            <a:accordions>
+                                <a:accordion prompt="BID_ENTRUSTMENT_HEADERS.PREQUAL_FLAG" selected="true">
+                                    <a:hBox>
+                                        <a:toolbarButton click="bid6010_UploadPrequalAttachmentFun" text="BID_ENTRUSTMENT_HEADERS.PREQUAL_FILE" width="100"/>
+                                    </a:hBox>
+                                    <a:hBox labelWidth="100">
+                                        <a:dateTimePicker name="closing_date" bindTarget="bid6010_edit_entrustment_prequal" prompt="BID_PREQUAL_HEADERS.CLOSING_DATE" readOnly="true"/>
+                                        <a:comboBox name="review_method_desc" bindTarget="bid6010_edit_entrustment_prequal" prompt="BID_PREQUAL_HEADERS.REVIEW_METHOD" readOnly="true"/>
+                                        <a:numberField name="qualified_limit" allowDecimals="false" allowNegative="false" bindTarget="bid6010_edit_entrustment_prequal" prompt="BID_PREQUAL_HEADERS.QUALIFIED_LIMIT" readOnly="true"/>
+                                    </a:hBox>
+                                    <a:hBox labelWidth="100">
+                                        <a:textField name="prequal_location" bindTarget="bid6010_edit_entrustment_prequal" prompt="BID_PREQUAL_HEADERS.PREQUAL_LOCATION" readOnly="true"/>
+                                        <a:checkBox name="file_free_flag" bindTarget="bid6010_edit_entrustment_prequal" prompt="BID_PREQUAL_HEADERS.FILE_FREE_FLAG" readOnly="true" width="150"/>
+                                        <a:numberField name="proqual_file_expense" allowDecimals="false" allowNegative="false" bindTarget="bid6010_edit_entrustment_prequal" prompt="BID_PREQUAL_HEADERS.PROQUAL_FILE_EXPENSE" readOnly="true"/>
+                                    </a:hBox>
+                                    <a:hBox labelWidth="100">
+                                        <a:textField name="comments" bindTarget="bid6010_edit_entrustment_prequal" prompt="BID_PREQUAL_HEADERS.COMMENTS" readOnly="true" width="750"/>
+                                    </a:hBox>
+                                </a:accordion>
+                            </a:accordions>
+                        </a:accordionPanel>
+                    </div>
+                </a:vBox>
+            </a:vBox>
+            <a:tabPanel height="270" marginWidth="50">
+                <a:tabs>
+                    <a:tab prompt="BID_ENTRUSTMENT_HEADERS.ITEM" width="100">
+                        <a:grid id="bid6010_entrustment_ln_items_grid" bindTarget="bid6010_entrustment_ln_items_ds" height="230" marginWidth="60" navBar="true">
+                            <a:columns>
+                                <a:column name="line_num" align="center" prompt="BID_ENTRUSTMENT_LN_ITEMS.LINE_NUM" sortable="true" width="30"/>
+                                <a:column name="inv_organization_desc" align="center" prompt="BID_ENTRUSTMENT_LN_ITEMS.INV_ORGANIZATION_ID" sortable="true" width="100"/>
+                                <a:column name="item_code" align="left" prompt="BID_ENTRUSTMENT_LN_ITEMS.ITEM_CODE" width="100"/>
+                                <a:column name="item_desc" align="left" prompt="BID_ENTRUSTMENT_LN_ITEMS.ITEM_DESC" width="100"/>
+                                <!-- <a:column name="item_category_code" align="left" prompt="BID_ENTRUSTMENT_LN_ITEMS.ITEM_TYPE_CODE" width="100"/> -->
+                                <a:column name="item_category_desc" align="left" prompt="BID_ENTRUSTMENT_LN_ITEMS.ITEM_TYPE_NAME" width="100"/>
+                                <a:column name="need_by_date" align="center" prompt="BID_ENTRUSTMENT_LN_ITEMS.NEED_BY_DATE" renderer="Aurora.formatDate" width="60"/>
+                                <a:column name="quantity" align="right" prompt="BID_ENTRUSTMENT_LN_ITEMS.APPLY_QUANTITY" width="60"/>
+                                <a:column name="uom_desc" align="center" prompt="BID_ENTRUSTMENT_LN_ITEMS.UOM" width="60"/>
+                                <a:column name="base_price" align="right" prompt="BID_ENTRUSTMENT_LN_ITEMS.BASE_PRICE" renderer="bid6010EntrustmentItemEditRender" width="80"/>
+                                <a:column name="tax_included_flag" align="center" prompt="BID_ENTRUSTMENT_LN_ITEMS.TAX_FLAG" width="30"/>
+                                <a:column name="tax_type_code" align="center" prompt="BID_ENTRUSTMENT_LN_ITEMS.TAX_RATE_CODE" width="60"/>
+                                <a:column name="tax_type_rate" align="right" prompt="BID_ENTRUSTMENT_LN_ITEMS.TAX_RATE" width="60"/>
+                                <a:column name="net_price" align="right" prompt="BID_ENTRUSTMENT_LN_ITEMS.PRE_TAX_NET_PRICE" renderer="bid6010EntrustmentItemEditRender" width="80"/>
+                                <a:column name="net_amount" align="right" prompt="BID_ENTRUSTMENT_LN_ITEMS.NET_AMOUNT" renderer="bid6010EntrustmentItemEditRender" width="80"/>
+                                <a:column name="tax_amount" align="right" prompt="BID_ENTRUSTMENT_LN_ITEMS.TAX_AMOUNT" renderer="bid6010EntrustmentItemEditRender" width="80"/>
+                                <a:column name="total_amount" align="right" prompt="BID_ENTRUSTMENT_LN_ITEMS.AMOUNT" renderer="bid6010EntrustmentItemEditRender" width="80"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab prompt="BID_ENTRUSTMENT_HEADERS.BIDDER" width="100">
+                        <a:grid id="bid6010_entrustment_ln_bidders_grid" bindTarget="bid6010_entrustment_ln_bidders_ds" height="230" marginWidth="60" navBar="true">
+                            <a:columns>
+                                <a:column name="bidder_code" align="left" prompt="BID_ENTRUSTMENT_HEADERS.BIDDER_CODE" width="100"/>
+                                <a:column name="bidder_desc" align="left" prompt="BID_ENTRUSTMENT_HEADERS.BIDDER_NAME" width="150"/>
+                                <a:column name="contact_name" align="left" prompt="BID_ENTRUSTMENT_LN_ITEMS.CONTACT_ID" width="100"/>
+                                <a:column name="mobile_phone" align="left" prompt="BID_ENTRUSTMENT_LN_ITEMS.MOBILE_PHONE" width="80"/>
+                                <a:column name="email" align="left" prompt="BID_ENTRUSTMENT_LN_ITEMS.EMAIL" width="80"/>
+                                <a:column name="telephone" align="left" prompt="BID_ENTRUSTMENT_LN_ITEMS.TELEPHONE" width="80"/>
+                                <!--<a:column name="sms_flag" align="left" prompt="BID_ENTRUSTMENT_LN_ITEMS.SMS_FLAG" width="80"/>-->
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab prompt="PROMPT.ATTACHMENT" width="100">
+                        <a:grid id="bid6010_entrustment_atm_files_grid" bindTarget="bid6010_entrustment_atm_files_ds" height="230" marginWidth="60" navBar="true">
+                            <a:columns>
+                                <a:column name="attachment_type" align="left" prompt="PUR_VENDORS.ATTACHMENT_TYPE" width="60"/>
+                                <a:column name="file_download_link" align="left" prompt="PROMPT.ATTACHMENT_NAME" renderer="bid6010EntrustmentAtmRender" width="150"/>
+                                <a:column name="upload_user_name" align="left" prompt="PROMPT.UPLOADED_BY" width="80"/>
+                                <a:column name="upload_date" align="center" prompt="PROMPT.UPLOAD_DATE" renderer="Aurora.formatDateTime" width="80"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+            <a:grid id="bid6010_bidding_docm_header_grid" bindTarget="bid6010_bidding_docm_header_ds" height="260" marginWidth="60" navBar="true">
+                <a:columns>
+                    <a:column name="bid_header_number" align="center" prompt="BID_ENTRUSTMENT_HEADERS.BID_NUMBER" renderer="bid6010BiddingDocmDetailRender" sortable="true" width="80"/>
+                    <a:column name="bidder_desc" align="left" prompt="BID_ENTRUSTMENT_HEADERS.BIDDER_NAME" renderer="bid6010BiddingDocmDetailRender" width="100"/>
+                    <a:column name="bidder_user_desc" align="left" prompt="BID_ENTRUSTMENT_HEADERS.BIDDER" width="80"/>
+                    <a:column name="sum_unit_price" align="right" prompt="BID_ENTRUSTMENT_HEADERS.SUM_UNIT_PRICE" renderer="Aurora.formatNumber" width="80"/>
+                    <!-- <a:column name="bid_score_sum" align="right" prompt="BID_ENTRUSTMENT_HEADERS.BID_SCORE_SUM" width="80"/> -->
+                    <a:column name="min_price_weight" align="right" prompt="BID_ENTRUSTMENT_HEADERS.MIN_PRICE_WEIGHT" renderer="bid6010BiddingDocmDetailRender" width="80"/>
+                    <!-- <a:column name="scoring" align="center" prompt="PROMPT.EVALUATE" renderer="bid6010BiddingDocmDetailRender" width="50"/> -->
+                    <a:placeHolder id="bid6010_dynamicLineColumnObj"/>
+                    <!-- <a:column name="score_status_desc" align="left" prompt="STATUS" width="60"/>
+                    <a:column name="expert_suggestion" align="left" prompt="BID_BIDDING_SCORE_HEADERS.EXPERT_SUGGESTION" width="100"/> -->
+                    <a:column name="operation_record" align="center" prompt="PROMPT.OPERATION_RECORD" renderer="bid6010BiddingDocmDetailRender" width="60"/>
+                </a:columns>
+                <a:editors>
+                    <a:textField id="bid6010_bidding_docm_header_tf"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+        <script><![CDATA[
+         bid6010_entrustmentDetailInitFun();
+         ]]></script>
+    </a:view>
+    <a:view-config>
+        <c:batch-config source="/model/belong_teams" targetId="bid6010_dynamicLineColumnObj">
+            <a:column name="${@team_seq}" align="center" prompt="${@team_desc}" renderer="bid6010BiddingDocmDetailRender" width="60"/>
+        </c:batch-config>
+    </a:view-config>
+</a:screen>

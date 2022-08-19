@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Lin.Chen
+    $Date: 2017-04-12  
+    $Revision: 1.0  
+    $Purpose: 生成申请单
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    h.req_header_id,
+                    h.req_number,
+                    h.business_group,
+                    h.data_source,
+                    TO_CHAR(h.Creation_Date, 'yyyy-mm-dd') apply_date,
+                    h.creation_date,
+                    h.created_by,
+                    NVL(h.status,'10_NEW') status,
+                    (SELECT
+                        B.CODE_VALUE_NAME
+                    FROM
+                        SYS_CODES_VL A,
+                        SYS_CODE_VALUES_VL B
+                    WHERE
+                        A.CODE_ID    = B.CODE_ID AND
+                        A.CODE       = 'PUR_APPLICATION_STATUS' AND
+                        B.CODE_VALUE = NVL(h.status,'10_NEW')
+                    ) status_desc,
+                    (SELECT s.description FROM sys_user s WHERE s.user_id = h.created_by
+                    ) applicant_name,
+                    h.own_company_id,
+                    h.business_unit_id,
+                    h.pur_organization_id,
+                    (SELECT
+                        p.description
+                    FROM
+                        pur_organizations_vl p
+                    WHERE
+                        p.pur_organization_id = h.pur_organization_id
+                    ) pur_organization_name,
+                    (SELECT
+                        u.business_unit_name
+                    FROM
+                        fnd_business_units_vl u
+                    WHERE
+                        u.business_unit_id = h.business_unit_id
+                    ) business_unit_name,
+                    h.pur_buyer_id,
+                    (SELECT pb.display_code FROM pur_buyers pb WHERE pb.buyer_id = h.pur_buyer_id
+                    ) pur_buyer_code,
+                    (SELECT
+                        pb.buyer_desc
+                    FROM
+                        pur_buyers_vl pb
+                    WHERE
+                        pb.buyer_id = h.pur_buyer_id
+                    ) pur_buyer_name,
+                    h.header_comments,
+                    h.title,
+                    (SELECT
+                        SUM(l.currency_unit_price * l.quantity)
+                    FROM
+                        pur_req_lines_tmp l
+                    WHERE
+                        l.req_header_id = h.req_header_id
+                    ) total_amount,
+                    h.import_oa_flag,
+                    h.import_sap_flag,
+                    h.pur_po_type,
+                    DECODE(h.pur_po_type, 'ZI01', '内贸', 'ZI10', '设备') pur_po_type_desc,
+                    h.release_num,
+                    h.invoice_type,
+                    h.eb_order_id,
+                    (SELECT
+                        v.code_value_name
+                    FROM
+                        sys_code_values_v v
+                    WHERE
+                        v.code       = 'AP_INVOICE_TYPE' AND
+                        v.code_value = h.invoice_type
+                    ) invoice_type_desc,
+                    h.bill_delivery_id,
+                    (SELECT
+                        dav.province_name
+                        || ' '
+                        || dav.city_name
+                        || ' '
+                        || dav.county_name
+                        || ' '
+                        || dav.address_detail location_address
+                    FROM
+                        fnd_company_delivery_addr_vl dav
+                    WHERE
+                        dav.delivery_id = h.bill_delivery_id
+                    ) acquire_location_desc,
+                    (SELECT
+                        m.approve_method
+                    FROM
+                        pur_catelogs_user_defined m
+                    WHERE
+                        rownum < 2 AND
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            pur_req_lines_tmp l
+                        WHERE
+                            l.req_header_id  = h.req_header_id AND
+                            m.catelog_udf_id = l.item_category_id
+                        )
+                    ) approve_method
+                FROM
+                    pur_req_headers_tmp h
+                WHERE
+                    h.req_header_id = ${@req_header_id} AND
+                    h.data_source  <> 'SRM'
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+				begin
+	            	update pur_req_headers_tmp h
+	            	   set h.business_unit_id    = ${@business_unit_id},
+                           h.header_comments     = ${@header_comments},
+                           h.title               = ${@title},
+                           h.pur_po_type         = ${@pur_po_type},
+                           h.pur_organization_id = ${@pur_organization_id},
+                           h.pur_buyer_id        = ${@pur_buyer_id},
+                           h.release_num         = ${@release_num},
+                           h.invoice_type        = ${@invoice_type},
+                           h.bill_delivery_id    = ${@bill_delivery_id},
+                           h.last_update_date    = sysdate,
+                           h.last_updated_by     = ${/session/@user_id}
+					 where h.req_header_id = ${/parameter/@req_header_id};
+                end;
+    		]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+				begin
+	            	pur_catelog_shopping_cart_pkg.check_req_atm(p_req_header_id => ${/parameter/@req_header_id},
+	            	                                            p_user_id       => ${/session/@user_id});
+                end;
+    		]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

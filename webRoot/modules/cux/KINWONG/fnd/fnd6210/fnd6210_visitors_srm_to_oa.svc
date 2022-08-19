@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: heyuming  
+    $Date: 2020年11月23日
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:service xmlns:t="aurora.application.action" xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <p:echo/>
+        <a:model-execute model="cux.KINWONG.fnd.fnd6210.visitors_register_submit"/>
+        <a:model-query fetchAll="true" model="cux.KINWONG.fnd.fnd6210.fnd6210_visitors_register_details" rootPath="details"/>
+        <a:model-query fetchAll="true" model="cux.KINWONG.fnd.fnd6210.fnd6210_geturl_to_oa" rootPath="url"/>
+        <a:model-query fetchAll="true" model="cux.KINWONG.fnd.fnd6210.fnd6210_get_tcode_to_oa" rootPath="tcode"/>
+        <a:rest-invoker acceptLanguage="zh-CN,zh;q=0.8" cacheControl="no-cache" contentType="application/json;charset=UTF-8" raiseExceptionOnError="true" requestMethod="GET" returnPath="/soapResponse/USER" url="${/model/url/record/@get_user_url}"/>
+        <p:set field="/parameter/@userName" sourceField="/soapResponse/USER/@userName"/>
+        <s:server-script><![CDATA[
+            var logger = $logger('server-script');
+            
+            function log(msg) {
+                logger.info(msg);
+            }
+            var para = $ctx.parameter;
+            log($ctx.model.getChild('details').toXML);
+            var dataList = $ctx.model.getChild('details').getChildren();
+            var data = [];
+            for (var i = 0;i < dataList.length;i++) {
+                data.push(dataList[i]);
+            }
+            
+            var tableListAll = new CompositeMap('tableListAll');  
+            var record = new CompositeMap('record');
+            var tableList = new CompositeMap('TableList');
+            var loginName = new CompositeMap('loginName');
+           // loginName.setText(para.userName);
+            loginName.setText('zhugenlan');
+            var tCode = new CompositeMap('tCode');
+            var tcodeValue = $ctx.model.getChild('tcode').getChild('record').quote_code;
+            tCode.setText(tcodeValue);
+            var title_text = 'SRM自动触发来访人员预约审批单' + data[0].build_number;
+            var title = new CompositeMap('title');
+            title.setText(title_text);
+            tableList.addChild(loginName);
+            tableList.addChild(tCode);
+            tableList.addChild(title);
+            var table1 = new CompositeMap('Table');
+            table1['isson'] = '1';
+            tableList.addChild(table1);
+            var nameList = {
+                "申请人电话号": data[0].contact_phone,
+                "受访基地1": data[0].contact_company,
+                "客户名称": data[0].vendor_name,
+                "来访类型": data[0].visitors_type,
+                "来访人数": data[0].contact_dept,
+                "来访人员车辆车牌号": data[0].car_number,
+                "来来访事由": data[0].from_reason,
+                "是否进入车间": data[0].isintofactory,
+                "访厂时间起": data[0].start_time,
+                "访厂时间终": data[0].leaving_time,
+                "是否需要开一卡通": data[0].iscard_desc
+            };
+            for (var tempName in nameList) {
+                var field = new CompositeMap('Field');
+                field.name = tempName;
+                if (nameList[tempName]) {
+                    field.value = nameList[tempName];
+                } else {
+                    field.value = '';
+                }
+                table1.addChild(field);
+            }
+                var table2 = new CompositeMap('Table');
+                table2['isson'] = '2';
+                tableList.addChild(table2);
+                var row = [];
+                for (var i = 0;i < data.length;i++) {
+                    log(data.length);
+                    row.push(new CompositeMap('row'));
+                    table2.addChild(row[i]);
+                    var temp_i = i + 1;
+                    // var is_min_amount = 'N';
+            
+                    // if (data[name][i].min_amount >= data[name][i].untax_price) {
+                        // is_min_amount = 'Y';
+                    // }
+                    var nameList1 = {
+                        "姓名": data[i].visitors_name,
+                        "来访人员性别": data[i].visitors_sex_desc,
+                        "身份证号码": data[i].visitors_cardid,
+                        "单位简称": data[i].companyname,
+                        "是否基地住宿": data[i].isstay_desc,
+                        "是否安排基地就餐": data[i].iseat_desc
+                    }
+                   
+                    for (var tempName in nameList1) {
+                        var field = new CompositeMap('Field');
+                        field.name = tempName;
+                        if (nameList1[tempName]) {
+            			    field.value = nameList1[tempName];
+                        } else {
+                            field.value = '';
+                        }
+                        row[i].addChild(field);
+                    }
+                }
+               
+                record.setText(tableList.toXML());
+                log(tableList.toXML());
+                tableListAll.addChild(record);
+            var url = $ctx.model.getChild('url').getChild('record').post_url + '&key=BD2B0CCCBC954FA7';
+            try {
+                var is = Packages.com.hand.jw_webservice.HttpUtils.urlPost(url, tableList.toXML(), 'text/xml;charset=utf8', "POST", "UTF-8", "", "");
+                var ret = Packages.com.hand.jw_webservice.IOUtilsEx.newString(is, "UTF-8");
+                log(ret);
+                ret = JSON.parse(ret);
+                if (ret.status == 'S') {
+                    $ctx.put('/soapResponse/RESPONSE/@status', ret.status);
+                } else if (ret.status == 'E') {
+                    $ctx.put('/soapResponse/RESPONSE/@status', ret.status);
+                    $ctx.put('/soapResponse/RESPONSE/@message', ret.message);
+                }
+            } catch (e) {
+                log(e)
+            }
+        ]]></s:server-script>
+        <p:echo/>
+        <t:test field="/soapResponse/RESPONSE/@status" message="${/soapResponse/RESPONSE/@message}" operator="!=" value="S"/>
+    </a:init-procedure>
+</a:service>

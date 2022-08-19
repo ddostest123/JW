@@ -1,0 +1,360 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao  
+    $Date: 2015-08-12 下午03:38:31  
+    $Revision: 1.0  
+    $Purpose: 送货单打印,默认打印样式
+-->
+<!--<tr><a href="javascript:change_model(1)">模式一</a></tr><tr><a href="javascript:change_model(2)">模式二</a></tr><tr><a href="javascript:change_model(3)">模式三</a></tr><tr><a href="javascript:change_model(4)">模式四</a></tr>< -->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+    <a:init-procedure>
+        <p:set field="/model/inv_print_headers" setToNull="true"/>
+        <p:set field="/model/inv_print_lines" setToNull="true"/>
+        <a:model-query autoCount="true" defaultWhereClause="v.asn_header_id in (${/parameter/@asn_header_id})" model="inv.PRINT.inv_asn_print_headers_netcore" rootpath="inv_print_headers"/>
+        <a:model-query autoCount="true" defaultWhereClause="a.asn_header_id in (${/parameter/@asn_header_id})" fetchAll="true" model="inv.PRINT.inv_asn_print_lines_netcore" rootpath="inv_print_lines"/>
+    </a:init-procedure>
+    <a:view package="aurora.ui.std" template="default">
+        <style><![CDATA[ 
+             html, body{
+                margin: 0 auto;
+    			overflow:visible;
+    			width:200mm;
+    			color: #000000;
+    		}
+    		.item_table,.item_table td,.item_table tr{
+    		   border: 1px dotted #312b2b!important;
+    		}
+    		.print_div{
+    		    margin: 0 auto;
+    		    height:122mm;
+    		}
+    		div{
+    		    min-height: 16px;
+    		}
+			.STYLE1 {
+				font-family:"宋体";
+				font-size: 35px;
+			}
+			.STYLE2 {
+				font-family:"宋体";
+				font-weight: bold;
+				font-size: 14px;
+				padding:0;
+			}
+			.STYLE3 {
+				font-family:"宋体"; 
+				font-size: 12px;
+				padding: 3px 0px;
+			}
+			.STYLE4 {
+				font-size: 8px;
+				height:5mm;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			.STYLE5 {
+				font-family:"宋体";
+				font-size: 12px;
+			}
+			.STYLE6 {
+				font-family:"宋体";
+				font-size: 11px;
+			}
+			.STYLE7 {
+				font-family:"宋体"; 
+				font-size: 9px;
+			}
+			.barcode-style{
+			    font-family:"宋体";
+				font-weight: bold;
+				font-size: 40px;
+				font-style: italic;
+			    border: 1px solid #000000;
+			    width: 60%;
+			    text-align: center; 
+			    vertical-align: middle;
+			    line-height: 100px;
+			}
+			
+			body{
+				background-color:#ffffff;
+			}
+		]]></style>
+        <script><![CDATA[
+            var record_num = 0;
+            var num = 0;
+            var record_per_page = 7;
+            var pages = '${/model/inv_print_headers/record/@pages}';
+            var total_records = '${/model/inv_print_headers/record/@line_count}';
+            var need_new_page = false;
+            var need_new_report = false;
+            var cur_page = 1;
+            var new_page = 0;
+            var item_code_before = '';
+            var item_code_now;
+            var item_des;
+            var unit_meas_lookup_code;
+            var warehouse;
+            var locahouse;
+            var item_code_amount = 0;
+            var item_code_sum = 0;
+            
+            function printPageBreak() {
+                document.write('<div style="page-break-after: always;display:none"></div>');
+            }
+            //打印logo和编码条
+            function printLogoAndBarcode(){
+                var html = '<div class="print_div"><table width="100%" style="padding-top:10px;" border="0" cellspacing="0" cellpadding="0">'+
+                			'<tr>'+
+                				'<td width="30%"></td>'+
+                				'<td width="40%" class="STYLE1"><div align="center">送&nbsp;货&nbsp;单</div></td>'+
+                				'<td width="30%" style="text-align: center;" align="right"><div><img src="${/request/@context_path}/asnbarcode?type=code128&amp;height=9.0mm&amp;qz=0.45mm&amp;hrp=bottom&amp;hrsize=3pt&amp;mw=0.2mm&amp;fmt=jpeg&amp;msg=${/model/inv_print_headers/record/@asn_barcode}"/></div></td>'+
+                			'</tr>'+
+                		   '</table>'+
+                		   '';
+                		   
+            	document.write(html);
+            }
+            
+            //打印头信息
+            function printSupplyInfo(){
+                var html = '';
+                document.write(html);
+
+				html = '<table width="100%" border="0" cellspacing="0" cellpadding="0">'+
+            			'<tr style="height:35px;width:80%;style="padding-bottom: 3px;">'+
+            				'<td colspan="1" width="5%" class="STYLE3"><div align="right">供应方:</div></td>'+
+            				'<td colspan="5" width="10%" class="STYLE3"><div style="border-bottom: 2px dotted#312b2b;" align="left">&nbsp;${/model/inv_print_headers/record/@vendor_name}</div></td>'+
+            				'<td colspan="1" width="5%" class="STYLE3"><div align="right">客户:</div></td>'+
+            				'<td colspan="2" width="10%" class="STYLE3"><div style="border-bottom: 2px dotted#312b2b;" align="left">&nbsp;${/model/inv_print_headers/record/@company_name}</div></td>'+
+            				'<td colspan="1" width="5%" style="font-size: 12px;padding: 3px 0px;"><div align="right">SRM单号:</div></td>'+
+            				'<td colspan="1" width="10%" style="font-size: 12px;padding: 3px 0px;"><div style="border-bottom: 2px dotted#312b2b;font-weight: bolder" align="left">&nbsp;${/model/inv_print_headers/record/@asn_number}</div></td>'+
+            			'</tr>'+
+            			'<tr style="height:35px;px;style="padding-bottom: 3px;">'+
+            			    '<td colspan="1" width="5%" class="STYLE3"><div  align="right">发货地址:</div></td>'+
+            				'<td colspan="5" width="10%" class="STYLE3"><div style="border-bottom: 2px dotted#312b2b;" align="left">&nbsp;${/model/inv_print_headers/record/@vendor_site_name}</div></td>'+
+                            '<td colspan="1" width="5%" class="STYLE3"><div align="right">收货地址:</div></td>'+
+            				'<td colspan="5" width="10%" class="STYLE3"><div style="border-bottom: 2px dotted#312b2b;" align="left">&nbsp;${/model/inv_print_headers/record/@location_name}</div></td>'+
+            			'</tr>'+
+            			'<tr style="height:35px;style="padding-bottom: 3px;">'+
+            			    '<td colspan="1" width="5%" class="STYLE3"><div align="right">联系人:</div></td>'+
+            				'<td colspan="2" width="10%" class="STYLE3"><div style="border-bottom: 2px dotted#312b2b;" align="left">&nbsp;${/model/inv_print_headers/record/@business_represent_name}</div></td>'+
+            				'<td colspan="1" width="5%" class="STYLE3"><div align="right">手机号:</div></td>'+
+            				'<td colspan="2" width="10%" class="STYLE3"><div style="border-bottom: 2px dotted#312b2b;" align="left">&nbsp;${/model/inv_print_headers/record/@business_represent_phone}</div></td>'+
+            				'<td colspan="1" width="5%" class="STYLE3"><div align="right">联系电话:</div></td>'+
+            				'<td colspan="2" width="15%" class="STYLE3"><div style="border-bottom: 2px dotted#312b2b;" align="left">&nbsp;${/model/inv_print_headers/record/@telephone}</div></td>'+
+            			    '<td colspan="1" width="5%" class="STYLE3"><div align="right">送货日期:</div></td>'+
+            				'<td colspan="2" width="10%" class="STYLE3"><div style="border-bottom: 2px dotted#312b2b;" align="left">&nbsp;${/model/inv_print_headers/record/@expected_date}</div></td>'+
+            			'</tr>'+
+            		   '</table>'+
+            		   '';
+            	document.write(html);
+            }
+
+            function printItemDetail_head(){
+                var html = '<table class="item_table" width="100%" id="table_head"  style="table-layout: fixed;border-collapse: collapse;padding-top: 10px;" border="1" cellpadding="0" cellspacing="0" bordercolor="#000000">'+
+                			'<tr id="head" style="height:10px;">'+
+                				'<td width="4%" class="STYLE4"><div align="center">序号</div></td>'+
+                				'<td width="10%" class="STYLE4"><div align="center">采购订单</div></td>'+
+                				'<td width="4%" class="STYLE4"><div align="center">行</div></td>'+
+                				'<td width="10%" class="STYLE4"><div align="center">物料</div></td>'+
+                				'<td width="40%" class="STYLE4"><div align="center">物料描述</div></td>'+
+                				'<td width="8%" class="STYLE4"><div align="center">交货数</div></td>'+
+                				'<td width="7%" class="STYLE4"><div align="center">实收数</div></td>'+
+                				'<td width="7%" class="STYLE4"><div align="center">不合格数</div></td>'+
+                				'<td width="5%" class="STYLE4"><div align="center">免检</div></td>'+
+                				'<td width="5%" class="STYLE4"><div align="center">备注</div></td>'+
+                			'</tr>';		
+            	document.write(html);
+            }
+            
+            
+            function printItemDetail_foot(){
+                var length = '${/model/inv_print_lines/@totalCount}';
+                var line_sequence = '${/model/inv_print_lines/@line_sequence}';
+                for(var i =0;i< 6+line_sequence-length;i++)
+                {
+                var line_num = Number(line_sequence)+i+1;
+                var html = '<table class="item_table" width="100%" id="table_head"  style="border-collapse: collapse;" border="1" cellpadding="0" cellspacing="0" bordercolor="#000000">'+
+                			'<tr id="head" >'+
+                				'<td width="4%" class="STYLE4"><div align="center">'+line_num+'</div></td>'+
+                				'<td width="10%" class="STYLE4"><div align="center"></div></td>'+
+                				'<td width="4%" class="STYLE4"><div align="center"></div></td>'+
+                				'<td width="10%" class="STYLE4"><div align="center"></div></td>'+
+                				'<td width="40%" class="STYLE4"><div align="center"></div></td>'+
+                				'<td width="8%" class="STYLE4"><div align="center"></div></td>'+
+                				'<td width="7%" class="STYLE4"><div align="center"></div></td>'+
+                				'<td width="7%" class="STYLE4"><div align="center"></div></td>'+
+                				'<td width="5%" class="STYLE4"><div align="center"></div></td>'+
+                				'<td width="5%" class="STYLE4"><div align="center"></div></td>'+
+                			'</tr>';		
+            	document.write(html);
+                }
+            }
+            
+            //打印页脚信息
+            function printFooter(){
+                var html = '<div style="border: 0px solid;"><table style="width:200mm;" border="0" cellspacing="0" cellpadding="0">'+
+                			'<tr height="40" style="padding-bottom: 3px;">'+
+                				'<td colspan="1" width="10%" class="STYLE6"><div align="right">制单人：</div></td>'+
+                				'<td colspan="2" width="10%" ><div style="border-bottom: 2px dotted#312b2b;" align="left"></div></td>'+ 
+                				'<td colspan="1" width="10%" class="STYLE6"><div align="right">签收人：</div></td>'+
+                				'<td colspan="2" width="10%"><div style="border-bottom: 2px dotted#312b2b;" align="left"></div></td>'+
+                				'<td colspan="1" width="10%" class="STYLE6"><div align="right">检验员：</div></td>'+
+                				'<td colspan="2" width="10%"><div style="border-bottom: 2px dotted#312b2b;" align="left"></div></td>'+
+                				'<td colspan="1" width="10%" class="STYLE6"><div align="right">签收日期：</div></td>'+
+                				'<td colspan="2" width="10%"><div style="border-bottom: 2px dotted#312b2b;" align="left"></div></td>'+
+                			'</tr>'+
+                			'<tr>'+
+                				'<td colspan="1" width="10%" class="STYLE6"><div align="right">一式五联:</div></td>'+
+                				'<td colspan="9" width="20%" style="font-weight: bolder;">白联-客户签收&nbsp;&nbsp;黄联-客户采购&nbsp;&nbsp;蓝联-客户检验&nbsp;&nbsp;红联-财务请款&nbsp;&nbsp;绿联-存根</td>'+
+                			'</tr>'+
+                		'</table></div>';
+                		
+            	document.write(html);
+            	
+            	html = '<table width="100%"  border="0" cellspacing="0" cellpadding="0">'+
+                			'<tr height="50">'+
+                				'<td width="40%" class="STYLE7"><div align="left">制单日期：${/model/inv_print_headers/record/@print_date}</div></td>'+
+                				'<td width="10%" class="STYLE7"><div align="right">共' + pages + '页&nbsp;&nbsp;第' + cur_page + '页</div></td>'+
+                			'</tr>'+
+                		'</table></div>';
+            	
+            	document.write(html);
+            }
+            
+            function newRecord() {
+                
+                if (record_num == record_per_page) {
+                    need_new_page = true;
+                    record_num = 0;
+                }
+            
+                if (need_new_page) {
+                    //printItemDetail_foot();
+                    document.write("</table>");
+                    document.write("<br/>");
+                    printFooter();
+                    //printPageBreak();
+                    
+                    cur_page = cur_page + 1;
+                    
+                    printLogoAndBarcode();
+	            	printSupplyInfo();
+	                printItemDetail_head();
+                    need_new_page = false;
+                }
+                new_page = new_page + 1;
+                record_num++;
+            }
+            function change_model(mode)
+            {
+                
+                getChildNodes(document.getElementById("head"),mode);
+				getChildNodes(document.getElementById("content"),mode);
+            }
+            var getChildNodes = function(object,mode) {
+                    var childArr = object.children;
+                    var str;
+                        document.getElementById("table_head").style.tableLayout = '';
+                        if(mode != 4)
+                        {
+                            document.getElementById("table_head").style.tableLayout = 'fixed';
+                        }
+                    for (var i = 0;i < childArr.length;i++) {
+                        //初始化样式
+                        childArr[i].style.wordBreak = '';
+                        childArr[i].style.wordWrap = '';
+                        if(mode == 1)
+                        {
+                            childArr[i].style.wordBreak = 'break-all';
+                            childArr[i].style.wordWrap = 'break-word';
+                        }
+                        if(mode == 2)
+                        {
+                            childArr[i].style.overflow = 'hidden';
+                        }
+                        if(mode == 3)
+                        {
+                            
+                            str = childArr[i].children[0].innerHTML;
+                            if(str.length<11)
+                            {
+                                
+                            }else
+                            {
+                                alert(str.length);
+                            childArr[i].children[0].innerHTML = str.substring(0,11)+"...";
+                            }
+                        }
+                    }
+                }
+        ]]></script>
+        <body style="margin-left:1;">
+            <script><![CDATA[
+               // document.write("<div style='page-break-after:always'/>");
+                //渲染logo和条形码
+            	printLogoAndBarcode();
+            	//打印供应信息
+            	printSupplyInfo();
+            	//打印物品明细
+                printItemDetail_head();
+            ]]></script>
+            <a:repeater datamodel="/model/inv_print_lines">
+                <script><![CDATA[
+                    newRecord();
+                    item_code_now = '${@item_code}';            
+                ]]></script>
+                <tr id="content" height="5">
+                    <td class="STYLE4" width="4%">
+                        <div align="center"><![CDATA[${@line_sequence}]]></div>
+                    </td>
+                    <td class="STYLE4" width="10%">
+                        <div align="center" style="font-weight: bolder;"><![CDATA[${@display_po_number}]]></div>
+                    </td>
+                    <td class="STYLE4" width="4%">
+                        <div align="center" style="font-family:&quot;宋体&quot;;"><![CDATA[${@line_num}]]></div>
+                    </td>
+                    <td class="STYLE4" width="10%">
+                        <div align="center" style="font-weight: bolder;"><![CDATA[${@item_code}]]></div>
+                    </td>
+                    <td class="STYLE4" width="40%">
+                        <div align="center" style="font-size: 8px;white-space:nowrap;"><![CDATA[${@item_name}]]></div>
+                    </td>
+                    <td class="STYLE4" width="8%">
+                        <div align="right" style="font-weight: bolder;"><![CDATA[${@ship_quantity}]]></div>
+                    </td>
+                    <td class="STYLE4" width="7%">
+                        <div align="center"/>
+                    </td>
+                    <td class="STYLE4" width="7%">
+                        <div align="center"/>
+                    </td>
+                    <td class="STYLE4" width="5%">
+                        <div align="center"><![CDATA[${@exemption_flag}]]></div>
+                    </td>
+                    <td class="STYLE4" width="5%">
+                        <div align="center"/>
+                    </td>
+                </tr>
+                <script><![CDATA[
+                ]]></script>
+            </a:repeater>
+            <script><![CDATA[
+                 //printItemDetail_foot();
+                 document.write("</table>");
+                 
+            ]]></script>
+            <script><![CDATA[
+				 printFooter();
+				 //document.write("<div style='page-break-before:always;display:none' ></div>");
+				 // if ('${/parameter/@maxasn}' == '${/parameter/@asn_header_id}'){
+				     // document.write("<div style='page-break-after:always'></div>");
+				 // }
+				 //document.write("<div style='page-break-after:always'/>");
+				 //change_model(2);
+			]]></script>
+        </body>
+    </a:view>
+</a:screen>

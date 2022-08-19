@@ -1,0 +1,400 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Dru  
+    $Date: 2014-5-6 下午3:21:37  
+    $Revision: 1.0  
+    $Purpose: 供应商邀请查询
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure/>
+    <a:view package="aurora.ui.std" template="default">
+        <div/>
+        <a:link id="pur5611_vendor_invitation_link" url="${/request/@context_path}/modules/pur/PUR5611/pur_vendor_invitation.screen"/>
+        <a:link id="pur5611_vendorEmailImport_link" url="${/request/@context_path}/modules/pur/PUR5611/pur_vendor_email_import.screen"/>
+        <a:link id="pur5611_vendorEmailBatchMarch_link" url="${/request/@context_path}/modules/pur/PUR5611/pur_vendor_email_batch_match.svc"/>
+        <a:link id="pur5611_vendorEmailBatchInvite_link" url="${/request/@context_path}/modules/pur/PUR5611/pur_vendor_email_batch_invite.svc"/>
+        <a:link id="pur5611_syncVendorInvitation_link" model="pur.PUR5611.pur_sync_vendors" modelaction="update"/>
+        <a:link id="pur5611_syncVendorRelation_link" model="pur.PUR5611.pur_sync_vendors" modelaction="execute"/>
+        <a:link id="pur5611_ErpVendorRelationLink" url="${/request/@context_path}/modules/pur/PUR5611/pur_vendor_relation.svc"/>
+        <a:link id="pur5611_ErpVendorCancelRelationLink" url="${/request/@context_path}/modules/pur/PUR5611/pur_vendor_cancelRelation.svc"/>
+        <script><![CDATA[
+            var k;
+            
+            //日期比较
+            
+            function pur5611_compareDate(start, end) {
+                if (start > end) {
+                    return false;
+                }
+                return true;
+            }
+            
+            //日期校验
+            
+            function pur5611_invitation_dateValidator(record, name, value) {
+                if (name == 'invitation_date_from' || name == 'invitation_date_to') {
+                    var start = record.get('invitation_date_from');
+                    var end = record.get('invitation_date_to');
+            
+                    if ( !! end) {
+                        if (!pur5611_compareDate(start, end)) {
+                            return '${l:START_GREATER_THAN_END}';
+                        }
+                    }
+                    return true;
+                }
+            }
+            
+
+            //查询
+            
+            function pur5611_syncVendor_queryFun() {
+                $('pur5611_vendor_result_ds').query();
+            }
+            
+            function pur5611_syncVendor_related_queryFun() {
+                $('pur5611_vendor_related_result_ds').query();
+            }
+            
+            //邮箱格式校验
+            
+            function pur5611_email_Validator(record, name, value) {
+                if ( !! value) {
+                    var myReg = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,4})+$/;
+                    if (myReg.test(value)) {
+                        return true;
+                    }
+                    return '${l:PUR6020_VENDOR.MAIL_FORMAT_IS_INCORRECT}！';
+                }
+                return true;
+            
+            }
+            
+          
+
+            //Batch Match
+            
+            
+            //匹配
+            //不传company的时候自动查找并插入（多条记录跳过）
+            //传company的时候直接插入
+            
+            function pur5611_vendorMatchFunction() {
+                var records = $('pur5611_vendor_result_ds').getSelected();
+            
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PUR5611.AT_LEAST_CHOICE_ONE}', function() {});
+                    return;
+                }
+                var datas = [];
+                //Check Email
+                for (var i = 0;i < records.length;i++) {
+                    var vendor_email = records[i].get('vendor_email');
+                    var advice_company_id = records[i].get('advice_company_id');
+                    var coop_national_org_code = records[i].get('coop_national_org_code');
+                    var coop_company_name = records[i].get('coop_company_name');
+                    
+                    //邮箱、代码、建议企业三者必须存在一个
+                    if (Ext.isEmpty(vendor_email) && Ext.isEmpty(advice_company_id) && Ext.isEmpty(coop_national_org_code)) {
+                        Aurora.showMessage('${l:PROMPT}', '数据不完整，无法匹配！', function() {});
+                        return;
+                    }
+                    
+                    var myReg = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,4})+$/;
+                    if (!Ext.isEmpty(vendor_email) && !myReg.test(vendor_email)) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.EMAIL_FORMATION}', function() {});
+                        return;
+                    }
+                    var data = {
+                        'vendor_id': records[i].get('vendor_id'),
+                        'advice_company_id': records[i].get('advice_company_id'),
+                        'vendor_email': records[i].get('vendor_email'),
+                        'coop_national_org_code': records[i].get('coop_national_org_code'),
+                        'coop_company_name': records[i].get('coop_company_name')
+                    };
+                    datas.push(data);
+                }
+            
+                Aurora.Masker.mask(Ext.getBody());
+                Aurora.request({
+                    url: $('pur5611_vendorEmailBatchMarch_link').getUrl(),
+                    para: datas,
+                    success: function(res) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        $('pur5611_vendor_result_ds').query();
+                    },
+                    failure: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    error: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    scope: this
+                });
+            
+            }
+            
+      
+            function pur5611_adviceCompanyNameEditorFunction(record, name) {
+                var field = record.getField('advice_company_name');
+                var company_full_name = encodeURIComponent(record.get('coop_company_name'));
+                var national_organization_code = record.get('coop_national_org_code');
+                var email = record.get('vendor_email');
+                
+            
+                if (Aurora.isEmpty(national_organization_code) && Aurora.isEmpty(email)) {
+                    return '';
+                }
+            
+                if (company_full_name == 'undefined') {
+                    field.setLovPara('company_full_name', null);
+                } else {
+                    field.setLovPara('company_full_name', company_full_name);
+                }
+            
+                field.setLovPara('national_organization_code', national_organization_code);
+                field.setLovPara('email', email);
+            
+                return 'pur5611_vendorLov';
+            }
+            
+            function pur5611_vendorResultDs_onLoad(ds) {
+            
+               }
+        
+            
+            //关联
+            //必须有平台关联企业
+            
+            function pur5611_vendorRelationFunction() {
+                var records = $('pur5611_vendor_result_ds').getSelected();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PUR5611.AT_LEAST_CHOICE_ONE}', function() {});
+                    return;
+                }
+                var datas = [];
+                for (var i = 0;i < records.length;i++) {
+                    var advice_company_id = records[i].get('advice_company_id');
+                    if (Aurora.isEmpty(advice_company_id)) {
+                        Aurora.showMessage('${l:PROMPT}', '没有相关的平台企业，无法关联！', function() {});
+                        return;
+                    }
+                    var data = {
+                        'vendor_id': records[i].get('vendor_id'),
+                        'advice_company_id': records[i].get('advice_company_id'),
+                        'owner_company_id':'${/parameter/@owner_company_id}'
+                    };
+                    datas.push(data);
+                }
+            
+                Aurora.Masker.mask(Ext.getBody());
+                Aurora.request({
+                    url: $('pur5611_ErpVendorRelationLink').getUrl(),
+                    para: datas,
+                    success: function(res) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        $('pur5611_vendor_result_ds').query();
+                    },
+                    failure: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    error: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    scope: this
+                });
+            }
+            
+            //取消关联
+            
+            
+            function pur5611_vendorCancelRelationFunction() {
+                var records = $('pur5611_vendor_related_result_ds').getSelected();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PUR5611.AT_LEAST_CHOICE_ONE}', function() {});
+                    return;
+                }
+                var datas = [];
+                for (var i = 0;i < records.length;i++) {
+                    var data = {
+                        'vendor_id': records[i].get('vendor_id')
+                    };
+                    datas.push(data);
+                }
+            
+                Aurora.Masker.mask(Ext.getBody());
+                Aurora.request({
+                    url: $('pur5611_ErpVendorCancelRelationLink').getUrl(),
+                    para: datas,
+                    success: function(res) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        $('pur5611_vendor_related_result_ds').query();
+                    },
+                    failure: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    error: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    scope: this
+                });
+            }
+            
+            function pur5611_adviceCompanyNameRender(value,record,name){
+                var advice_company_id = record.get('advice_company_id');
+                var advice_company_name= record.get('advice_company_name');
+                if(Aurora.isEmpty(advice_company_id)){
+                    return '<div style="background:yellow">'+value+'</div>';
+                }else
+                {
+                    return value;
+                }
+            }
+            
+            function pur5611_vendorResultDs_OnUpdate(ds, record, name, value, oldvalue) {
+                if (name=='advice_company_name'){
+                    if (value==''){
+                        record.set('advice_company_id',null);
+                    }
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="pur5611_invitation_query_ds" model="pur.PUR5611.pur_vendor_invitation_query">
+                <a:fields>
+                    <a:field name="invitation_date_from" validator="pur5611_invitation_dateValidator"/>
+                    <a:field name="invitation_date_to" validator="pur5611_invitation_dateValidator"/>
+                    <a:field name="used_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="pur5611_invitation_result_ds" autoCount="true" autoPageSize="true" model="pur.PUR5611.pur_vendor_invitation_query" queryDataSet="pur5611_invitation_query_ds" queryUrl="${/request/@context_path}/autocrud/pur.PUR5611.pur_vendor_invitation_query/query" selectable="true">
+                <a:fields>
+                    <a:field name="vendor_name" prompt="PUR_VENDOR_INVITATION.VENDOR_NAME" readOnly="true"/>
+                    <a:field name="vendor_email" prompt="PUR_VENDOR_INVITATION.VENDOR_EMAIL" readOnly="true"/>
+                    <a:field name="user_desc" prompt="PUR_VENDOR_INVITATION.USER_ID" readOnly="true"/>
+                    <a:field name="invitation_date" prompt="PUR_VENDOR_INVITATION.INTITATION_DATE"/>
+                    <a:field name="company_name" prompt="PUR_VENDOR_INVITATIONS.COMPANY_ID" readOnly="true"/>
+                    <a:field name="enabled_flag" checkedValue="Y" readOnly="true" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="pur5611_vendor_query_ds"/>
+            <a:dataSet id="pur5611_vendor_result_ds" autoCount="true" autoPageSize="true" model="pur.PUR5611.pur_sync_vendors" queryDataSet="pur5611_vendor_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="vendor_email" validator="pur5611_email_Validator"/>
+                    <a:field name="coop_national_org_code"/>
+                    <a:field name="coop_company_code"/>
+                    <a:field name="advice_company_name" lovHeight="490" lovService="pur.PUR5611.fnd_advice_companies_lov" lovWidth="540" lovlabelWidth="150" title="平台关联企业">
+                        <a:mapping>
+                            <a:map from="company_id" to="advice_company_id"/>
+                            <a:map from="advice_company_name" to="advice_company_name"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="pur5611_vendorResultDs_onLoad"/>
+                    <a:event name="update" handler="pur5611_vendorResultDs_OnUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 已关联的erp供应商 -->
+            <a:dataSet id="pur5611_vendor_related_query_ds"/>
+            <a:dataSet id="pur5611_vendor_related_result_ds" autoCount="true" autoPageSize="true" model="pur.PUR5611.pur_sync_vendors_related" queryDataSet="pur5611_vendor_related_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="vendor_email" validator="pur5611_email_Validator"/>
+                    <a:field name="coop_national_org_code"/>
+                    <a:field name="coop_company_code"/>
+                    <a:field name="advice_company_name" lovHeight="490" lovService="pur.PUR5611.fnd_advice_companies_lov" lovWidth="540" lovlabelWidth="150" title="平台关联企业">
+                        <a:mapping>
+                            <a:map from="company_id" to="advice_company_id"/>
+                            <a:map from="advice_company_name" to="advice_company_name"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:tabPanel marginHeight="120" marginWidth="50">
+                <a:tabs>
+                    <a:tab prompt="待关联的供应商" width="130">
+                        <a:hBox style="margin-top:10px;margin-left:20px">
+                            <a:toolbarButton click="pur5611_vendorMatchFunction" text="PUR5611.MATCH" width="100"/>
+                            <a:toolbarButton click="pur5611_vendorRelationFunction" text="关联" width="100"/>
+                        </a:hBox>
+                        <a:queryForm bindTarget="pur5611_vendor_query_ds" marginWidth="80" resultTarget="pur5611_vendor_result_ds" style="border:none;">
+                            <a:formToolBar>
+                                <a:textField style="width:100%;display:none"/>
+                                <a:hBox labelWidth="120">
+                                    <a:textField name="display_vendor_code" bindTarget="pur5660_vendor_query_ds" prompt="PUR_SYS_VENDOR_BASICS.VENDOR_CODE" typeCase="upper">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5611_syncVendor_queryFun"/>
+                                        </a:events>
+                                    </a:textField>
+                                    <a:textField name="full_name" bindTarget="pur5660_vendor_query_ds" prompt="PUR_SYS_VENDOR_BASICS.FULL_NAME">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5611_syncVendor_queryFun"/>
+                                        </a:events>
+                                    </a:textField>
+                                    <a:textField name="vendor_email" bindTarget="pur5660_vendor_query_ds" prompt="PUR_VENDOR_INVITATION.VENDOR_EMAIL">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5611_syncVendor_queryFun"/>
+                                        </a:events>
+                                    </a:textField>
+                                </a:hBox>
+                            </a:formToolBar>
+                        </a:queryForm>
+                        <a:grid id="pur5611_vendor_grid" autoAppend="false" bindTarget="pur5611_vendor_result_ds" marginHeight="240" marginWidth="70" navBar="true">
+                            <a:columns>
+                                <a:column name="display_vendor_code" align="center" prompt="VENDER_CODE" renderer="pur5611_adviceCompanyNameRender" sortable="true" width="60"/>
+                                <a:column name="coop_national_org_code" editor="pur5611_vendorTf" prompt="供应商组织机构代码" sortable="true" width="90"/>
+                                <a:column name="coop_company_name" editor="pur5611_vendorTf" prompt="公司名称" width="80"/>
+                                <a:column name="vendor_email" editor="pur5611_vendorTf" prompt="PUR_VENDOR_INVITATION.VENDOR_EMAIL" sortable="true" width="120"/>
+                                <a:column name="full_name" prompt="PUR_SYS_VENDOR_BASICS.FULL_NAME" sortable="true" width="150"/>
+                                <a:column name="advice_company_name" editorFunction="pur5611_adviceCompanyNameEditorFunction" prompt="PUR5611_VENDOR_INVITATIONS.ADVICE_COMPANY_NAME" sortable="true" width="150"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:textField id="pur5611_vendorTf"/>
+                                <a:lov id="pur5611_vendorLov"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab prompt="已关联的供应商" width="130">
+                        <a:hBox style="margin-top:10px;margin-left:20px">
+                            <a:toolbarButton click="pur5611_vendorCancelRelationFunction" text="取消关联" width="100"/>
+                        </a:hBox>
+                        <a:queryForm bindTarget="pur5611_vendor_related_query_ds" marginWidth="80" resultTarget="pur5611_vendor_related_result_ds" style="border:none;">
+                            <a:formToolBar>
+                                <a:textField style="width:100%;display:none"/>
+                                <a:hBox labelWidth="120">
+                                    <a:textField name="display_vendor_code" bindTarget="pur5611_vendor_related_query_ds" prompt="PUR_SYS_VENDOR_BASICS.VENDOR_CODE" typeCase="upper">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5611_syncVendor_related_queryFun"/>
+                                        </a:events>
+                                    </a:textField>
+                                    <a:textField name="full_name" bindTarget="pur5611_vendor_related_query_ds" prompt="PUR_SYS_VENDOR_BASICS.FULL_NAME">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5611_syncVendor_related_queryFun"/>
+                                        </a:events>
+                                    </a:textField>
+                                    <a:textField name="vendor_email" bindTarget="pur5611_vendor_related_query_ds" prompt="PUR_VENDOR_INVITATION.VENDOR_EMAIL">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5611_syncVendor_related_queryFun"/>
+                                        </a:events>
+                                    </a:textField>
+                                </a:hBox>
+                            </a:formToolBar>
+                        </a:queryForm>
+                        <a:grid id="pur5611_vendor_related_grid" autoAppend="false" bindTarget="pur5611_vendor_related_result_ds" marginHeight="240" marginWidth="70" navBar="true">
+                            <a:columns>
+                                <a:column name="display_vendor_code" align="center" prompt="VENDER_CODE" sortable="true" width="60"/>
+                                <a:column name="coop_national_org_code" prompt="供应商组织机构代码" sortable="true" width="90"/>
+                                <a:column name="coop_company_name" prompt="公司名称" width="80"/>
+                                <a:column name="vendor_email" prompt="PUR_VENDOR_INVITATION.VENDOR_EMAIL" sortable="true" width="120"/>
+                                <a:column name="full_name" prompt="PUR_SYS_VENDOR_BASICS.FULL_NAME" sortable="true" width="150"/>
+                                <a:column name="advice_company_name" prompt="PUR5611_VENDOR_INVITATIONS.ADVICE_COMPANY_NAME" sortable="true" width="150"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+    </a:view>
+</a:screen>

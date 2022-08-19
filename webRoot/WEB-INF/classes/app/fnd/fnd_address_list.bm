@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    id,
+                    NAME,
+                    TYPE
+                FROM
+                    (SELECT
+                        v.*,
+                        ceil(rownum / NVL(${/parameter/@page_size}, 5)) AS page_num
+                    FROM
+                        (SELECT DISTINCT
+                            id,
+                            NAME,
+                            TYPE
+                        FROM
+                            (SELECT
+                                'BUSINESS_GROUP' TYPE,
+                                -1 id,
+                                s.business_group_name NAME
+                            FROM
+                                fnd_business_groups_vl s
+                            WHERE
+                                s.business_group_code = ${/session/@business_group} AND
+                                ${@parent_id}        IS NULL
+                            UNION ALL
+                            SELECT
+                                'COMPANY' TYPE,
+                                -2,
+                                '我的客户'
+                            FROM
+                                dual
+                            WHERE
+                                EXISTS
+                                (SELECT
+                                    1
+                                FROM
+                                    fnd_companies f
+                                WHERE
+                                    f.business_group = ${/session/@business_group} AND
+                                    enabled_flag     = 'Y' AND
+                                    (
+                                        f.supply_flag  = 'Y' OR
+                                        f.service_flag = 'Y'
+                                    )
+                                ) AND
+                                ${@parent_id} IS NULL
+                            UNION ALL
+                            SELECT
+                                'COMPANY' TYPE,
+                                -3,
+                                '我的供应商'
+                            FROM
+                                dual
+                            WHERE
+                                EXISTS
+                                (SELECT
+                                    1
+                                FROM
+                                    fnd_companies f
+                                WHERE
+                                    f.business_group = ${/session/@business_group} AND
+                                    enabled_flag     = 'Y' AND
+                                    (
+                                        f.require_flag = 'Y'
+                                    )
+                                ) AND
+                                ${@parent_id} IS NULL
+                            UNION ALL
+                            SELECT
+                                'COMPANY' TYPE,
+                                -4,
+                                '第三方服务'
+                            FROM
+                                dual
+                            WHERE
+                                EXISTS
+                                (SELECT
+                                    1
+                                FROM
+                                    fnd_companies f
+                                WHERE
+                                    f.business_group = ${/session/@business_group} AND
+                                    enabled_flag     = 'Y' AND
+                                    (
+                                        f.require_flag = 'Y'
+                                    )
+                                ) AND
+                                ${@parent_id} IS NULL
+                            UNION ALL
+                            SELECT
+                                'COMPANY' TYPE,
+                                s.company_id id,
+                                s.company_full_name NAME
+                            FROM
+                                fnd_companies_simplified_vl s,
+                                fnd_companies f
+                            WHERE
+                                s.business_group = ${/session/@business_group} AND
+                                f.enabled_flag   = 'Y' AND
+                                s.company_id     = f.company_id AND
+                                ${@parent_id}    = -1
+                            UNION ALL
+                            SELECT
+                                'COMPANY' TYPE,
+                                fc.company_id id,
+                                fc.company_full_name NAME
+                            FROM
+                                fnd_companies_simplified_vl fc,
+                                fnd_cooperative_partners p,
+                                fnd_companies f
+                            WHERE
+                                fc.company_id          = p.coop_company_id AND
+                                fc.business_group      = p.coop_business_group AND
+                                p.owner_business_group = ${/session/@business_group} AND
+                                p.owner_company_id     = f.company_id AND
+                                f.enabled_flag         = 'Y' AND
+                                (
+                                    (
+                                        ${@parent_id} = -2 AND
+                                        (
+                                            p.client_flag         = 'Y' OR
+                                            p.accept_service_flag = 'Y'
+                                        )
+                                    )
+                                    OR
+                                    (
+                                        ${@parent_id} = -3 AND
+                                        p.vendor_flag = 'Y'
+                                    )
+                                    OR
+                                    (
+                                        ${@parent_id}  = -4 AND
+                                        p.service_flag = 'Y'
+                                    )
+                                )
+                                AND
+                                NVL(${@parent_id},0) < 0
+                            UNION ALL
+                            SELECT
+                                'USER' TYPE,
+                                su.user_id,
+                                su.description
+                            FROM
+                                sys_user su
+                            WHERE
+                                EXISTS
+                                (SELECT
+                                    1
+                                FROM
+                                    fnd_companies fc
+                                WHERE
+                                    fc.company_id     = ${@parent_id} AND
+                                    fc.business_group = su.business_group
+                                ) AND
+                                EXISTS
+                                (SELECT
+                                    1
+                                FROM
+                                    pur_headers_all_v pav,
+                                    pur_buyers_vl pb
+                                WHERE
+                                    pav.vendor_id =
+                                    (SELECT
+                                        pv.vendor_id
+                                    FROM
+                                        pur_vendors pv
+                                    WHERE
+                                        pv.coop_business_group = ${/session/@business_group} AND
+                                        pv.business_group      = 'BG00000101'
+                                    ) AND
+                                    pav.agent_id = pb.buyer_id AND
+                                    pb.user_id   = su.user_id
+                                ) AND
+                                NVL(su.frozen_flag, 'N') = 'N' AND
+                                NVL(${@parent_id},0)     > 0
+                            )
+                        ORDER BY
+                            TYPE,
+                            NAME
+                        )v
+                    )
+                WHERE
+                    (
+                        (
+                            ${@page_num} IS NOT NULL AND
+                            ${@page_num}  = page_num
+                        )
+                        OR
+                        (
+                            ${@page_num} IS NULL AND
+                            1             = 1
+                        )
+                    )
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="type" databaseType="CHAR" datatype="java.lang.String" physicalName="TYPE"/>
+        <bm:field name="id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="ID"/>
+        <bm:field name="name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="NAME"/>
+    </bm:fields>
+</bm:model>

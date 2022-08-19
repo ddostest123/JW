@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: LIBIN  
+    $Date: 2014-10-27 上午11:25:49  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:service xmlns:s="aurora.plugin.script" xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+    <a:init-procedure>
+        <a:model-query model="sms.sys_sms_config" rootPath="sms_config"/>
+        <s:server-script><![CDATA[
+            var parameter = $ctx.parameter;
+            var action = parameter.action;
+            var mobile = parameter.mobile;
+            var content = parameter.content;
+            var template = parameter.template;
+            var sms_log_bm = 'sms.sys_sms_logs';
+            var overdue_date = (parameter.overdue_date) ? parameter.overdue_date : '300'; //短信过期时间
+            var reSend_date = (parameter.reSend_date) ? parameter.reSend_date : '60'; //短信可重发时间
+            var source = parameter.source;
+            var source_id = $ctx.parameter.source_id;
+            var key = $ctx.parameter.key;
+            var code = $ctx.parameter.code;
+            
+            var record = $ctx.model.getChild("sms_config").getChildren()[0];
+            var host = record.host;
+            var port = parseInt(record.port);
+            var serviceId = record.service_id;
+            var accountId = record.account_id;
+            var password = record.passwd;
+            var dsf = $instance("aurora.database.service.IDatabaseServiceFactory");
+            
+            importPackage(Packages.com.jianzhou.sdk);
+            
+            function init() {
+                if (action == 'common') {
+                    //发送推送信息
+                    var sm = setContent();
+                    if (sm) {
+                        sendMessage(sm, content);
+                    }
+                } else if (action == 'validate_code') {
+                    var mobiles = mobile.split(';');
+                    //验证码的形式短信提交，先验证短信是否在可重发时间内连续提交（reSend_date）
+                    var queryArray = validateReSendDate();
+                    if (queryArray.length > 0) {
+                        //重复提交
+                        parameter.error_message = reSend_date + '秒内重复提交'
+                        println('重复提交');
+                        return;
+                    } else if (mobiles.length > 1) {
+                        parameter.error_message = '接受验证码的手机号有多个'
+                        println('接受验证码的手机号有多个');
+                        return;
+                    } else {
+                        //生成随机的6位验证码
+                        var code = getRandomCode(6);
+                        //$ctx.parameter.code = code;
+                        //将生成的信息同时插入后台数据中
+                        var code_id = insertCodeList(code);
+                        $ctx.parameter.key = code_id;
+                        //将短信内容里的*换成验证码
+                        /* var send_message;
+                        if (content.indexOf('VALIDATION_CODE') > 0) {
+                            send_message = content.replace('VALIDATION_CODE', code);
+                        } else {
+                            send_message = content;
+                        } */
+                        //加上短信签名
+                        //send_message += '【汉得SCF】';
+                        //println(send_message);
+                        //content = String(send_message);
+                        sendMessageInOracle(code);
+                        //发送消息
+                        /* var sm = setContent();
+                         if (sm) {
+                         sendMessage(sm, content);
+                         } */
+                    }
+                } else if (action == 'validation') {
+                    //验证code是否是此key(code_id下的)
+                    if (valiationCode()) {
+                        //正确
+                        $ctx.parameter.validate_flag = 'Y';
+                    } else {
+                        $ctx.parameter.validate_flag = 'N';
+                    }
+                }
+            }
+            
+            //连接请求
+            
+            function setContent() {
+                var sm = new BusinessService();
+                sm.setWebService("http://www.jianzhou.sh.cn/JianzhouSMSWSServer/services/BusinessService");
+                var validate = sm.validateUser('sdk_hande1', '20150629');
+                if (validate == 1) {
+                    return sm;
+                } else {
+                    println('身份验证失败');
+                    return false;
+                }
+            }
+            //发送短信
+            
+            function sendMessage(sm, content) {
+                //发送短信
+                println('发送结果：' + send_return);
+                if (send_return < 0) {
+                    sendFailure(send_return);
+                }
+            }
+            
+            //发送短信-后台
+            
+            function sendMessageInOracle(code) {
+                var param = {
+                    send_to: mobile,
+                    note: '',
+                    validation_code:code,
+                    template:template
+                };
+                var send_list = new ModelService('sms.sys_sms_send_list');
+                send_list.insert(param);
+            }
+            
+            //短信发送失败处理
+            
+            function sendFailure(send_return) {
+                //发送失败：接收到发送短信的反馈后改写后台代发短信的状态，写日志
+                //建立与数据库的连接
+                var sqlContext = dsf.createContextWithConnection();
+                try {
+                    var context = sqlContext.getObjectContext();
+                    if (context == null) context = new CompositeMap().getData();
+                    var service = dsf.getModelService('sms.sys_sms_logs', context);
+                    var para = new CompositeMap();
+                    para.status = String(send_return);
+                    para.log_text = String(mobile + ':' + content);
+                    para.sms_send_id = send_id;
+                    service.execute(para.getData());
+                } catch (e) {
+                    println(e.message)
+                } finally {
+                    if (sqlContext != null) sqlContext.freeConnection();
+                }
+            }
+            //校验短信是否连续提交（在重复时间内）
+            
+            function validateReSendDate() {
+                var code_list_bm = $bm('sms.sys_sms_code_lists');
+                //设置查询条件
+                var code_list = code_list_bm.queryAsMap({
+                    'send_to': mobile,
+                    'source': source,
+                    'source_id': source_id,
+                    'reSend_flag': 'Y'
+                });
+                var array = code_list.getChildren();
+                return array;
+            }
+            
+            //生成随机的验证码
+            
+            function getRandomCode(n) {
+                var min = Math.pow(10, n - 1);
+                var max = Math.pow(10, n) - 1;
+                var random = Math.random();
+                var r_n = min + Math.round(random * (max - min));
+                return r_n;
+            }
+            
+            //插入后台的验证信息表
+            
+            function insertCodeList(code) {
+                try {
+                    var param = {
+                        send_to: mobile,
+                        note: template,
+                        code: code,
+                        overdue_date: overdue_date,
+                        reSend_date: reSend_date,
+                        source: source,
+                        source_id: source_id
+                    };
+                    var code_list = new ModelService('sms.sys_sms_code_lists');
+                    code_list.insert(param);
+                    var code_id = parameter.result_code_id;
+                } catch (e) {
+                    println(e.message);
+                    code_id = -1;
+                } finally {
+                    return code_id;
+                }
+            }
+            
+            //验证code,再验证时间是否过期
+            
+            function valiationCode() {
+                var param = {
+                    key: key,
+                    code: code
+                };
+                var code_list = new ModelService('sms.sys_sms_code_lists');
+                code_list.execute(param);
+                var flag = parameter.validate_flag;
+                if(flag == 'Y'){
+                    return true;
+                }else{
+                    parameter.error_message = '验证码错误或已过期，请确认';
+                    return false;
+                }
+            }
+            
+            //查看用户信息-主要是余额
+            
+            function LookUserInfor(sm) {
+                var user_infor = '';
+                user_infor = sm.getUserInfo("jzyy400", "123456");
+                var remainFeeIndexStart = user_infor.indexOf('<remainFee>');
+                var remainFeeIndexEnd = user_infor.indexOf('</remainFee>');
+                var remainFee = parseInt(user_infor.substring(remainFeeIndexStart + 11, remainFeeIndexEnd));
+                return remainFee;
+            }
+            init();
+        ]]></s:server-script>
+    </a:init-procedure>
+    <a:service-output output="/parameter"/>
+</a:service>

@@ -1,0 +1,591 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: libin $
+    $Date: 2015/09/21 01:47:40 $
+    $Revision: 1.1.1.1 $
+    $Purpose: “事件消息模板维护” 编辑界面
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="l.template_header_id = ${/parameter/@template_header_id}" model="sys.SYS2020.sys_notify_template_line" rootPath="sys_notify_line"/>
+        <a:model-query defaultWhereClause="template_header_id = ${/parameter/@template_header_id}" model="sys.SYS2020.sys_notify_template_recipient" rootPath="sys_notify_recipient"/>
+        <a:model-query defaultWhereClause=" snrt.enabled_flag = &apos;Y&apos; " fetchAll="true" model="sys.SYS2020.sys_notify_recipient_type" rootPath="recipientType"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="sys2060_save_link" url="${/request/@context_path}/modules/sys/SYS2060/sys_notify_edit_update.svc"/>
+        <a:link id="sys2060_delete_link" model="sys.SYS2020.sys_notify_template_line" modelaction="delete"/>
+        <!-- 配置文件 -->
+        <script src="${/request/@context_path}/ueditor-jsp/ueditor.config.js" type="text/javascript"/>
+        <!-- 编辑器源码文件 -->
+        <script src="${/request/@context_path}/component/jquery/jquery-1.8.3.min.js" type="text/javascript"/>
+        <script src="${/request/@context_path}/ueditor-jsp/ueditor.all.js" type="text/javascript"/>
+        <link href="${/request/@context_path}/index/css/sys_notify_edit.css?v=1.1" rel="stylesheet" type="text/css"/>
+        <script><![CDATA[
+            jQuery.noConflict();
+        ]]></script>
+        <script><![CDATA[
+            var sys2060_ueIndex = 0;
+            var sys2060_ueArray = []; //ue实例化数组
+            
+            function getId(id) {
+                return document.getElementById(id);
+            }
+            
+            function sys2060_init() {
+                sys2060_ueIndex = 0;
+                sys2060_data_init();
+            }
+            
+            function sys2060_data_init() {
+                var records = $('sys2060_notify_template_line_rs').getAll();
+                if (records.length > 0) {
+                    //有行数据时，自动创建编辑器
+                    for (var i = 0;i < records.length;i++) {
+                        var data = records[i].data;
+                        sys2060_uEditor_create(data);
+                    }
+                } else {
+                    //初始化创建一个编辑器
+                    sys2060_line_add();
+                }
+            }
+            /*
+             ******sys2060_uEditor_create()
+             ******创建一个含有ueditor的模板编辑器
+             ******参数:data表示实例化时传进来的内容，
+             ******sys2060_ueIndex:最多只能创建4个
+             ******通过js加载的模板编辑后，需要对ueditor进行实例化操作，并将实例化返回的对象存入到全局变量sys2060_ueArray数组中。
+             ******通过js加载的模板在保存时会根据id进行取值，赋值到对应的ds记录上
+             */
+            
+            function sys2060_uEditor_create(data) {
+                //最多只能有四个编辑器
+                if (sys2060_ueIndex == 4) {
+                    Aurora.showMessage('提示', '最多只能有增加四个');
+                    var records = $('sys2060_notify_template_line_rs').getAll();
+                    $('sys2060_notify_template_line_rs').remove(records[records.length - 1]);
+                    return;
+                }
+                var body = getId('sys2060_edit');
+                var index = sys2060_ueIndex + 1;
+                var content = (data) ? data.template_content : '';
+                var flag = (data) ? data.enabled_flag : 'Y';
+                var receive = sys2060_getReceive(data.template_line_id);
+                var div = document.createElement('div');
+                var html = '';
+                div.className = 'step';
+                div.id = 'step_' + index;
+                html += '<div class="order">' + index + '</div>';
+                //发送方式
+                html += '<div class="line-detail"><div index="' + sys2060_ueIndex + '" id="sys2060_send_type_' + index + '" class="detail-row"><div class="add-btn" code="SMS" style="margin-left:50px">短信</div><div class="add-btn" code="MAIL">邮件</div><div class="add-btn" code="MSG">系统消息</div><div class="add-btn" code="WECHAT">微信</div><div style="clear:both"></div></div>';
+                //系统消息的类型
+                html += '<div class="detail-row" style="display:none"><div class="corner"></div><div class="add-btn" code="SYSTEM" style="margin-left:50px">系统消息</div><div code="COMPANY" class="add-btn">公司动态</div><div code="PURCHASE" class="add-btn">求购动态</div><div code="COOP" class="add-btn">商友圈</div><div code="INDUSTRY" class="add-btn">行业资讯</div><div style="clear:both"></div></div>';
+                //设置收件人
+                html += '<div class="detail-row z-h"><div class="corner"></div><div class="receive-person-field"><span>收件人:</span><input id="sys2060_receive_input_' + index + '" readOnly="true" value="' + receive.name + '" class="receive-person-field"></input><i onclick="sys2060_receive_onpen(' + index + ',this)" class="icon-plus-sign"></i></div>';
+                html += '<div class="trangle"></div><div id="sys2060_receive_window_' + index + '" class="receive-window"><ul id="' + data.template_line_id + '"></ul></div></div>';
+                //设置标题
+                html += '<div class="detail-row"><div class="corner"></div><div class="receive-person-field"><span>主题:</span><input id="sys2060_title_' + index + '" value="' + data.template_title + '"></input></div></div>';
+                html += '</div>';
+                html += '<script id="container_' + index + '" style="width:600px;height:200px;margin:0 auto" type="text/plain"><\/script>';
+                //设置sql
+                html += '<div class="sql-line-set"><div class="sql-field"><span>SQL:</span><textarea id="sys2060_sql_' + index + '">' + data.content_sql + '</textarea></div></div>';
+                //设置删除和测试按钮
+                html += '<div class="line-detail" style="margin-top:10px;overflow:hidden"><div style="float:left;" class="add-btn red" onclick="sys_notify_cancel(' + index + ')">删除</div></div>';
+                //设置面纱
+                html += '<div class="mask"></div>';
+                div.innerHTML = html;
+                body.insertBefore(div, body.lastChild);
+                //js事件绑定
+                var btn_index;
+                switch (data.send_method) {
+                case 'SMS':
+                    btn_index = 0;
+                    break;
+                case 'MAIL':
+                    btn_index = 1;
+                    break;
+                case 'MSG':
+                    btn_index = 2;
+                    break;
+                case 'WECHAT':
+                    btn_index = 3;
+                    break;
+                default:
+                    btn_index = -1;
+                    break;
+                }
+                //发送类型按钮事件绑定
+                sys2060_onclickSet('sys2060_send_type_' + index, btn_index);
+                //发送类型为系统消息时，消息类型事件绑定
+                sys2060_onclickType('sys2060_send_type_' + index, data.message_type);
+                //收件人内容设置
+                sys2060_setReceive('sys2060_receive_window_' + index, index, receive.array);
+                //编辑器实例化
+                sys2060_ue_init('container_' + index, content, flag);
+            }
+            
+            /*
+             ******sys_notify_cancel(index)
+             ******删除第index个创建好的模板编辑器
+             ******删除逻辑：1.当被删除的对象是未保存时，直接删除当前模板，后方模板上移（将模板内的id一次减一，注意：重新初始化ueditor）
+             ***********   ueidtor重新初始化:ue.destory()将被删除的元素内的编辑器销毁，将减一后的编辑器先销毁，重新按照新id初始化，
+             ***********   并插入到原来的全局数组sys2060_ueArray中，ueditor容器要是<script>(销毁后会默认设为textarea)
+             *********** 2.当被删除的对象是已保存时，校验页面内是否有未保存的模板。
+             */
+            
+            function sys_notify_cancel(index) {
+                var record = $('sys2060_notify_template_line_rs').getAll()[index - 1];
+                var records = $('sys2060_notify_template_line_rs').getAll();
+                var i;
+                //如果要删除的行是未保存的，直接清除此行
+                if (records[index - 1].isNew) {
+                    //清除样式内容,清除编辑器实例化数组
+                    var p = getId('sys2060_edit');
+                    p.removeChild(p.children[index - 1]);
+                    sys2060_ueArray[index - 1].destroy();
+                    //后方元素上移
+                    for (i = index + 1;i <= sys2060_ueIndex;i++) {
+                        //父id-1
+                        var child = getId('step_' + i);
+                        setIdless('step_', i);
+                        //序列号-1
+                        child.children[0].innerText = i - 1;
+                        //类型
+                        var type = child.children[1].children[0];
+                        type.id = 'sys2060_send_type_' + (i - 1);
+                        type.setAttribute('index', (i - 2));
+                        //收件人
+                        var re_i = getId('sys2060_receive_input_' + i);
+                        re_i.id = 'sys2060_receive_input_' + (i - 1);
+                        re_i.nextSibling.setAttribute('onclick', 'sys2060_receive_onpen(' + (i - 1) + ',this)');
+                        var ul_p = getId('sys2060_receive_window_' + i);
+                        ul_p.id = 'sys2060_receive_window_' + (i - 1);
+                        var lis = ul_p.children[0].children;
+                        for (var li_i = 0;li_i < lis.length;li_i++) {
+                            lis[li_i].setAttribute('onclick', 'sys2060_receive_liClick(this,' + (i - 1) + ')');
+                        }
+                        //主题
+                        setIdless('sys2060_title_', i);
+                        //编辑器
+                        var content = sys2060_ueArray[i - 1].getContent();
+                        content = (content) ? content : '';
+                        sys2060_ueArray[i - 1].destroy();
+                        var ue = getId('container_' + i);
+                        ue.outerHTML = '<script id="container_' + (i - 1) + '" style="width:600px;height:200px;margin:0 auto" type="text/plain"><\/script>';
+                        sys2060_ue_init('container_' + (i - 1), content, 'Y', i - 1);
+                        //sql编辑
+                        setIdless('sys2060_sql_', i);
+                        //删除按钮
+                        var cancel = child.children[4].children[0];
+                        cancel.setAttribute('onclick', 'sys_notify_cancel(' + (i - 1) + ')');
+                    }
+                    sys2060_ueArray.splice(index - 1, 1);
+                    sys2060_ueIndex--;
+                    //清除ds数据
+                    $('sys2060_notify_template_line_rs').remove(records[index - 1]);
+                    return;
+                }
+                //如果要删除的行是以保存的，进行下步
+                for (i = 0;i < records.length;i++) {
+                    if (records[i].isNew) {
+                        Aurora.showMessage('提示', '有未保存的数据，请先保存!');
+                        return;
+                    }
+                }
+                Aurora.showConfirm('提示', '确认删除?', function() {
+                    Aurora.request({
+                        url: $('sys2060_delete_link').getUrl(),
+                        para: {
+                            'template_line_id': record.get('template_line_id'),
+                            'template_header_id': '${/parameter/@template_header_id}',
+                            'send_method': record.get('send_method')
+                        },
+                        success: function(result) {
+                            //sys2060_lineSubmitsuccess();
+                            Aurora.showMessage('提示', '删除成功', function() {
+                                var url = '${/request/@context_path}/modules/sys/SYS2060/sys_notify_edits.screen?template_header_id=' + '${/parameter/@template_header_id}';
+                                Aurora.go(url);
+                            });
+                        }
+                    });
+                }, function() {
+                    return;
+                });
+            }
+            
+            //将此id的元素的id换成新的id
+            
+            function setIdless(id, i) {
+                var tar = getId(id + i);
+                tar.id = id + (i - 1);
+            }
+            
+            //寻找对应的收件人信息
+            
+            function sys2060_getReceive(line_id) {
+                var records = $('sys2060_notify_recipient_ds').getAll();
+                var txt = '';
+                var array = [];
+                for (var i = 0;i < records.length;i++) {
+                    if (records[i].get('template_line_id') == line_id) {
+                        txt += records[i].get('recipient_type_desc') + ';';
+                        array.push(records[i].get('recipient_type_id'));
+                    }
+                }
+                var obj = {
+                    name: txt,
+                    array: array
+                };
+                return obj;
+            }
+            
+            /*
+             ******sys2060_onclickSet(id,index)
+             ******选择发送类型，并将对应code插入到对应的ds记录中
+             ******判断选择的类型的code是否在其他模板中存在
+             ******修改样式
+             ******修改对应的ds记录
+             */
+            
+            function sys2060_onclickSet(id, index) {
+                var div = getId(id);
+                var child = div.children;
+                if (index >= 0) {
+                    child[index].className = child[index].className + ' active';
+                }
+                for (var i = 0;i < child.length;i++) {
+                    child[i].onclick = function() {
+                        //遍历判断此类型的发送方式是否已经存在
+                        var code = this.getAttribute('code');
+                        for (var a = 1;a <= sys2060_ueIndex;a++) {
+                            var _p = getId('sys2060_send_type_' + a);
+                            if (_p && _p != this.parentNode) {
+                                for (var b = 0;b < _p.children.length;b++) {
+                                    var _c = _p.children[b];
+                                    if (_c.className == 'add-btn active' && _c.getAttribute('code') == code) {
+                                        Aurora.showMessage('提示', '此类型的发送模板已经存在');
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                        this.className = (this.className == 'add-btn') ? 'add-btn active' : this.className;
+                        //其他按钮取消active
+                        var parent = this.parentNode;
+                        for (var i = 0;i < parent.children.length;i++) {
+                            if (parent.children[i] != this && i != parent.children.length - 1) {
+                                parent.children[i].className = 'add-btn';
+                            }
+                        }
+                        //ds中数据修改
+                        var records = $('sys2060_notify_template_line_rs').getAll();
+                        var _i = this.parentNode.getAttribute('index');
+                        records[_i].set('send_method', code);
+                        //如果是系统消息，选择消息类型
+                        var type = this.parentNode.nextSibling;
+                        if (code == 'MSG') {
+                            type.style.display = 'block';
+                        } else {
+                            type.style.display = 'none';
+                            //取消ds的数据
+                            records[_i].set('message_type', ' ');
+                        }
+            
+                    };
+                }
+            }
+            
+            function sys2060_onclickType(id, message_type) {
+                var p = getId(id).nextSibling;
+                var children = p.children;
+                var index;
+                switch (message_type) {
+                case 'SYSTEM':
+                    index = 1;
+                    break;
+                case 'COMPANY':
+                    index = 2;
+                    break;
+                case 'PURCHASE':
+                    index = 3;
+                    break;
+                case 'COOP':
+                    index = 4;
+                    break;
+                case 'INDUSTRY':
+                    index = 5;
+                    break;
+                default:
+                    index = -1;
+                    break;
+                }
+                if (index >= 0) {
+                    p.style.display = 'block';
+                    children[index].className = children[index].className + ' active';
+                }
+                for (var i = 0;i < children.length;i++) {
+                    children[i].onclick = function() {
+                        var parent = this.parentNode;
+                        var code = this.getAttribute('code');
+                        for (var j = 1;j < parent.children.length - 1;j++) {
+                            parent.children[j].className = 'add-btn';
+                        }
+                        this.className = this.className + ' active';
+                        //修改ds
+                        var records = $('sys2060_notify_template_line_rs').getAll();
+                        var _i = this.parentNode.previousSibling.getAttribute('index');
+                        records[_i].set('message_type', code);
+                    };
+                }
+            }
+            /*
+             ******sys2060_ue_init(id, content, flag, array_index)
+             ******ue的编辑器实例化
+             ******参数id：外部容器id
+             ******参数content：实例化后编辑器的内容
+             ******参数flag:编辑器是否启用的标志
+             ******参数array_index:初始化后返回的对象ue，存放到全局变量数组sys2060_ueArray的对应位置，若空，则插入到最后的位置
+             */
+            
+            function sys2060_ue_init(id, content, flag, array_index) {
+                var ue = UE.getEditor(id, {
+                    toolbars: [
+                        ['source', //源代码
+                        'undo', //撤销
+                        'redo', //重做
+                        'bold', //加粗
+                        'indent', //首行缩进
+                        'italic', //斜体
+                        'underline', //下划线
+                        'fontfamily', //字体
+                        'fontsize', //字号
+                        'justifyleft', //居左对齐
+                        'justifyright', //居右对齐
+                        'justifycenter', //居中对齐
+                        'justifyjustify', //两端对齐
+                        'forecolor', //字体颜色
+                        'fullscreen', //全屏
+                        'imagecenter' //居中
+                        ]
+                    ],
+                    autoHeightEnabled: true,
+                    autoFloatEnabled: true
+                });
+                if (array_index) {
+                    sys2060_ueArray[array_index] = ue;
+                } else {
+                    sys2060_ueArray.push(ue);
+                    sys2060_ueIndex++;
+                }
+            
+                //设置内容
+                if (!Aurora.isEmpty(content)) {
+                    ue.ready(function() {
+                        ue.setContent(content);
+                        if (flag == 'N') {
+                            ue.setDisabled();
+                        }
+                    });
+                }
+            }
+            
+            //联系人界面内容设置
+            
+            function sys2060_setReceive(id, index, array) {
+                var _w = getId(id);
+                var records = $('sys_recipient_type_ds').getAll();
+                var html = '';
+                for (var i = 0;i < records.length;i++) {
+                    if (searchInArray(records[i].get('recipient_type_id'), array)) {
+                        html += '<li select="true" onclick="sys2060_receive_liClick(this,' + index + ')" id="' + records[i].get('recipient_type_id') + '"><span>' + records[i].get('description') + '</span><i class="icon-ok" style="display:block"></i></li>';
+                    } else {
+                        html += '<li select="false" onclick="sys2060_receive_liClick(this,' + index + ')" id="' + records[i].get('recipient_type_id') + '"><span>' + records[i].get('description') + '</span><i class="icon-ok"></i></li>';
+                    }
+                }
+                _w.children[0].innerHTML = html;
+            }
+            
+            function searchInArray(id, array) {
+                for (var i = 0;i < array.length;i++) {
+                    if (array[i] == id) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            
+            function sys2060_receive_liClick(_this, index) {
+                var ds = $('sys2060_notify_template_line_rs');
+                var records = ds.getAll();
+                var flag = _this.getAttribute('select');
+                var _i = getId('sys2060_receive_input_' + index);
+                var t = _this.children[0].innerText + ';';
+                var r_ds = $('sys2060_notify_recipient_ds');
+                var r_records = r_ds.getAll();
+                if (flag == 'false') {
+                    _this.children[1].style.display = 'block';
+                    _this.setAttribute('select', 'true');
+                    _i.value += t;
+                    var data = {
+                        'template_line_id': _this.parentNode.id,
+                        'recipient_type_id': _this.id,
+                        'enabled_flag': 'Y'
+                    };
+                    r_ds.create(data);
+                } else {
+                    _this.children[1].style.display = 'none';
+                    _this.setAttribute('select', 'false');
+                    var v = (_i.value).replace(t, '');
+                    _i.value = v;
+                    for (var i = 0;i < r_records.length;i++) {
+                        if (r_records[i].get('template_line_id') == _this.parentNode.id && r_records[i].get('recipient_type_id') == _this.id) {
+                            r_ds.remove(r_records[i]);
+                        }
+                    }
+                }
+            }
+            
+            //打开联系人界面
+            
+            function sys2060_receive_onpen(index, _this) {
+                var _w = getId('sys2060_receive_window_' + index);
+                var _t = _w.previousSibling;
+                sys_show(_w);
+                sys_show(_t);
+                if (_this.className == 'icon-plus-sign') {
+                    _this.className = 'icon-minus-sign';
+                } else {
+                    _this.className = 'icon-plus-sign';
+                }
+                //寻找当前record,返回index光标
+                var ds = $('sys2060_notify_template_line_rs');
+                ds.locate(index);
+            }
+            
+            function sys_show(obj) {
+                if (obj.style.display == 'block') {
+                    obj.style.display = 'none';
+                } else {
+                    obj.style.display = 'block';
+                }
+            }
+            //增加新的发送类型
+            
+            function sys2060_line_add() {
+                var ds = $('sys2060_notify_template_line_rs');
+                var records = ds.getAll();
+                //创建ds记录
+                var data = {
+                    'template_header_id': '${/parameter/@template_header_id}',
+                    'template_line_id': null,
+                    'template_title': '',
+                    'template_content': '',
+                    'send_method': '',
+                    'content_sql': '',
+                    'enabled_flag': 'Y'
+                };
+                ds.create(data);
+                //创建ue编辑器
+                sys2060_uEditor_create(data);
+            }
+            /*
+             ******sys2060_line_save()
+             ******保存数据
+             ******新增的模板内的数据未保存到ds中，需要循环赋值
+             ******只有当发送类型为MAIL时返回带格式的编辑内容
+             */
+            
+            function sys2060_line_save() {
+                var ds = $('sys2060_notify_template_line_rs');
+                var r_ds = $('sys2060_notify_recipient_ds');
+                var records = $('sys2060_notify_template_line_rs').getAll();
+                for (var i = 0;i < records.length;i++) {
+                    //复制模板中心内容
+                    var content;
+                    if (records[i].get('send_method') == 'MAIL') {
+                        content = sys2060_ueArray[i].getContent();
+                    } else {
+                        content = sys2060_ueArray[i].getContentTxt();
+                    }
+                    records[i].set('template_content', content);
+                    //复制标题
+                    var _i = getId('sys2060_title_' + (i + 1)).value;
+                    records[i].set('template_title', _i);
+                    //复制sql
+                    var _t = getId('sys2060_sql_' + (i + 1)).value;
+                    records[i].set('content_sql', _t);
+                    //svc判断新增修改状态
+                    if (records[i].isNew) {
+                        records[i].set('_status', 'insert');
+                    } else {
+                        records[i].set('_status', 'update');
+                    }
+                    //当发送方式为系统消息时，判断消息类型
+                    if (records[i].get('send_method') == 'MSG' && Aurora.isEmpty(records[i].get('message_type'))) {
+                        Aurora.showMessage('提示', '第' + (i + 1) + '个模板的系统消息类型为空！请选择');
+                        return;
+                    }
+                }
+                if (ds.validate()) {
+                    ds.submit();
+                }
+            }
+            
+            function sys2060_lineSubmitsuccess() {
+                Aurora.showMessage('提示', '保存成功', function() {
+                    var url = '${/request/@context_path}/modules/sys/SYS2060/sys_notify_edits.screen?template_header_id=' + '${/parameter/@template_header_id}';
+                    Aurora.go(url);
+                });
+            
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="sys2060_notify_template_line_rs" model="sys.SYS2020.sys_notify_template_line" submitUrl="${/request/@context_path}/modules/sys/SYS2060/sys_notify_edit_update.svc">
+                <a:datas dataSource="/model/sys_notify_line"/>
+                <a:fields>
+                    <a:field name="template_title" required="true" requiredMessage="标题不能为空"/>
+                    <a:field name="content_sql" required="true" requiredMessage="sql不能为空"/>
+                    <a:field name="send_method" required="true" requiredMessage="发送类型还没选择"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="submitsuccess" handler="sys2060_lineSubmitsuccess"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="sys_recipient_type_ds">
+                <a:datas dataSource="/model/recipientType"/>
+            </a:dataSet>
+            <a:dataSet id="sys2060_notify_recipient_ds" bindName="recipients" bindTarget="sys2060_notify_template_line_rs" model="sys.SYS2020.sys_notify_template_recipient">
+                <a:datas dataSource="/model/sys_notify_recipient"/>
+            </a:dataSet>
+        </a:dataSets>
+        <div class="head">
+            <div class="main-content">
+                <img src="${/request/@context_path}/images/HandIcon.png" style="height:40px"/>
+            </div>
+        </div>
+        <div class="body">
+            <div class="main-content content-m">
+                <div class="title"><![CDATA[消息模板维护]]></div>
+                <div class="head-desc">
+                    <a:label name="title" bindTarget="sys2060_notify_template_line_rs" prompt="头行消息名称" width="200"/>
+                </div>
+                <div id="sys2060_edit" class="body-editor">
+                    <!-- <div class="step_title"><![CDATA[方法/步骤]]></div> -->
+                    <div class="step">
+                        <div class="add-btn" onclick="sys2060_line_add()" style="width:600px"><![CDATA[添加消息行模板]]></div>
+                    </div>
+                </div>
+                <div class="operation-set">
+                    <button class="save-btn" onclick="sys2060_line_save()"><![CDATA[保存]]></button>
+                </div>
+            </div>
+        </div>
+        <script src="${/request/@context_path}/ueditor-jsp/auto.js"/>
+        <script><![CDATA[
+            //初始化
+            Aurora.onReady(function() {
+                sys2060_init();
+            });
+        ]]></script>
+    </a:view>
+</a:screen>

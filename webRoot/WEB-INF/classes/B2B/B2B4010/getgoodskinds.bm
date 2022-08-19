@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: pccold  
+    $Date: 2015-4-8 下午3:30:49  
+    $Revision: 1.0  
+    $Purpose: 查询商品类型
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" xmlns:f="aurora.database.features" alias="t1">
+    <bm:fields>
+        <bm:field name="category_udf_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="category_udf_id"/>
+        <bm:field name="node_level" databaseType="NUMBER" datatype="java.lang.Float" physicalName="category_level"/>
+        <bm:field name="category_level" databaseType="NUMBER" datatype="java.lang.Long" physicalName="category_level"/>
+        <bm:field name="parent_category_udf_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="parent_category_udf_id"/>
+        <bm:field name="category_name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="category_name"/>
+    </bm:fields>
+    <bm:features>
+        <f:standard-who/>
+    </bm:features>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            
+            	select nvl(tt2.description_text, '其他分类') AS category_name,
+				       tt1.category_udf_id,
+				       tt1.parent_category_udf_id,
+				       tt1.category_level,
+				       tt1.node_level
+				  from (select avg(t.category_udf_id) as category_udf_id,
+				               avg(t.parent_category_udf_id) as parent_category_udf_id,
+				               avg(t.category_level) as category_level,
+				               avg(t.category_name_id) as category_name_id,
+				               avg(level) as node_level
+				          from (select a.category_udf_id,
+				                       a.parent_category_udf_id,
+				                       a.category_level,
+				                       a.category_name_id
+				                  from mtl_categories_user_defined a
+				                 where a.business_group = ${/parameter/@coop_business_group} --访问
+				                   and a.enabled_flag = 'Y'
+				                union
+				                select 0    as category_udf_id,
+				                       null as parent_category_udf_id,
+				                       1    as category_level,
+				                       0    category_name_id
+				                  from dual) t
+				         start with t.category_udf_id in
+				                    (SELECT nvl(ci.category_udf_id, 0)
+				                       FROM b2b_system_items            b,
+				                            mtl_category_classify_items ci,
+				                            mtl_system_items            m,
+				                            b2b_client_products         p
+				                      WHERE m.item_id = b.item_id
+				                        and m.for_sales_flag = 'Y'
+				                        and nvl(b.off_shelf_flag, 'N') = 'N'
+				                        and b.item_id = ci.item_id(+)
+				                        and p.item_id = m.item_id
+				                        and p.coop_business_group = ${/session/@business_group} --登录
+				                        and p.coop_company_id = ${/parameter/@my_company_id} --登录
+				                        and exists
+				                      (select 1
+				                               from mtl_item_inv_organization mo,
+				                                    inv_organizations_vl      i,
+				                                    fnd_companies_vl          f,
+				                                    fnd_business_units_vl     u
+				                              where mo.inventory_organization_id =
+				                                    i.inv_organization_id
+				                                and i.business_unit_id = u.business_unit_id
+				                                and u.company_id = f.company_id
+				                                and mo.item_id = m.item_id
+				                                and f.company_id = ${/parameter/@coop_company_id} --访问
+				                                and f.business_group = ${/parameter/@coop_business_group})) --访问
+				        connect by t.category_udf_id = prior t.parent_category_udf_id
+				         group by t.category_udf_id) tt1,
+				       fnd_descriptions tt2
+				 where tt2.language(+) = userenv('LANG')
+				   and tt1.category_name_id = tt2.description_id(+)
+			   	order by tt1.node_level desc, category_udf_id desc
+		 	]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

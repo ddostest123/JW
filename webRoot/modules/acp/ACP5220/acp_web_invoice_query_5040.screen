@@ -1,0 +1,1130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao  
+    $Date: 2014-11-27 下午03:00:26  
+    $Revision: 1.0  
+    $Purpose: 非寄销网上发票创建(供)，入口页面
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="EXISTS (SELECT 1 FROM fnd_cooperative_partners p WHERE (p.client_flag = &apos;Y&apos; OR p.accept_service_flag = &apos;Y&apos;)  AND p.coop_business_group = f.business_group and p.owner_business_group = ${/session/@business_group}) AND acp_type=&apos;ACP_NON_CSGN&apos;" fetchAll="true" model="acp.PUBLIC.fnd_config_cnt_acp_merge_rule" rootPath="acp5220_merge_rule_data"/>
+        <a:model-query defaultWhereClause="v.config_classify_code = &apos;PO&apos; AND v.config_item_code = &apos;PO_10&apos;" fetchAll="true" model="public.get_fnd_config_center_coop_bg_item_value" rootPath="bg_item_po_10"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="acp5220_header_link" url="${/request/@context_path}/modules/acp/ACP5220/acp_web_invoice_headers.screen"/>
+        <a:link id="acp5220_unit_price_batch_update_link" url="${/request/@context_path}/modules/acp/ACP5220/acp5220_unit_price_batch_maintain.screen"/>
+        <a:link id="acp5220_web_invoice_tax_rate_link" url="${/request/@context_path}/modules/acp/ACP5220/acp_web_invoice_tax_rate_confirm.screen"/>
+        <script><![CDATA[
+            var merge_num_flag = 0; //校验并单数量是否全正数或负数
+            var po_10_flag = '${/model/bg_item_po_10/record/@bg_config_item_value}'; //是否启用数值税率
+            //加法
+            
+            function acp5220_accAdd(arg1, arg2) {
+                var r1, r2, m, c;
+                try {
+                    r1 = arg1.toString().split(".")[1].length;
+                } catch (e) {
+                    r1 = 0;
+                }
+                try {
+                    r2 = arg2.toString().split(".")[1].length;
+                } catch (e) {
+                    r2 = 0;
+                }
+                c = Math.abs(r1 - r2);
+                m = Math.pow(10, Math.max(r1, r2));
+                if (c > 0) {
+                    var cm = Math.pow(10, c);
+                    if (r1 > r2) {
+                        arg1 = Number(arg1.toString().replace(".", ""));
+                        arg2 = Number(arg2.toString().replace(".", "")) * cm;
+                    } else {
+                        arg1 = Number(arg1.toString().replace(".", "")) * cm;
+                        arg2 = Number(arg2.toString().replace(".", ""));
+                    }
+                } else {
+                    arg1 = Number(arg1.toString().replace(".", ""));
+                    arg2 = Number(arg2.toString().replace(".", ""));
+                }
+                return (arg1 + arg2) / m;
+            }
+            
+            //乘法
+            
+            function acp5220_accMul(arg1, arg2) {
+                var m = 0,
+                    s1 = arg1.toString(),
+                    s2 = arg2.toString();
+                try {
+                    m += s1.split(".")[1].length;
+                } catch (e) {}
+                try {
+                    m += s2.split(".")[1].length;
+                } catch (e) {}
+                return Number(s1.replace(".", "")) * Number(s2.replace(".", "")) / Math.pow(10, m);
+            }
+            
+            //除法
+            
+            function acp5220_accDiv(arg1, arg2) {
+                var t1 = 0,
+                    t2 = 0,
+                    r1, r2;
+                try {
+                    t1 = arg1.toString().split(".")[1].length;
+                } catch (e) {}
+                try {
+                    t2 = arg2.toString().split(".")[1].length;
+                } catch (e) {}
+            
+                r1 = Number(arg1.toString().replace(".", ""));
+                r2 = Number(arg2.toString().replace(".", ""));
+                return (r1 / r2) * Math.pow(10, t2 - t1);
+            
+            }
+            
+            
+            //取精度
+            
+            function acp5220_js_round(para1, para2) {
+                return Math.round(acp5220_accMul(para1, Math.pow(10, para2))) / Math.pow(10, para2);
+            }
+            
+            //日期比较
+            
+            function acp5220_compareDate(start, end) {
+                if (start > end) {
+                    return false;
+                }
+                return true;
+            }
+            
+            //日期校验
+            
+            function acp5220_confirm_dateValidator(record, name, value) {
+                if (name == 'confirm_date_from' || name == 'confirm_date_to') {
+                    var start = record.get('confirm_date_from');
+                    var end = record.get('confirm_date_to');
+            
+                    if ( !! end) {
+                        if (!acp5220_compareDate(start, end)) {
+                            return '${l:START_GREATER_THAN_END}';
+                        }
+                    }
+                    return true;
+                }
+            }
+            
+            //执行查询
+            
+            function acp5220_web_invoice_query() {
+                $('acp5220_result_ds').query();
+            }
+            
+            // 勾选时所做的操作
+            
+            function acp5220_result_select(ds, record) {
+            
+                //勾选一行后默认勾选同一对账单的行
+                var bill_number = record.get('bill_number');
+                var bill_records = ds.getAll();
+                for (var i = 0;i < bill_records.length;i++) {
+                    if (bill_records[i].get('bill_number') == bill_number) {
+                        ds.select(bill_records[i]);
+                        var list_ds = $('acp5220_selected_list_ds');
+                        var bill_detail_id = bill_records[i].get('bill_detail_id');
+                        var result_record = list_ds.find('bill_detail_id', bill_detail_id);
+                        if (Aurora.isEmpty(result_record)) {
+                            $('acp5220_selected_list_ds').create(bill_records[i].data);
+                        }
+                    }
+                }
+            
+            
+            }
+            
+            // 勾选去掉时所做的操作
+            
+            function acp5220_result_unselect(ds, record) {
+                var bill_number = record.get('bill_number');
+                var bill_records = ds.getAll();
+                for (var i = 0;i < bill_records.length;i++) {
+                    if (bill_records[i].get('bill_number') == bill_number) {
+                        ds.unSelect(bill_records[i]);
+                        var list_ds = $('acp5220_selected_list_ds');
+                        var bill_detail_id = bill_records[i].get('bill_detail_id');
+                        var result_record = list_ds.find('bill_detail_id', bill_detail_id);
+                        if (!Aurora.isEmpty(result_record)) {
+                            list_ds.remove(result_record);
+                        }
+                    }
+                }
+            
+            
+            }
+            
+            // 页面执行重新查询时所做的操作
+            
+            function acp5220_grid_render(grid) {
+                var ds = $('acp5220_result_ds');
+                var records = ds.getAll();
+                var list_ds = $('acp5220_selected_list_ds');
+                var list_records = list_ds.getAll();
+                for (var i = 0;i < records.length;i++) {
+                    var select_record = list_ds.find('bill_detail_id', records[i].get('bill_detail_id'));
+                    if (!Aurora.isEmpty(select_record)) {
+                        ds.select(records[i]);
+                        records[i].set('transaction_quantity', select_record.get('transaction_quantity'));
+                        records[i].set('display_transaction_price', select_record.get('display_transaction_price'));
+                        records[i].set('tax_type_id', select_record.get('tax_type_id'));
+                        records[i].set('tax_type_code', select_record.get('tax_type_code'));
+                    }
+                    records[i].getField('tax_type_code').setLovPara('business_group', records[i].get('owner_business_group'));
+                }
+            }
+            
+            //关联网上发票
+            
+            function acp5220_create_gridRenderer(value, record, name) {
+                var lineId = record.get('line_id');
+                if (name == 'associate_web_invoice') {
+                    // return '<a href="javascript:openAssociateWebInvoice(' + lineId + ')">${l:ACP_WEB_INVOICE.INTERACTION_WEB_INVOICE}</a>';
+                    return '';
+                }
+            
+                if (name == 'display_unit_price' || name == 'display_line_amount' || name == 'display_tax_unit_price') {
+                    if (value == '***') {
+                        return value;
+                    } else {
+                        return Aurora.formatNumber(value);
+                    }
+                }
+            }
+            
+            function openAssociateWebInvoice(lineId) {
+                new Aurora.Window({
+                    id: 'acp_web_invoice_query_window',
+                    url: $('acp5220_web_invoice_query_link').getUrl() + '?line_id=' + lineId,
+                    title: '${l:ACP_WEB_INVOICE.INTERACTION_WEB_INVOICE}',
+                    fullScreen: true
+                });
+            }
+            
+            function acp5220_result_ds_update(dataSet, record, name, value, oldvalue) {
+            
+                record.dirty = false;
+            
+                var bill_detail_id = record.get('bill_detail_id');
+                var list_ds = $('acp5220_selected_list_ds');
+                var select_record = list_ds.find('bill_detail_id', bill_detail_id);
+            
+                //获取本次开票净价、本次开票数量、含税价、税率、INVOICE_08配置项的值
+                var transaction_quantity = 0; //本次开票数量
+                var display_transaction_price = 0; //本次开票净价
+                var display_tax_unit_price = 0; //对账单含税价
+                var tax_rate = 0; //税率
+                var item_value = 'N'; //发票08配置项值
+                var display_bill_amount = 0; //本次开票净额
+            
+                if (!Aurora.isEmpty(record.get('transaction_quantity'))) {
+                    transaction_quantity = record.get('transaction_quantity') * 1;
+                }
+                if (!Aurora.isEmpty(record.get('display_transaction_price'))) {
+                    display_transaction_price = record.get('display_transaction_price') * 1;
+                }
+                if (!Aurora.isEmpty(record.get('display_tax_unit_price'))) {
+                    display_tax_unit_price = record.get('display_tax_unit_price') * 1;
+                }
+                if (!Aurora.isEmpty(record.get('tax_rate'))) {
+                    tax_rate = acp5220_accDiv(record.get('tax_rate') * 1, 100);
+                }
+                if (!Aurora.isEmpty(record.get('invoice08_item_value'))) {
+                    item_value = record.get('invoice08_item_value');
+                }
+            
+                //本次开票数量
+                if (name == 'transaction_quantity') {
+                    var bill_quantity = record.get('bill_quantity'); //可开票数量
+            
+                    //校验1.退货的开票数量不能为正数
+                    if (bill_quantity < 0 && value > 0) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:ACP_WEB_INVOICE.RETURN_TRANS_QUANTITY_NEGATIVE}');
+                        record.set('transaction_quantity', oldvalue);
+                        return false;
+                    }
+            
+                    //校验2.本次开票数量不能大于剩余开票数量(绝对值)
+                    //可开票数量、本次开票数量取绝对值
+                    if (value < 0) {
+                        value = value * -1;
+                    } else {
+                        value = value;
+                    }
+                    if (bill_quantity < 0) {
+                        bill_quantity = bill_quantity * -1;
+                    } else {
+                        bill_quantity = bill_quantity;
+                    }
+                    if (value > bill_quantity || Aurora.isEmpty(value)) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:ACP_WEB_INVOICE.AVAILABLE_INVOICE_QUANTITY_ENOUGH}');
+                        record.set('transaction_quantity', oldvalue);
+                        return false;
+                    }
+            
+                    //判断配置项的值，根据配置项的不同，返回不同逻辑计算的值
+                    //使用含税价进行开票
+                    if (!Aurora.isEmpty(item_value) && item_value == 'Y') {
+            
+                        //计算 本次开票净额  = (含税单价 /(1+税率))*本次开票数量，结果保留2位小数
+                        display_bill_amount = acp5220_accMul(acp5220_accDiv(display_tax_unit_price, acp5220_accAdd(1, tax_rate)), transaction_quantity);
+                        display_bill_amount = acp5220_js_round(display_bill_amount, 2);
+            
+                        //原有逻辑
+                    } else {
+            
+                        //计算 本次开票净额 = 本次开票数量*本次开票净价，结果保留2位小数
+                        display_bill_amount = acp5220_accMul(transaction_quantity, display_transaction_price);
+                        display_bill_amount = acp5220_js_round(display_bill_amount, 2);
+                    }
+            
+                    //设置本次开票净额
+                    record.set('display_bill_amount', display_bill_amount);
+            
+                    if (!Aurora.isEmpty(select_record)) {
+                        select_record.set('transaction_quantity', transaction_quantity);
+                        select_record.set('display_bill_amount', display_bill_amount);
+                    }
+                }
+            
+                //本次开票净价
+                if (name == 'display_transaction_price') {
+                    //计算 本次开票净额 = 本次开票数量*本次开票净价，结果保留2位小数
+                    display_bill_amount = acp5220_accMul(transaction_quantity, display_transaction_price);
+                    display_bill_amount = acp5220_js_round(display_bill_amount, 2);
+                    record.set('display_bill_amount', display_bill_amount);
+            
+                    if (!Aurora.isEmpty(select_record)) {
+                        select_record.set('display_transaction_price', display_transaction_price);
+                        select_record.set('display_bill_amount', display_bill_amount);
+                    }
+                }
+            
+                //税率
+                if (name == 'tax_type_id') {
+            
+                    //判断配置项的值，根据配置项的不同，返回不同逻辑计算的值
+                    //使用含税价进行开票
+                    if (!Aurora.isEmpty(item_value) && item_value == 'Y') {
+            
+                        //计算 本次开票净额  = (含税单价 /(1+税率))*本次开票数量，结果保留2位小数
+                        display_bill_amount = acp5220_accMul(acp5220_accDiv(display_tax_unit_price, acp5220_accAdd(1, tax_rate)), transaction_quantity);
+                        display_bill_amount = acp5220_js_round(display_bill_amount, 2);
+                    }
+            
+                    //设置本次开票净额
+                    record.set('display_bill_amount', display_bill_amount);
+            
+                    if (!Aurora.isEmpty(select_record)) {
+                        // select_record.set('tax_type_name',record.get('tax_type_name'));
+                        // select_record.set('tax_rate',record.get('tax_rate'));
+                        select_record.set('tax_type_id', record.get('tax_type_id'));
+                    }
+                }
+            
+                if (name == 'tax_rate') {
+            
+                    if (!Aurora.isEmpty(select_record)) {
+                        select_record.set('tax_rate', record.get('tax_rate'));
+                    }
+                }
+                if (name == 'tax_type_code') {
+                    if (!Aurora.isEmpty(select_record)) {
+                        select_record.set('tax_type_code', record.get('tax_type_code'));
+                    }
+                }
+            
+            }
+            
+            function acp5220_checkHeaderExists(record) {
+                var header_record = $('acp5220_invoice_headers_ds').getCurrentRecord();
+                var merge_rule_records = $('acp5220_merge_rule_ds').getAll();
+            
+                //Modify by Hunter.Wang at 2016-04-11
+                //减去公司、供应商、供应商点的CODE，描述的分组，只保留id
+                if (header_record.get('company_id') != record.get('company_id') || header_record.get('vendor_id') != record.get('vendor_id') || header_record.get('vendor_site_id') != record.get('vendor_site_id') || header_record.get('terms_id') != record.get('terms_id') || header_record.get('rate_type') != record.get('rate_type') || header_record.get('rate_date') != record.get('rate_date') || header_record.get('rate') != record.get('rate') || header_record.get('currency_code') != record.get('currency_code')) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:ACP_WEB_INVOICE.SELECTED_RECORDS_BE_SAME}');
+                    return false;
+                }
+            
+                //如果核企配置了并单规则,按照配置规则校检
+                for (var i = 0;i < merge_rule_records.length;i++) {
+                    if (merge_rule_records[i].get('business_group') == header_record.get('owner_business_group')) {
+                        //业务实体
+                        if (merge_rule_records[i].get('business_unit_flag') == 'Y') {
+                            if (header_record.get('business_unit_id') != record.get('business_unit_id')) {
+                                Aurora.showMessage('${l:PROMPT}', '${l:ACP_MERGE_RULE.CHOOSE_DIFFERENT_BU}', null, 300, 120);
+                                return false;
+                            }
+                        }
+                        //库存组织
+                        if (merge_rule_records[i].get('inv_organization_flag') == 'Y') {
+                            if (header_record.get('organization_id') != record.get('organization_id')) {
+                                Aurora.showMessage('${l:PROMPT}', '${l:ACP_MERGE_RULE.CHOOSE_DIFFERENT_INV_ORG}', null, 300, 120);
+                                return false;
+                            }
+                        }
+                        //采购组织
+                        if (merge_rule_records[i].get('pur_organization_flag') == 'Y') {
+                            if (header_record.get('pur_organization_id') != record.get('pur_organization_id')) {
+                                Aurora.showMessage('${l:PROMPT}', '${l:ACP_MERGE_RULE.CHOOSE_DIFFERENT_PUR_ORG}', null, 300, 120);
+                                return false;
+                            }
+                        }
+                        //采购员
+                        if (merge_rule_records[i].get('pur_buyer_flag') == 'Y') {
+                            if (header_record.get('pur_buyer_id') != record.get('pur_buyer_id')) {
+                                Aurora.showMessage('${l:PROMPT}', '${l:ACP_MERGE_RULE.CHOOSE_DIFFERENT_PUR_BUYER}', null, 300, 120);
+                                return false;
+                            }
+                        }
+                        //订单
+                        if (merge_rule_records[i].get('pur_po_flag') == 'Y') {
+                            if (header_record.get('po_header_id') != record.get('po_header_id')) {
+                                Aurora.showMessage('${l:PROMPT}', '${l:ACP_MERGE_RULE.CHOOSE_DIFFERENT_PO_NUMBER}', null, 300, 120);
+                                return false;
+                            }
+                        }
+                        //税率
+                        if (merge_rule_records[i].get('tax_rate_flag') == 'Y') {
+                            if (header_record.get('tax_rate') != record.get('tax_rate')) {
+                                Aurora.showMessage('${l:PROMPT}', '${l:ACP_MERGE_RULE.CHOOSE_DIFFERENT_TAX}', null, 300, 120);
+                                return false;
+                            }
+                        }
+                        //订单类型
+                        if (merge_rule_records[i].get('pur_po_type_flag') == 'Y') {
+                            if (header_record.get('type_lookup_code') != record.get('type_lookup_code')) {
+                                Aurora.showMessage('${l:PROMPT}', '${l:ACP_MERGE_RULE.CHOOSE_DIFFERENT_PO_TYPE}', null, 300, 120);
+                                return false;
+                            }
+                        }
+                        //出票方
+                        if (merge_rule_records[i].get('invoice_vendor_flag') == 'Y') {
+                            if (header_record.get('invoice_vendor_id') != record.get('invoice_vendor_id')) {
+                                Aurora.showMessage('${l:PROMPT}', '${l:FND_CONFIG_CNT_ACP_RULE.CHOOSE_DIFFERENT_INVOICE_VENDOR}', null, 300, 120);
+                                return false;
+                            }
+                        }
+            
+                        //并单数量
+                        if (merge_rule_records[i].get('acp_merge_flag') == 'Y') {
+                            var old_merge_num_flag = Math.abs(merge_num_flag) > Math.abs(record.get('quantity')) ? merge_num_flag : record.get('quantity');
+                            merge_num_flag = merge_num_flag + record.get('quantity');
+                            if (Math.abs(old_merge_num_flag) > Math.abs(merge_num_flag)) {
+                                merge_num_flag = 0;
+                                Aurora.showMessage('${l:PROMPT}', '${l:ACP_MERGE_RULE.CHOOSE_ACP_MERGE_NUM}', null, 300, 120);
+                                return false;
+                            }
+                        }
+                    }
+                }
+                return true;
+            }
+            
+            function getresult(num, n) {
+                return num.toString().replace(new RegExp("^(\\-?\\d*\\.?\\d{0," + n + "})(\\d*)$"), "$1") + 0;
+            }
+            //获取勾选数据的开票金额之和
+            
+            function acp5220_getSumInvoiceAmount() {
+                debugger;
+                var result = {};
+                var bill_records = $('acp5220_selected_list_ds').getAll();
+                var transaction_quantity = 0; //本次开票数量
+                var display_transaction_price = 0; //本次开票净价（订单净价/对账单净价）
+                var display_tax_unit_price = 0; //对账单含税价
+                var tax_rate = 0; //税率
+                var display_bill_amount = 0; //行金额
+                var sum_line_amount = 0; //汇总行金额
+                var line_tax_amount = 0; //行税额
+                var sum_tax_amount = 0; //税额
+                var sum_amount = 0; //含税总额
+                var item_value = 'N'; //发票08配置项值
+                var h_no_tax_amount = 0; //未税金额合计
+                var total_nums = 0; //数量合计
+                //获取配置项「用含税价开票」
+                if (!Aurora.isEmpty(bill_records[0].get('invoice08_item_value'))) {
+                    item_value = bill_records[0].get('invoice08_item_value');
+                }
+            
+                for (var i = 0;i < bill_records.length;i++) {
+                    var billed_quantity = bill_records[i].get('billed_quantity');
+                    if (typeof(billed_quantity) == 'undefined' || billed_quantity == '') {
+                        billed_quantity = 0;
+                    }
+                    total_nums = total_nums + billed_quantity;
+                    sum_amount = sum_amount + bill_records[i].get('tax_amount_lines');
+                    sum_tax_amount = sum_tax_amount + (bill_records[i].get('tax_amount_lines') - bill_records[i].get('no_tax_amount'));
+            
+                    //获取本次开票数量，本次开票净价，税率，对账单含税价
+                    // if (!Aurora.isEmpty(bill_records[i].get('transaction_quantity'))) {
+                    // transaction_quantity = bill_records[i].get('transaction_quantity') * 1;
+                    // }
+                    // if (!Aurora.isEmpty(bill_records[i].get('display_transaction_price'))) {
+                    // display_transaction_price = bill_records[i].get('display_transaction_price') * 1;
+                    // }
+                    // if (!Aurora.isEmpty(bill_records[i].get('tax_rate'))) {
+                    // tax_rate = acp5220_accDiv(bill_records[i].get('tax_rate') * 1, 100);
+                    // }
+                    // if (!Aurora.isEmpty(bill_records[i].get('display_tax_unit_price'))) {
+                    // display_tax_unit_price = bill_records[i].get('display_tax_unit_price') * 1;
+                    // }
+            
+                    /***********计算行金额和行税额***********/
+                    // 1.使用含税价进行开票
+                    // if (!Aurora.isEmpty(item_value) && item_value == 'Y') {
+            
+                    // //计算行金额 = （含税价*本次开票数量）
+                    // display_bill_amount = acp5220_accMul(transaction_quantity, display_tax_unit_price);
+                    // //汇总行金额 = SUM（含税价*本次开票数量）
+                    // sum_line_amount = acp5220_accAdd(sum_line_amount, display_bill_amount);
+            
+                    // //计算行税额 = 含税行金额 / (1+税率 ) * 税率
+                    // line_tax_amount = acp5220_accMul(acp5220_accDiv(display_bill_amount, acp5220_accAdd(1, tax_rate)), tax_rate);
+                    // //汇总行税额 = SUM（税率*本次开票数量*本次开票净价  ）
+                    // sum_tax_amount = acp5220_accAdd(sum_tax_amount, line_tax_amount);
+            
+                    // // 2.使用净价进行开票
+                    // } else {
+                    // //计算行金额 = 本次开票数量*本次开票净价
+                    // display_bill_amount = acp5220_accMul(transaction_quantity, display_transaction_price);
+                    // //汇总行金额 = SUM（本次开票数量*本次开票净价）
+                    // sum_line_amount = acp5220_accAdd(sum_line_amount, display_bill_amount);
+            
+                    // //计算行税额 = 税率*本次开票数量*本次开票净价
+                    // line_tax_amount = acp5220_accMul(tax_rate, acp5220_accMul(transaction_quantity, display_transaction_price));
+                    // //汇总行税额 = SUM（税率*本次开票数量*本次开票净价  ）
+                    // sum_tax_amount = acp5220_accAdd(sum_tax_amount, line_tax_amount);
+                    // }
+                }
+            
+                /***********计算含税总额（系统）和税额（系统）***********/
+                // 1.使用含税价进行开票
+                if (!Aurora.isEmpty(item_value) && item_value == 'Y') {
+                    // //未税金额合计 = 含税总额（系统） - 税额（系统）
+                    // h_no_tax_amount = sum_line_amount - sum_tax_amount;
+                    // h_no_tax_amount = acp5220_js_round(h_no_tax_amount, 2);
+                    // //含税总额（系统）= SUM（含税价*本次开票数量）
+                    // sum_amount = acp5220_js_round(sum_line_amount, 2);
+                    // //税额（系统）
+                    // sum_tax_amount = acp5220_js_round(sum_tax_amount, 2);
+            
+                    result.tax_total_amount = sum_amount.toFixed(2);
+                    result.tax_amount = sum_tax_amount.toFixed(2);
+                    result.h_no_tax_amount = h_no_tax_amount;
+                    result.total_nums = total_nums;
+            
+                    // 2.使用净价进行开票
+                } else {
+                    // //未税金额合计 = 含税总额（系统） - 税额（系统）
+                    // h_no_tax_amount = sum_line_amount - sum_tax_amount;
+                    // h_no_tax_amount = acp5220_js_round(h_no_tax_amount, 2);
+                    // //含税总额（系统） = SUM（本次开票数量*本次开票净价） + SUM（税率*本次开票数量*本次开票净价  ）
+                    // sum_amount = acp5220_accAdd(sum_line_amount, sum_tax_amount);
+                    // sum_amount = acp5220_js_round(sum_amount, 2);
+                    // //税额（系统）= SUM（税率*本次开票数量*本次开票净价  ）
+                    // sum_tax_amount = acp5220_js_round(sum_tax_amount, 2);
+            
+                    result.tax_total_amount = sum_amount.toFixed(2);
+                    result.tax_amount = sum_tax_amount.toFixed(2);
+                    result.h_no_tax_amount = h_no_tax_amount;
+                    result.total_nums = total_nums;
+                }
+            
+                return result;
+            }
+            
+            function acp5220_create_invoice_preview(bill_records) {
+                var header_ds = $('acp5220_invoice_headers_ds');
+                var line_ds = $('acp5220_invoice_lines_ds');
+            
+                var transaction_quantity = 0; //本次开票数量
+                var display_transaction_price = 0; //本次开票净价
+                var display_bill_amount = 0; //本次开票金额
+                var display_tax_unit_price = 0; //含税单价
+                var tax_bill_amount = 0; //含税行金额
+                var unit_price = 0; //净价
+                var tax_rate = 0; //税率
+                var item_value = 'N'; //发票08配置项值
+            
+                //获取配置项值
+                if (!Aurora.isEmpty(bill_records[0].get('invoice08_item_value'))) {
+                    item_value = bill_records[0].get('invoice08_item_value');
+                }
+            
+                //发票头
+                var now = new Date();
+                var month = now.getMonth() + 1;
+                month = month > 9 ? month : '0' + month;
+                var day = now.getDate();
+                day = day > 9 ? day : '0' + day;
+                var date = now.getFullYear() + '-' + month + '-' + day; //STRING类型
+                bill_records[0].set('creation_date', date);
+                header_ds.create(bill_records[0].data);
+            
+                //如果配置了并单规则,但没有勾选按照采购组采购组织合并，则清空头上的采购组采购组织信息
+                var merge_rule_records = $('acp5220_merge_rule_ds').getAll(),
+                    header_record = header_ds.getCurrentRecord();
+            
+                //校验
+                for (var i = 0;i < bill_records.length;i++) {
+            
+                    // if (Aurora.isEmpty(bill_records[i].get('transaction_quantity'))) {
+                    // Aurora.showMessage('${l:PROMPT}', '${l:ACP_WEB_INVOICE.INVOICE_QUANTITY_NOT_NULL}');
+                    // return false;
+                    // }
+                    // if (Aurora.isEmpty(bill_records[i].get('display_transaction_price'))) {
+                    // Aurora.showMessage('${l:PROMPT}', '${l:ACP_WEB_INVOICE.INVOICE_PRICE_NOT_NULL}');
+                    // return false;
+                    // }
+                    //Modify Jehu 15294 启用数值税率
+                    // if ('Y' == po_10_flag){
+                    // //此时的税率代码已被替换为税率值
+                    // if (Aurora.isEmpty(bill_records[i].get('tax_type_code'))) {
+                    // Aurora.showMessage('${l:PROMPT}', '${l:ACP_WEB_INVOICE.TAX_RATE_NOT_NULL}');
+                    // return false;
+                    // } else {
+                    // //如果前台的税率代码不为空则将税率代码里的值赋给税率值字段（税率代码修改）
+                    // bill_records[i].set('tax_rate',bill_records[i].get('tax_type_code'));
+                    // }
+                    // } else {
+                    // if (Aurora.isEmpty(bill_records[i].get('tax_type_code'))) {
+                    // Aurora.showMessage('${l:PROMPT}', '${l:ACP_WEB_INVOICE.TAX_RATE_NOT_NULL}');
+                    // return false;
+                    // }
+                    // }
+            
+                    if (!acp5220_checkHeaderExists(bill_records[i])) {
+                        return false;
+                    }
+                }
+            
+                merge_num_flag = 0; //通过校验 并单数量判断flag置零
+            
+                for (var i = 0;i < merge_rule_records.length;i++) {
+                    if (merge_rule_records[i].get('business_group') == header_record.get('owner_business_group')) {
+                        if (merge_rule_records.length > 0) {
+                            //采购组织
+                            if (merge_rule_records[i].get('pur_buyer_flag') != 'Y') {
+                                header_record.set('pur_buyer_id', '');
+                                header_record.set('pur_buyer_name', '');
+                            }
+                            //采购员
+                            if (merge_rule_records[i].get('pur_organization_flag') != 'Y') {
+                                header_record.set('pur_organization_id', '');
+                                header_record.set('pur_organization_name', '');
+                            }
+                            //出票方
+                            if (merge_rule_records[i].get('invoice_vendor_flag') != 'Y') {
+                                header_record.set('invoice_vendor_id', '');
+                                header_record.set('invoice_vendor_desc', '');
+                            }
+                        } else {
+                            header_record.set('pur_buyer_id', '');
+                            header_record.set('pur_buyer_name', '');
+                            header_record.set('pur_organization_id', '');
+                            header_record.set('pur_organization_name', '');
+                            header_record.set('invoice_vendor_id', '');
+                            header_record.set('invoice_vendor_desc', '');
+                        }
+                    }
+                }
+            
+                //系统计算发票含税总额，以及税额
+                bill_records[0].set('tax_total_amount', acp5220_getSumInvoiceAmount().tax_total_amount); //含税总额（系统）
+                bill_records[0].set('tax_amount', acp5220_getSumInvoiceAmount().tax_amount); //税额（系统）
+                bill_records[0].set('h_no_tax_amount', acp5220_getSumInvoiceAmount().h_no_tax_amount); //未税金额合计
+                bill_records[0].set('total_nums', acp5220_getSumInvoiceAmount().total_nums); //对账数量合计
+            
+            
+                //发票行
+                for (var j = 0;j < bill_records.length;j++) {
+            
+                    bill_records[j].set('invoice_line_num', j + 1);
+            
+                    //获取税率、本次开票数量、本次开票净价、本次开票金额
+                    if (!Aurora.isEmpty(bill_records[j].get('tax_rate'))) {
+                        tax_rate = acp5220_accDiv(bill_records[j].get('tax_rate') * 1, 100);
+                    }
+                    if (!Aurora.isEmpty(bill_records[j].get('transaction_quantity'))) {
+                        transaction_quantity = bill_records[j].get('transaction_quantity') * 1;
+                    }
+                    if (!Aurora.isEmpty(bill_records[j].get('display_transaction_price'))) {
+                        display_transaction_price = bill_records[j].get('display_transaction_price') * 1;
+                    }
+                    if (!Aurora.isEmpty(bill_records[j].get('display_bill_amount'))) {
+                        display_bill_amount = bill_records[j].get('display_bill_amount') * 1;
+                    }
+                    if (!Aurora.isEmpty(bill_records[j].get('display_tax_unit_price'))) {
+                        display_tax_unit_price = bill_records[j].get('display_tax_unit_price') * 1;
+                    } else if (Aurora.isEmpty(bill_records[j].get('display_tax_unit_price'))) {
+                        display_tax_unit_price = '';
+                    }
+                    if (!Aurora.isEmpty(bill_records[j].get('unit_price'))) {
+                        unit_price = bill_records[j].get('unit_price') * 1;
+                    }
+            
+                    //判断配置项的值，根据配置项的不同，返回不同逻辑计算的值
+                    //使用含税价进行开票
+                    if (!Aurora.isEmpty(item_value) && item_value == 'Y') {
+            
+                        //含税价不能为空或者0
+                        if (!Aurora.isEmpty(display_tax_unit_price) && display_tax_unit_price != 0) {
+                            //计算 本次开票净额  = (含税单价 /(1+税率))*本次开票数量，结果保留2位小数
+                            display_bill_amount = acp5220_accMul(acp5220_accDiv(display_tax_unit_price, acp5220_accAdd(1, tax_rate)), transaction_quantity);
+                            display_bill_amount = acp5220_js_round(display_bill_amount, 2);
+            
+                            //计算 含税开票行金额 = 含税价*本次开票数量，结果保留2位小数
+                            tax_bill_amount = acp5220_accMul(display_tax_unit_price, transaction_quantity);
+                            tax_bill_amount = acp5220_js_round(tax_bill_amount, 2);
+            
+                            bill_records[j].set('display_transaction_price', display_transaction_price); //开票净价
+                            bill_records[j].set('display_bill_amount', display_bill_amount); //本次开票净额
+                            bill_records[j].set('display_tax_unit_price', display_tax_unit_price); //含税单价
+                            bill_records[j].set('tax_bill_amount', tax_bill_amount); //含税开票行金额
+                        }
+            
+                        //原有逻辑
+                    } else {
+            
+                        //计算 本次开票净额 = 本次开票数量*本次开票净价，结果保留2位小数
+                        display_bill_amount = acp5220_accMul(transaction_quantity, display_transaction_price);
+                        display_bill_amount = acp5220_js_round(display_bill_amount, 2);
+            
+                        //计算 含税行金额 = 本次开票数量*本次开票净价*(1+税率)，结果保留2位小数
+                        tax_bill_amount = acp5220_accMul(acp5220_accMul(transaction_quantity, display_transaction_price), acp5220_accAdd(1, tax_rate));
+                        tax_bill_amount = acp5220_js_round(tax_bill_amount, 2);
+            
+                        bill_records[j].set('display_transaction_price', display_transaction_price); //开票净价
+                        bill_records[j].set('display_bill_amount', display_bill_amount); //本次开票净额
+                        bill_records[j].set('display_tax_unit_price', display_tax_unit_price); //含税单价
+                        bill_records[j].set('tax_bill_amount', tax_bill_amount); //含税开票行金额
+            
+                    }
+                    var tax_amount = bill_records[j].get('tax_amount');
+                    line_ds.create(bill_records[j].data);
+                }
+            
+                return true;
+            }
+            
+            function createRandom(Min, Max) {
+                var Range = Max - Min;
+                var Rand = Math.random();
+                return (Min + Math.round(Rand * Range));
+            }
+            
+            function acp5220_invoice_create() {
+                var header_ds = $('acp5220_invoice_headers_ds');
+                var line_ds = $('acp5220_invoice_lines_ds');
+                var records = $('acp5220_selected_list_ds').getAll();
+                createRandom_id = createRandom(1, 999999);
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:ACP_WEB_INVOICE.PLEASE_SELECT_AT_LEASE_ONE_RECORD}');
+                    return;
+                } else {
+                    header_ds.removeAll();
+                    line_ds.removeAll();
+                    var flag = acp5220_create_invoice_preview(records);
+                    if (flag) {
+                        new Aurora.Window({
+                            id: 'acp5220_header_link_window',
+                            url: $('acp5220_header_link').getUrl() + '?control_business_group=' + header_ds.getCurrentRecord().get('owner_business_group'),
+                            title: '${l:ACP_WEB_INVOICE.PREVIEW}',
+                            fullScreen: true
+                        });
+                    }
+                }
+            }
+            
+            function acp5220_createGridEditorFuntion(record, name) {
+                var invoice_06_exists_flag = record.get('invoice_06_exists_flag');
+                var invoice10_item_value = record.get('invoice10_item_value'); //配置中心 创建发票税率不可以修改
+                if (name == "display_transaction_price") {
+                    if (invoice_06_exists_flag == 'Y') {
+                        record.getMeta().getField('display_transaction_price').setRequired(true);
+                        return 'quantity_nf_2';
+                    } else {
+                        record.getMeta().getField('display_transaction_price').setRequired(false);
+                        return '';
+                    }
+                }
+            
+                if (name == "tax_type_code") {
+                    if (invoice10_item_value == 'N') {
+                        if ('Y' == po_10_flag) {
+                            return;
+                        } else {
+                            return 'acp5220_grid_lov';
+                        }
+                    } else {
+                        return '';
+                    }
+                }
+            }
+            
+            function acp5220_subjectDsSelect(ds, record) {
+                var list_ds = $('acp5220_subject_selected_list_ds');
+                var subject_id = record.get('subject_id');
+                var result_record = list_ds.find('subject_id', subject_id);
+                if (Aurora.isEmpty(result_record)) {
+                    $('acp5220_subject_selected_list_ds').create(record.data);
+                }
+            }
+            
+            function acp5220_subjectDsUnselect(ds, record) {
+                var list_ds = $('acp5220_subject_selected_list_ds');
+                var subject_id = record.get('subject_id');
+                var result_record = list_ds.find('subject_id', subject_id);
+                if (!Aurora.isEmpty(result_record)) {
+                    list_ds.remove(result_record);
+                }
+            }
+            
+            function acp5220_subject_list_query() {
+                $('acp5220_subject_ds').query();
+            }
+            
+            //校检是否存在
+            
+            function check_bu_item_exists(business_unit_id, item_id, item_name) {
+                var records = $('acp5220_unit_price_batch_update_ds').getAll();
+                for (var i = 0;i < records.length;i++) {
+                    if (records[i].get('business_unit_id') == business_unit_id && records[i].get('item_id') == item_id && records[i].get('item_name') == item_name) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            
+            //单价批量修改
+            
+            function acp5220_unit_price_batch_update() {
+                //先清空之前设置的数据
+                var records = $('acp5220_result_ds').getAll(),
+                    batch_update_ds = $('acp5220_unit_price_batch_update_ds');
+                batch_update_ds.removeAll();
+                for (var i = 0;i < records.length;i++) {
+                    if (check_bu_item_exists(records[i].get('business_unit_id'), records[i].get('item_id'), records[i].get('item_name'))) {
+                        var new_record = batch_update_ds.create();
+                        new_record.set('business_unit_id', records[i].get('business_unit_id'));
+                        new_record.set('business_unit_name', records[i].get('business_unit_name'));
+                        new_record.set('item_id', records[i].get('item_id'));
+                        new_record.set('item_code', records[i].get('item_code'));
+                        new_record.set('item_name', records[i].get('item_name'));
+                    }
+                }
+                new Aurora.Window({
+                    id: 'acp5220_unit_price_batch_update_win',
+                    url: $('acp5220_unit_price_batch_update_link').getUrl(),
+                    title: '${l:ACP5220.UNIT_PRICE_BATCH_UPDATE}',
+                    height: 420,
+                    width: 650
+                });
+            }
+            
+            //如果允许修改单价则显示批量修改单价按钮
+            // function acp5220_result_ds_load(ds){
+            // var records = ds.getAll();
+            // if(records.length > 0 && records[0].get('invoice_06_exists_flag') == 'Y'){
+            // $('acp5220_unit_price_batch_update_btn').show();
+            // }else{
+            // //如果不需要显示，就取消占位
+            // document.getElementById('acp5220_unit_price_batch_update_btn').style.display='none';
+            // }
+            // if(records.length > 0 && records[0].get('invoice10_item_value') == 'N'){
+            // $('acp5220_tax_rate_batch_update_btn').show();
+            // }else{
+            // document.getElementById('acp5220_unit_price_batch_update_btn').style.display='none';
+            // }
+            // }
+            
+            function acp5220_tax_invoice_num_validator(record, name, value) {
+                if (Aurora.isEmpty(value)) {
+                    value = '';
+                }
+                //将非ascii字符替换成三个星号，再计算长度
+                if (value.replace(/[^\x00-\xff]/ig, '***').length > 400) {
+                    return '${l:ACP5220.TAX_INVOICE_NUM_TOO_LONG}';
+                }
+                return true;
+            }
+            
+            
+            //选择数据后批量修改税率
+            
+            function acp5220_web_invoice_tax_rate_update() {
+                var records = $('acp5220_selected_list_ds').getAll();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:ACP5220.PLEASE_SELECT_AT_LEAST_TAX_RATE_UPDATE_RECORD}');
+                    return;
+                }
+            
+                new Aurora.Window({
+                    id: 'acp5220_web_invoice_tax_rate_window',
+                    url: $('acp5220_web_invoice_tax_rate_link').getUrl(),
+                    title: '${l:ACP5220.TAX_RATE_BATCH_UPDATE}',
+                    height: 300,
+                    width: 400
+                });
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="acp5220_merge_rule_ds">
+                <a:datas dataSource="acp5220_merge_rule_data"/>
+            </a:dataSet>
+            <a:dataSet id="acp5220_unit_price_batch_update_ds">
+                <a:fields>
+                    <a:field name="business_unit_id"/>
+                    <a:field name="business_unit_name"/>
+                    <a:field name="item_id"/>
+                    <a:field name="item_code"/>
+                    <a:field name="item_name"/>
+                    <a:field name="unit_price"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="acp5220_invoice_headers_ds" fetchAll="true">
+                <a:fields>
+                    <a:field name="invoice_amount" required="true" requiredMessage="${l:ACP_WEB_INVOICE.INVOICE_AMOUNT_NOT_NULL}"/>
+                    <a:field name="invoice_tax_amount" required="true" requiredMessage="${l:ACP_WEB_INVOICE.INVOICE_TAX_AMOUNT_NOT_NULL}"/>
+                    <a:field name="tax_invoice_num" required="false" requiredMessage="${l:ACP_WEB_INVOICE.TAX_INVOICE_NUM_NOT_NULL}" validator="acp5220_tax_invoice_num_validator"/>
+                    <a:field name="express_company" required="true" requiredMessage="快递公司不能为空！"/>
+                    <a:field name="express_order" required="true" requiredMessage="快递单号不能为空！"/>
+                    <a:field name="contacts" required="true" requiredMessage="联系人不能为空！"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="acp5220_invoice_lines_ds" fetchAll="true"/>
+            <a:dataSet id="acp5220_selected_list_ds"/>
+            <a:dataSet id="acp5220_query_ds">
+                <a:fields>
+                    <a:field name="confirm_date_from" validator="acp5220_confirm_dateValidator"/>
+                    <a:field name="confirm_date_to" validator="acp5220_confirm_dateValidator"/>
+                    <a:field name="bill_number"/>
+                    <a:field name="po_header_num"/>
+                    <a:field name="company_name" autoComplete="true" autoCompleteField="company_full_name" lovHeight="500" lovService="public.fnd_cooperative_company_by_supply_lov" lovWidth="500" title="ACP_BILL.COMPANY_NAME">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_full_name" to="company_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="business_unit_name" autoComplete="true" autoCompleteField="business_unit_name" lovHeight="500" lovService="public.fnd_business_unit_lov_by_client_business_group" lovWidth="600" title="ACP_WEB_INVOICE.BUSINESS_UNIT_ID">
+                        <a:mapping>
+                            <a:map from="business_unit_id" to="business_unit_id"/>
+                            <a:map from="business_unit_name" to="business_unit_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="off_free_flag" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="acp5220_result_ds" autoCount="true" autoQuery="false" fetchAll="false" model="acp.ACP5220.acp_bill_details" pageSize="100" queryDataSet="acp5220_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="detail_id"/>
+                    <a:field name="tax_type_code" autoComplete="true" autoCompleteField="tax_type_code" lovGridHeight="350" lovHeight="500" lovService="public.fnd_tax_type_code_lov?business_group=bg" lovWidth="500" required="true" requiredMessage="${l:ACP_WEB_INVOICE.TAX_RATE_NOT_NULL}" title="ACP_WEB_INVOICE.TAX_RATE">
+                        <a:mapping>
+                            <a:map from="tax_type_id" to="tax_type_id"/>
+                            <a:map from="tax_type_code" to="tax_type_code"/>
+                            <a:map from="tax_type_rate" to="tax_rate"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="display_transaction_price" requiredMessage="ACP5150.INVOICE_PRICE_FOTMAT_ERROR"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="acp5220_result_ds_update"/>
+                    <a:event name="select" handler="acp5220_result_select"/>
+                    <a:event name="unselect" handler="acp5220_result_unselect"/>
+                    <!-- <a:event name="load" handler="acp5220_result_ds_load"/> -->
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="acp5220_subject_selected_list_ds">
+                <a:fields>
+                    <a:field name="tax_included_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="acp5220_subject_ds" autoPageSize="true" autoQuery="true" model="acp.ACP5220.acp_bill_line_subject" selectable="true">
+                <a:fields>
+                    <a:field name="tax_included_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="select" handler="acp5220_subjectDsSelect"/>
+                    <a:event name="unselect" handler="acp5220_subjectDsUnselect"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="acp5220_invoice_create" text="ACP_WEB_INVOICE.WEB_INVOICE_PREVIEW" width="100"/>
+                <a:gridButton bind="acp5220_create_grid" type="excel" width="100"/>
+                <a:toolbarButton id="acp5220_unit_price_batch_update_btn" click="acp5220_unit_price_batch_update" hidden="true" text="ACP5220.UNIT_PRICE_BATCH_UPDATE" width="100"/>
+                <a:toolbarButton id="acp5220_tax_rate_batch_update_btn" click="acp5220_web_invoice_tax_rate_update" hidden="true" text="ACP5220.TAX_RATE_BATCH_UPDATE" width="100"/>
+            </a:screenTopToolbar>
+            <a:queryForm id="acp5220_query_form" bindTarget="acp5220_query_ds" resultTarget="acp5220_result_ds" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:hBox labelWidth="100">
+                        <a:textField name="bill_number" bindTarget="acp5220_query_ds" prompt="ACP_BILL_HEADERS.BILL_NUMBER">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5220_web_invoice_query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:lov name="business_unit_name" bindTarget="acp5220_query_ds" prompt="ACP_WEB_INVOICE.BUSINESS_UNIT_ID">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5220_web_invoice_query"/>
+                            </a:events>
+                        </a:lov>
+                        <a:textField name="po_number" bindTarget="acp5220_query_ds" prompt="ACP_WEB_INVOICE.PO_NUMBER">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5220_web_invoice_query"/>
+                            </a:events>
+                        </a:textField>
+                    </a:hBox>
+                </a:formToolBar>
+                <a:formBody style="margin-left:-3px">
+                    <a:hBox labelWidth="100">
+                        <a:lov name="company_name" bindTarget="acp5220_query_ds" prompt="ACP_BILL.COMPANY_NAME">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5220_web_invoice_query"/>
+                            </a:events>
+                        </a:lov>
+                        <a:textField name="pur_organization_name" bindTarget="acp5220_query_ds" prompt="PUR_ORGANIZATIONS.PUR_ORGANIZATION">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5220_web_invoice_query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:textField name="pur_buyer_name" bindTarget="acp5220_query_ds" prompt="PUR_HEADERS_ALL.PUR_BUYER">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5220_web_invoice_query"/>
+                            </a:events>
+                        </a:textField>
+                    </a:hBox>
+                    <a:hBox labelWidth="100">
+                        <a:textField name="receipt_num" bindTarget="acp5220_query_ds" prompt="ACP_BILL_DETAILS.RECEIPT_NUM">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5220_web_invoice_query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:datePicker name="confirm_date_from" bindTarget="acp5220_query_ds" prompt="ACP_BILL_HEADERS.CONFIRM_DATE_FROM">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5220_web_invoice_query"/>
+                            </a:events>
+                        </a:datePicker>
+                        <a:datePicker name="confirm_date_to" bindTarget="acp5220_query_ds" prompt="ACP_BILL_HEADERS.CONFIRM_DATE_TO">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5220_web_invoice_query"/>
+                            </a:events>
+                        </a:datePicker>
+                    </a:hBox>
+                    <a:hBox labelWidth="100">
+                        <a:textField name="inv_organization_name" bindTarget="acp5220_query_ds" prompt="ACP_BILL_SOURCE.ORGANIZATION_NAME">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5220_web_invoice_query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:textField name="type_lookup_desc" bindTarget="acp5220_query_ds" prompt="PUR_HEADERS_ALL.ORDER_TYPE_ID">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5220_web_invoice_query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:checkBox name="off_free_flag" bindTarget="acp5220_query_ds" prompt="PUR_LINES_ALL.OFF_FREE_FLAG">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5220_web_invoice_query"/>
+                            </a:events>
+                        </a:checkBox>
+                    </a:hBox>
+                    <a:hBox labelWidth="100">
+                        <a:textField name="item_code_name" bindTarget="acp5220_query_ds" prompt="ACP_CSGN_WEB_INVOICE_LNS.ITEM_ID">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5220_web_invoice_query"/>
+                            </a:events>
+                        </a:textField>
+                    </a:hBox>
+                </a:formBody>
+            </a:queryForm>
+            <a:tabPanel marginHeight="180" marginWidth="30">
+                <a:tabs>
+                    <a:tab prompt="ACP_BILL.BILL_INFO" width="130">
+                        <a:grid id="acp5220_create_grid" autoAppend="false" bindTarget="acp5220_result_ds" marginHeight="230" marginWidth="65" navBar="true" style="margin-top:10px;">
+                            <a:columns>
+                                <a:column name="vendor_code" align="left" prompt="ACP_BILL_HEADERS.VENDOR_CODE" sortable="true" width="80"/>
+                                <a:column name="vendor_name" align="left" prompt="ACP_BILL_HEADERS.VENDOR_NAME" sortable="true" width="80"/>
+                                <a:column name="billed_quantity" align="right" prompt="对账数量" sortable="true" width="60"/>
+                                <a:column name="bill_number" align="center" prompt="ACP_BILL_HEADERS.BILL_NUMBER" sortable="true" width="70"/>
+                                <!-- <a:column name="bill_line_num" align="center" prompt="ACP_BILL_LINES.BILL_LINE_NUM" sortable="true" width="35"/> -->
+                                <a:column name="status_desc" align="left" prompt="对账状态" sortable="true" width="80"/>
+                                <a:column name="item_code" align="left" prompt="ACP_BILL_SOURCE.ITEM_CODE" sortable="true" width="60"/>
+                                <a:column name="item_name" align="left" prompt="ACP_BILL_SOURCE.ITEM_NAME" sortable="true" width="80"/>
+                                <a:column name="currency_code" align="center" prompt="ACP_WEB_INVOICE.CURRENCY_CODE" sortable="true" width="40"/>
+                                <a:column name="tax_rate" align="left" prompt="税率" sortable="true" width="80"/>
+                                <a:column name="no_tax_amount" align="center" prompt="未税金额合计" sortable="true" width="80"/>
+                                <!-- <a:column name="loan_month" align="center" prompt="贷款月份" sortable="true" width="80"/>
+                                <a:column name="gl_date" align="center" prompt="GL日期" sortable="true" width="80"/> -->
+                                <!-- <a:column name="quantity" align="right" prompt="ACP_BILL_SOURCE.QUANTITY" renderer="Aurora.formatNumber" sortable="true" width="60"/>
+                                <a:column name="display_unit_price" align="right" prompt="ACP_BILL_SOURCE.UNIT_PRICE" renderer="acp5220_create_gridRenderer" sortable="true" width="60"/>
+                                <a:column name="display_line_amount" align="right" prompt="ACP_WEB_INVOICE.LINE_AMOUNT" renderer="acp5220_create_gridRenderer" sortable="true" width="60"/>
+                                <a:column name="bill_quantity" align="right" prompt="ACP_WEB_INVOICE.BILL_QUANTITY_REMAINING" renderer="Aurora.formatNumber" sortable="true" width="60"/>
+                                <a:column name="transaction_quantity" align="right" editor="quantity_nf_1" prompt="ACP_WEB_INVOICE.BILL_QUANTITY" renderer="Aurora.formatNumber" sortable="true" width="60"/>
+                                <a:column name="display_transaction_price" align="right" editorFunction="acp5220_createGridEditorFuntion" prompt="ACP_WEB_INVOICE.TRANSACTION_PRICE" renderer="Aurora.formatNumber" sortable="true" width="60"/>
+                                <a:column name="display_bill_amount" align="right" prompt="ACP_WEB_INVOICE.NET_BILL_AMOUNT" sortable="true" width="60"/>
+                                <a:column name="tax_type_code" align="center" editorFunction="acp5220_createGridEditorFuntion" prompt="ACP_WEB_INVOICE.TAX_RATE" sortable="true" width="60"/>
+                                <a:column name="display_tax_unit_price" align="right" prompt="ACP_WEB_INVOICE.TAX_INVOICE_PRICE" renderer="acp5220_create_gridRenderer" sortable="true" width="60"/>
+                                <a:column name="billed_quantity" align="right" prompt="ACP_WEB_INVOICE.BILLED_QUANTITY" sortable="true" width="60"/>
+                                <a:column name="used_item_code" align="center" prompt="MTL2060.USED_ITEM_CODE" width="60"/>
+                                <a:column name="rcv_trx_type_desc" align="center" prompt="ACP_BILL_DETAILS.TRANSACTION_TYPE" sortable="true" width="70"/>
+                                <a:column name="unit_meas_lookup_code_desc" align="left" prompt="ACP_BILL_DETAILS.SRM_UNIT_OF_MEASURE" sortable="true" width="40"/>
+                                <a:column name="pur_organization_name" align="left" prompt="PUR_ORGANIZATIONS.PUR_ORGANIZATION" sortable="true" width="100"/>
+                                <a:column name="pur_buyer_name" align="left" prompt="PUR_HEADERS_ALL.PUR_BUYER" sortable="true" width="100"/>
+                                <a:column name="invoice_vendor_desc" prompt="ACP_WEB_INVOICE_HEADERS.INVOICE_PARTNER" width="100"/>
+                                <a:column name="company_name" align="left" prompt="ACP_BILL.COMPANY_NAME" sortable="true" width="80"/>
+                                <a:column name="business_unit_name" align="left" prompt="ACP_WEB_INVOICE.BUSINESS_UNIT_ID" sortable="true" width="80"/>
+                                <a:column name="organization_name" align="left" prompt="ACP_BILL_SOURCE.ORGANIZATION_NAME" sortable="true" width="80"/>
+                                <a:column name="vendor_site_name" align="left" prompt="ACP_BILL_SOURCE.VENDOR_SITE_CODE_NAME" sortable="true" width="80"/>
+                                <a:column name="segment1" align="left" prompt="ACP_WEB_INVOICE.PO_NUMBER" sortable="true" width="80"/>
+                                <a:column name="line_num" align="left" prompt="ACP_BILL_DETAILS.PO_LINE_NUM" sortable="true" width="50"/>
+                                <a:column name="shipment_num" align="left" prompt="ACP_BILL_DETAILS.PO_SHIPMENT_NUM" sortable="true" width="80"/>
+                                <a:column name="type_lookup_desc" prompt="PUR_HEADERS_ALL.ORDER_TYPE_ID" width="60"/>
+                                <a:column name="receipt_num" align="left" prompt="ACP_WEB_INVOICE.RECEIPT_NUM" sortable="true" width="50"/>
+                                <a:column name="receipt_line_num" align="left" prompt="ACP_WEB_INVOICE.RECEIPT_LINE_NUM" sortable="true" width="30"/>
+                                <a:column name="confirm_date_fmt" align="center" prompt="ACP_BILL_HEADERS.CONFIRM_DATE" sortable="true" width="80"/>
+                                <a:column name="transaction_date_fmt" align="center" prompt="ACP_BILL_DETAILS.TRANSACTION_DATE" sortable="true" width="80"/> -->
+                            </a:columns>
+                            <a:events>
+                                <a:event name="render" handler="acp5220_grid_render"/>
+                            </a:events>
+                            <a:editors>
+                                <a:lov id="acp5220_grid_lov"/>
+                                <a:numberField id="quantity_nf_1" allowDecimals="true" allowFormat="true" allowNegative="true" decimalPrecision="4"/>
+                                <a:numberField id="quantity_nf_2" allowDecimals="true" allowFormat="true" allowNegative="false" decimalPrecision="8"/>
+                                <a:numberField id="tax_rate_nf" allowDecimals="true" allowFormat="false" allowNegative="false"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                    <!-- <a:tab prompt="ACP_BILL.SUBJECT_NAME" width="100">
+                        <a:grid id="acp5220_subject_ds_grid" autoAppend="false" bindTarget="acp5220_subject_ds" marginHeight="230" marginWidth="65" navBar="true" style="margin-top:10px;">
+                            <a:columns>
+                                <a:column name="bill_number" align="center" prompt="ACP_BILL_HEADERS.BILL_NUMBER" width="80"/>
+                                <a:column name="subject_document_number" align="center" prompt="ACP_SUBJECT_DOCUMENTS.SUBJECT_DOCUMENT_NUMBER" width="100"/>
+                                <a:column name="line_num" align="center" prompt="ACP_BILL_SOURCE.LINE_NUM" width="40"/>
+                                <a:column name="subject_name" align="center" prompt="ACP_BILL.SUBJECT_NAME" width="70"/>
+                                <a:column name="debit_credit_name" align="center" prompt="ACP_BILL.DEBIT_CREDIT" width="70"/>
+                                <a:column name="voucher_money" align="right" prompt="ACP_BILL.VOUCHER_MONEY" renderer="Aurora.formatMoney" width="60"/>
+                                <a:column name="standard_money" align="right" prompt="ACP_BILL.STANDARD_MONEY" renderer="Aurora.formatMoney" width="60"/>
+                                <a:column name="tax_included_flag" align="center" prompt="ACP_INVOICE_LINES.TAX_INCLUDED_FLAG" width="40"/>
+                                <a:column name="tax_type_rate" align="right" prompt="ACP_WEB_INVOICE.TAX_RATE" width="40"/>
+                                <a:column name="amount_include_tax" align="right" prompt="ACP_SUBJECT_DOCUMENTS.AMOUNT_INCLUDE_TAX" renderer="Aurora.formatMoney" width="60"/>
+                                <a:column name="note" align="left" prompt="ACP_BILL.SUBJECT_NOTE" width="70"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab> -->
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+    </a:view>
+</a:screen>

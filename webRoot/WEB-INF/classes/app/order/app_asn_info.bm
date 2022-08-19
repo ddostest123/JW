@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wangcheng6595
+    $Date: 2014-11-21 10:32:23  
+    $Revision: 1.0  
+    $Purpose: APP，登录后送货单查询列表
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:fields>
+        <bm:field name="asn_header_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="ASN_HEADER_ID"/>
+        <bm:field name="asn_num" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="ASN_NUM"/>
+        <bm:field name="asn_type_name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="ASN_TYPE_NAME"/>
+        <bm:field name="vendor_id" databaseType="NUMBER" datatype="java.lang.Long" physicalName="VENDOR_ID"/>
+        <bm:field name="vendor_name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="VENDOR_NAME"/>
+        <bm:field name="status_name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="STATUS_NAME"/>
+        <bm:field name="expected_date" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="EXPECTED_DATE"/>
+        <bm:field name="ship_date" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="SHIP_DATE"/>
+        <bm:field name="ship_time" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="SHIP_TIME"/>
+        <bm:field name="ship_day" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="SHIP_DAY"/>
+        <bm:field name="process_status_name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="PROCESS_STATUS_NAME"/>
+        <bm:field name="cancel_process_status_name" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="CANCEL_PROCESS_STATUS_NAME"/>
+    </bm:fields>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            	select * from (SELECT v.*,ceil(rownum/30) as page_num
+				  FROM (SELECT ah.asn_header_id,
+				               nvl(ah.display_asn_number,
+				                   ah.asn_number) AS asn_num,
+				               (SELECT atv.asn_type_name FROM inv_asn_types_vl atv WHERE atv.asn_type_code = ah.asn_type_code) AS asn_type_name,
+				               ah.vendor_id,
+				               (SELECT pvv.full_name FROM pur_vendors_v pvv WHERE pvv.vendor_id = ah.vendor_id) AS vendor_name,
+				               ah.status,
+				               (SELECT cvv.code_value_name
+				                  FROM sys_code_values_v cvv
+				                 WHERE cvv.code = 'INV_ASN_HEADERS_STATUS'
+				                       AND cvv.code_value = ah.status) AS status_name,
+				               to_char(ah.expected_date,
+				                       'yyyy-mm-dd') AS expected_date,
+				               to_char(ah.ship_date,
+				                       'yyyy-mm-dd') AS ship_date,
+				               to_char(ah.ship_date,
+				                       'hh24:mi') AS ship_time,
+				               decode(to_char(ah.ship_date - 1,
+				                              'd'),
+				                      '1',
+				                      '星期一',
+				                      '2',
+				                      '星期二',
+				                      '3',
+				                      '星期三',
+				                      '4',
+				                      '星期四',
+				                      '5',
+				                      '星期五',
+				                      '6',
+				                      '星期六',
+				                      '7',
+				                      '星期日') AS ship_day,
+				              nvl((SELECT decode(al.process_status,
+                      				'SUCCESSED',
+                      				'发送成功',
+                      				'WAITING',
+                      				'发送中',
+                      				'IMPORTED',
+                      				'正在发送',
+                      				'FAILED',
+                      				'发送失败',
+                      				' ')
+          						FROM inv_asn_lines al
+         						WHERE al.asn_header_id = ah.asn_header_id
+               						AND rownum = 1),' ') AS process_status_name,
+				              nvl((SELECT decode(al.cancel_process_status,
+                      				'SUCCESSED',
+                      				'取消成功',
+                      				'WAITING',
+                      				'等待反馈',
+                      				'IMPORTED',
+                      				'正在处理',
+                      				'FAILED',
+                      				'取消失败')
+          						FROM inv_asn_lines al
+         						WHERE al.asn_header_id = ah.asn_header_id
+               						AND rownum = 1),' ')AS cancel_process_status_name
+				          FROM inv_asn_headers ah
+				          #WHERE_CLAUSE# 
+				          order by ship_date desc,ship_time desc) v
+				 WHERE v.asn_num LIKE '%' || TRIM(${@asn_num}) || '%'
+				       AND ((${@ship_date_from} IS NOT NULL AND
+				       to_date(${@ship_date_from},
+				                     'yyyy-mm-dd') <= to_date(v.ship_date,
+				                                                    'yyyy-mm-dd')) OR (${@ship_date_from} IS NULL AND 1 = 1))
+				       AND ((${@ship_date_to} IS NOT NULL AND
+				       to_date(${@ship_date_to},
+				                     'yyyy-mm-dd') >= to_date(v.ship_date,
+				                                                    'yyyy-mm-dd')) OR (${@ship_date_to} IS NULL AND 1 = 1))
+				) where ((${@page_num} is not null and ${@page_num}=page_num) or (${@page_num} is null and 1=1))
+				
+			]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter name="business_group"/>
+                <bm:parameter name="user_id"/>
+                <bm:parameter name="asn_num"/>
+                <bm:parameter name="ship_date_from"/>
+                <bm:parameter name="ship_date_to"/>
+                <bm:parameter name="page_num"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="to_receive" queryExpression="EXISTS (SELECT 1 FROM inv_asn_lines al WHERE nvl(al.cancel_process_status,&apos; &apos;) &lt;&gt;&apos;WAITING&apos; and al.asn_header_id = ah.asn_header_id AND al.status = &apos;SEND_OUT&apos; AND nvl(al.cancel_flag,&apos;N&apos;) = &apos;N&apos; AND nvl(al.close_flag,&apos;N&apos;) = &apos;N&apos;AND nvl(al.receive_status,&apos;PART_RECEIVE&apos;) = &apos;PART_RECEIVE&apos;)"/>
+        <!-- <bm:query-field name="page_num" queryOperator="="/> -->
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="1=1"/>
+        <bm:data-filter expression="nvl((SELECT al.process_status FROM inv_asn_lines al WHERE al.asn_header_id = ah.asn_header_id AND rownum = 1), &apos; &apos;) in (&apos;SUCCESSED&apos;,&apos;WAITING&apos;)"/>
+        <bm:data-filter expression="ah.coop_business_group = ${@business_group} AND EXISTS (SELECT 1 FROM fnd_user_authority fua WHERE fua.authority_type = &apos;VENDOR&apos;AND fua.assign_id = ah.vendor_id AND fua.user_id = ${@user_id})"/>
+    </bm:data-filters>
+</bm:model>

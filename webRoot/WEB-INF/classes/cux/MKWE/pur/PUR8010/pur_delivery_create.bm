@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="h.last_update_date desc,h.segment1,l.line_num,h.vendor_code,h.business_unit_id">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*,
+                    ( v.quantity - v.trx_amount ) un_trx_amount, --未交货数量
+                    rownum line_number
+                FROM
+                    (SELECT
+                        h.pur_header_id,
+                        l.pur_line_id,
+                        h.vendor_id,
+                        h.vendor_code,
+                        h.vendor_name,
+                        h.display_po_number segment1,
+                        l.line_num,
+                        l.item_id,
+                        l.item_code,
+                        msi.item_name,
+                        l.unit_meas_lookup_code,
+                        l.quantity,
+                        TO_CHAR(pll.need_by_date, 'YYYY-MM-DD HH24:MI:SS') need_by_date,
+                        h.agent_id,
+                        h.agent_name,
+                        h.agent_code,
+                        h.owner_business_group,
+                        h.owner_company_id,
+                        h.business_unit_id,
+                        (SELECT
+                            pv.coop_company_id
+                        FROM
+                            pur_vendors pv
+                        WHERE
+                            pv.vendor_id = h.vendor_id
+                        ) coop_company_id,
+                        (SELECT
+                            pv.coop_business_group
+                        FROM
+                            pur_vendors pv
+                        WHERE
+                            pv.vendor_id = h.vendor_id
+                        ) coop_business_group,
+                        h.company_id,
+                        h.company_code,
+                        h.company_name,
+                        (SELECT
+                            NVL(pvv.coop_company_id, -1)
+                        FROM
+                            pur_vendors_v pvv
+                        WHERE
+                            pvv.vendor_id = h.vendor_id
+                        ) AS vendor_company_id,
+                        h.created_by,
+                        msi.item_specs,
+                        msi.item_model,
+                        (SELECT
+                            f.business_unit_name
+                        FROM
+                            fnd_business_units_vl f
+                        WHERE
+                            f.business_unit_id = h.business_unit_id
+                        ) business_unit_name,
+                        h.last_update_date,
+                        (l.quantity -
+                        (SELECT
+                            NVL(SUM(pl.need_del_quantity), 0)
+                        FROM
+                            pur_del_plan_lines pl
+                        WHERE
+                            pl.segment1 = h.display_po_number AND
+                            pl.line_num = l.line_num
+                        )) remain_split_quantity,
+                        (SELECT
+                            NVL(SUM(DECODE(rcv_trx_type, 'RETURN_DIRECT', prtl.trx_amount * -1, prtl.trx_amount)),0) trx_amount
+                        FROM
+                            pur_rcv_trx_lines prtl,
+                            pur_rcv_trx_headers prth
+                        WHERE
+                            prtl.rcv_trx_header_id    = prth.rcv_trx_header_id AND
+                            prth.processed_flag       = 'Y' AND
+                            prtl.from_po_line_id      = l.pur_line_id AND
+                            prtl.business_group       = ${/session/@business_group} AND
+                            prth.owner_business_group = ${/session/@business_group}
+                        ) trx_amount
+                    FROM
+                        pur_headers_all h,
+                        pur_lines_all l,
+                        pur_line_locations_all pll,
+                        mtl_system_items_vl msi
+                    WHERE
+                        h.pur_header_id         = l.pur_header_id AND
+                        l.pur_line_id           = pll.pur_line_id(+) AND
+                        msi.item_id(+)          = l.item_id AND
+                        h.srm_status           IN ('CONFIRMED') AND --,'RELEASED'
+                        NVL(l.cancel_flag,'N') <> 'Y' AND
+                        NVL(l.closed_flag,'N') <> 'Y' AND
+                        -- h.delivery_split_flag             = 'Y' AND
+                        NVL(l.is_returned_flag,'N') <> 'Y' AND
+                        h.owner_business_group       = ${/session/@business_group} #ORDER_BY_CLAUSE#
+                    ) v #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:parameters>
+                <bm:parameter name="header_id" output="true" outputPath="/parameter/@header_id"/>
+            </bm:parameters>
+            <bm:update-sql><![CDATA[
+        
+            	BEGIN
+            	    pur_delivery_plan_pkg.insert_delivery_plan_hd_temp(x_header_id => ${@header_id},
+            	    												p_business_unit_id => ${@business_unit_id}, 
+												            	    p_business_unit_name => ${@business_unit_name}, 
+												            	    p_owner_business_group => ${/session/@business_group}, 
+												            	    p_vendor_code => ${@vendor_code}, 
+												            	    p_vendor_id => ${@vendor_id}, 
+												            	    p_vendor_name => ${@vendor_name},
+												            	    p_coop_company_id => ${@coop_company_id},
+												            	    p_owner_company_id => ${@company_id},
+												            	    p_coop_business_group => ${@coop_business_group},
+												            	    p_user_id => ${/session/@user_id}
+												            	    );
+            	END;
+        	  	]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+            	BEGIN
+            	    pur_delivery_plan_pkg.insert_delivery_plan_ln_temp(p_header_id => ${/parameter/@header_id},
+            	    												p_segment1 => ${@segment1},
+												            	    p_line_num => ${@line_num},
+												            	    p_source_po_header_id => ${@source_po_header_id}, 
+												            	    p_source_po_line_id => ${@source_po_line_id}, 
+												            	    p_item_code => ${@item_code},
+												            	    p_item_name => ${@item_name},
+												            	    p_quantity => ${@quantity},
+												            	    p_unit_meas_lookup_code => ${@unit_meas_lookup_code},
+												            	    p_item_specs => ${@item_specs},
+												            	    p_item_model => ${@item_model},
+												            	    p_po_need_date => to_date(${@po_need_date},'YYYY-MM-DD HH24:MI:SS'),
+												            	    p_business_unit_id => ${@business_unit_id},
+												            	    p_business_unit_name => ${@business_unit_name},
+												            	    p_user_id => ${/session/@user_id}
+												            	    );
+            	END;
+        	  	]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="segment1" queryExpression="v.segment1 like &apos;%&apos;|| ${@segment1} ||&apos;%&apos;"/>
+        <bm:query-field name="vendor_id" queryExpression="v.vendor_id = ${@vendor_id}"/>
+        <bm:query-field name="item_id" queryExpression="v.item_id = ${@item_id}"/>
+        <bm:query-field name="business_unit_id" queryExpression="v.business_unit_id = ${@business_unit_id}"/>
+        <bm:query-field name="agent_id" queryExpression="v.agent_id = ${@agent_id}"/>
+        <bm:query-field name="need_by_date_from" queryExpression="(v.need_by_date &gt;= ${@need_by_date_from} or ${@need_by_date_from} is null)"/>
+        <bm:query-field name="need_by_date_to" queryExpression="(v.need_by_date &lt;= ${@need_by_date_to} or ${@need_by_date_to} is null)"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="1=1"/>
+        <bm:data-filter expression="v.remain_split_quantity &gt; 0"/>
+    </bm:data-filters>
+    <!--  <authority foundation_code="DELIVERY_PLAN">
+        <authority-segment source_alias="v" source_name="agent_id" type="PUR_BUYER"/>
+        <authority-segment source_alias="v" source_name="owner_company_id" type="COMPANY"/>
+        <authority-segment source_alias="v" source_name="business_unit_id" type="BUSINESS_UNIT"/>
+        <authority-segment source_alias="v" source_name="inv_organization_id" type="INV_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="vendor_company_id" type="VENDOR"/>
+    </authority> -->
+    <!-- <bm:features>
+        <s:bm-script><![CDATA[
+            var cx = Packages.aurora.javascript.Context.getCurrentContext();
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>  -->
+</bm:model>

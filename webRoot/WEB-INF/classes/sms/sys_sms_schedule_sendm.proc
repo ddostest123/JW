@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Jayce  
+    $Date: 2014-10-27 下午16:16:58  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<p:procedure xmlns:s="aurora.plugin.script" xmlns:a="http://www.aurora-framework.org/application" xmlns:rs="aurora.database.rsconsumer" xmlns:p="uncertain.proc" trace="true">
+    <s:server-script><![CDATA[
+            importPackage(java.io);
+            importPackage(java.net);
+            importPackage(java.util);
+            importPackage(java.text);
+            importPackage(java.lang);
+            importPackage(Packages.org.apache.commons.httpclient);
+            importPackage(Packages.org.apache.commons.httpclient.methods);
+            
+            function byteToString(arr) {
+                if (typeof arr === 'string') {
+                    return arr;
+                }
+                var str = '',
+                    _arr = arr;
+                for (var i = 0;i < _arr.length;i++) {
+                    var one = _arr[i].toString(2),
+                        v = one.match(/^1+?(?=0)/);
+                    if (v && one.length == 8) {
+                        var bytesLength = v[0].length;
+                        var store = _arr[i].toString(2).slice(7 - bytesLength);
+                        for (var st = 1;st < bytesLength;st++) {
+                            store += _arr[st + i].toString(2).slice(2);
+                        }
+                        str += String.fromCharCode(parseInt(store, 2));
+                        i += bytesLength - 1;
+                    } else {
+                        str += String.fromCharCode(_arr[i]);
+                    }
+                }
+                return str;
+            }
+            
+            var collect_list = new ModelService('sms.sys_sms_send_list');
+            collect_list.update();
+            //将发送列表里状态为'N'的消息发送出去
+            var send_list_bm = $bm('sms.sys_sms_send_list');
+            var send_list = send_list_bm.queryAsMap({
+                'send_flag': 'N'
+            });
+            var array = send_list.getChildren();
+            println('test1');
+            if (array.length > 0) {
+                try {
+                    var dsf = $instance("aurora.database.service.IDatabaseServiceFactory");
+                    var sqlContext = dsf.createContextWithConnection();
+                    var context = sqlContext.getObjectContext();
+                    if (context == null) {
+                        context = new CompositeMap().getData();
+                    }
+                    println('test2');
+                    for (var i = 0;i < array.length;i++) {
+                        var para = new CompositeMap();
+                        para.sms_send_id = array[i].sms_send_id;
+                        try {
+                            var bm = dsf.getModelService('sms.sys_sms_send_list', context);
+                            bm.execute(para.getData());
+                        } catch (e) {
+                            println(e.message);
+                        } finally {}
+                        var url = "http://113.106.16.55:8080/GateWay/Services.asmx/DirectSend?";
+                        var httpClient = new HttpClient();
+                        httpClient.getParams().setBooleanParameter("http.protocol.expect-continue", false);
+                        var getMethod = new PostMethod(url);
+                        var Content = "测试短息接收信息，测试短息接收信息，测试短息接收信息。";
+                        getMethod.addParameter(new NameValuePair("UserID", "195802"));
+                        getMethod.addParameter(new NameValuePair("Account", "admin"));
+                        getMethod.addParameter(new NameValuePair("Password", "795472"));
+                        getMethod.addParameter(new NameValuePair("Phones", array[i].sms_send_to));
+                        getMethod.addParameter(new NameValuePair("SendType", "1"));
+                        getMethod.addParameter(new NameValuePair("SendTime", ""));
+                        getMethod.addParameter(new NameValuePair("PostFixNumber", ""));
+                        getMethod.addParameter(new NameValuePair("Content", java.net.URLEncoder.encode( array[i].sms_note, 'utf-8')));
+            
+                        println(getMethod.getURI());
+                        getMethod.addRequestHeader("Connection", "close");
+                        try {
+                            var statusCode = httpClient.executeMethod(getMethod);
+                            println(statusCode);
+                            if (statusCode != HttpStatus.SC_OK) {
+                                System.err.println("Method failed: " + getMethod.getStatusLine());
+                            }
+                            var responseBody = getMethod.getResponseBody();
+                            print('responseBody' + byteToString(responseBody));
+                            var str = byteToString(responseBody);
+                            var beginPoint = str.indexOf("<RetCode>");
+                            var endPoint = str.indexOf("</RetCode>");
+                            result = str.substring(beginPoint + 9, endPoint);
+                            if (result == 'Sucess') {
+                                try {
+                                    var service = dsf.getModelService('sms.sys_sms_receive_lists', context);
+                                    var para = new CompositeMap();
+                                    para.sms_send_id = array[i].sms_send_id;
+                                    service.execute(para.getData());
+                                } catch (e) {
+                                    println(e.message);
+                                } finally {}
+                            } else {
+                                try {
+                                    var service = dsf.getModelService('sms.sys_sms_logs', context);
+                                    var para = new CompositeMap();
+                                    para.status = String(result);
+                                    para.log_text = String(result);
+                                    para.log_text = String(mobile + ':' + result);
+                                    para.sms_send_id = array[i].sms_send_id;
+                                    service.execute(para.getData());
+                                } catch (e) {
+                                    println(e.message);
+                                } finally {}
+                            }
+                        } catch (e) {
+                            println(e);
+                        } finally {
+                            getMethod.releaseConnection();
+                        }
+                    }
+                } catch (e) {
+                    println(e.message);
+                } finally {}
+            }
+        ]]></s:server-script>
+</p:procedure>

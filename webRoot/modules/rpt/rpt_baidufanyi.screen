@@ -1,0 +1,286 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: hansen  
+    $Date: 2015-5-13 下午2:21:52  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:view>
+        <script language="JavaScript" src="${/request/@context_path}/index/js/jquery-1.8.3.min.js"/>
+        <script><![CDATA[
+            jQuery.noConflict();
+        ]]></script>
+        <a:link id="fanyi_save_link" url="${/request/@context_path}/modules/rpt/pur_po_rpt_set.svc"/>
+        <script><![CDATA[
+            var code = [];
+            var res = [];
+            var table_name = [];
+            var res_length = [];
+            var all_length;
+            var fanyi_length;
+            var language;
+            var ds_index = 0;
+            var ajax_text_length = 50;
+            
+            function jsonpCallback() {
+                var data = [];
+                for (var i = 0;i < res.length;i++) {
+                    //插入数据
+                    data.push({
+                        //'_status':'insert',
+                        'prompt_code': code[i],
+                        'description': res[i],
+                        'language': language,
+                        'table_name':table_name[i]
+                    });
+                }
+                if (data.length > 0) {
+                    Aurora.request({
+                        url: $('fanyi_save_link').getUrl(),
+                        para: data,
+                        success: function() {
+                            $('fanyi_result_ds').query();
+                            code = [];
+                            res = [];
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        failure: function() {},
+                        scope: this
+                    });
+                } else {
+                    $('fanyi_result_ds').query();
+                    code = [];
+                    res = [];
+                    Aurora.Masker.unmask(Ext.getBody());
+                }
+            }
+            
+            function fanyi_languageJudge(code) {
+                var ds = $('fanyi_result_ds').getAll();
+                for (var i = 0;i < ds.length;i++) {
+                    var data = ds[i].data;
+                    if (data.prompt_code == code && data.language == language) {
+                        //已存在需要翻译的记录
+                        return false;
+                    }
+                }
+                return true;
+            }
+            
+            function count_fanyi_sum(to_language) {
+                var ds = $('fanyi_result_ds').getAll();
+                var sum = 0;
+                for (var i = 0;i < ds.length;i++) {
+                    if (ds[i].get('language') == 'ZHS' && fanyi_languageJudge(ds[i].get('prompt_code'))) {
+                        sum++;
+                    }
+                }
+                return sum;
+            }
+            //寻找换行符(若换行符是最后一位，则不予计算)
+            function search0Ain(text) {
+                var str = text;
+                var sum = 0;
+                var length = text.length;
+                while (str != '') {
+                    var index = str.indexOf('%0A');
+                    if (index < 0) {
+                        return sum;
+                    } else if (index > 0) {
+                        str = str.substring(index + 3);
+                        if (length != index + 3) {
+                            sum++;
+                        }
+                    }
+                }
+                return sum;
+            }
+            
+            function jquery_fanyi(to_language) {
+                Aurora.Masker.mask(Ext.getBody(), '..');
+                var ds = $('fanyi_result_ds').getAll();
+                var text = '';
+                var trans_to;
+                language = to_language;
+                fanyi_length = count_fanyi_sum(to_language);
+                all_length = ds.length;
+                if (ds_index < all_length) {
+                    switch (language) {
+                    case 'US':
+                        trans_to = 'en';
+                        break;
+                    case 'JP':
+                        trans_to = 'jp';
+                        break;
+                    case 'KOR':
+                        trans_to = 'kor';
+                        break;
+                    case 'DE':
+                        trans_to = 'de';
+                        break;
+                    default:
+                        trans_to = 'en';
+                        break;
+                    }
+                    for (var i = ds_index;i < ds_index + ajax_text_length;i++) {
+                        if (i < all_length) {
+                            var data = ds[i].data;
+                            var description = data.description;
+                            if (data.language == 'ZHS' && fanyi_languageJudge(data.prompt_code) && !Aurora.isEmpty(description) && description != ' ') {
+                                code.push(data.prompt_code);
+                                table_name.push(data.table_name);
+                                var desc = encodeURIComponent(description);
+                                text += desc;
+                                res_length.push(search0Ain(desc) + 1);
+                                text += (i == ds_index + ajax_text_length - 1 || i == all_length - 1) ? '' : '%0A';
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    var url = "http://openapi.baidu.com/public/2.0/bmt/translate?client_id=SnTmM9Cor6HQWdp5ScwQYk7H&q=";
+                    url += text;
+                    url += '&from=zh&to=' + trans_to;
+                    ds_index = i;
+                    fanyi_ajax(text, url, to_language);
+                } else {
+                    ds_index = 0;
+                    jsonpCallback();
+                }
+            }
+            
+            function fanyi_ajax(text, url, to_language) {
+                if (text != '') {
+                    jQuery.ajax({
+                        type: "POST",
+                        url: url,
+                        dataType: "JSONP",
+                        success: function(data) {
+                            if (!data.error_code) {
+                                var length = code.length - res.length;
+                                var desc = '';
+                                if (data.trans_result.length != ajax_text_length) {
+                                    debugger;
+                                    //alert(data.trans_result.length);
+                                }
+                                for (var i = 0;i < data.trans_result.length;i++) {
+                                    desc = '';
+                                    for (var j = 0;j < res_length[res.length];j++) {
+                                        desc += data.trans_result[i + j].dst;
+                                    }
+                                    i += j - 1;
+                                    res.push(desc);
+                                }
+                            } else {
+                                res.push('');
+                                alert(data.error_msg);
+                            }
+                            if (res.length == fanyi_length) {
+                                ds_index = 0;
+                                jsonpCallback();
+                            } else {
+                                jquery_fanyi(to_language);
+                            }
+                        },
+                        error: function() {
+                            //请求出错
+                            alert('请求出错');
+                        }
+                    });
+                } else {
+                    if (res.length == fanyi_length) {
+                        ds_index = 0;
+                        jsonpCallback();
+                    } else {
+                        jquery_fanyi(to_language);
+                    }
+                }
+            }
+            
+            function fanyi_grid_edit(record, name) {
+                if (record.isNew) {
+                    return 'fanyi_grid_edit_tf';
+                } else {
+                    return;
+                }
+            }
+            //加载js和css文件
+            
+            function loadjscssfile(filename, filetype) {
+                var fileref;
+                if (filetype == "js") {
+                    fileref = document.createElement('script');
+                    fileref.setAttribute("type", "text/javascript");
+                    fileref.setAttribute("src", filename);
+                } else if (filetype == "css") {
+                    fileref = document.createElement('link');
+                    fileref.setAttribute("rel", "stylesheet");
+                    fileref.setAttribute("type", "text/css");
+                    fileref.setAttribute("href", filename);
+                }
+                if (typeof fileref != "undefined") {
+                    document.getElementsByTagName("head")[0].appendChild(fileref);
+                }
+            }
+            loadjscssfile('${/request/@context_path}/component/handListButton/handListButton.css', 'css');
+            loadjscssfile('${/request/@context_path}/component/handListButton/handListButton.js', 'js');
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="fanyi_language">
+                <a:datas>
+                    <a:record name="中文" language_code="ZHS"/>
+                    <a:record name="英文" language_code="US"/>
+                    <a:record name="日文" language_code="JP"/>
+                    <a:record name="韩文" language_code="KOR"/>
+                    <a:record name="德文" language_code="DE"/>
+                </a:datas>
+            </a:dataSet>
+            <a:dataSet id="fanyi_query_ds">
+                <a:fields>
+                    <a:field name="language" displayField="name" options="fanyi_language" returnField="language_code" valueField="language_code"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="fanyi_result_ds" autoQuery="true" fetchAll="true" model="rpt.fanyi_set" queryDataSet="fanyi_query_ds" selectable="true"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <!-- <a:toolbarButton className="item-rbtn-blue back" click="fanyi_function" style="margin-left:5px;" text="百度翻译" width="100"/> -->
+                <div style="float:left;">
+                    <div name="handListButton" buttonType="" buttontext="百度翻译" color="blue" style="margin-top:5px">
+                        <ul>
+                            <li click="jquery_fanyi(&apos;US&apos;)"><![CDATA[英语]]></li>
+                            <li click="jquery_fanyi(&apos;JP&apos;)"><![CDATA[日语]]></li>
+                            <li click="jquery_fanyi(&apos;KOR&apos;)"><![CDATA[韩语]]></li>
+                            <li click="jquery_fanyi(&apos;DE&apos;)"><![CDATA[德语]]></li>
+                        </ul>
+                    </div>
+                </div>
+            </a:screenTopToolbar>
+            <a:queryForm id="fanyi_query" bindTarget="fanyi_query_ds" resultTarget="fanyi_result_ds" style="border:none">
+                <a:formToolBar>
+                    <a:hBox labelWidth="100">
+                        <a:textField name="prompt_code" bindTarget="fanyi_query_ds" prompt="编码"/>
+                        <a:comboBox name="language" bindTarget="fanyi_query_ds" prompt="语言"/>
+                        <a:textField name="description" bindTarget="fanyi_query_ds" prompt="描述"/>
+                    </a:hBox>
+                </a:formToolBar>
+            </a:queryForm>
+            <a:grid id="fanyi_grid" autoAppend="false" bindTarget="fanyi_result_ds" marginHeight="100" marginWidth="100">
+                <a:toolBar>
+                    <a:button type="add"/>
+                    <a:button type="save"/>
+                    <a:button type="clear"/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="prompt_code" align="left" editorFunction="fanyi_grid_edit" prompt="编码" width="300"/>
+                    <a:column name="language" align="left" editorFunction="fanyi_grid_edit" prompt="语言" width="100"/>
+                    <a:column name="description" align="left" editor="fanyi_grid_edit_tf" prompt="描述" width="300"/>
+                </a:columns>
+                <a:editors>
+                    <a:textField id="fanyi_grid_edit_tf"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

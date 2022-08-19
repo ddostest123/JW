@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lianghuihao
+    $Date: 2018-9-28 19:45:51 
+    $Revision: 1.0  
+    $Purpose: 送货单外包装二维码打印，送货单行件信息查询BM
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="v.po_num asc,v.asn_number asc,v.asn_line_num asc">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*,
+                    rownum AS line_sequence
+                FROM
+                    (SELECT
+                        (SELECT
+                            h.asn_number
+                        FROM
+                            inv_asn_headers h
+                        WHERE
+                            h.asn_header_id = l.asn_header_id
+                        ) asn_number,
+                        l.asn_line_num,
+                        l.asn_header_id,
+                        l.asn_line_id,
+                        l.item_code,
+                        l.item_name,
+                        l.ship_quantity,
+                        p.packet_quantity,
+                        TO_CHAR(l.lots_validity_date, 'yyyy-mm-dd') lots_validity_date,
+                        decode((select count(1)
+						  from mtl_category_classify_items i, mtl_categories_user_defined d
+						 where d.category_udf_id = i.category_udf_id
+						   and i.item_id = l.item_id
+						   and d.category_code in ('02022901', '03051101', '03050801')),0,'N','Y') br_code_flag,
+                        (SELECT
+                            fc.company_full_name
+                        FROM
+                            fnd_companies_vl fc,
+                            pur_vendors_v pvv
+                        WHERE
+                            fc.company_id = pvv.coop_company_id AND
+                            pvv.vendor_id =
+                            (SELECT
+                                h.vendor_id
+                            FROM
+                                inv_asn_headers h
+                            WHERE
+                                h.asn_header_id = l.asn_header_id
+                            )
+                        ) AS vendor_company_name,
+                        l.box_amount,
+                        (SELECT
+                            pha.display_po_number
+                        FROM
+                            pur_headers_all_v pha,
+                            pur_line_locations_all lla
+                        WHERE
+                            pha.pur_header_id        = lla.pur_header_id AND
+                            lla.pur_line_location_id = l.line_location_id
+                        ) AS po_num,
+                        l.lots_num,
+                        TO_CHAR(l.production_date,'YYYYMMDD') production_date,
+                        ROUND(l.packet_weight,2) packet_weight,
+                        (
+                	    SELECT lbc.bar_code
+                          FROM cux_inv_asn_lines_bar_code lbc
+                         WHERE lbc.asn_line_id = l.asn_line_id
+                           AND lbc.line_num = p.bar_code
+                           AND rownum = 1
+                        ) bar_code,
+                        l.isrosh
+                    FROM
+                        inv_asn_lines l,
+                        inv_asn_package_print p
+                    WHERE
+                        l.asn_line_id           = p.asn_line_id AND
+                        NVL(l.cancel_flag, 'N') = 'N' AND
+                        NVL(l.close_flag, 'N')  = 'N' AND
+                        p.session_id            = ${/session/@session_id} AND
+                        l.asn_line_id           = ${/parameter/@asn_line_id}
+                    ) v
+                WHERE
+                    (
+                        inv_asn_print_pkg.check_asn_print_authority(${/session/@session_id}, ${/session/@role_id}, ${/session/@user_id}) = 0
+                    )
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

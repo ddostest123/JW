@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: shenjun  
+    $Date: 2017-9-21 下午06:50:56  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+              SELECT *
+          FROM (SELECT l.pur_line_id,
+                       l.pur_header_id,
+                       h.company_id,
+                       h.company_name,
+                       h.vendor_id,
+                       h.vendor_code,
+                       h.vendor_name,
+                       h.segment1,
+                       h.display_po_number,
+                       h.revision_num,
+                       h.release_id,
+                       h.release_num,
+                       h.display_release_num,
+                       l.line_num,
+                       l.item_id,
+                       l.item_description,
+				       decode(l.is_returned_flag,
+				       		  'Y',
+				       		  '-' || rtrim(to_char(l.quantity,
+							                     'FM99999999990.99999999'),
+							             '.'),
+				       		  'N',
+				       		  rtrim(to_char(l.quantity,
+							                     'FM99999999990.99999999'),
+							             '.'),
+				       		  rtrim(to_char(l.quantity,
+							                     'FM99999999990.99999999'),
+							             '.')) AS quantity,
+				       fnd_document_control_pkg.get_reality_value(p_rule_code    => 'PRICE_SECRECY',
+				                                             p_role_id         => ${/session/@role_id},
+				                                             p_foundation_code => 'PUR_PO',
+				                                             p_document_id     => h.pur_header_id,
+				                                             p_control_area    => 'EXTERNAL',
+				                                             p_business_group  => ${/session/@business_group},
+				                                             p_value           =>  l.unit_price) unit_price,
+				       fnd_document_control_pkg.get_reality_value(p_rule_code    => 'PRICE_SECRECY',
+				                                             p_role_id         => ${/session/@role_id},
+				                                             p_foundation_code => 'PUR_PO',
+				                                             p_document_id     => h.pur_header_id,
+				                                             p_control_area    => 'EXTERNAL',
+				                                             p_business_group  => ${/session/@business_group},
+				                                             p_value           => l.quantity * l.unit_price)  line_amount,
+                       (SELECT nvl(msi.display_item_code,
+                                   l.item_code)
+                          FROM mtl_system_items msi
+                         WHERE msi.item_id = l.item_id) item_code,
+                       l.ean_code,
+                       nvl((SELECT vl.uom_desc
+                             FROM fnd_uom_codes_vl vl
+                            WHERE l.unit_meas_lookup_code = vl.uom_code
+                                  AND vl.business_group = h.owner_business_group),
+                           l.unit_meas_lookup_code) unit_meas_lookup_code,
+                       (SELECT gc.currency_name FROM gld_currency_vl gc WHERE gc.currency_code = h.currency_code) currency_code,
+                       l.line_type_id,
+                       l.line_type_name,
+                       l.category_id,
+                       l.category_name,
+                       h.type_lookup_code,
+                       nvl(h.type_lookup_desc,
+                           h.erp_po_type_desc) type_lookup_desc,
+                       h.owner_company_id,
+                       h.owner_business_group,
+                       h.business_unit_id,
+                       (SELECT bu.business_unit_name FROM fnd_business_units_vl bu WHERE bu.business_unit_id = h.business_unit_id) business_unit_name,
+                       h.inv_organization_name,
+                       l.actual_receiver_code,
+                       l.actual_receiver_name,
+                       l.ship_to_location_address,
+                       l.contacts_info,
+                       l.inv_organization_id,
+                         h.coop_business_unit_id,
+                       (SELECT pll.need_by_date FROM pur_line_locations_all pll WHERE pll.pur_line_id = l.pur_line_id AND ROWNUM = 1) need_by_date,
+                       (SELECT to_char(pll.need_by_date, 'yyyy-mm-dd') FROM pur_line_locations_all pll WHERE pll.pur_line_id = l.pur_line_id AND ROWNUM = 1) need_by_date_fmt,
+                       ap.arrival_plan_id,
+                       nvl(ap.status, 'NEW') AS status,
+				       ap.line_num AS batch_line_num,
+				       to_char(ap.arrival_date, 'yyyy-mm-dd') AS arrival_date,
+				       ap.arrival_quantity,
+				       ap.arrival_comments,
+				       to_char(ap.last_update_date, 'YYYY-MM-DD HH24:MI:SS') AS last_update_dat
+                  FROM pur_headers_all_v       h,
+                       pur_lines_all           l,
+                       jk_pur_arrival_plan	ap
+                 WHERE h.pur_header_id = l.pur_header_id
+                       AND h.coop_business_group = ${/session/@business_group}
+                       AND ap.pur_line_id = l.pur_line_id
+                       AND ap.pur_line_id = ${@pur_line_id}
+                       AND h.last_version = 'Y'
+                       AND h.srm_status in ('RELEASED','CONFIRMED')
+                       AND
+                       ((h.comments IS NOT NULL AND h.comments NOT IN ('体外诊断试剂申领',
+                                                                       'SIMS')) OR h.comments IS NULL)
+                       AND (h.release_rule_code = 'ALL' OR h.release_rule_code = 'VENDOR' OR h.release_rule_code = 'INVALID' OR
+                       h.release_rule_code IS NULL)) v
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+				BEGIN
+					jk_pur_arrival_plan_pkg.create_arrival_plan(p_pur_line_id      => ${@pur_line_id},
+					                                            p_line_num         => ${@batch_line_num},
+					                                            p_arrival_date     => to_date(${@arrival_date},'YYYY-MM-DD'),
+					                                            p_arrival_quantity => ${@arrival_quantity},
+					                                            p_arrival_comments => ${@arrival_comments},
+					                                            p_user_id          => ${/session/@user_id});
+				END;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+				BEGIN
+					jk_pur_arrival_plan_pkg.delete_arrival_plan(p_pur_line_id      => ${/parameter/record/@pur_line_id},
+					                                            p_user_id          => ${/session/@user_id});
+				END;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+				BEGIN
+					jk_pur_arrival_plan_pkg.init_arrival_plan(p_pur_line_id => ${@pur_line_id}, p_user_id => ${/session/@user_id});
+				END;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

@@ -1,0 +1,253 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        ff.*,
+                        rownum num,
+                        null useless_id
+                    FROM
+                        ( SELECT DISTINCT
+                            fcp.coop_business_group cooper_business_group,
+                            fcp.coop_company_id cooper_company_id,
+                            (SELECT
+                                f.supplier_id
+                            FROM
+                                fnd_com_sup_infos f
+                            WHERE
+                                f.company_id = fcv.company_id
+                            ) supplier_id,
+                            fcp.coop_company_id vendor_id,
+                            fcv.company_code display_vendor_code,
+                            fcv.company_full_name full_name,
+                            NVL(pvlc.authorize_flag,'N') authorize_flag,
+                            pvlc.stage_code,
+                            (SELECT
+                                MAX(h.recommend_hds_id)
+                            FROM
+                                pur_vendor_recommend_hds h
+                            WHERE
+                                h.owner_business_group = ${/session/@business_group} AND
+                                h.vendor_id            = fcp.coop_company_id AND
+                                h.status              IN ('NEW', 'REJECTED')
+                            ) recommend_hds_id,
+                            (SELECT
+                                MAX(h.potential_id)
+                            FROM
+                                pur_potential_vendor h
+                            WHERE
+                                h.owner_business_group = ${/session/@business_group} AND
+                                h.vendor_id            = fcp.coop_company_id AND
+                                h.status              IN ('NEW', 'REJECTED')
+                            ) potential_id,
+                            (SELECT
+                                h.qualified_hds_id
+                            FROM
+                                pur_qualified_vendor_hds h
+                            WHERE
+                                h.owner_business_group = ${/session/@business_group} AND
+                                h.vendor_id            = fcp.coop_company_id AND
+                                h.status              IN ('NEW', 'REJECTED')
+                            ) qualified_hds_id,
+                            (SELECT
+                                h.element_hds_id
+                            FROM
+                                pur_qualified_vendor_hds h
+                            WHERE
+                                h.owner_business_group = ${/session/@business_group} AND
+                                h.vendor_id            = fcp.coop_company_id AND
+                                h.status              IN ('NEW', 'REJECTED')
+                            ) element_hds_id,
+                            (SELECT
+                                (
+                                    CASE
+                                        WHEN COUNT(1) = 0
+                                        THEN 'COMMON'
+                                        ELSE 'STRICT'
+                                    END)
+                            FROM
+                                pur_supply_ability_hds psah,
+                                pur_supply_ability_lns psal,
+                                mtl_categories_user_defined mcud
+                            WHERE
+                                psah.ability_hds_id       = psal.ability_hds_id AND
+                                psah.vendor_id            = fcp.coop_company_id AND
+                                psah.business_group       = ${/session/@business_group} AND
+                                psal.supply_flag          = 'Y' AND
+                                psal.category_udf_id      = mcud.category_udf_id AND
+                                mcud.introduction_request = 'STRICT'
+                            ) AS introduction_request,
+                            v.document_type,
+                            v.document_header_id,
+                            v.stage_from,
+                            v.stage_to,
+                            (SELECT
+                                NVL(fc.black_list_flag, 'N')
+                            FROM
+                                fnd_companies fc
+                            WHERE
+                                fc.company_id = fcv.company_id AND
+                                (
+                                    fc.black_list_expiry_date IS NULL OR
+                                    (
+                                        fc.black_list_expiry_date >= sysdate
+                                    )
+                                )
+                            ) AS black_list_flag
+                        FROM
+                            fnd_cooperative_partners fcp,
+                            pur_vendor_life_cycle pvlc,
+                            fnd_companies_vl fcv,
+                            (SELECT
+                                'DOWNGRADE' AS document_type,
+                                v.downgrade_id AS document_header_id,
+                                lc.stage_code AS stage_from,
+                                v.downgrade_to AS stage_to,
+                                v.vendor_id
+                            FROM
+                                pur_downgrade_vendors v,
+                                pur_vendor_life_cycle lc
+                            WHERE
+                                v.status               IN ('NEW', 'RELEASED') AND
+                                v.process_type          = 'DOWNGRATE' AND
+                                v.owner_business_group  = ${/session/@business_group} AND
+                                v.vendor_id             = lc.coop_company_id AND
+                                lc.owner_business_group = v.owner_business_group AND
+                                lc.current_flag         = 'Y'
+                            UNION ALL
+                            SELECT
+                                'ELIMINATE' document_type,
+                                v.downgrade_id document_header_id,
+                                lc.stage_code AS stage_from,
+                                v.downgrade_to AS stage_to,
+                                v.vendor_id
+                            FROM
+                                pur_downgrade_vendors v,
+                                pur_vendor_life_cycle lc
+                            WHERE
+                                v.status               IN ('NEW', 'RELEASED') AND
+                                v.process_type          = 'ELIMINATE' AND
+                                v.owner_business_group  = ${/session/@business_group} AND
+                                v.vendor_id             = lc.coop_company_id AND
+                                lc.owner_business_group = v.owner_business_group AND
+                                lc.current_flag         = 'Y'
+                            UNION ALL
+                            SELECT
+                                'UPGRADE',
+                                rh.recommend_hds_id,
+                                lc.stage_code AS stage_from,
+                                'RECOMMEND' AS stage_to,
+                                rh.vendor_id
+                            FROM
+                                pur_vendor_recommend_hds rh,
+                                pur_vendor_life_cycle lc
+                            WHERE
+                                rh.status              IN ('NEW', 'SUBMITTED') AND
+                                rh.owner_business_group = ${/session/@business_group} AND
+                                rh.vendor_id            = lc.coop_company_id AND
+                                lc.owner_business_group = rh.owner_business_group AND
+                                lc.current_flag         = 'Y'
+                            UNION ALL
+                            SELECT
+                                'UPGRADE',
+                                pv.potential_id,
+                                lc.stage_code AS stage_from,
+                                'POTENTIAL' AS stage_to,
+                                pv.vendor_id
+                            FROM
+                                pur_potential_vendor pv,
+                                pur_vendor_life_cycle lc
+                            WHERE
+                                pv.status              IN ('NEW', 'SUBMITTED') AND
+                                pv.owner_business_group = ${/session/@business_group} AND
+                                pv.vendor_id            = lc.coop_company_id AND
+                                lc.owner_business_group = pv.owner_business_group AND
+                                lc.current_flag         = 'Y'
+                            UNION ALL
+                            SELECT
+                                'UPGRADE',
+                                vh.qualified_hds_id,
+                                lc.stage_code AS stage_from,
+                                'QUALIFIED' AS stage_to,
+                                vh.vendor_id
+                            FROM
+                                pur_qualified_vendor_hds vh,
+                                pur_vendor_life_cycle lc
+                            WHERE
+                                vh.status              IN ('NEW', 'SUBMITTED') AND
+                                vh.owner_business_group = ${/session/@business_group} AND
+                                vh.vendor_id            = lc.coop_company_id AND
+                                lc.owner_business_group = vh.owner_business_group AND
+                                lc.current_flag         = 'Y'
+                            UNION ALL 
+                            SELECT v.change_type AS document_type,
+							       v.req_id AS document_header_id,
+							       lc.stage_code AS stage_from,
+							       v.updated_stage AS stage_to,
+							       v.vendor_id
+							  FROM wz_vendor_stage_change_reqs v,
+							       pur_vendor_life_cycle       lc
+							 WHERE v.status IN ('NEW',
+							                    'SUBMITTED')
+							       AND v.owner_business_group = ${/session/@business_group}
+							       AND v.vendor_id = lc.coop_company_id
+							       AND lc.owner_business_group = v.owner_business_group
+							       AND lc.current_flag = 'Y') v
+                        WHERE
+                            fcp.owner_business_group  = ${/session/@business_group} AND
+                            fcp.coop_company_id       = fcv.company_id AND
+                            fcp.vendor_flag           = 'Y' AND
+                            fcp.enabled_flag          = 'Y' AND
+                            pvlc.owner_business_group = fcp.owner_business_group AND
+                            pvlc.coop_business_group  = fcp.coop_business_group AND
+                            pvlc.coop_company_id      = fcp.coop_company_id AND
+                            pvlc.current_flag         = 'Y' AND
+                            v.vendor_id(+)            = fcp.coop_company_id AND
+                            pvlc.stage_code           = ${@stage_code}
+                        ORDER BY
+                            display_vendor_code
+                        ) ff
+                    ) vlc 
+            	#AUTHORIY_FROM#  
+            	#WHERE_CLAUSE# 
+            	#AUTHORIY_WHERE# 
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <!-- <bm:query-field name="stage_code" queryExpression="ff.stage_code = ${@stage_code}"/> -->
+        <!-- <bm:query-field name="page_num_from" queryExpression="vlc.num &gt;= ${@page_num_from}"/>
+        <bm:query-field name="page_num_to" queryExpression="vlc.num &lt;= ${@page_num_to}"/> -->
+        <bm:query-field name="vendor_desc" queryExpression="(display_vendor_code like &apos;%&apos;||${@vendor_desc}||&apos;%&apos; or full_name like &apos;%&apos;||${@vendor_desc}||&apos;%&apos;)"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="1=1"/>
+    </bm:data-filters>
+    <authority foundation_code="PUR_VENDOR">
+        <authority-segment source_alias="vlc" source_name="useless_id" type="CREATER"/>
+        <authority-segment source_alias="vlc" source_name="useless_id" type="COMPANY"/>
+        <authority-segment source_alias="vlc" source_name="useless_id" type="RECEIVER"/>
+        <authority-segment source_alias="vlc" source_name="useless_id" type="BUSINESS_UNIT"/>
+        <authority-segment source_alias="vlc" source_name="useless_id" type="PUR_ORGANIZATION"/>
+        <authority-segment source_alias="vlc" source_name="useless_id" type="PUR_BUYER"/>
+        <authority-segment source_alias="vlc" source_name="useless_id" type="INV_ORGANIZATION"/>
+        <authority-segment source_alias="vlc" source_name="useless_id" type="SD_ORGANIZATION"/>
+        <authority-segment source_alias="vlc" source_name="cooper_company_id" type="VENDOR"/>
+        <authority-segment source_alias="vlc" source_name="useless_id" type="CLIENT"/>
+        <authority-segment source_alias="vlc" source_name="useless_id" type="PURHASE_MATERIAL"/>
+        <authority-segment source_alias="vlc" source_name="useless_id" type="SALES_PRODUCTION"/>
+        <authority-segment source_alias="vlc" source_name="useless_id" type="CLIENT_SITE"/>
+        <authority-segment source_alias="vlc" source_name="useless_id" type="VENDOR_SITE"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+            var cx = Packages.aurora.javascript.Context.getCurrentContext();
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

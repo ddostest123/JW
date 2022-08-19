@@ -1,0 +1,289 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Wanq  
+    $Date: 2012-10-11 下午6:47:44  
+    $Revision: 1.0  
+    $Purpose: 采购订单维护面
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <!-- <a:model-query model="db.erpfnd_precision_pkg.get_quantity_precision" rootPath="erppur_3020_get_quantity_accuracy"/>
+        <a:model-query model="db.erpfnd_precision_pkg.get_price_precision" rootPath="erppur_3020_get_price_precision"/> -->
+        <a:model-query defaultWhereClause="document_code=&apos;PUR_PURCHASE_ORDER&apos;" model="erppublic.get_document_file" rootPath="erppur_3020_pur_print"/>
+    </a:init-procedure>
+    <a:view>
+        <!-- <script src="${/request/@context_path}/modules/pur/pur.js" type="text/javascript"/> -->
+        <a:link id="erppur_3020_order_close_link" model="db.erppur_purchase_order_pkg.purchase_order_close" modelaction="execute"/>
+        <a:link id="erppur_3020_order_submit_link" model="db.erppur_purchase_order_pkg.purchase_order_submit" modelaction="execute"/>
+        <a:link id="erppur_3020_order_delete_link" model="db.erppur_purchase_order_pkg.purchase_order_delete" modelaction="delete"/>
+        <a:link id="erppur_3020_new_add_order_link" url="${/request/@context_path}/modules/erppur/ERPPUR5010/pur_purchase_order_new.screen"/>
+        <a:link id="erppur_3020_attachments_download_link" url="${/request/@context_path}/modules/erppur/ERPPUR3010/pur_attachments_download.screen"/>
+        <a:link id="erppur_3020_attachments_check_link" model="db.erpsys_attachments_check_pkg.get_attachments" modelaction="execute"/>
+        <script><![CDATA[
+        var erppur_3020_add_flag = false;
+    	
+		function erppur_3020_item_footRender(records, name){
+		     return '<font size=2>合计</font>';
+		}
+		function erppur_3020_amount_footRender(records, name){
+		    var sum = 0;
+            for (var i = 0;i < records.length;i++) {
+                var r = records[i].get(name);
+                if(r<0){
+                 	r=-r;   
+                }
+                var n = parseFloat(r);
+                if (!isNaN(n)) {
+                    sum += n;
+                }
+            }
+            sum = Math.round(sum * 100) / 100;
+            $('erppur_3020_order_header_detail_ds').getAt(0).set('total_amount',sum);
+            return '<label style="font-weight:bold">' + Aurora.formatNumber(Math.round(sum * 100)/100 ,'${/model/erppur_3020_get_amount_precision/record/@value}') + '</label>';
+		}
+		function erppur_3020_show_positive_number(value,record,name){
+		    if(value<0){
+		     	value = -value;   
+		    }
+		    if(name=="amount"||name=="tax_rate"){
+		        value = Aurora.formatNumber(value,'${/model/erppur_3020_get_amount_precision/record/@value}');
+		    }
+		    if(name=="price"){
+		        var tx = new String(value);
+                var tx1 = tx.split('.')[1];
+                //var precision = ${/model/erppur_3020_get_price_precision/record/@value};
+                var precision = '2';
+                if(typeof(tx1)=='undefined'){
+		        	return value;
+                }else if(tx1.length<precision){
+                    return Aurora.formatNumber(value,tx1.length);
+                }
+                return Aurora.formatNumber(value,precision);
+		    }
+		    // if(name=="trade_quantity"||name=="primary_quantity"||name=="received_trade_quantity"||name=="received_primary_quantity"){
+		        // value = show_reserver_num(value,'${/model/erppur_3020_get_quantity_accuracy/record/@value}');
+		        // // value = Aurora.formatNumber(value,'${/model/erppur_3020_get_quantity_accuracy/record/@value}');
+		    // }
+		    return value;
+		}
+		function erppur_3020_receive_back(){
+		    $('erppur_3020_receive_window').close();
+		}
+		function erppur_3020_require_date_render(value,record,name){
+	    	if(value){
+		        if( !(value instanceof Date)){
+		        	value = value.substring(0,10);
+		        }
+    	    }
+    	    return Aurora.formatDate(value);
+		}
+		
+		function erppur_3020_receive_print(){
+		    var document_head_id = '${/parameter/@purchase_order_header_id}';
+                var file = '${/model/erppur_3020_pur_print/record/@document_file}';
+                if (Aurora.isEmpty(file)) {
+                    Aurora.showMessage('提示', '打印模版未找到，请检查FND1110--打印模板设置');
+                } else {
+                    window.open('${/request/@context_path}/reports?__report=report/'+file+'&document_head_id=' + document_head_id+'&v_company_id='+'${@company_id}' + '&__format=pdf');
+                }
+		}
+		    function erppur3020_attachments_download(){
+             var dsHeader = $('erppur_3020_order_header_detail_ds');
+             var header_record = dsHeader.getAt(0);
+		        purchase_order_header_id = header_record.get('purchase_order_header_id');
+                new Aurora.Window({
+                    id: 'erppur_3020_attachments_download_window',
+                    url: $('erppur_3020_attachments_download_link').getUrl()+'?table_pk_value='+purchase_order_header_id,
+                    title: '附件查看',
+                    height: 400,
+                    width: 400
+                });
+            }	
+    	]]></script>
+        <a:dataSets>
+            <a:dataSet id="erppur_3020_get_sys_ds" loadData="true" model="erppur.ERPPUR5010.fnd_companies_base_currency"/>
+            <a:dataSet id="erppur_3020_currency_ds" loadData="true" model="erppur.ERPPUR5010.gld_currency_lov"/>
+            <a:dataSet id="erppur_3020_order_type_ds" fetchAll="true" loadData="true" model="erppur.public.pur_purchase_order_type"/>
+            <a:dataSet id="erppur_3020_order_header_detail_ds" loadData="true" model="erppur.ERPPUR5010.pur_purchase_order_headers_query">
+                <a:fields>
+                    <a:field name="company_name" readOnly="true"/>
+                    <a:field name="order_number" readOnly="true"/>
+                    <a:field name="vender_name" lovGridHeight="320" lovHeight="450" lovService="erppur.ERPPUR5010.fnd_business_partners" lovWidth="500" readOnly="true" required="true" title="供应商查询">
+                        <a:mapping>
+                            <a:map from="partner_code_name" to="vender_name"/>
+                            <a:map from="partner_id" to="vender_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="vender_id" readOnly="true"/>
+                    <a:field name="currency_code" readOnly="true"/>
+                    <a:field name="currency_name" displayField="currency_code" options="erppur_3020_currency_ds" readOnly="true" required="true" returnField="currency_code" valueField="currency_code"/>
+                    <a:field name="order_date" readOnly="true"/>
+                    <!-- <a:field name="gr_warehouse_id" readOnly="true"/>
+                    <a:field name="gr_warehouse_code_name" lovGridHeight="320" lovHeight="450" lovService="erppur.ERPPUR5010.inv_warehouses_lov" lovWidth="500" readOnly="true" title="库房查询">
+                        <a:mapping>
+                            <a:map from="warehouse_name" to="gr_warehouse_name"/>
+                            <a:map from="warehouse_id" to="gr_warehouse_id"/>
+                        </a:mapping>
+                    </a:field> -->
+                    <a:field name="status_name" readOnly="true"/>
+                    <a:field name="buyer_employee_name" readOnly="true"/>
+                    <a:field name="buyer_employee_id" readOnly="true"/>
+                    <a:field name="return_order_flag" checkedValue="Y" defaultValue="N" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="outsourcing_flag" checkedValue="Y" defaultValue="N" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="closed_flag" checkedValue="Y" defaultValue="N" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="description" readOnly="true"/>
+                    <a:field name="company_id" defaultValue="${@company_id}" readOnly="true"/>
+                    <a:field name="total_amount" readOnly="true"/>
+                    <a:field name="creation_date"/>
+                    <a:field name="creation_date_desc" readOnly="true" required="true"/>
+                    <a:field name="order_type_code"/>
+                    <a:field name="type_lookup_desc" displayField="description" options="erppur_3020_order_type_ds" readOnly="true" required="true" returnField="type_lookup_code" valueField="order_type_code">
+                        <a:mapping>
+                            <a:map from="return_order_flag" to="return_order_flag"/>
+                            <a:map from="outsourcing_flag" to="outsourcing_flag"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="description" readOnly="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="erppur_3020_order_line_ds" bindName="result_ds" bindTarget="erppur_3020_order_header_detail_ds" fetchAll="true" loadData="true" model="erppur.ERPPUR5010.pur_purchase_order_lines" submitUrl="${/request/@context_path}/modules/erppur/ERPPUR5010/pur_purchase_order_line_submit.svc">
+                <a:fields>
+                    <a:field name="line_number" readOnly="true" required="true"/>
+                    <a:field name="item_id" readOnly="true"/>
+                    <a:field name="item_code_name" lovGridHeight="320" lovHeight="450" lovService="erppur.ERPPUR5010.inv_items_basics_lov" lovWidth="500" readOnly="true" required="true" title="物品查询">
+                        <a:mapping>
+                            <a:map from="item_code_name" to="item_code_name"/>
+                            <a:map from="item_id" to="item_id"/>
+                            <a:map from="trade_uom" to="trade_uom"/>
+                            <a:map from="primary_uom" to="primary_uom"/>
+                            <a:map from="trade_uom_name" to="trade_uom_name"/>
+                            <a:map from="primary_uom_name" to="primary_uom_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="trade_uom" readOnly="true"/>
+                    <a:field name="trade_uom_name" lovGridHeight="320" lovHeight="450" lovLabelWidth="120" lovService="erppur.ERPPUR5010.inv_uom_codes_lov" lovWidth="530" readOnly="true" required="true" title="单位查询">
+                        <a:mapping>
+                            <a:map from="uom_description" to="trade_uom_name"/>
+                            <a:map from="uom_code" to="trade_uom"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="trade_quantity" readOnly="true" required="true"/>
+                    <a:field name="primary_quantity" readOnly="true" required="true"/>
+                    <a:field name="primary_uom_name" readOnly="true" required="true"/>
+                    <a:field name="price" readOnly="true" required="true"/>
+                    <a:field name="require_date" readOnly="true" required="true"/>
+                    <a:field name="tax_included_flag" checkedValue="Y" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="amount" readOnly="true"/>
+                    <a:field name="gr_warehouse_id" readOnly="true"/>
+                    <a:field name="gr_warehouse_name" readOnly="true"/>
+                    <a:field name="closed_flag" checkedValue="Y" defaultValue="N" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="gift_flag" defaultValue="N" readOnly="true"/>
+                    <a:field name="company_id" defaultValue="${@company_id}" readOnly="true"/>
+                    <a:field name="tax_rate" readOnly="true"/>
+                    <a:field name="description" readOnly="true"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:defaultScreen>
+            <a:screenTopToolbar>
+                <a:toolbarButton className="item-rbtn-blue back" click="erppur_3020_receive_back" text="返回" width="100"/>
+                <a:toolbarButton className="item-rbtn-blue print" click="erppur_3020_receive_print" text="打印" width="100"/>
+                <a:toolbarButton id="erppur3020_attachments_download_btn" className="item-rbtn-blue query" click="erppur3020_attachments_download" text="附件查看" width="100"/>
+            </a:screenTopToolbar>
+            <!-- <a:hBox padding="0">
+                <a:textField name="order_number" bindTarget="erppur_3020_order_header_detail_ds" prompt="订单号" typeCase="upper"/>
+                <a:textField name="vender_name" bindTarget="erppur_3020_order_header_detail_ds" prompt="供应商" width="240"/>
+                <a:textField name="currency_code" bindTarget="erppur_3020_order_header_detail_ds" prompt="币种" width="60"/>
+                <a:textField name="order_date" bindTarget="erppur_3020_order_header_detail_ds" prompt="订单日期"/>
+            </a:hBox>
+            <a:hBox padding="0">
+                <a:textField name="gr_warehouse_code_name" bindTarget="erppur_3020_order_header_detail_ds" prompt="收货库房"/>
+                <a:textField name="status_name" bindTarget="erppur_3020_order_header_detail_ds" prompt="状态" width="71"/>
+                <a:hBox labelWidth="76" padding="0">
+                    <a:checkBox name="return_order_flag" bindTarget="erppur_3020_order_header_detail_ds" prompt="退货订单"/>
+                    <a:checkBox name="outsourcing_flag" bindTarget="erppur_3020_order_header_detail_ds" prompt="委外订单"/>
+                    <a:checkBox name="closed_flag" bindTarget="erppur_3020_order_header_detail_ds" prompt="关闭"/>
+                </a:hBox>
+                <a:textField name="buyer_employee_name" bindTarget="erppur_3020_order_header_detail_ds" prompt="采购员"/>
+            </a:hBox>
+            <a:hBox padding="0">
+                <a:textField name="description" bindTarget="erppur_3020_order_header_detail_ds" prompt="备注" width="832"/>
+            </a:hBox> -->
+            <a:hBox padding="0">
+                <a:comboBox name="company_name" bindTarget="erppur_3020_order_header_detail_ds" prompt="公司"/>
+                <a:textField name="order_number" bindTarget="erppur_3020_order_header_detail_ds" prompt="订单号" typeCase="upper"/>
+                <a:textField name="revision_num" bindTarget="erppur_3020_order_header_detail_ds" prompt="版本" readOnly="true"/>
+                <a:comboBox name="type_lookup_desc" bindTarget="erppur_3020_order_header_detail_ds" prompt="类型"/>
+            </a:hBox>
+            <a:hBox padding="0">
+                <a:lov name="vender_name" bindTarget="erppur_3020_order_header_detail_ds" prompt="供应商" width="240"/>
+                <a:comboBox name="currency_name" bindTarget="erppur_3020_order_header_detail_ds" prompt="币种" width="60"/>
+                <a:datePicker name="creation_date_desc" bindTarget="erppur_3020_order_header_detail_ds" prompt="订单日期"/>
+                <!-- <a:textField name="total_amount" bindTarget="erppur_5010_order_header_new_ds" prompt="总金额"/> -->
+                <a:textField name="status_name" bindTarget="erppur_3020_order_header_detail_ds" prompt="状态"/>
+            </a:hBox>
+            <a:hBox padding="0">
+                <!-- <a:comboBox name="gr_warehouse_code_name" bindTarget="erppur_3010_order_header_detail_ds" prompt="收货库房"/> -->
+                <a:textField name="buyer_employee_name" bindTarget="erppur_3020_order_header_detail_ds" prompt="采购员"/>
+                <a:hBox labelWidth="76" padding="0">
+                    <a:checkBox name="return_order_flag" bindTarget="erppur_3020_order_header_detail_ds" prompt="退货订单"/>
+                    <a:checkBox name="outsourcing_flag" bindTarget="erppur_3020_order_header_detail_ds" prompt="委外订单"/>
+                    <a:checkBox name="closed_flag" bindTarget="erppur_3020_order_header_detail_ds" prompt="关闭"/>
+                </a:hBox>
+            </a:hBox>
+            <a:hBox padding="0">
+                <a:textArea name="description" bindTarget="erppur_3020_order_header_detail_ds" height="60" prompt="备注" width="825"/>
+            </a:hBox>
+            <a:grid bindTarget="erppur_3020_order_line_ds" height="300" marginHeight="190" marginWidth="50" navBar="false" width="1570">
+                <a:columns>
+                    <a:column name="line_number" align="right" prompt="行号" width="45"/>
+                    <a:column name="item_code_name" align="left" footerRenderer="erppur_3020_item_footRender" prompt="物品" width="270"/>
+                    <a:column name="trade_quantity" align="right" prompt="交易数量" width="100"/>
+                    <a:column name="quantity_received" align="right" prompt="已接收" width="100"/>
+                    <a:column name="trade_uom_name" align="left" prompt="交易单位" width="80"/>
+                    <a:column name="primary_quantity" align="right" prompt="主数量" width="100"/>
+                    <!--  <a:column name="received_primary_quantity" align="right" prompt="已接收" width="100"/> -->
+                    <a:column name="primary_uom_name" align="left" prompt="主单位" width="70"/>
+                    <a:column name="require_date" align="left" prompt="到货日期" renderer="erppur_3020_require_date_render" width="100"/>
+                    <a:column name="tax_included_flag" prompt="含税" width="55"/>
+                    <a:column name="price" align="right" prompt="单价" renderer="erppur_3020_show_positive_number" width="100"/>
+                    <a:column name="tax_rate" align="right" prompt="税率(%)" renderer="erppur_3020_show_positive_number" width="75"/>
+                    <a:column name="amount" align="right" footerRenderer="erppur_3020_amount_footRender" prompt="金额" renderer="erppur_3020_show_positive_number" width="130"/>
+                    <a:column name="description" align="left" prompt="备注" width="145"/>
+                    <a:column name="closed_flag" prompt="关闭" width="55"/>
+                </a:columns>
+                <a:editors>
+                    <a:checkBox id="erppur_3020_checkBox" checkedValue="Y" uncheckedValue="N"/>
+                </a:editors>
+            </a:grid>
+        </a:defaultScreen>
+        <script><![CDATA[
+        function erppur_3020_order_detail_init(){
+        	var head_record = $('erppur_3020_order_header_detail_ds').getAt(0);
+        	var order_date = head_record.get('order_date');
+        	head_record.set('order_date',Aurora.formatDate(order_date));
+             var param = {};
+                param['table_pk_value'] =head_record .get('purchase_order_header_id');
+                param['table_name'] ='ERPPUR5010_PURCHASE_ORDER_HEADERS';
+                Aurora.request({
+                    url: $('erppur_3020_attachments_check_link').getUrl(),
+                    para: param,
+                    success: function(res) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        if (res.result.exist_flag == 'N'){
+                            $('erppur3020_attachments_download_btn').disable();
+                        }
+                    },
+                    failure:function(){
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    error:function(){
+                      	Aurora.Masker.unmask(Ext.getBody());  
+                    },
+                    scope: this
+                });
+        }
+        erppur_3020_order_detail_init();
+        ]]></script>
+    </a:view>
+</a:screen>

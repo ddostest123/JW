@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        cp.owner_company_id,
+                        pc.company_id,
+                        pc.vendor_name,
+                        pc.vendor_platform_code,
+                        pc.unified_social_code,
+                        cp.coop_company_id,
+                        (SELECT
+                            (SELECT
+                                v.flex_desc
+                            FROM
+                                fnd_flex_values_v v
+                            WHERE
+                                v.flex_value_set_code = 'PUR_VENDOR_LIFE_CYCLE' AND
+                                v.flex_value          = l.stage_code
+                            )
+                        FROM
+                            pur_vendor_life_cycle l
+                        WHERE
+                            l.owner_business_group = cp.owner_business_group AND
+                            l.coop_business_group  = cp.coop_business_group AND
+                            l.coop_company_id      = cp.coop_company_id AND
+                            l.current_flag         = 'Y'
+                        ) stage_desc,
+                        pc.business_license_number,
+                        pc.business_leader,
+                        pc.business_leader_phone,
+                        pc.business_leader_email,
+                        (SELECT
+                            r.description
+                        FROM
+                            fnd_region_code_vl r
+                        WHERE
+                            r.region_id = pc.registered_province_id
+                        )
+                        || ' '
+                        ||
+                        (SELECT
+                            r.description
+                        FROM
+                            fnd_region_code_vl r
+                        WHERE
+                            r.region_id = pc.registered_city_id
+                        ) registered_desc,
+                        (SELECT
+                            pvv.display_vendor_code
+                        FROM
+                            pur_vendors_vl pvv
+                        WHERE
+                            pvv.coop_company_id = pc.company_id AND
+                            pvv.business_group  = ${/session/@business_group} AND
+                            rownum              = 1
+                        ) vendor_sap_code,
+                        (SELECT
+                            c_attribute4
+                        FROM
+                            (SELECT
+                                pbi.c_attribute4
+                            FROM
+                                pur_vendor_survey_basic_info pbi,
+                                pur_vendor_survey_headers pvsh
+                            WHERE
+                                pbi.survey_header_id     = pvsh.survey_header_id AND
+                                pvsh.supplier_company_id = pc.company_id
+                            ORDER BY
+                                pvsh.survey_header_id DESC
+                            )
+                        WHERE
+                            rownum = 1
+                        ) registered_capital,
+                        (SELECT
+                            c_attribute3
+                        FROM
+                            (SELECT
+                                pbi.c_attribute3
+                            FROM
+                                pur_vendor_survey_basic_info pbi,
+                                pur_vendor_survey_headers pvsh
+                            WHERE
+                                pbi.survey_header_id     = pvsh.survey_header_id AND
+                                pvsh.supplier_company_id = pc.company_id
+                            ORDER BY
+                                pvsh.survey_header_id DESC
+                            )
+                        WHERE
+                            rownum = 1
+                        ) founding_time,
+                        (SELECT
+                            approved_by
+                        FROM
+                            (SELECT
+                                u.description approved_by
+                            FROM
+                                pur_vendor_survey_headers pvs,
+                                pur_vendor_survey_record r1,
+                                sys_user u
+                            WHERE
+                                pvs.require_business_group = ${/session/@business_group} AND
+                                pvs.status                != '60_DELETED' AND
+                                r1.table_name              = 'PUR_VENDOR_SURVEY_HEADERS' AND
+                                r1.action_code             = '40_APPROVED' AND
+                                r1.table_pk_value          = pvs.survey_header_id AND
+                                u.user_id                  = r1.created_by AND
+                                pvs.supplier_company_id    =pc.company_id
+                            ORDER BY
+                                r1.creation_date DESC
+                            )
+                        WHERE
+                            rownum = 1
+                        ) developer,
+                        to_char(register_t,'yyyy-mm-dd hh24:mi:ss') be_regist_date,
+                        to_char(recommend_t,'yyyy-mm-dd hh24:mi:ss') be_recommend_date,
+                        to_char(potential_t,'yyyy-mm-dd hh24:mi:ss') be_potential_date,
+                        to_char(qualified_t,'yyyy-mm-dd hh24:mi:ss') be_qualified_date,
+                        to_char(eliminated_t,'yyyy-mm-dd hh24:mi:ss') be_eliminate_date
+                    FROM
+                        fnd_coop_partner_vendors_vl cp,
+                        (SELECT
+                            *
+                        FROM
+                            (SELECT
+                                c.creation_date,
+                                c.stage_code,
+                                c.coop_company_id,
+                                fc.company_id,
+                                fc.company_full_name vendor_name,
+                                fc.company_code vendor_platform_code,
+                                fc.unified_social_code,
+                                fc.business_license_number,
+                                fc.business_represent_name business_leader,
+                                fc.business_represent_phone business_leader_phone,
+                                fc.business_represent_mail business_leader_email,
+                                fc.registered_province_id,
+                                fc.registered_city_id,
+                                fc.supply_flag
+                            FROM
+                                pur_vendor_life_cycle c,
+                                fnd_companies_vl fc
+                            WHERE
+                                c.owner_business_group                    = ${/session/@business_group} AND
+                                fc.company_id                             = c.coop_company_id
+                            ) pivot( MAX(creation_date) t FOR stage_code IN( 'REGISTER' register, 'RECOMMEND' recommend, 'POTENTIAL' potential, 'QUALIFIED' qualified, 'ELIMINATED' eliminated ) )
+                        ) pc
+                    WHERE
+                        pc.company_id           = cp.coop_company_id AND
+                        cp.owner_business_group = ${/session/@business_group} AND
+                        cp.enabled_flag         = 'Y' AND
+                        pc.supply_flag          = 'Y' AND
+                        cp.vendor_flag          = 'Y' AND
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            fnd_companies c
+                        WHERE
+                            c.business_group = cp.owner_business_group AND
+                            c.company_id     = cp.owner_company_id AND
+                            c.enabled_flag   = 'Y'
+                        )
+                    ) t1 #AUTHORIY_FROM# #WHERE_CLAUSE# #AUTHORIY_WHERE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="stage_desc"/>
+        <bm:field name="be_eliminate_date"/>
+        <bm:field name="be_qualified_date"/>
+        <bm:field name="be_potential_date"/>
+        <bm:field name="be_recommend_date"/>
+        <bm:field name="be_regist_date"/>
+        <bm:field name="developer"/>
+        <bm:field name="founding_time"/>
+        <bm:field name="registered_capital"/>
+        <bm:field name="registered_desc"/>
+        <bm:field name="business_leader_email"/>
+        <bm:field name="business_leader_phone"/>
+        <bm:field name="business_leader"/>
+        <bm:field name="business_license_number"/>
+        <bm:field name="unified_social_code"/>
+        <bm:field name="vendor_platform_code"/>
+        <bm:field name="vendor_name"/>
+        <bm:field name="vendor_sap_code"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field name="stage_desc" queryExpression=" t1.stage_desc = ${@stage_desc}"/>
+        <bm:query-field name="developer" queryExpression=" t1.developer like &apos;%&apos; ||${@developer}|| &apos;%&apos;"/>
+        <bm:query-field name="vendor_name" queryExpression=" t1.vendor_name = ${@vendor_name}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="1=1"/>
+    </bm:data-filters>
+    <authority foundation_code="PUR_VENDOR">
+        <authority-segment source_alias="t1" source_name="useless_id_1" type="CREATER"/>
+        <authority-segment source_alias="t1" source_name="owner_company_id" type="COMPANY"/>
+        <authority-segment source_alias="t1" source_name="useless_id_3" type="RECEIVER"/>
+        <authority-segment source_alias="t1" source_name="useless_id_4" type="BUSINESS_UNIT"/>
+        <authority-segment source_alias="t1" source_name="useless_id_5" type="PUR_ORGANIZATION"/>
+        <authority-segment source_alias="t1" source_name="useless_id_6" type="INV_ORGANIZATION"/>
+        <authority-segment source_alias="t1" source_name="useless_id_7" type="SD_ORGANIZATION"/>
+        <authority-segment source_alias="t1" source_name="coop_company_id" type="VENDOR"/>
+        <authority-segment source_alias="t1" source_name="useless_id_9" type="CLIENT"/>
+        <authority-segment source_alias="t1" source_name="useless_id_10" type="PURHASE_MATERIAL"/>
+        <authority-segment source_alias="t1" source_name="useless_id_11" type="SALES_PRODUCTION"/>
+        <authority-segment source_alias="t1" source_name="useless_id_12" type="CLIENT_SITE"/>
+        <authority-segment source_alias="t1" source_name="useless_id_13" type="VENDOR_SITE"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+            var cx = Packages.aurora.javascript.Context.getCurrentContext();
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

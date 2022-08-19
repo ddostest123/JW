@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wangcheng  
+    $Date: 2015-10-20 下午2:02:38  
+    $Revision: 1.0  
+    $Purpose: 供应商导入ERP
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+SELECT vi.import_id,
+       vi.erp_type_code,
+       vi.vendor_code,
+       nvl(vi.vendor_name,
+           opv.coop_company_name) AS vendor_name,
+       nvl(vi.abandon_flag,
+           'N') AS abandon_flag,
+       vi.process_status,
+       vi.process_message,
+       vi.coop_es,
+       vi.payment_term_id,
+       vi.payment_term_code,
+       vi.payment_terms,
+       opv.coop_company_id,
+       opv.coop_company_code,
+       opv.coop_company_name,
+       opv.external_system_id,
+       opv.external_system_code,
+       opv.external_system_name,
+       opv.system_type,
+       opv.tax_id_number,
+	   opv.business_represent_name,
+	   opv.business_represent_phone,
+	   opv.business_represent_mail
+  FROM fnd_coop_vendor_imports vi,
+       (SELECT cp.owner_business_group,
+               cp.coop_business_group,
+               cp.coop_company_id,
+               cp.coop_company_code,
+               cp.coop_company_name,
+               es.external_system_id,
+               es.external_system_code,
+               es.external_system_name,
+               es.system_type,
+               cp.coop_company_id || '-' || es.external_system_id AS coop_es,
+               cp.tax_id_number,
+			   cp.business_represent_name,
+			   cp.business_represent_phone,
+			   cp.business_represent_mail
+          FROM (SELECT a.owner_business_group,
+                       a.coop_business_group,
+                       a.coop_company_id,
+                       fc.company_code        AS coop_company_code,
+                       fc.company_full_name   AS coop_company_name,
+                       nvl(fc.unified_social_code,fc.tax_id_number) as tax_id_number,
+				       fc.business_represent_name,
+				       fc.business_represent_phone,
+				       fc.business_represent_mail
+                  FROM fnd_cooperative_partners a,
+                       fnd_companies_vl         fc
+                 WHERE a.owner_business_group = ${/session/@business_group}
+                       AND a.vendor_flag = 'Y'
+                       and fc.supply_flag = 'Y'
+                       AND a.coop_company_id = fc.company_id
+                 GROUP BY a.owner_business_group,
+                          a.coop_business_group,
+                          a.coop_company_id,
+                          fc.company_code,
+                          fc.company_full_name,
+                          nvl(fc.unified_social_code,fc.tax_id_number),
+					       fc.business_represent_name,
+					       fc.business_represent_phone,
+					       fc.business_represent_mail) cp,
+               fnd_bg_external_system_vl es
+         WHERE es.business_group = ${/session/@business_group}
+               ) opv
+ #WHERE_CLAUSE#
+  ORDER BY opv.coop_company_code
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <!-- <bm:parameters>
+                <bm:parameter name="import_id" dataType="java.lang.Long" input="true" output="true" outputPath="@import_id"/>
+            </bm:parameters> -->
+            <bm:update-sql><![CDATA[
+               BEGIN
+   fnd_coop_vendor_import_pkg.update_coop_vendor_import(p_import_id=>${@import_id},
+													    p_erp_type_code=>${@erp_type_code},
+													    p_vendor_code=>${@vendor_code},
+													    p_vendor_name=>${@vendor_name},
+													    p_payment_term_id => ${@payment_term_id},
+													    p_payment_term_code => ${@payment_term_code},
+													    p_payment_terms=>${@payment_terms},
+													    p_coop_company_id=>${@coop_company_id},
+													    p_es_id=>${@external_system_id},
+													    p_abandon_flag=>${@abandon_flag},
+													    p_business_group=>${/session/@business_group},
+													    p_user_id=>${/session/@user_id});
+				END;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+               BEGIN
+   fnd_coop_vendor_import_pkg.submit_coop_vendor_import_mzdp(p_import_id=>${@import_id},
+   														p_batch_id=>${/parameter/@batch_id},
+   														p_action  => ${@action},
+													    p_user_id=>${/session/@user_id});
+				END;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="coop_company_code" queryExpression="opv.coop_company_code like &apos;%&apos;||trim(${@coop_company_code})||&apos;%&apos;"/>
+        <bm:query-field name="coop_company_name" queryExpression="opv.coop_company_name like &apos;%&apos;||trim(${@coop_company_name})||&apos;%&apos;"/>
+        <bm:query-field name="erp_type_code" queryExpression="vi.erp_type_code like &apos;%&apos;||trim(${@erp_type_code})||&apos;%&apos;"/>
+        <bm:query-field name="external_system_id" queryExpression="opv.external_system_id = ${@external_system_id} "/>
+        <bm:query-field name="abandon_display_none" queryExpression="(${@abandon_display_none}=&apos;Y&apos; and nvl(vi.abandon_flag,&apos;N&apos;)=&apos;N&apos; or ${@abandon_display_none}=&apos;N&apos;)"/>
+        <bm:query-field name="system_type" queryExpression="opv.system_type = ${@system_type}"/>
+        <bm:query-field name="success_flag" queryExpression="((${@success_flag}=&apos;Y&apos; and vi.process_status=&apos;SUCCESSFUL&apos;) or (${@success_flag}=&apos;N&apos; and NVL(vi.process_status,-1)!=&apos;SUCCESSFUL&apos;))"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="vi.coop_es(+) = opv.coop_es"/>
+    </bm:data-filters>
+</bm:model>

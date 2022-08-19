@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+				SELECT *
+				  FROM (SELECT dense_rank() over(ORDER BY h.display_po_number, l.line_num) rows_num,
+				               h.pur_header_id,
+				               l.pur_line_id,
+				               h.display_po_number AS po_number,
+				               l.line_num AS po_line_num,
+				               h.vendor_id,
+				               h.vendor_code,
+				               h.vendor_name,
+				               ll.ship_to_organization_id,
+				               ll.ship_to_organization_code,
+				               (SELECT iov.description
+				                  FROM inv_organizations_vl iov
+				                 WHERE iov.inv_organization_id = ll.ship_to_organization_id) AS ship_to_organization_name,
+				               l.item_id,
+				               l.item_description,
+				               l.quantity,
+				               nvl((SELECT vl.uom_desc
+				                     FROM fnd_uom_codes_vl vl
+				                    WHERE l.unit_meas_lookup_code = vl.uom_code
+				                          AND vl.business_group = h.owner_business_group),
+				                   l.unit_meas_lookup_code) AS unit_meas_lookup_code,
+				               decode(h.type_lookup_code,
+				                      'BLANKET',
+				                      ll.price_override,
+				                      l.unit_price) AS unit_price,
+				               (SELECT tc.tax_type_rate FROM fnd_tax_type_codes tc WHERE tc.tax_type_id = l.tax_code_id) tax_rate,
+				               l.line_desc,
+				               ll.need_by_date,
+				               to_char(ll.need_by_date,
+				                       'yyyy-mm-dd') AS need_by_date_desc,
+				               ll.promised_date,
+				               to_char(ll.promised_date,
+				                       'yyyy-mm-dd') AS promised_date_desc,
+				               to_char(ll.request_arrival_date,
+				                       'YYYY-MM-DD') AS request_arrival_date_desc,
+				               h.vendor_site_id,
+				               h.vendor_site_code,
+				               h.vendor_site_name,
+				               (SELECT su.description FROM sys_user su WHERE su.user_id = h.created_by) AS creater_name,
+				               nvl(h.erp_creation_date,
+				                           h.creation_date) AS creation_date,
+				               to_char(nvl(h.erp_creation_date,
+				                           h.creation_date),
+				                       'yyyy-mm-dd') AS creation_date_desc,
+				               (SELECT to_char(MIN(rtl.trx_date),
+				                               'yyyy-mm-dd')
+				                  FROM pur_rcv_trx_lines rtl
+				                 WHERE rtl.from_po_header_id = h.pur_header_id
+				                       AND rtl.from_po_line_id = l.pur_line_id
+				                       AND rtl.erp_rcv_trx_type = '101') AS deliver_date,
+				               row_number() over(PARTITION BY h.pur_header_id, l.pur_line_id ORDER BY td.term_detail_id) row_num,
+				               es.equipment_schedule_id,
+				               td.term_detail_id,
+				               td.term_detail_name,
+				               
+				               es.payable_amount,
+				               es.actually_amount,
+				               es.currency_code,
+				               to_char(es.payment_date,
+				                       'yyyy-mm-dd') AS payment_date,
+				               es.invoice_number,
+				               es.invoice_amount,
+				               to_char(es.invoice_date,
+				                       'yyyy-mm-dd') AS invoice_date,
+				               nvl((SELECT SUM(nvl(es1.invoice_amount,
+				                               0))
+				                  FROM cux_fdm_equipment_schedule es1
+				                 WHERE es1.pur_header_id(+) = h.pur_header_id
+				                       AND es1.pur_line_id(+) = l.pur_line_id
+				                 GROUP BY h.pur_header_id,
+				                          l.pur_line_id),0) invoice_amount_sum,
+				               nvl(es.finish_flag,
+				                   'N') AS finish_flag,
+				               decode(es.finish_flag,
+				                      'Y',
+				                      '是',
+				                      '否') AS finish_flag_display,
+				               es.check_status,
+				               decode(es.check_status,
+				                      'PASS',
+				                      '通过',
+				                      'NOPASS',
+				                      '不通过') AS check_status_display,
+				               es.comments
+				          FROM pur_headers_all            h,
+				               pur_lines_all              l,
+				               pur_line_locations_all     ll,
+				               csh_payment_terms_detail   td,
+				               cux_fdm_equipment_schedule es
+				         WHERE h.pur_header_id = l.pur_header_id
+				               AND l.pur_line_id = ll.pur_line_id
+				               AND h.terms_id = td.payment_term_id
+				               AND td.term_detail_id = es.term_detail_id(+)
+				               AND es.pur_header_id(+) = h.pur_header_id
+				               AND es.pur_line_id(+) = l.pur_line_id
+				               AND ll.cancel_flag = 'N'
+				               AND h.response_status = 'SUCCESSED'
+				               AND h.type_lookup_code = 'Z03'
+				               AND h.srm_status IN ('RELEASED',
+				                                    'CONFIRMED')) v #WHERE_CLAUSE#
+				 ORDER BY po_number,
+				          po_line_num,
+				          term_detail_id
+
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="po_number" queryExpression="v.po_number like &apos;%&apos;||${@po_number}||&apos;%&apos;"/>
+        <bm:query-field name="vendor_code" queryExpression="v.vendor_code = ${@vendor_code}"/>
+        <bm:query-field name="ship_to_organization_code" queryExpression="v.ship_to_organization_code = ${@ship_to_organization_code}"/>
+        <bm:query-field name="item_description" queryExpression="v.item_description like &apos;%&apos;||${@item_description}||&apos;%&apos;"/>
+        <bm:query-field name="creation_date_from" queryExpression="to_date(v.creation_date_desc,&apos;yyyy-mm-dd&apos;) &gt;= to_date(${@creation_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="creation_date_to" queryExpression="to_date(v.creation_date_desc,&apos;yyyy-mm-dd&apos;) &lt;= to_date(${@creation_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="need_by_date_from" queryExpression="to_date(v.need_by_date_desc,&apos;yyyy-mm-dd&apos;) &gt;= to_date(${@need_by_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="need_by_date_to" queryExpression="to_date(v.need_by_date_desc,&apos;yyyy-mm-dd&apos;) &lt;= to_date(${@need_by_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="deliver_date_from" queryExpression="to_date(v.deliver_date,&apos;yyyy-mm-dd&apos;) &gt;= to_date(${@deliver_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="deliver_date_to" queryExpression="to_date(v.deliver_date,&apos;yyyy-mm-dd&apos;) &lt;= to_date(${@deliver_date_to},&apos;yyyy-mm-dd&apos;)"/>
+    </bm:query-fields>
+</bm:model>

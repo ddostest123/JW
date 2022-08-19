@@ -1,0 +1,407 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:c="aurora.application.action" xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure outputPath="/parameter">
+        <a:import-excel header_id="${/parameter/@header_id}" separator="," status_field="/parameter/@ImportSuccess" template_code="ERPINV_ITEM_IMPORT" user_id="${/session/@user_id}"/>
+        <a:model-query model="erppublic.get_fnd_interface_header_id" rootPath="erpinv_2010_header_id"/>
+        <a:model-query defaultWhereClause="template_code=&apos;Com_Items&apos;" model="erpsys.public.sys_attachment_template" rootPath="erpinv2010_attachment_template_root"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="erpinv_2010_item_import_save_data_link" url="${/request/@context_path}/modules/erpinv/ERPINV2010/inv_item_import_save.svc"/>
+        <a:link id="erpinv_item_import_ds_submit_link" model="erpinv.ERPINV2010.inv_item_import_submit" modelaction="batch_update"/>
+        <a:link id="erpinv_item_import_submit_link" url="${/request/@context_path}/modules/erpinv/ERPINV2010/inv_item_import_submit.svc"/>
+        <a:link id="erpinv2010_gld_initialize_error_log_link" url="${/request/@context_path}/modules/erpinv/ERPINV2010/inv_initialize_error_log.screen"/>
+        <a:link id="erpinv2010_initialize_link" url="${/request/@context_path}/modules/erpinv/ERPINV2010/inv_item_main.screen"/>
+        <a:link id="erpinv2010_item_import_check" model="erpinv.ERPINV2010.inv_item_import_check" modelaction="execute"/>
+        <a:link id="erpinv2010_atm_download_link" url="${/request/@context_path}/modules/erpinv/ERPINV2010/atm_download.svc"/>
+        <script><![CDATA[
+            function erpinv2010_saveClick() {
+                if (document.getElementById('erpinv2010_importFile').value) {
+                    var fileName = document.getElementById('erpinv2010_importFile').value;
+                    var fileType = fileName.substr(fileName.lastIndexOf("."));
+                    if (fileType != '.xls' && fileType != '.xlsx') {
+                        alert('${l:ERPINV.MESSAGE4}');
+                    } else {
+                        document.getElementById('erpinv2010_importForm').submit();
+                    }
+                }
+            }
+            
+            function inv2010_download_file(value, record, name) {
+                return value + '<img src="${/request/@context_path}/images/excel_16.png"><a href="javascript:erpinv2010_downloadFile();">'+'${l:ERPINV.TEMPLATE_FILE}'+'</a>' + '。';
+            }
+            
+            function erpinv2010_submit() {
+                var ds = $('erpinv_2010_item_import_result_ds');
+                var records = $('erpinv_2010_item_import_result_ds').getAll();
+                if (records.length == 0 || !ds.validate()) {
+                    return;
+                }
+                var param = {};
+                param['header_id'] = '${/parameter/@header_id}';
+                if ($('erpinv_2010_item_import_result_ds').isModified()) {
+                    Aurora.showMessage('${l:SRM.PROMPT}', '${l:ERPINV.MESSAGE5}');
+                } else {
+                    Aurora.Masker.mask(Ext.getBody(), '${l:ERPFND.SUBMITTING}');
+                    Aurora.request({
+                        url: $('erpinv_item_import_submit_link').getUrl(),
+                        para: param,
+                        success: function(res) {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            if (res.result.error_flag == 'Y') {
+                                inv2010_error();
+                            } else {
+                                Aurora.go($('erpinv2010_initialize_link').getUrl());
+                            }
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            /* function createEditor(record) {
+             var obj = {};
+             var gid = 'gld2040_upload_grid';
+             var dataindex = 'reference_display';
+             obj.html = ['<table cellpadding="0" cellspacing="1" border="0" class="cmp_table" style="border:none;background-color:#ccc">', '<tr>', '<td class="label" style="width:120px;">', '${l:INV.MESSAGE32}'+'(' + record.get('reference_name') + ')', '</td>', '<td dataindex="' + dataindex + '" recordid="' + record.id + '" atype="grid-cell">', '<div style="width: 150px;float:left" id="' + gid + '_' + dataindex + '_' + record.id + '" class="grid-cell cell-editor" ><span>' + (record.get(dataindex) || "") + '</span></div>', '</td>', '</tr>', '</table>'].join('');
+             obj.height = 52;
+             return obj;
+             } */
+            
+            /* function inv2010_upload_onCreateRow(grid, row, record, map, columns) {
+             var field = record.getField('reference_display');
+             var value = record.get('reference');
+             field.setReadOnly(false);
+             field.setRequired(true);
+             if (value != null && value != '') {
+             var obj = createEditor(record);
+             grid.createCompositeRow('account_code', map, obj, 6, record, columns);
+             } else {
+             field.setReadOnly(true);
+             field.setRequired(false);
+             }
+             } */
+            
+            function erpinv2010_error() {
+                new Aurora.Window({
+                    id: 'erpinv2010_error_log_window',
+                    url: $('erpinv2010_gld_initialize_error_log_link').getUrl() + '?header_id=' + '${/parameter/@header_id}',
+                    title: '${l:ERPINV.ERROR_MESSAGE}',
+                    height: 350,
+                    width: 540
+                });
+            }
+            
+            function erpinv2010_back() {
+                Aurora.go($('erpinv2010_initialize_link').getUrl());
+            }
+            
+            function erpinv2010_check() {
+                var url = $('erpinv2010_item_import_check').getUrl();
+                var para = {
+                    'header_id': '${/parameter/@header_id}'
+                };
+                if ($('erpinv_2010_item_import_result_ds').isModified()) {
+                    Aurora.showMessage('${l:SRM.PROMPT}', '${l:ERPINV.MESSAGE5}');
+                } else {
+                    if (!$('erpinv_2010_item_import_result_ds').validate()) {
+                        return;
+                    }
+                    Aurora.Masker.mask(Ext.getBody(), '${l:SRM.CHECKING}');
+                    Aurora.request({
+                        url: url,
+                        para: para,
+                        success: function(res) {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            if (res.result.error_flag == 'Y') {
+                                inv2010_error();
+                            } else {
+                                Aurora.showMessage('${l:SRM.PROMPT}', '${l:ERPINV.MESSAGE6}');
+                            }
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        }
+                    });
+                }
+            }
+            
+            function erpinv2010_import_item_code_validator(record, name, value) {
+                var item_code = record.get('item_code');
+                var regex = /^[\dA-Z\-]+$/;
+                if (!regex.test(item_code)) {
+                    return '${l:ERPINV.MESSAGE7}';
+                }
+                return true;
+            }
+            
+            //模版
+            
+            function erpinv2010_downloadFile() {
+                var template_code = "Com_Items";
+                var attachment_id = '${/model/erpinv2010_attachment_template_root/record/@attachment_id}';
+                if (Aurora.isEmpty(attachment_id)) {
+                    return;
+                }
+                var url = $('inv2010_atm_download_link').getUrl() + '?attachment_id=' + attachment_id + '&table_name=SYS_ATTACHMENT_TEMPLATE&table_pk_value=' + '${/model/erpinv2010_attachment_template_root/record/@template_id}';
+                window.location.href = url;
+            }
+            
+            function erpinv_2010_import_ef(record, name) {
+                if (record.isNew) {
+                    return 'erpinv_2010_import_numberf';
+                }
+                return '';
+            }
+            
+            //新增
+            function pmtGridcellclick(grid,row,name,record){
+                var metadata = record.getMeta();
+                var company_id = record.get('company_id');
+                var f1 = metadata.getField('item_type_desc');
+                var f2 = metadata.getField('primary_uom_desc');
+                var f3 = metadata.getField('trade_uom_desc');
+                var f4 = metadata.getField('default_inv_warehouse_desc');
+                var f5 = metadata.getField('ven_code');
+                var f6 = metadata.getField('cus_code');
+                var f7 = metadata.getField('ven_trade_uom_desc');
+                var f8 = metadata.getField('cus_trade_uom_desc');
+                    if(!record.get('company_id')||record.get('company_id')==''){
+                        f1.setLovService('');
+                        f2.setLovService('');                        
+                    }else{                  	
+                    	f1.setLovService('erpinv.ERPINV2010.inv_item_type');
+                    	f1.setLovPara('enabled_flag','Y');
+                    	f1.setLovPara('company_id',record.get('company_id'));
+                    	f2.setLovService('erpinv.public.inv_uom_codes_lov');
+                    	f2.setLovPara('enabled_flag','Y');
+                    	f2.setLovPara('company_id',record.get('company_id'));
+                    	f3.setLovService('erpinv.public.inv_uom_codes_lov');
+                    	f3.setLovPara('enabled_flag','Y');
+                    	f3.setLovPara('company_id',record.get('company_id'));
+                    	f4.setLovService('erpinv.ERPINV2010.inv_item_default_warehouse');
+                    	f4.setLovPara('enabled_flag','Y');
+                    	f4.setLovPara('company_id',record.get('company_id'));
+                    	f5.setLovService('erpinv.ERPINV2010.inv_item_venders');
+                    	f5.setLovPara('enabled_flag','Y');
+                    	f5.setLovPara('company_id',record.get('company_id'));
+                    	f6.setLovService('erpinv.ERPINV2010.inv_item_customers');
+                    	f6.setLovPara('enabled_flag','Y');
+                    	f6.setLovPara('company_id',record.get('company_id'));
+                    	f7.setLovService('erpinv.public.inv_uom_codes_lov');
+                    	f7.setLovPara('enabled_flag','Y');
+                    	f7.setLovPara('company_id',record.get('company_id'));
+                    	f8.setLovService('erpinv.public.inv_uom_codes_lov');
+                    	f8.setLovPara('enabled_flag','Y');
+                    	f8.setLovPara('company_id',record.get('company_id'));
+                    }
+                if (name == 'ven_currency_code') {
+                	$('erpinv_2010_currency_code_ds').setQueryParameter('company_id', company_id);
+                    $('erpinv_2010_currency_code_ds').query();
+                }else if(name == 'cus_currency_code') {
+                	$('erpinv_2010_currency_code_ds').setQueryParameter('company_id', company_id);
+                    $('erpinv_2010_currency_code_ds').query();
+                }
+            } 
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="erpinv_2010_currency_code_ds" autoQuery="true" fetchAll="true" model="erpinv.ERPINV2010.sys_currency"/>
+            <a:dataSet id="erpinv_2010_item_import_result_ds" autoPageSize="true" model="erpinv.ERPINV2010.inv_item_import" queryUrl="${/request/@context_path}/autocrud/erpinv.ERPINV2010.inv_item_import/query?session_id=${/parameter/@header_id}" selectable="true">
+                <a:fields>
+                    <a:field name="company_id"/>
+                    <a:field name="company_code" autoComplete="true" autoCompleteSize="1" lovGridHeight="300" lovHeight="430" lovService="erppublic.fnd_company_list" lovWidth="500" title="SRM.QUERY">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_full_name" to="company_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="line_number" required="true"/>
+                    <a:field name="session_id" defaultValue="${/parameter/@header_id}"/>
+                    <a:field name="inventory_flag" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                    <a:field name="lot_number_flag" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                    <a:field name="enabled_flag" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                    <a:field name="item_type_desc" autoComplete="true" autoCompleteField="item_type_code" autoCompleteSize="1" lovGridHeight="300" lovHeight="430" lovWidth="500" prompt="ERPINV.ITEM_TYPE_DESC" required="true" title="HAP_QUERY">
+                        <a:mapping>
+                            <a:map from="code_name" to="item_type_desc"/>
+                            <a:map from="item_type_code" to="item_type_code"/>
+                            <a:map from="item_type_id" to="item_type_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="item_type_id"/>
+                    <a:field name="primary_uom_desc" autoComplete="true" autoCompleteField="code_name" autoCompleteSize="1" lovGridHeight="300" lovHeight="430" lovWidth="500" prompt="ERPINV.PRIMARY_UOM_DESC" title="HAP_QUERY">
+                        <a:mapping>
+                            <a:map from="uom_description" to="primary_uom_desc"/>
+                            <a:map from="uom_code" to="primary_uom"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="trade_uom_desc" autoComplete="true" autoCompleteField="code_name" autoCompleteSize="1" lovGridHeight="300" lovHeight="430" lovWidth="500" prompt="ERPINV.TRADE_UOM_DESC" title="HAP_QUERY">
+                        <a:mapping>
+                            <a:map from="uom_description" to="trade_uom_desc"/>
+                            <a:map from="uom_code" to="trade_uom"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="default_inv_warehouse_desc" autoComplete="true" autoCompleteField="warehouse_code" lovGridHeight="300" lovHeight="430" lovWidth="500" prompt="ERPINV_ITEMS_BASICS.DEFAULT_INV_WAREHOUSE_ID" title="HAP_QUERY">
+                        <a:mapping>
+                            <a:map from="warehouse_name" to="default_inv_warehouse_desc"/>
+                            <a:map from="warehouse_id" to="default_inv_warehouse_id"/>
+                            <a:map from="warehouse_code" to="default_inv_warehouse"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="default_inv_warehouse"/>
+                    <a:field name="item_code" required="true"/>
+                    <a:field name="item_name" required="true"/>
+                    <a:field name="inv_basics_flag" checkedValue="Y" defaultValue="Y" required="true" uncheckedValue="N"/>
+                    <a:field name="inv_pur_flag" checkedValue="Y" defaultValue="N" required="true" uncheckedValue="N"/>
+                    <a:field name="ven_code" autoComplete="true" lovGridHeight="300" lovHeight="430" lovWidth="500" prompt="ERPINV2010.ITEM_VENDER_CODE" title="HAP_QUERY">
+                        <a:mapping>
+                            <a:map from="partner_code" to="ven_code"/>
+                            <a:map from="partner_name" to="ven_name"/>
+                            <a:map from="tax_rate" to="ven_tax_rate"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="ven_name" readOnly="true"/>
+                    <a:field name="ven_item_code"/>
+                    <a:field name="ven_item_name"/>
+                    <a:field name="ven_trade_uom_desc" autoComplete="true" autoCompleteField="code_name" autoCompleteSize="1" lovGridHeight="300" lovHeight="430" lovWidth="500" prompt="ERPINV.VEN_TRADE_UOM_DESC" title="HAP_QUERY">
+                        <a:mapping>
+                            <a:map from="uom_description" to="ven_trade_uom_desc"/>
+                            <a:map from="uom_code" to="trade_uom"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="ven_currency_code" displayField="currency_code" options="erpinv_2010_currency_code_ds" returnField="currency_code" valueField="currency_code"/>
+                    <a:field name="ven_tax_include_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="ven_tax_rate"/>
+                    <a:field name="ven_price"/>
+                    <a:field name="inv_sale_flag" checkedValue="Y" defaultValue="N" required="true" uncheckedValue="N"/>
+                    <a:field name="cus_code" autoComplete="true" autoCompleteField="code_name" autoCompleteSize="1" lovGridHeight="300" lovHeight="430" lovWidth="500" prompt="ERPINV2010.ITEM_CUSTOMER_CODE" title="HAP_QUERY">
+                        <a:mapping>
+                            <a:map from="partner_code" to="cus_code"/>
+                            <a:map from="partner_name" to="cus_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="cus_name"/>
+                    <a:field name="cus_item_code"/>
+                    <a:field name="cus_item_name"/>
+                    <a:field name="cus_trade_uom_desc" autoComplete="true" autoCompleteField="code_name" autoCompleteSize="1" lovGridHeight="300" lovHeight="430" lovWidth="500" prompt="ERPINV.CUS_TRADE_UOM_DESC" title="HAP_QUERY">
+                        <a:mapping>
+                            <a:map from="uom_description" to="cus_trade_uom_desc"/>
+                            <a:map from="uom_code" to="trade_uom"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="cus_currency_code" displayField="currency_code" options="erpinv_2010_currency_code_ds" returnField="currency_code" valueField="currency_code"/>
+                    <a:field name="cus_tax_include_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="cus_tax_rate"/>
+                    <a:field name="cus_price"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenTopToolbar>
+            <a:screenTitle/>
+            <a:toolbarButton className="item-rbtn-blue template" click="erpinv2010_downloadFile" style="margin-left:20px;" text="SRM.TEMPLATE" width="100"/>
+            <a:toolbarButton className="item-rbtn-blue import" click="erpinv2010_saveClick" text="SRM.IMPORT" width="100"/>
+            <a:toolbarButton className="item-rbtn-blue verify" click="erpinv2010_check" text="SRM.VERIFY" width="100"/>
+            <a:toolbarButton className="item-rbtn-blue submit" click="erpinv2010_submit" text="SRM.SUBMIT" width="100"/>
+            <a:toolbarButton className="item-rbtn-blue error" click="erpinv2010_error" text="SRM.ERROR" width="100"/>
+            <a:toolbarButton className="item-rbtn-blue back" click="erpinv2010_back" text="SRM.BACK" width="100"/>
+        </a:screenTopToolbar>
+        <a:hBox style="margin-top:10px">
+            <form name="upload" id="erpinv2010_importForm" action="${/request/@context_path}/modules/erpinv/ERPINV2010/inv_item_import_trans_upload.screen?header_id=${/model/erpinv_2010_header_id/record/@header_id}" enctype="multipart/form-data" method="post">
+                <label style="margin-left:10px;margin-top:10px;"><![CDATA[选择要引入的数据文件：]]></label>
+                <input name="CONTENT" id="erpinv2010_importFile" type="file"/>
+            </form>
+        </a:hBox>
+        <a:grid id="erpinv_2010_item_import_result" bindTarget="erpinv_2010_item_import_result_ds" height="380" marginHeight="99" marginWidth="40" navBar="true" style="border:none" width="730">
+            <a:toolBar>
+                <a:button type="add"/>
+                <a:button type="save"/>
+                <a:button type="delete"/>
+                <a:button type="excel"/>
+            </a:toolBar>
+            <a:columns>
+                <a:column name="line_number" editorFunction="erpinv_2010_import_ef" lock="true" prompt="ERPINV_ITEMS_BASICS_ITF.LINE_NUMBER" width="30"/>
+                <a:column name="company_code" editor="erpinv_2010_lov_com" lock="true" prompt="公司" width="100"/>
+                <a:column name="item_type_desc" editor="erpinv_2010_import_lov" lock="true" width="60"/>
+                <a:column name="item_code" align="center" editor="erpinv_2010_import_textField2" lock="true" width="60"/>
+                <a:column name="item_name" editor="erpinv_2010_import_textField2" lock="true" width="60"/>
+                <a:colunm name="inv_basics_flag" editor="erpinv_2010_import_enabled_flag_ckb" width="50"/>
+                <a:column name="item_specs" editor="erpinv_2010_import_textField2" width="50"/>
+                <a:column name="bar_code" editor="erpinv_2010_import_textField2" width="50"/>
+                <a:column name="primary_uom_desc" editor="erpinv_2010_import_lov" width="50"/>
+                <a:column name="trade_uom_desc" editor="erpinv_2010_import_lov" width="50"/>
+                <a:column name="inventory_flag" editor="erpinv_2010_import_enabled_flag_ckb" width="50"/>
+                <a:column name="default_inv_warehouse_desc" editor="erpinv_2010_import_lov" width="50"/>
+                <a:column name="enabled_flag" editor="erpinv_2010_import_enabled_flag_ckb" width="50"/>
+                <a:column name="inv_pur_flag" editor="erpinv_2010_import_enabled_flag_ckb" width="50"/>
+                <a:column name="ven_code" editor="erpinv_2010_import_lov" width="50"/>
+                <a:column name="ven_name" width="50"/>
+                <a:column name="ven_item_code" editor="erpinv_2010_import_textField2" width="50"/>
+                <a:column name="ven_item_name" editor="erpinv_2010_import_textField2" width="50"/>
+                <a:column name="ven_trade_uom_desc" editor="erpinv_2010_import_lov" width="50"/>
+                <a:column name="ven_currency_code" editor="erpinv_2010_currency_code_cmb1" width="50"/>
+                <a:column name="ven_tax_include_flag" editor="erpinv_2010_import_enabled_flag_ckb" width="50"/>
+                <a:column name="ven_tax_rate" editor="erpinv_2010_import_textField2" width="50"/>
+                <a:column name="ven_price" editor="erpinv_2010_import_textField2" width="50"/>
+                <a:column name="inv_sale_flag" editor="erpinv_2010_import_enabled_flag_ckb" width="50"/>
+                <a:column name="cus_code" editor="erpinv_2010_import_lov" width="50"/>
+                <a:column name="cus_name" width="50"/>
+                <a:column name="cus_item_code" editor="erpinv_2010_import_textField2" width="50"/>
+                <a:column name="cus_item_name" editor="erpinv_2010_import_textField2" width="50"/>
+                <a:column name="cus_trade_uom_desc" editor="erpinv_2010_import_lov" width="50"/>
+                <a:column name="cus_currency_code" editor="erpinv_2010_currency_code_cmb1" width="50"/>
+                <a:column name="cus_tax_include_flag" editor="erpinv_2010_import_enabled_flag_ckb" width="50"/>
+                <a:column name="cus_tax_rate" editor="erpinv_2010_import_textField2" width="50"/>
+                <a:column name="cus_price" editor="erpinv_2010_import_textField2" width="50"/>
+            </a:columns>
+            <a:editors>
+                <a:lov id="erpinv_2010_lov_com"/>
+                <a:textField id="erpinv_2010_import_textField2"/>
+                <a:checkBox id="erpinv_2010_import_enabled_flag_ckb"/>
+                <a:lov id="erpinv_2010_import_lov"/>
+                <a:comboBox id="erpinv_2010_currency_code_cmb1"/>
+                <a:numberField id="erpinv_2010_import_numberf" allowDecimals="false" allowNegative="false"/>
+            </a:editors>
+            <a:events>
+                <a:event name="cellclick" handler="pmtGridcellclick"/>
+            </a:events>
+        </a:grid>
+        <script><![CDATA[
+
+            function erpinv_2010_import_upload_init() {
+                var url = $('erpinv_2010_item_import_save_data_link').getUrl();
+                //alert('saving...');
+                Aurora.Masker.mask(Ext.getBody(), '${l:SRM.IMPORTING}');
+                Aurora.request({
+                    url: url,
+                    para: {
+                        'header_id': '${/parameter/@header_id}'
+                    },
+                    success: function(res) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        var error_flag = res.result.error_flag;
+                        if (error_flag == 'Y') {
+                            erpinv2010_error();
+                        }
+                        $('erpinv_2010_item_import_result_ds').query();
+                    },
+                        error: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                    scope: this
+                });
+            }
+            
+            erpinv_2010_import_upload_init();
+        ]]></script>
+    </a:view>
+</a:screen>

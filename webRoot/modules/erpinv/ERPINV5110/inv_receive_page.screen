@@ -1,0 +1,374 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Wanq  
+    $Date: 2012-10-17 下午4:27:46  
+    $Revision: 1.0  
+    $Purpose: 采购接收订单界面
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <!-- <a:model-query defaultWhereClause="enabled_flag=&apos;Y&apos;" fetchAll="true" model="erppur.ERPPUR5010.inv_warehouses_lov" rootPath="erpinv_5110_warehouses_root"/> -->
+        <a:model-execute model="db.erpinv_document_outsourcing_pkg.batch_del_outsourcing_tmp"/>
+        <!--  <a:model-query model="db.erpfnd_precision_pkg.get_quantity_precision" rootPath="erpinv_5110_get_quantity_accuracy"/>
+        <a:model-query model="db.erpfnd_precision_pkg.get_price_precision" rootPath="erpinv_5110_get_price_precision"/> -->
+    </a:init-procedure>
+    <a:view>
+        <!-- <script src="${/request/@context_path}/modules/inv/inv.js" type="text/javascript"/> -->
+        <a:link id="get_open_period_name_link" model="db.erpgld_periods_pkg.get_open_period_name" modelaction="query"/>
+        <a:link id="jump_outsourcing_link" url="${/request/@context_path}/modules/erpinv/ERPINV5110/inv_receive_outsourcing.screen"/>
+        <a:link id="erpinv5110_document_date_check" model="db.erpgld_periods_pkg.get_open_inv_period" modelaction="query"/>
+        <script><![CDATA[
+            var transaction_date_flag = true; //事务日期 的 期间是否存在。 状态值。
+            
+            function erpinv_5110_receive_page_init(select_record_arr) {
+                //debugger;
+                //debugger;
+                //alert('${/parameter/@company_id}');
+                //$('erpinv_5110_receive_header_ds').add();
+                var head_record = $('erpinv_5110_receive_header_ds').getAt(0);
+                var record_arr = select_record_arr;
+                var return_order_flag = record_arr[0].get('return_order_flag');
+                var outsourcing_flag = record_arr[0].get('outsourcing_flag');
+                head_record.set('return_order_flag', return_order_flag);
+                head_record.set('outsourcing_flag', outsourcing_flag);
+            
+                head_record.set('transaction_date', erppur_5010_getNowFormatDate());
+                head_record.set('transaction_num', '等待系统产生');
+                for (var i = 0;i < record_arr.length;i++) {
+                    var record = record_arr[i];
+                    var trade_uom = record.get('trade_uom');
+                    var primary_uom = record.get('primary_uom');
+                    record.set('primary_quantity_old', record.get('primary_quantity'));
+                    record.set('trade_quantity_old', record.get('trade_quantity'));
+                    if (trade_uom != primary_uom) {
+                        var this_promary_quantity = record.get('the_receive') * record.get('primary_quantity') / record.get('trade_quantity'); /* this_promary_quantity = Aurora.formatNumber(this_promary_quantity,${/model/erpinv_5110_receive_line_ds/record/@value}); */
+                        this_promary_quantity = Number(this_promary_quantity.toFixed('${/model/erpinv_5110_receive_line_ds/record/@value}'));
+                        if (this_promary_quantity < 0) {
+                            this_promary_quantity = -this_promary_quantity;
+                        }
+                        record.set('primary_quantity', this_promary_quantity);
+                    } else {
+                        record.set('primary_quantity', record.get('the_receive'));
+                    }
+                    record.set('warehouse_id', record.get('warehouse_id'));
+                    record.set('warehouse_code_name', record.get('warehouse_code_name'));
+                    
+                    record.set('trade_quantity', record.get('the_receive'));
+                    record.set('line_number', (i + 1) * 10);
+                    record.set('description', '');
+                    record.set('pur_line_id', record.get('pur_line_id'));
+                    $('erpinv_5110_receive_line_ds').add(record);
+                }
+                //inv_5110_check_date();
+            }
+            
+            function erpinv_5110_cancel() {
+                erpinv_5110_select_record_arr = '';
+                $('erpinv_5110_order_receive_window').close();
+            }
+            
+            function erpinv_5110_outsourcing_render(value, record, name) {
+                var outsourcing_flag = record.get('outsourcing_flag');
+                var return_order_flag = record.get('return_order_flag');
+                if (outsourcing_flag == 'Y' && return_order_flag == 'N') {
+                    var index = $('erpinv_5110_receive_line_ds').indexOf(record);
+                    var pur_line_id = record.get('pur_line_id');
+                    var vender_id = record.get('vender_id');
+                    var line_number = record.get('line_number');
+                    var company_id = record.get('company_id');
+                    var url = $('jump_outsourcing_link').getUrl() + '?index=' + index + '&pur_line_id=' + pur_line_id + '&vender_id=' + vender_id + '&line_number=' + line_number + '&company_id=' + company_id;
+                    return '<a href="javascript:erpinv_5110_open_outsouring_page(\'' + url + '\');">' + '委外核销' + '</a>';
+                }
+                return '';
+            }
+            
+            function erpinv_5110_open_outsouring_page(url) {
+                if ($('erpinv_5110_receive_header_ds').validate()) {
+                    new Aurora.Window({
+                        id: 'erpinv_5110_outsouring_window',
+                        url: url,
+                        title: '委外核销',
+                        fullScreen: true
+                    });
+                }
+            }
+            
+            function erpinv_5110_primary_quantity_editFun(record, name) {
+                if (record.isNew) {
+                    var trade_uom = record.get('trade_uom');
+                    var primary_uom = record.get('primary_uom');
+                    if (trade_uom == primary_uom) {
+                        return '';
+                    }
+                    return 'erpinv_5110_receive_numField';
+                } else {
+                    return '';
+                }
+            
+            }
+            //获取当前格式化日期
+            
+            function erppur_5010_getNowFormatDate() {
+                var day = new Date();
+                var CurrentDate = Aurora.formatDate(day);
+                return CurrentDate;
+            }
+            
+            function erpinv_5110_delete() {
+                var record_arr = $('erpinv_5110_receive_line_ds').getSelected();
+                var length = record_arr.length;
+                for (var i = 0;i < length;i++) {
+                    var record = record_arr[i];
+                    $('erpinv_5110_receive_line_ds').remove(record);
+                }
+            }
+            
+            function erpinv_5110_confirm() {
+                var header_ds = $('erpinv_5110_receive_header_ds');
+                var line_ds = $('erpinv_5110_receive_line_ds');
+                var records = line_ds.getAll();
+                if (header_ds.validateSelf()) {
+                    if (records.length == 0) {
+                        Aurora.showMessage('提示', '未维护行信息不得过账！', function() {
+                            $('erpinv_5310_sales_delivery_goods').close();
+                        });
+                    } else {
+                        if (line_ds.validate()) {
+                            Aurora.showConfirm('提示', '是否确认过账？', function() {
+                                header_ds.submit();
+                            });
+                        }
+                    }
+                }
+            
+            }
+            
+            function erpinv_5110_date_period_validator(record, name, value) {
+                var url = $('erpinv5110_document_date_check').getUrl();
+                var flag = true;
+                var companyId = '${/parameter/@company_id}';
+                Aurora.request({
+                    url: url,
+                    para: {
+                        date: value,
+                        company_id: companyId
+                    },
+                    success: function(res) {
+                        //debugger;
+                        var period_name = res.result.record.period_name;
+                        //alert(period_name);
+                        if (Aurora.isEmpty(period_name)) {
+                            //Aurora.showMessage('提示','事务日期所在库存期间未打开,请修改事务日期！');
+                            flag = '事务日期所在库存期间必须处于打开状态!';
+                        } else {
+                            record.set('period_name', period_name);
+                        }
+                    },
+                    scope: this,
+                    sync: true
+                });
+                return flag;
+            }
+            
+            
+            function erpinv_5110_receive_line_ds_update(dataSet, record, name, value, oldvalue) {
+                if (name == "trade_quantity") {
+                    if (record.get('trade_uom') == record.get('primary_uom')) {
+                        record.set('primary_quantity', record.get('trade_quantity'));
+                    } else {
+                        var this_promary_quantity = record.get('trade_quantity') * record.get('primary_quantity_old') / record.get('trade_quantity_old');
+                        //this_promary_quantity = Aurora.formatNumber(this_promary_quantity, ${/model/erpinv_5110_receive_line_ds/record/@value});
+                        this_promary_quantity = Aurora.formatNumber(this_promary_quantity, '${/model/erpinv_5110_receive_line_ds/record/@value}');
+                        record.set('primary_quantity', this_promary_quantity);
+                    }
+                    return;
+                }
+                if (name == "trade_uom") {
+                    if (record.get('trade_uom') == record.get('primary_uom')) {
+                        record.set('primary_quantity', record.get('trade_quantity'));
+                    }
+                    return;
+                }
+            }
+            
+            function erpinv_5110_receive_positive_number(value, record, name) {
+                if (value < 0) {
+                    value = -value;
+                }
+                if (name == "amount" || name == "price") {
+                    value = Aurora.formatNumber(value, '${/model/erpinv_5110_receive_line_ds/record/@value}');
+                }
+            
+                return value;
+            }
+            
+            function erpinv_5110_receive_header_ds_submitsuccess(dataSet, res) {
+                Aurora.Masker.unmask($('erpinv_5110_order_receive_window').wrap);
+                erpinv_5110_select_record_arr = '';
+                var transaction_number = res.result.record.transaction_number;
+                var receive_head_record = $('erpinv_5110_receive_header_ds').getAt(0);
+                receive_head_record.set('transaction_num', transaction_number);
+                // Aurora.showMessage("${l:PROMPT}","过账成功！事务号为："+transaction_number);
+                $('erpinv_5110_delete_btn').disable();
+                $('erpinv_5110_confirm_btn').disable();
+                var field = receive_head_record.getField('transaction_date');
+                field.setReadOnly(true);
+                field = receive_head_record.getField('description');
+                field.setReadOnly(true);
+                // $('erpinv_5110_order_receive_window').close();
+                Aurora.SideBar.enable = true;
+                Aurora.SideBar.show({
+                    msg: '过账成功!',
+                    duration: 6000
+                });
+            }
+            
+            function erpinv_5110_receive_line_trade_quantity_validato(record, name, value) {
+                if (value <= 0) {
+                    return "接收数量不能小于等于0";
+                }
+                return true;
+            }
+            
+            function erpinv_5110_receive_line_primary_quantity_validato(record, name, value) {
+                if (value <= 0) {
+                    return "主数量不能小于等于0";
+                }
+                return true;
+            }
+            
+            function erpinv_5110_trade_quantity_editFun(record, name) {
+                if (record.isNew) {
+                    return 'erpinv_5110_receive_numField';
+                } else {
+                    return '';
+                }
+            
+            }
+            
+            function erpinv_5110_warehouse_code_name_editFun(record, name) {
+                if (record.isNew) {
+                    return 'erpinv_5110_cbb';
+                } else {
+                    return '';
+                }
+            }
+            
+            function erpinv_5110_description_editFun(record, name) {
+                if (record.isNew) {
+                    return 'erpinv_5110_textField';
+                } else {
+                    return '';
+                }
+            }
+            
+            // function erpinv_5110_line_ds_indexchange(dataSet, record) {
+            // dataSet.select(record);
+            // }
+            
+            // function erpinv_5110_receive_line_ds_rowclick(grid, row, record) {
+            // $('erpinv_5110_receive_line_ds').select(record);
+            // var aa;
+            // }
+            
+            function erpinv5110_receive_head_submit_before() {
+                // $('erpinv_5110_confirm_btn').disable();
+                Aurora.Masker.mask($('erpinv_5110_order_receive_window').wrap, '正在保存...');
+            }
+            
+            function erpinv5110_head_submit_failed() {
+                // $('erpinv_5110_confirm_btn').enable();
+                Aurora.Masker.unmask($('erpinv_5110_order_receive_window').wrap);
+            }
+            
+            function erpinv_5110_receive_line_ds_cellclick(grid, row, name, record) {
+                if (name == 'warehouse_code_name') {
+                    $('erpinv_5110_warehouses_ds').setQueryParameter('enabled_flag', 'Y');
+                    $('erpinv_5110_warehouses_ds').setQueryParameter('company_id', '${/parameter/@company_id}');
+                    $('erpinv_5110_warehouses_ds').query();
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <!-- <a:dataSet id="erpinv_5110_warehouses_ds" >
+                <a:datas dataSource="erpinv_5110_warehouses_root"/>
+            </a:dataSet> -->
+            <a:dataSet id="erpinv_5110_warehouses_ds" model="erppur.ERPPUR5010.inv_warehouses_lov"/>
+            <a:dataSet id="open_period_ds" model="db.erpgld_periods_pkg.get_open_period_name"/>
+            <a:dataSet id="erpinv_5110_receive_header_ds" autoCreate="true" model="erpinv.ERPINV5110.inv_document_pur_trx_headers" submitUrl="${/request/@context_path}/modules/erpinv/ERPINV5110/inv_purchase_receivce_submit.svc">
+                <a:fields>
+                    <a:field name="pur_trx_header_id"/>
+                    <a:field name="transaction_num" readOnly="true" required="true"/>
+                    <a:field name="return_order_flag" checkedValue="Y" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="outsourcing_flag" checkedValue="Y" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="company_id" defaultValue="${/parameter/@company_id}"/>
+                    <a:field name="status"/>
+                    <a:field name="period_name" defaultValue="period_name"/>
+                    <a:field name="transaction_date" required="true" validator="erpinv_5110_date_period_validator"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="submitsuccess" handler="erpinv_5110_receive_header_ds_submitsuccess"/>
+                    <a:event name="submit" handler="erpinv5110_receive_head_submit_before"/>
+                    <a:event name="submitfailed" handler="erpinv5110_head_submit_failed"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="erpinv_5110_receive_line_ds" bindName="result_ds" bindTarget="erpinv_5110_receive_header_ds" selectable="true" selectionModel="multiple">
+                <a:fields>
+                    <a:field name="trade_quantity" required="true" validator="erpinv_5110_receive_line_trade_quantity_validato"/>
+                    <a:field name="primary_quantity" required="true" validator="erpinv_5110_receive_line_primary_quantity_validato"/>
+                    <a:field name="warehouse_id"/>
+                    <a:field name="warehouse_code_name" displayField="code_name" options="erpinv_5110_warehouses_ds" required="true" returnField="warehouse_id" valueField="warehouse_id"/>
+                    <a:field name="billing_status"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="erpinv_5110_receive_line_ds_update"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:defaultScreen>
+            <a:screenTopToolbar>
+                <a:toolbarButton id="erpinv_5110_confirm_btn" className="item-rbtn-blue post" click="erpinv_5110_confirm" text="过账" width="100"/>
+                <a:gridButton id="erpinv_5110_delete_btn" bind="erpinv_5110_receive_line_grid" type="clear" width="100"/>
+                <a:toolbarButton className="item-rbtn-blue back" click="erpinv_5110_cancel" text="返回" width="100"/>
+            </a:screenTopToolbar>
+            <a:hBox>
+                <a:textField name="transaction_num" bindTarget="erpinv_5110_receive_header_ds" prompt="事务号" typeCase="upper"/>
+                <a:checkBox name="return_order_flag" bindTarget="erpinv_5110_receive_header_ds" checkedValue="Y" prompt="退货订单" uncheckedValue="N" width="44"/>
+                <a:checkBox name="outsourcing_flag" bindTarget="erpinv_5110_receive_header_ds" checkedValue="Y" prompt="委外订单" uncheckedValue="N" width="43"/>
+                <a:datePicker name="transaction_date" bindTarget="erpinv_5110_receive_header_ds" prompt="事务日期"/>
+            </a:hBox>
+            <a:hBox>
+                <a:textField name="description" bindTarget="erpinv_5110_receive_header_ds" prompt="备注" width="632"/>
+            </a:hBox>
+            <a:grid id="erpinv_5110_receive_line_grid" bindTarget="erpinv_5110_receive_line_ds" height="320" marginHeight="175" marginWidth="50" submask="false" width="1030">
+                <a:columns>
+                    <a:column name="line_number" align="left" prompt="行号" width="50"/>
+                    <a:column name="item_code_name" align="left" prompt="物品" width="250"/>
+                    <a:column name="trade_quantity" align="right" editorFunction="erpinv_5110_trade_quantity_editFun" prompt="本次接收" renderer="erpinv_5110_receive_positive_number" width="70"/>
+                    <a:column name="trade_uom_name" align="left" prompt="交易单位" width="70"/>
+                    <a:column name="primary_quantity" align="right" editorFunction="erpinv_5110_primary_quantity_editFun" prompt="本次接收" renderer="erpinv_5110_receive_positive_number" width="70"/>
+                    <a:column name="primary_uom_name" align="left" prompt="主单位" width="70"/>
+                    <a:column name="warehouse_code_name" align="left" editorFunction="erpinv_5110_warehouse_code_name_editFun" prompt="收货库房" width="120"/>
+                    <a:column name="description" align="left" editorFunction="erpinv_5110_description_editFun" prompt="备注" width="200"/>
+                    <a:column name="outsourcing_flag" align="left" prompt="委外核销" renderer="erpinv_5110_outsourcing_render" width="70"/>
+                </a:columns>
+                <a:editors>
+                    <a:numberField id="erpinv_5110_receive_numField" decimalPrecision="2"/>
+                    <!-- decimalPrecision="${/model/erpinv_5110_receive_line_ds/record/@value}"/> -->
+                    <a:lov id="erpinv_5110_receive_lov"/>
+                    <a:textField id="erpinv_5110_textField"/>
+                    <a:comboBox id="erpinv_5110_cbb"/>
+                </a:editors>
+                <a:events>
+                    <a:event name="cellclick" handler="erpinv_5110_receive_line_ds_cellclick"/>
+                </a:events>
+            </a:grid>
+        </a:defaultScreen>
+        <script><![CDATA[
+        	Aurora.onReady(function(){
+        	   //debugger;
+               erpinv_5110_receive_page_init(erpinv_5110_select_record_arr);
+			});
+        ]]></script>
+    </a:view>
+</a:screen>

@@ -1,0 +1,242 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:service xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="a.api_code=&apos;PRODUCT_SELL_PRICE&apos;" fetchAll="true" model="api.PUBLIC.jd_sku_method" rootPath="mes"/>
+        <a:model-query model="api.PUBLIC.jd_product_detail_main" rootPath="jd_detail"/>
+        <s:server-script import="request.js"><![CDATA[
+            var record = $ctx.model.getChild('mes').getChildren()[0];
+            
+            //校验商品是否存在
+            var detail = $ctx.model.getChild('jd_detail').getChildren()[0];
+            //if (!detail) raise_app_error('Goods do not exist');
+            //校验商品库存
+            //1.接收传进来的参数
+            var sku = $ctx.get('/parameter/@sku'); //${@sku}569172 3917764
+            var num = $ctx.get('/parameter/@num'); //${@num}10
+            var province = $ctx.get('/parameter/@province'); //${@provinces}2
+            var city = $ctx.get('/parameter/@city'); //${@city}2833
+            var county = $ctx.get('/parameter/@county'); //${@county}51955
+            var town = $ctx.get('/parameter/@town'); //${@towns};0
+            var price = $ctx.get('/parameter/@price'); //${@price};0
+            //2.拼接库存请求链接 参数模板：param_json={"skuNums":[{"skuId": 569172, "num:101}],"area":"1_0_0_0"}
+            var v_str = record.url + record.app_key + record.access_token + record.timestamp;
+            var stock = '&format=json&v=1.0&method=biz.stock.fororder.batget';
+            var s_str = v_str + stock;
+            
+            var stock_pre_str = '&param_json={%22skuNums%22:[{%22';
+            var stock_mid_str = 'skuId%22:' + sku + ',%22num%22:' + num + '}],%22area%22:%22' + province + '_' + city + '_' + county + '_' + town;
+            var stock_last_str = '%22}';
+            var api_url = s_str + stock_pre_str + stock_mid_str + stock_last_str;
+            //println(api_url);
+            //库存请求
+            request({
+                url: api_url,
+                //para: para,
+                success: function(args) {
+                    if (args.biz_stock_fororder_batget_response.success == true) {
+                        var result = args.biz_stock_fororder_batget_response.result;
+                        $ctx.parameter.skuId = result[0].skuId;
+                        $ctx.parameter.areaId = result[0].areaId;
+                        $ctx.parameter.stockStateId = result[0].stockStateId;
+                        $ctx.parameter.stockStateDesc = result[0].stockStateDesc;
+                        $ctx.parameter.remainNum = result[0].remainNum;
+            
+                        var stockFlag = 'N';
+                        var stockNum = $ctx.parameter.stockStateId;
+                        if (stockNum == 33) {
+                            stockFlag = 'Y';
+                        }
+                        $ctx.parameter.stockFlag = stockFlag;
+            
+                        if ($ctx.parameter.stockStateDesc == '无货') {
+                            //println($ctx.parameter.stockStateDesc + $ctx.parameter.stockStateId);
+                            raise_app_error('该商品库存不足，请刷新后重新购买!');
+                        }
+                    } else {
+                        raise_app_error(args.biz_stock_fororder_batget_response.resultMessage);
+                    }
+                },
+                failure: function(args) {
+                    raise_app_error(args.error.message);
+                }
+            });
+            //校验商品价格
+            var record = $ctx.model.getChild('mes').getChildren()[0];
+            var d_str = v_str + record.method;
+            
+            var p_pre_str = '&param_json={%22sku%22:%22';
+            var p_last_str = '%22}';
+            var p_mid_str = sku;
+            var p_api_url = d_str + p_pre_str + p_mid_str + p_last_str;
+            //价格请求
+            request({
+                url: p_api_url,
+                //para: para,
+                success: function(args) { 
+                    if (args.biz_price_sellPrice_get_response.success == true) {
+                    var result = args.biz_price_sellPrice_get_response.result;
+                    $ctx.parameter.price = result[0].price;
+                    $ctx.parameter.jdPrice = result[0].jdPrice;
+            
+                    if (price != $ctx.parameter.price) {
+                        //println(price +'====='+ $ctx.parameter.price);
+                        raise_app_error('价格已变动，请刷新后重新购买!');
+                    }
+                    } else {
+                        raise_app_error(args.biz_price_sellPrice_get_response.resultMessage);
+                    }
+            
+                },
+                failure: function(args) {
+                    raise_app_error(args.error.message);
+                }
+            });
+            //调用加入购物车bm,插入主商品信息
+            var res_main = {
+                'business_group': 'BG000016',
+                'source_code': 'JD',
+                'sku': sku,
+                'quantity': num,
+                'descriptions': $ctx.parameter.descriptions,
+                'user_id': null,
+                'price': $ctx.parameter.price,
+                'gift_flag': 'N',
+                'main_sku': null,
+                'gift_start_time': '',
+                'gift_end_time': ''
+            };
+            $bm('GoingBuy.JD.jd_shopping_cart_detail').insert(res_main);
+            
+            
+            //请求赠品参数--&param_json={"skuId": 657300"province": 7,"city": 527,"county": 530,"Town": 0}
+            var m_gift = '&format=json&v=1.0&method=biz.product.skuGift.query';
+            var s_str_gift = v_str + m_gift;
+            var s_pre_str = '&param_json={%22skuId%22:';
+            var s_last_str = '}';
+            var s_mid_str = sku + ',%22province%22:' + province + ',%22city%22:' + city + ',%22county%22:' + county + ',%22Town%22:' + town;
+            var s_api_url = s_str_gift + s_pre_str + s_mid_str + s_last_str;
+            //请求商品详情参数  param_json={ "sku": 102194}
+            var t_pre_str = '&param_json={%22sku%22:';
+            var t_last_str = '}';
+            //println(s_api_url);
+            //赠品请求
+            request({
+                url: s_api_url,
+                //para: para,
+                success: function(args) { /*  將响应结果集转换为JSON类型集 */
+                    //var response = JSON.stringify(args);
+                  if (args.biz_product_skuGift_query_response.success == true) {  
+                    var result = args.biz_product_skuGift_query_response.result;
+                    if (result != null) {
+                        var skuGift = result.gifts;
+                        $ctx.parameter.maxNum = result.maxNum;
+                        $ctx.parameter.minNum = result.minNum;
+                        for (i = 0;i < skuGift.length;i++) {
+                            $ctx.parameter.gift_sku = skuGift[i].skuId;
+                            $ctx.parameter.gift_num = skuGift[i].num;
+                            //println($ctx.parameter.gift_num);
+                            var giftType = skuGift[i].giftType;
+                            if (giftType == 1) {
+                                $ctx.parameter.giftType = '附件';
+                            } else {
+                                $ctx.parameter.giftType = '赠品';
+                            }
+                            //将时间戳修改为日期格式
+            
+                            function add0(m) {
+                                return m < 10 ? '0' + m : m
+                            }
+            
+                            function format(timeStamp) {
+                                var time = new Date(timeStamp);
+                                var y = time.getFullYear();
+                                var m = time.getMonth() + 1;
+                                var d = time.getDate();
+                                var h = time.getHours();
+                                var mm = time.getMinutes();
+                                var s = time.getSeconds();
+                                return y + '-' + add0(m) + '-' + add0(d) + ' ' + add0(h) + ':' + add0(mm) + ':' + add0(s);
+                            }
+                            $ctx.parameter.promoStartTime = format(result.promoStartTime);
+                            $ctx.parameter.promoEndTime = format(result.promoEndTime);
+                            $ctx.parameter.start = result.promoStartTime;
+                            $ctx.parameter.end = result.promoEndTime;
+            
+                            //如果有赠品,并且赠品满足购买数量限制,则调用加入购物车bm,插入赠品信息
+                            var final_gift_num = 0;
+                            var gift_has_flag = true;
+                            var minNum = $ctx.parameter.minNum;
+                            var maxNum = $ctx.parameter.maxNum;
+                            var gift_num = $ctx.parameter.gift_num;
+                            //println($ctx.parameter.minNum + '====' + $ctx.parameter.maxNum  + '====' + $ctx.parameter.gift_num);
+                            if (minNum == 0) {
+                                if (maxNum == 0) {
+                                    final_gift_num = num * gift_num;
+                                } else if (maxNum != 0) {
+                                    if (num <= maxNum) {
+                                        final_gift_num = num * gift_num;
+                                    } else if (num > maxNum) {
+                                        final_gift_num = maxNum * gift_num;
+                                    }
+                                }
+                            } else if (minNum != 0) {
+                                if (maxNum == 0) {
+                                    if (num < minNum) {
+                                        gift_has_flag = false;
+                                    } else if (num >= minNum) {
+                                        final_gift_num = num * gift_num;
+                                    }
+                                } else if (maxNum != 0) {
+                                    if (num < minNum) {
+                                        gift_has_flag = false;
+                                    } else if ((num >= minNum) && (num <= maxNum)) {
+                                        final_gift_num = num * gift_num;
+                                    } else if (num > maxNum) {
+                                        final_gift_num = maxNum * gift_num;
+                                    }
+                                }
+                            }
+            
+                            var res_gift = {
+                                'business_group': 'BG000016',
+                                'source_code': 'JD',
+                                'sku': $ctx.parameter.gift_sku,
+                                //$ctx.parameter.sku,
+                                'quantity': final_gift_num,
+                                'descriptions': $ctx.parameter.descriptions,
+                                'user_id': null,
+                                'price': 0,
+                                'gift_flag': 'Y',
+                                'main_sku': sku,
+                                'gift_start_time': $ctx.parameter.promoStartTime,
+                                'gift_end_time': $ctx.parameter.promoEndTime
+                            };
+            
+                            var nowDate = new Date();
+                            var timestamp = (new Date()).valueOf();
+                            if ((timestamp >= ($ctx.parameter.start)) && (timestamp <= ($ctx.parameter.end))) {
+                                if (gift_has_flag) {
+                                    $bm('GoingBuy.JD.jd_shopping_cart_detail').insert(res_gift);
+                                }
+                            }
+            
+                        }
+            
+                    } else if (result == null) {
+                        $ctx.parameter.isNull = 'true';
+                    }
+                  }
+                  else{
+                       raise_app_error(args.biz_product_skuGift_query_response.resultMessage);
+                  }
+                },
+                failure: function(args) {
+                    raise_app_error(args.error.message);
+                }
+            });
+          
+        ]]></s:server-script>
+        <p:echo/>
+    </a:init-procedure>
+    <a:service-output output="/parameter/"/>
+</a:service>

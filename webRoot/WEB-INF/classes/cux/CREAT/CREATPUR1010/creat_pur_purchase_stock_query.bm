@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: shenjun  
+    $Date: 2017-12-27 下午04:38:31  
+    $Revision: 1.0  
+    $Purpose: 科锐物流成本报表
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="inv_organization_id,agent_id,vendor_id">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT *
+				  FROM (SELECT COUNT(*) AS order_count,
+						       (SELECT COUNT(*)
+						          FROM pur_headers_all ph,
+						               pur_lines_all   pl
+						         WHERE ph.pur_header_id = pl.pur_header_id
+						               AND h.inv_organization_id = ph.inv_organization_id
+						               AND ph.agent_id = h.agent_id
+						               AND ph.vendor_id = h.vendor_id
+						               AND ph.last_version = 'Y'
+						               AND ph.cancel_flag <> 'Y'
+						               AND ph.srm_status <> 'DELETED'
+						               AND ph.owner_business_group = ${/session/@business_group}
+						               AND (ph.release_rule_code = 'ALL' OR ph.release_rule_code = 'INTERNAL' OR
+						               ph.release_rule_code = 'INVALID' OR ph.release_rule_code IS NULL)
+						               AND EXISTS (SELECT 1
+						                  FROM pur_line_locations_all pll
+						                 WHERE pll.pur_line_id = pl.pur_line_id
+						                       AND (pll.cancel_flag = 'N' OR pl.cancel_flag IS NULL))
+								       AND ph.erp_creation_date >= to_date(${@creation_date_from},
+								                                      'yyyy-mm-dd')
+								       AND ph.erp_creation_date < to_date(${@creation_date_to},
+								                                      'yyyy-mm-dd') + 1 ) AS order_line_count,
+					(SELECT SUM(nvl(amount,
+					               0))
+					  FROM (SELECT decode(pl.is_returned_flag,
+					                      'Y',
+					                      decode(ph.type_lookup_code,
+					                             'BLANKET',
+					                             (pll.quantity * pl.unit_price),
+					                             decode(pl.quantity,
+					                                    0,
+					                                    (pll.quantity * pl.unit_price),
+					                                    NULL,
+					                                    (pll.quantity * pl.unit_price),
+					                                    nvl(trunc((pll.quantity / pl.quantity) * pl.no_tax_amount,
+					                                              2),
+					                                        (pll.quantity * pl.unit_price)))) * -1,
+					                      decode(ph.type_lookup_code,
+					                             'BLANKET',
+					                             (pll.quantity * pl.unit_price),
+					                             decode(pl.quantity,
+					                                    0,
+					                                    (pll.quantity * pl.unit_price),
+					                                    NULL,
+					                                    (pll.quantity * pl.unit_price),
+					                                    nvl(trunc((pll.quantity / pl.quantity) * pl.no_tax_amount,
+					                                              2),
+					                                        (pll.quantity * pl.unit_price))))) AS amount
+						          FROM pur_headers_all        ph,
+						               pur_lines_all          pl,
+						               pur_line_locations_all pll
+						         WHERE ph.pur_header_id = pl.pur_header_id
+						               AND pl.pur_line_id = pll.pur_line_id
+						               AND h.inv_organization_id = ph.inv_organization_id
+						               AND ph.agent_id = h.agent_id
+						               AND ph.vendor_id = h.vendor_id
+						               AND ph.last_version = 'Y'
+						               AND ph.cancel_flag <> 'Y'
+						               AND ph.srm_status <> 'DELETED'
+						               AND ph.owner_business_group = ${/session/@business_group}
+						               AND (ph.release_rule_code = 'ALL' OR ph.release_rule_code = 'INTERNAL' OR
+						               ph.release_rule_code = 'INVALID' OR ph.release_rule_code IS NULL)
+						               --AND NVL(pl.is_returned_flag,'N') = 'N'
+						               AND (pll.cancel_flag = 'N' OR pl.cancel_flag IS NULL)
+								       AND ph.erp_creation_date >= to_date(${@creation_date_from},
+								                                      'yyyy-mm-dd')
+								       AND ph.erp_creation_date < to_date(${@creation_date_to},
+								                                      'yyyy-mm-dd') + 1 )) AS order_sum_amount,
+						       h.inv_organization_id,
+						       h.inv_organization_name,
+						       h.agent_id,
+						       h.agent_name,
+						       h.vendor_id,
+						       h.vendor_code,
+						       h.vendor_name
+						  FROM pur_headers_all h
+						 WHERE h.last_version = 'Y'
+						       AND h.cancel_flag <> 'Y'
+						       AND h.srm_status <> 'DELETED'
+						       AND h.owner_business_group = ${/session/@business_group}
+						       AND h.erp_creation_date >= to_date(${@creation_date_from},
+						                                      'yyyy-mm-dd')
+						       AND h.erp_creation_date < to_date(${@creation_date_to},
+						                                      'yyyy-mm-dd') + 1
+						       AND (h.release_rule_code = 'ALL' OR h.release_rule_code = 'INTERNAL' OR h.release_rule_code = 'INVALID' OR
+						       h.release_rule_code IS NULL)
+						 GROUP BY h.inv_organization_id,
+						          h.inv_organization_name,
+						          h.agent_id,
+						          h.agent_name,
+						          h.vendor_id,
+						          h.vendor_code,
+						          h.vendor_name) v
+          		#AUTHORIY_FROM#
+          		#WHERE_CLAUSE# 
+          		#AUTHORIY_WHERE# 
+          		#ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="inv_organization_id" queryExpression="v.inv_organization_id = ${@inv_organization_id}"/>
+        <bm:query-field name="vendor_id" queryExpression="v.vendor_id = ${@vendor_id}"/>
+        <bm:query-field name="agent_id" queryExpression="v.agent_id = ${@agent_id}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="1=1"/>
+    </bm:data-filters>
+    <authority foundation_code="PUR_PO">
+        <authority-segment source_alias="v" source_name="agent_id" type="PUR_BUYER"/>
+        <authority-segment source_alias="v" source_name="inv_organization_id" type="INV_ORGANIZATION"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+        	var cx = Packages.aurora.javascript.Context.getCurrentContext();
+      		Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+          	Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

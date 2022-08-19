@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Jayce  
+    $Date: 2014-10-27 上午11:25:58  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:service xmlns:s="aurora.plugin.script" xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+    <a:init-procedure>
+        <s:server-script><![CDATA[
+            var sms_log_bm = '${/parameter/@sms_log_bm}';
+            var sms_list_bm = '${/parameter/@sms_list_bm}';
+            var host = '211.136.163.68';
+            var port = 9981;
+            var accountId = '10657109030540';
+            var password = 'HAND1357hand';
+            var serviceId = '10657109030540';
+            var dsf = $instance("aurora.database.service.IDatabaseServiceFactory");
+            
+            importPackage(Packages.com.jianzhou.sdk);
+            
+            function send(mobile, content, send_id) {
+                var sm = new BusinessService();
+                sm.setWebService("http://www.jianzhou.sh.cn/JianzhouSMSWSServer/services/BusinessService");
+                var validate = sm.validateUser('jzyy400', '123456');
+                if (validate == 1) {
+                    //建立与数据库的连接
+                    var sqlContext = dsf.createContextWithConnection();
+                    //发送短信(只有在send_id大于0的时候发送短信)
+                    if (send_id > 0) {
+                        var send_return = sm.sendBatchMessage("jzyy400", "123456", mobile, content + "【甘特中国】");
+                        var send_status;
+                        if (send_return > 0) {
+                            //发送成功,将后台标志置为Y
+                            send_status = 'DELIVRD';
+                        } else {
+                            //发送不成功，判断是否欠费，还是其他原因
+                            send_status = send_return;
+                        }
+                        //接收到发送短信的反馈后改写后台代发短信的状态，写日志
+                        try {
+                            var context = sqlContext.getObjectContext();
+                            if (context == null) context = new CompositeMap().getData();
+                            var service = dsf.getModelService('sms.sys_sms_logs', context);
+                            var para = new CompositeMap();
+                            para.status = String(send_status);
+                            para.log_text = String(mobile + ':' + send_return);
+                            para.sms_send_id = send_id;
+                            println(para.status);
+                            println(para.log_text);
+                            println(para.sms_send_id);
+                            service.execute(para.getData());
+                        } catch (e) {
+                            println(e.message)
+                        } finally {}
+                    }
+                    if (sqlContext != null) sqlContext.freeConnection();
+                } else {
+                    println('身份验证失败');
+                }
+            }
+            var send_list_bm = $bm('sms.sys_sms_send_list');
+            //将发送列表里状态为N的发送
+            var send_list = send_list_bm.queryAsMap({
+                'send_flag': 'N'
+            });
+            var array = send_list.getChildren();
+            for (var i = 0;i < array.length;i++) {
+                var item = array[i];
+                send(item.sms_send_to, item.sms_note, item.sms_send_id);
+            }
+        ]]></s:server-script>
+    </a:init-procedure>
+    <a:service-output output="/parameter"/>
+</a:service>

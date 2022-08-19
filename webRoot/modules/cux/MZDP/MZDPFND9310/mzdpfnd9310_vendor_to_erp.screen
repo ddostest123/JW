@@ -1,0 +1,355 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wangcheng6595
+    $Date: 2015-10-20
+    $Revision: 1.0  
+    $Purpose: 供应商导入ERP
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:view>
+        <a:link id="mzdpfnd9310_cooperativeVendorClass_link" url="${/request/@context_path}/modules/fnd/FND9310/fnd_cooperative_vendor_class.screen"/>
+        <a:link id="mzdpfnd9310_importInfoSapSubmit_link" url="${/request/@context_path}/modules/cux/MZDP/MZDPFND9310/mzdp9310_vendor_to_erp_submit.svc"/>
+        <a:link id="mzdpfnd9310_assign_bu_quick_add_link" url="${/request/@context_path}/modules/cux/MZDP/MZDPFND9310/mzdpfnd9310_assign_bu_quick_add.screen"/>
+        <script><![CDATA[
+            function fmzdpnd9310_vendor_to_erp_ResultQueryFun() {
+                $('mzdpfnd9310_vendor_to_erp_result_ds').query();
+            }
+            
+            function fnd9310_vendor_to_erp_success_QueryFun(){
+                $('mzdpfnd9310_vendor_to_erp_success_result_ds').query();
+            }
+            
+            function mzdpfnd9310_vendor_to_sap_success_GridRenderer(value, record, name) {
+                if (name == 'vendor_class') {
+                    return '<a href="javascript:mzdpfnd9310_cooperativeVendorClass(' + record.get('coop_company_id') + ')">供应商分类</a>';
+                } else if (name == 'coop_company_id') {
+                 	return '<a href="javascript:mzdpfnd9310_assign_vendor_quick_add(' + record.get('coop_company_id') + ',' + record.get('import_id') + ')">业务实体</a>';   
+                }
+            }
+            
+            function mzdpfnd9310_cooperativeVendorClass(coop_company_id) {
+                new Aurora.Window({
+                    id: 'fnd9310_cooperativeVendorClass_window',
+                    url: $('mzdpfnd9310_cooperativeVendorClass_link').getUrl() + '?coop_company_id=' + coop_company_id,
+                    title: '供应商分类',
+                    height: 300,
+                    width: 520
+                });
+            }
+            
+            
+            function mzdpfnd9310_vendor_to_erp_GridEditorFunction(record, name) {
+                var process_status = record.get('process_status');
+                if (process_status == 'SUCCESSFUL' || process_status == 'WAITING') {
+                    return '';
+                } else {
+                    if (name == 'abandon_flag') {
+                        return 'mzdpfnd9310_vendor_to_erp_grid_cb';
+                    } else {
+                        return 'mzdpfnd9310_vendor_to_erp_grid_tf';
+                    }
+                }
+            }
+            
+            
+            //提交到ERP
+            function mzdpfnd9310_vendor_to_erp_SubmitFunction() {
+                var records = $('mzdpfnd9310_vendor_to_erp_result_ds').getSelected();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PUR5611.AT_LEAST_CHOICE_ONE}');
+                    return;
+                }
+            
+                Aurora.showConfirm("${l:PROMPT}", "确认导入勾选的供应商", function() {
+                    var datas = [];
+                    for (var i = 0;i < records.length;i++) {
+                        if (records[i].get('process_status') == 'WAITING') {
+                            Aurora.showMessage('${l:PROMPT}', '导入中，请等待');
+                            return;
+                        } else if (records[i].get('process_status') == 'SUCCESSFUL') {
+                            Aurora.showMessage('${l:PROMPT}', '已经导入成功的供应商无法再次导入');
+                            return;
+                        } else if (records[i].get('abandon_flag') == 'Y') {
+                            Aurora.showMessage('${l:PROMPT}', '已经勾选放弃导入的供应商无法导入');
+                            return;
+                        } else if (records[i].dirty) {
+                            Aurora.showMessage('${l:PROMPT}', '请先保存数据');
+                            return;
+                        } else if (Aurora.isEmpty(records[i].get('vendor_name'))) {
+                            records[i].getField('vendor_name').setRequired(true);
+                            Aurora.showMessage('${l:PROMPT}', '数据不完整，无法提交，请先维护数据');
+                            return;
+                        } else {
+                            var data = {
+                                'import_id': records[i].get('import_id'),
+                                'external_system_id': records[i].get('external_system_id'),
+                        		'action':'IMPORT'
+                            };
+                            datas.push(data);
+                            records[i].set('process_status', 'WAITING');
+                            records[i].set('process_status_display', '${l:FND_COOP_VENDOR_IMPORT_STATUS.WAITING}');
+                            records[i].set('process_message', '');
+                        }
+                    }
+            		
+                    Aurora.Masker.mask(Ext.getBody(), '${l:PROMPT.SUBMITING}');
+            
+                    Aurora.request({
+                        url: $('mzdpfnd9310_importInfoSapSubmit_link').getUrl(),
+                        para: datas,
+                        success: function(res) {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            $('mzdpfnd9310_vendor_to_erp_result_ds').query();
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            $('mzdpfnd9310_vendor_to_erp_result_ds').query();
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            $('mzdpfnd9310_vendor_to_erp_result_ds').query();
+                        },
+                        scope: this
+                    });
+                });
+            }
+            
+           //供应商快速添加
+           function mzdpfnd9310_assign_vendor_quick_add(coop_company_id,import_id){
+			    if(coop_company_id){
+			    	new Aurora.Window({
+	                    id: 'mzdpfnd9310_assign_bu_quick_add_win',
+	                    title: '业务实体添加',
+	                    url: $('mzdpfnd9310_assign_bu_quick_add_link').getUrl() + '?vendor_company_id=' + coop_company_id + '&import_id=' + import_id,
+	                    width: 1200,
+	                    height: 550
+                	});
+			    }
+			}
+			
+			//重新导入
+			function mzdpfnd9310_vendor_to_erp_reimport(){
+			 	var records = $('mzdpfnd9310_vendor_to_erp_success_result_ds').getSelected();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PUR5611.AT_LEAST_CHOICE_ONE}');
+                    return;
+                }
+            
+                Aurora.showConfirm("${l:PROMPT}", "确认扩展导入勾选的供应商", function() {
+                    var datas = [];
+                    for (var i = 0;i < records.length;i++) {
+                        var data = {
+                            'import_id': records[i].get('import_id'),
+                            'external_system_id': records[i].get('external_system_id'),
+                        	'action':'REIMPORT'
+                        };
+                        datas.push(data);
+                        records[i].set('process_status', 'WAITING');
+                        records[i].set('process_status_display', '${l:FND_COOP_VENDOR_IMPORT_STATUS.WAITING}');
+                        records[i].set('process_message', '');
+                    }
+            		
+                    Aurora.Masker.mask(Ext.getBody(), '${l:PROMPT.SUBMITING}');
+            
+                    Aurora.request({
+                        url: $('mzdpfnd9310_importInfoSapSubmit_link').getUrl(),
+                        para: datas,
+                        success: function(res) {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            $('mzdpfnd9310_vendor_to_erp_success_result_ds').query();
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            $('mzdpfnd9310_vendor_to_erp_success_result_ds').query();
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            $('mzdpfnd9310_vendor_to_erp_success_result_ds').query();
+                        },
+                        scope: this
+                    });
+                });
+			}
+			
+			//扩充导入
+			function mzdpfnd9310_vendor_to_erp_expand_import(){
+			    var records = $('mzdpfnd9310_vendor_to_erp_success_result_ds').getSelected();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PUR5611.AT_LEAST_CHOICE_ONE}');
+                    return;
+                }
+			    
+			    var datas = [];
+                for (var i = 0;i < records.length;i++) {
+                    var data = {
+                        'import_id': records[i].get('import_id'),
+                        'external_system_id': records[i].get('external_system_id'),
+                        'action':'EXPAND_IMPORT'
+                    };
+                    datas.push(data);
+                    records[i].set('process_status', 'WAITING');
+                    records[i].set('process_status_display', '${l:FND_COOP_VENDOR_IMPORT_STATUS.WAITING}');
+                    records[i].set('process_message', '');
+                }
+        		
+                Aurora.Masker.mask(Ext.getBody(), '${l:PROMPT.SUBMITING}');
+        
+                Aurora.request({
+                    url: $('mzdpfnd9310_importInfoSapSubmit_link').getUrl(),
+                    para: datas,
+                    success: function(res) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        $('mzdpfnd9310_vendor_to_erp_success_result_ds').query();
+                    },
+                    failure: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        $('mzdpfnd9310_vendor_to_erp_success_result_ds').query();
+                    },
+                    error: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        $('mzdpfnd9310_vendor_to_erp_success_result_ds').query();
+                    },
+                    scope: this
+                });
+			}
+			
+			//ds加载成功处理
+			function fmzdpnd9310_vendor_to_erp_load_handler(ds){
+			    var submit_flag = 'N';
+			 	var records = ds.getAll();
+			 	for(var i = 0;i<records.length;i++){
+			 	    if(!records[i].get('import_id')){
+			 	     	records[i].set('_status','update'); 
+			 	     	submit_flag = 'Y';  
+			 	    }
+			 	} 
+			 	if(submit_flag == 'Y'){
+				 	$('mzdpfnd9310_vendor_to_erp_result_ds').submit();
+			 	}  
+			}
+            
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="fnd9310_coop_vendor_import_status" lookupCode="FND_COOP_VENDOR_IMPORT_STATUS"/>
+            <!-- SAP 待导入 -->
+            <a:dataSet id="mzdpfnd9310_vendor_to_erp_query_ds">
+                <a:fields>
+                    <a:field name="abandon_display_none" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="mzdpfnd9310_vendor_to_erp_result_ds" autoCount="true" autoPageSize="true" model="cux.MZDP.MZDPFND9310.fnd_cooperative_vendor_to_erp" queryDataSet="mzdpfnd9310_vendor_to_erp_query_ds" queryUrl="${/request/@context_path}/autocrud/cux.MZDP.MZDPFND9310.fnd_cooperative_vendor_to_erp/query?success_flag=N" selectable="true">
+                <a:fields>
+                    <a:field name="abandon_flag" checkedValue="Y" defaultValue="Y" unCheckedValue="N"/>
+                    <a:field name="process_status_display" displayField="code_value_name" options="fnd9310_coop_vendor_import_status" returnField="process_status" valueField="code_value"/>
+                    <a:field name="vendor_name"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="submitsuccess" handler="fmzdpnd9310_vendor_to_erp_ResultQueryFun"/>
+                    <a:event name="load" handler="fmzdpnd9310_vendor_to_erp_load_handler"/>
+                </a:events>
+            </a:dataSet>
+            <!-- SAP 导入成功 -->
+            <a:dataSet id="mzdpfnd9310_vendor_to_erp_success_query_ds">
+                <a:fields>
+                    <a:field name="abandon_display_none" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="mzdpfnd9310_vendor_to_erp_success_result_ds" autoCount="true" autoPageSize="true" model="cux.MZDP.MZDPFND9310.fnd_cooperative_vendor_to_erp" queryDataSet="mzdpfnd9310_vendor_to_erp_success_query_ds" queryUrl="${/request/@context_path}/autocrud/cux.MZDP.MZDPFND9310.fnd_cooperative_vendor_to_erp/query?success_flag=Y" selectable="true">
+                <a:fields>
+                    <a:field name="abandon_flag" checkedValue="Y" defaultValue="Y" unCheckedValue="N"/>
+                    <a:field name="process_status_display" displayField="code_value_name" options="fnd9310_coop_vendor_import_status" returnField="process_status" valueField="code_value"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:tabPanel marginHeight="90" marginWidth="60">
+                <a:tabs>
+                    <a:tab prompt="待导入" width="150">
+                        <a:screenTopToolbar>
+                            <a:gridButton bind="mzdpfnd9310_vendor_to_erp_grid" type="save" width="100"/>
+                            <a:toolbarButton click="mzdpfnd9310_vendor_to_erp_SubmitFunction" text="提交" width="100"/>
+                        </a:screenTopToolbar>
+                        <a:queryForm bindTarget="mzdpfnd9310_vendor_to_erp_query_ds" resultTarget="mzdpfnd9310_vendor_to_erp_result_ds" style="width:100%;border:none">
+                            <a:formToolBar>
+                                <a:hBox labelWidth="120">
+                                    <a:textField name="coop_company_code" prompt="合作企业代码">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="fmzdpnd9310_vendor_to_erp_ResultQueryFun"/>
+                                        </a:events>
+                                    </a:textField>
+                                    <a:textField name="coop_company_name" prompt="合作企业名称">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="fmzdpnd9310_vendor_to_erp_ResultQueryFun"/>
+                                        </a:events>
+                                    </a:textField>
+                                </a:hBox>
+                            </a:formToolBar>
+                        </a:queryForm>
+                        <a:grid id="mzdpfnd9310_vendor_to_erp_grid" autoAppend="false" bindTarget="mzdpfnd9310_vendor_to_erp_result_ds" marginHeight="220" marginWidth="80" navBar="true" width="1250">
+                            <a:columns>
+                                <a:column name="process_status_display" align="center" forExport="false" prompt="导入状态" width="70"/>
+                                <a:column name="process_message" align="center" forExport="false" prompt="错误信息" width="90"/>
+                                <a:column name="vendor_code" forExport="false" prompt="供应商编码" width="100"/>
+                                <a:column name="vendor_name" editorFunction="mzdpfnd9310_vendor_to_erp_GridEditorFunction" prompt="供应商名称" width="120"/>
+                                <a:column name="coop_company_code" prompt="合作企业代码" width="90"/>
+                                <a:column name="coop_company_name" prompt="合作企业名称" width="120"/>
+                                <!-- 
+                                <a:column name="external_system_code" forExport="true" hidden="true" prompt="外部系统编码" width="120"/>
+                                <a:column name="external_system_name" prompt="外部系统" width="120"/> -->
+                                <a:column name="vendor_class" align="center" forExport="false" prompt="供应商分类" renderer="mzdpfnd9310_vendor_to_sap_success_GridRenderer" width="80"/>
+                                <a:column name="coop_company_id" align="center" forExport="false" prompt="FND_BUSINESS_UNITS.BUSINESS_UNIT" renderer="mzdpfnd9310_vendor_to_sap_success_GridRenderer" width="80"/>
+                                <!-- <a:column name="abandon_flag" editorFunction="mzdpfnd9310_vendor_to_erp_GridEditorFunction" forExport="false" prompt="放弃导入" width="60"/> -->
+                                <a:column name="tax_id_number" prompt="PUR5660.TAX_REGISTRATION_NO" width="130"/>
+                                <a:column name="business_represent_name" prompt="联系人" width="80"/>
+                                <a:column name="business_represent_phone" prompt="电话" width="120"/>
+                                <a:column name="business_represent_mail" prompt="邮箱" width="120"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:textField id="mzdpfnd9310_vendor_to_erp_grid_tf"/>
+                                <a:checkBox id="mzdpfnd9310_vendor_to_erp_grid_cb"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab prompt="导入成功" width="100">
+                        <a:screenTopToolbar>
+                            <a:toolbarButton click="mzdpfnd9310_vendor_to_erp_reimport" text="FND_COOP_VENDOR_EXPORT.REIMPORT" width="100"/>
+                            <!-- <a:toolbarButton click="mzdpfnd9310_vendor_to_erp_expand_import" text="FND_COOP_VENDOR_EXPORT.EXPAND_IMPORT" width="100"/> -->
+                        </a:screenTopToolbar>
+                        <a:queryForm bindTarget="mzdpfnd9310_vendor_to_erp_success_query_ds" resultTarget="mzdpfnd9310_vendor_to_erp_success_result_ds" style="width:100%;border:none">
+                            <a:formToolBar>
+                                <a:hBox labelWidth="120">
+                                    <a:textField name="coop_company_code" prompt="合作企业代码">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="fnd9310_vendor_to_erp_success_QueryFun"/>
+                                        </a:events>
+                                    </a:textField>
+                                    <a:textField name="coop_company_name" prompt="合作企业名称">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="fnd9310_vendor_to_erp_success_QueryFun"/>
+                                        </a:events>
+                                    </a:textField>
+                                </a:hBox>
+                            </a:formToolBar>
+                        </a:queryForm>
+                        <a:grid id="mzdpfnd9310_vendor_to_erp_success_grid" bindTarget="mzdpfnd9310_vendor_to_erp_success_result_ds" marginHeight="220" marginWidth="80" navBar="true" width="1250">
+                            <a:columns>
+                                <a:column name="vendor_code" prompt="供应商编码" width="80"/>
+                                <a:column name="vendor_name" prompt="供应商名称" width="180"/>
+                                <a:column name="coop_company_code" prompt="合作企业代码" width="90"/>
+                                <a:column name="coop_company_name" prompt="合作企业名称" width="180"/>
+                                <!-- <a:column name="external_system_name" prompt="外部系统" width="180"/> -->
+                                <a:column name="vendor_class" align="center" prompt="供应商分类" renderer="mzdpfnd9310_vendor_to_sap_success_GridRenderer" width="80"/>
+                                <a:column name="coop_company_id" align="center" forExport="false" prompt="FND_BUSINESS_UNITS.BUSINESS_UNIT" renderer="mzdpfnd9310_vendor_to_sap_success_GridRenderer" width="80"/>
+                                <!-- <a:column name="abandon_flag" editorFunction="mzdpfnd9310_vendor_to_erp_GridEditorFunction" forExport="false" prompt="放弃导入" width="60"/> -->
+                                <a:column name="tax_id_number" prompt="PUR5660.TAX_REGISTRATION_NO" width="130"/>
+                                <a:column name="business_represent_name" prompt="联系人" width="80"/>
+                                <a:column name="business_represent_phone" prompt="电话" width="120"/>
+                                <a:column name="business_represent_mail" prompt="邮箱" width="120"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+    </a:view>
+</a:screen>

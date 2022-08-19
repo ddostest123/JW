@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:service xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="a.api_code=&apos;PRODUCT_SELL_PRICE&apos;" fetchAll="true" model="api.PUBLIC.jd_sku_method" rootPath="mes"/>
+        <s:server-script import="request.js"><![CDATA[
+            var record = $ctx.model.getChild('mes').getChildren()[0];
+            var v_str = record.url + record.app_key + record.access_token + record.timestamp;
+            
+            //接收参数
+            var jdOrderId = $ctx.get('/parameter/@jdOrderId'); //京东订单号
+            // var order_hds_id = $ctx.get('/parameter/@order_hds_id'); //订单头ID
+            
+            //订单请求成功之后,根据京东返回的订单号确认预占库存
+            var s_stock = '&format=json&v=1.0&method=biz.order.occupyStock.confirm';
+            var s_str_stock = v_str + s_stock;
+            var s_pre_str = '&param_json={"jdOrderId":';
+            var s_mid_str = jdOrderId;
+            var s_last_str = '}';
+            var s_api_url = s_str_stock + s_pre_str + s_mid_str + s_last_str;
+            
+            //确认预占库存订单请求
+            request({
+                url: s_api_url,
+                //para: para,
+                success: function(args) {
+                    var result = args.biz_order_occupyStock_confirm_response;
+        			
+        			if(result.success){
+        			    if(result.result){ //确认预占库存成功
+        			        
+	        			    $ctx.parameter.occupyStockConfirm = 'Y';
+	        			    
+	        			    //更新订单状态为已支付
+	        			    // res_order = {
+	        			        // 'jd_order_id': jdOrderId,
+	        			        // 'order_status': 'PAID'
+	        			    // };
+	        			    // $bm('GoingBuy.JD.jd_order_headers_save').update(res_order);
+	        			    
+	        			}else{
+	        			    raise_app_error(result.resultMessage); //"预占库存失败！"
+	        			}
+        			}else{
+        			    raise_app_error(result.resultMessage);
+        			}
+        			
+                },
+                failure: function(args) {
+                    raise_app_error(args.error.message);
+                }
+            });
+        ]]></s:server-script>
+        <p:echo/>
+    </a:init-procedure>
+    <a:service-output output="/parameter/"/>
+</a:service>

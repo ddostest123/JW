@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+        		SELECT
+        		    h.header_id,
+        		    h.del_plan_number,
+        		    h.vendor_id,
+        		    h.vendor_code,
+        		    h.vendor_name,
+        		    h.inv_organization_id,
+        		    h.inv_organization_name,
+        		    h.owner_business_group,
+        		    h.del_plan_status,
+        		    h.coop_company_id,
+        		    -- h.delivery_header_id,
+					decode((select count(1)
+	                from mtl_system_items            i,
+	                     mtl_category_classify_items ci,
+	                     mtl_categories_user_defined d,
+	                     pur_del_plan_lines          pl
+	               where i.item_id = ci.item_id
+	                 and ci.category_udf_id = d.category_udf_id
+	                 and i.display_item_code = pl.item_code
+	                 and pl.header_id = h.header_id
+	                 and pl.quantity <> 0
+	                 and not exists
+	               (SELECT 1
+	                        FROM pur_lines_all l
+	                       WHERE l.pur_line_id = pl.source_po_line_id
+	                         AND (l.closed_flag = 'Y' OR l.cancel_flag = 'Y'))
+	                 and d.catelog_udf_id = 1),0,'P','M') item_flag,
+        		    (SELECT
+        		        scv.code_value_name
+        		    FROM
+        		        sys_codes sc,
+        		        sys_code_values_vl scv
+        		    WHERE
+        		        sc.code          = 'PUR_DEL_PLAN_STATUS' AND
+        		        sc.code_id       = scv.code_id AND
+        		        scv.code_value   = h.del_plan_status AND
+        		        sc.enabled_flag  = 'Y' AND
+        		        scv.enabled_flag = 'Y'
+        		    ) del_plan_status_desc,
+        		    h.business_unit_id,
+        		    h.business_unit_name,
+        		    h.user_id,
+        		    (SELECT su.description FROM sys_user su WHERE h.created_by = su.user_id
+        		    ) user_name,
+        		    h.created_by,
+        		    TO_CHAR(h.creation_date,'YYYY-MM-DD HH24:MI:SS') creation_date,
+        		    h.last_updated_by,
+        		    TO_CHAR(h.last_update_date,'YYYY-MM-DD HH24:MI:SS') last_update_date
+        		FROM
+        		    pur_del_plan_headers h #WHERE_CLAUSE#
+    		]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:update-sql><![CDATA[
+            begin
+            pur_delivery_plan_pkg.insert_delivery_plan_hd(
+            						x_header_id 			=> ${@delivery_header_id},
+            						x_del_plan_number		=> ${@del_plan_number},
+            						p_source_header_id		=> ${@header_id},
+            						p_business_unit_id     	=> ${@business_unit_id},
+                                    p_business_unit_name   	=> ${@business_unit_name},
+                                    p_owner_business_group  => ${@owner_business_group},
+                                    p_vendor_code           => ${@vendor_code},
+                                    p_vendor_id             => ${@vendor_id},
+                                    p_vendor_name           => ${@vendor_name},
+                                    p_coop_company_id		=> ${@coop_company_id},
+                                    p_owner_company_id		=> ${@owner_company_id},
+                                    p_coop_business_group	=> ${@coop_business_group},
+                                    p_user_id               => ${/session/@user_id}
+            );
+            end;
+            ]]></bm:update-sql>
+            <bm:parameters>
+                <bm:parameter name="delivery_header_id" output="true" outputPath="/parameter/@delivery_header_id"/>
+                <bm:parameter name="del_plan_number" output="true" outputPath="/parameter/@del_plan_number"/>
+            </bm:parameters>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+        	begin
+        		pur_delivery_plan_pkg.delete_delivery_plan(
+            						p_header_id		=> ${@delivery_header_id},
+            						p_user_id 		=> ${/session/@user_id}
+            );
+        	end;
+       
+        ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+        	begin
+        		pur_delivery_plan_pkg.confirm_delivery_plan(p_header_id		=> ${@delivery_header_id},
+				            								p_user_id 		=> ${/session/@user_id},
+				            								p_action		=> ${@action});
+        	end;
+        	]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="header_id" queryExpression="h.header_id = ${@header_id}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="1=1"/>
+        <bm:data-filter name="business_group" expression="h.owner_business_group = ${/session/@business_group} "/>
+    </bm:data-filters>
+</bm:model>

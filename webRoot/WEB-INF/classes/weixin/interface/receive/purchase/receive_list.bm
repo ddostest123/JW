@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao  
+    $Date: 2015-09-08 下午04:38:31  
+    $Revision: 1.0  
+    $Purpose: 微信企业号，采购方，采购接收列表
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:fields>
+        <bm:field name="display_po_number" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="po_line_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="po_header_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="po_location_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="line_num" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="item_code" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="item_desc" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="unit_meas_lookup_code" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="po_quantity" databaseType="NUMBER" datatype="java.lang.Double"/>
+        <bm:field name="po_location_quantity_over" databaseType="NUMBER" datatype="java.lang.Double"/>
+        <bm:field name="srm_rcv_quantity" databaseType="NUMBER" datatype="java.lang.Double"/>
+        <bm:field name="standard_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+    </bm:fields>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            	SELECT v.*
+				  FROM (SELECT pha.display_po_number,
+				               pla.pur_line_id AS po_line_id,
+				               pha.pur_header_id AS po_header_id,
+				               plla.pur_line_location_id AS po_location_id,
+				               pla.line_num,
+				               pla.item_code,
+				               pla.item_description AS item_desc,
+				               nvl((SELECT vl.uom_desc
+				                     FROM fnd_uom_codes_vl vl
+				                    WHERE pla.unit_meas_lookup_code = vl.uom_code
+				                          AND vl.business_group = pha.owner_business_group),
+				                   pla.unit_meas_lookup_code) AS unit_meas_lookup_code,
+				               plla.quantity AS po_quantity,
+				               nvl(plla.quantity,
+				                   0) * (1 + nvl(pla.delivery_over,
+				                                 0) / 100) po_location_quantity_over,
+				               (SELECT nvl(SUM(pprl.rcv_quantity),
+				                           0) + nvl(plla.quantity_received,
+				                                    0)
+				                  FROM pur_po_rcv_lines   pprl,
+				                       pur_po_rcv_headers prrh
+				                 WHERE pprl.po_location_id = plla.pur_line_location_id
+				                       AND pprl.rcv_header_id = prrh.rcv_header_id
+				                       AND prrh.enabled_flag = 'Y'
+				                       AND prrh.import_status <> 'IMPORTED') AS srm_rcv_quantity,
+				               (SELECT cl.attribute3
+				                  FROM con_contract_object_lines cl
+				                 WHERE cl.contract_object_line_id = pla.contract_line_id) AS standard_id
+				          FROM pur_lines_all          pla,
+				               pur_line_locations_all plla,
+				               pur_headers_all        pha
+				         WHERE pla.pur_line_id = plla.pur_line_id
+				               AND pla.pur_header_id = pha.pur_header_id
+				               AND nvl(plla.cancel_flag,
+				                       'N') = 'N'
+				               AND pha.srm_status IN ('RELEASED',
+				                                      'CONFIRMED')
+				               AND nvl(pla.cancel_flag,
+				                       'N') = 'N'
+				               AND EXISTS (SELECT 1
+				                  FROM fnd_user_authority fua
+				                 WHERE fua.authority_type = 'INV_ORGANIZATION'
+				                       AND fua.user_id = ${/session/@user_id}
+				                       AND fua.assign_id = plla.ship_to_organization_id)) v
+				#WHERE_CLAUSE#	                
+				ORDER BY v.display_po_number,v.line_num
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter expression="(v.srm_rcv_quantity &lt; v.po_location_quantity_over)"/>
+        <bm:data-filter expression="((v.display_po_number like &apos;%&apos;||trim(${@po_asn_number})||&apos;%&apos;) or (exists(select 1  from inv_asn_lines ial, inv_asn_headers iah where ial.asn_header_id = iah.asn_header_id and ial.line_location_id = v.po_location_id and iah.asn_number like &apos;%&apos;||trim(${@po_asn_number})||&apos;%&apos;)))"/>
+    </bm:data-filters>
+</bm:model>

@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lianghuihao
+    $Date: 2018年12月14日13:43:48 
+    $Revision: 1.0  
+    $Purpose: 推送OA数据
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    l.req_line_id,
+                    l.req_header_id,
+                    l.line_num,
+                    ph.req_number,
+                    ph.data_source,
+                    (SELECT
+                        B.CODE_VALUE_NAME
+                    FROM
+                        SYS_CODES_VL A,
+                        SYS_CODE_VALUES_VL B
+                    WHERE
+                        A.CODE_ID    = B.CODE_ID AND
+                        A.CODE       = 'PUR_VENDOR_NAME' AND
+                        B.CODE_VALUE = ph.data_source
+                    ) data_source_desc,
+                    TO_CHAR(ph.creation_date,'YYYY-MM-DD') creation_date,
+                    l.item_id,
+                    l.item_code,
+                    SUBSTR(l.item_code, 0, 3) thr_item_code,
+                    SUBSTR(l.item_code, 0, 5) fiv_item_code,
+                    l.item_description item_desc,
+                    DECODE(TRIM(l.unit_meas_lookup_code), NULL, 'Y', 'N') uom_edit_flag,
+                    l.unit_meas_lookup_code,
+                    NVL(
+                    (SELECT
+                        ucv.uom_desc
+                    FROM
+                        fnd_uom_codes_vl ucv
+                    WHERE
+                        ucv.uom_code       = l.unit_meas_lookup_code AND
+                        ucv.business_group = ${/session/@business_group}
+                    ), l.unit_meas_lookup_code) AS uom_desc,
+                    l.quantity,
+                    l.unit_price price,
+                    (SELECT
+                        t.tax_type_code
+                    FROM
+                        fnd_tax_type_codes t
+                    WHERE
+                        t.tax_type_id = l.tax_type_id
+                    ) tax_type_code,
+                    l.tax_rate,
+                    (l.quantity * l.unit_price) line_amount,
+                    TO_CHAR(l.need_by_date, 'yyyy-mm-dd') need_by_date,
+                    l.currency_code,
+                    l.currency_unit_price,
+                    (SELECT
+                        f.company_full_name
+                    FROM
+                        fnd_companies_vl f
+                    WHERE
+                        f.company_id = l.vendor_company_id
+                    ) vendor_name,
+                    l.must_use_sugg_vendor_flag,
+                    l.cancel_flag,
+                    l.sourcing_flag,
+                    l.created_by,
+                    l.last_update_date,
+                    l.last_updated_by,
+                    l.inv_organization_id,
+                    (SELECT
+                        i.description
+                    FROM
+                        inv_organizations_vl i
+                    WHERE
+                        i.inv_organization_id = l.inv_organization_id
+                    ) ship_to_organization_name,
+                    (SELECT
+                        i.business_unit_id
+                    FROM
+                        inv_organizations i
+                    WHERE
+                        i.inv_organization_id = l.inv_organization_id
+                    ) business_unit_id,
+                    l.line_comments,
+                    (SELECT
+                        DECODE(COUNT(1), 0, 'N', 'Y')
+                    FROM
+                        mtl_categories_user_defined m
+                    WHERE
+                        m.category_code    = sys_parameter_pkg.value('NEWHOPE_INSURANCE_CODE') START
+                    WITH m.category_udf_id = l.item_category_id CONNECT BY PRIOR m.parent_category_udf_id = m.category_udf_id
+                    ) insurance_flag,
+                    l.destination_organization_id,
+                    l.destination_subinventory,
+                    l.po_release_flag,
+                    l.catalog_flag,
+                    l.delivery_id,
+                    l.shopping_cart_id,
+                    l.catalog_item_id,
+                    l.catalog_item_code,
+                    l.catalog_item_name,
+                    l.item_category_id,
+                    (SELECT
+                        c.category_code
+                        || '-'
+                        || c.category_name
+                    FROM
+                        mtl_categories_user_defined_vl c
+                    WHERE
+                        c.category_udf_id = l.item_category_id
+                    ) item_category_desc,
+                    l.catalog_id,
+                    (SELECT
+                        c.catelog_code
+                        || '-'
+                        || c.catelog_name
+                    FROM
+                        pur_catelogs_user_defined_vl c
+                    WHERE
+                        c.catelog_udf_id = l.catalog_id
+                    ) catalog_name,
+                    a.province_name
+                    || ' '
+                    || a.city_name
+                    || ' '
+                    || a.county_name
+                    || ' '
+                    || a.address_detail
+                    || ' '
+                    || a.contact_name
+                    || ' '
+                    || a.mobile_phone delivery_address,
+                    l.delivery_time,
+                    TO_CHAR((l.delivery_time + 2 + SYSDATE), 'YYYY-MM-DD') arrival_time,
+                    (SELECT
+                        psa.vendor_name
+                    FROM
+                        pur_catelog_shopping_mall psa
+                    WHERE
+                        psa.mall_id = (pur_catelog_shopping_cart_pkg.get_min_price_mall_id(p_brand_name => l.brand_name, p_mfg_sku => l.catalog_item_code, p_data_source => l.data_source))
+                    ) vendor_name_1,
+                    (SELECT
+                        psm.vendor_name
+                    FROM
+                        pur_catelog_shopping_mall psm
+                    WHERE
+                        psm.mall_id = (pur_catelog_shopping_cart_pkg.get_second_price_mall_id(p_brand_name => l.brand_name, p_mfg_sku => l.catalog_item_code, p_data_source => l.data_source))
+                    ) vendor_name_2,
+                    ROUND((l.unit_price - (
+                    (SELECT
+                        psm.price
+                    FROM
+                        pur_catelog_shopping_mall psm
+                    WHERE
+                        psm.mall_id = (pur_catelog_shopping_cart_pkg.get_min_price_mall_id(p_brand_name => l.brand_name, p_mfg_sku => l.catalog_item_code, p_data_source => l.data_source))
+                    ))) / l.unit_price, 2) vendor_radio_1,
+                    ROUND((l.unit_price - (
+                    (SELECT
+                        psm.price
+                    FROM
+                        pur_catelog_shopping_mall psm
+                    WHERE
+                        psm.mall_id = (pur_catelog_shopping_cart_pkg.get_second_price_mall_id(p_brand_name => l.brand_name, p_mfg_sku => l.catalog_item_code, p_data_source => l.data_source))
+                    ))) / l.unit_price, 2) vendor_radio_2,
+                    (SELECT
+                        psm.price
+                    FROM
+                        pur_catelog_shopping_mall psm
+                    WHERE
+                        psm.mall_id = (pur_catelog_shopping_cart_pkg.get_min_price_mall_id(p_brand_name => l.brand_name, p_mfg_sku => l.catalog_item_code, p_data_source => l.data_source))
+                    ) vendor_price_1,
+                    (SELECT
+                        psm.price
+                    FROM
+                        pur_catelog_shopping_mall psm
+                    WHERE
+                        psm.mall_id = (pur_catelog_shopping_cart_pkg.get_second_price_mall_id(p_brand_name => l.brand_name, p_mfg_sku => l.catalog_item_code, p_data_source => l.data_source))
+                    ) vendor_price_2,
+                    (SELECT
+                        psm.item_name
+                    FROM
+                        pur_catelog_shopping_mall psm
+                    WHERE
+                        psm.mall_id = (pur_catelog_shopping_cart_pkg.get_min_price_mall_id(p_brand_name => l.brand_name, p_mfg_sku => l.catalog_item_code, p_data_source => l.data_source))
+                    ) vendor_item_name_1,
+                    (SELECT
+                        psm.item_name
+                    FROM
+                        pur_catelog_shopping_mall psm
+                    WHERE
+                        psm.mall_id = (pur_catelog_shopping_cart_pkg.get_min_price_mall_id(p_brand_name => l.brand_name, p_mfg_sku => l.catalog_item_code, p_data_source => l.data_source))
+                    ) vendor_item_name_2,
+                    (SELECT
+                        (SELECT
+                            prv.delivery_time
+                        FROM
+                            pur_product_detail_vl prv
+                        WHERE
+                            prv.sku         = psm.display_item_code AND
+                            prv.data_source = psm.data_source
+                        ) delivery_time
+                    FROM
+                        pur_catelog_shopping_mall psm
+                    WHERE
+                        psm.mall_id = (pur_catelog_shopping_cart_pkg.get_min_price_mall_id(p_brand_name => l.brand_name, p_mfg_sku => l.catalog_item_code, p_data_source => l.data_source))
+                    ) vendor_delivery_time_1,
+                    (SELECT
+                        (SELECT
+                            prv.delivery_time
+                        FROM
+                            pur_product_detail_vl prv
+                        WHERE
+                            prv.sku         = psm.display_item_code AND
+                            prv.data_source = psm.data_source
+                        ) delivery_time
+                    FROM
+                        pur_catelog_shopping_mall psm
+                    WHERE
+                        psm.mall_id = (pur_catelog_shopping_cart_pkg.get_min_price_mall_id(p_brand_name => l.brand_name, p_mfg_sku => l.catalog_item_code, p_data_source => l.data_source))
+                    ) vendor_delivery_time_2
+                FROM
+                    pur_req_lines_tmp l,
+                    fnd_company_delivery_addr_vl a,
+                    pur_req_headers_tmp ph
+                WHERE
+                    l.req_header_id  = ph.req_header_id AND
+                    ph.req_header_id = ${@req_header_id} AND
+                    l.delivery_id    = a.delivery_id
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

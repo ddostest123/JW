@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao
+    $Date: 2014-9-15 下午1:20:40  
+    $Revision: 1.0  
+    $Purpose: 集团代码LOV
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="false">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                    SELECT
+                        *
+                    FROM
+                        (SELECT
+                            h.pur_header_id,
+                            h.display_po_number,
+                            h.erp_creation_date,
+                            h.owner_business_group,
+                            v.business_group_name owner_bg_name,
+                            l.pur_line_id,
+                            l.line_num,
+                            l.quantity,
+                            ll.quantity location_quantity,
+                            l.unit_price,
+                            ll.pur_line_location_id,
+                            ll.shipment_num,
+                            nvl(l.line_abnormal_flag,'N') line_abnormal_flag,
+                            (SELECT
+                                NVL(SUM(NVL(ll.quantity * l.unit_price, 0)), 0)
+                            FROM
+                                dual
+                            GROUP BY
+                                l.pur_line_id
+                            ) amount,
+                            (SELECT
+                                NVL(SUM(al.ship_quantity), 0)
+                            FROM
+                                inv_asn_lines al
+                            WHERE
+                                al.line_location_id = ll.pur_line_location_id AND
+                                al.cancel_flag     <> 'Y' AND
+                                al.close_flag      <> 'Y'
+                            ) asn_quantity
+                        FROM
+                            pur_headers_all h,
+                            pur_lines_all l,
+                            pur_line_locations_all ll,
+                            fnd_business_groups_vl v
+                        WHERE
+                            h.pur_header_id       = l.pur_header_id AND
+                            l.pur_line_id         = ll.pur_line_id AND
+                            v.business_group_code = h.owner_business_group AND
+                            h.cancel_flag        <> 'Y' AND
+                            h.closed_code        <> 'CLOSED' AND
+                            h.closed_code        <> 'FINALLY CLOSED'
+                        ) f #WHERE_CLAUSE#
+                    ORDER BY
+                        f.owner_business_group,
+                        f.display_po_number,
+                        f.line_num,
+                        f.shipment_num
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+                   begin
+                        pur_abnormal_set_pkg.pur_abnormal_set(p_line_id =>${@pur_line_id});
+                   end;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="owner_business_group_code" queryExpression="f.owner_business_group = ${@owner_business_group_code}"/>
+        <bm:query-field name="error_type_code" queryExpression="((${@error_type_code} = &apos;line_quantity&apos; and f.quantity &lt; 0)or(${@error_type_code} = &apos;location_quantity&apos; and f.asn_quantity &gt; f.location_quantity)or(${@error_type_code} = &apos;unit_price&apos; and (${@unit_price_error_from} is null or f.unit_price &gt;= ${@unit_price_error_from}) and (${@unit_price_error_to} is null or f.unit_price &lt;= ${@unit_price_error_to}))or(${@error_type_code} = &apos;line_amount&apos; and (${@line_amount_error_from} is null or f.amount &gt;= ${@line_amount_error_from}) and (${@line_amount_error_to} is null or f.amount &lt;= ${@line_amount_error_to})))"/>
+        <bm:query-field name="erp_date_from" queryExpression="f.erp_creation_date &gt;= to_date(${@erp_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="erp_date_to" queryExpression="f.erp_creation_date &lt;= to_date(${@erp_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="line_abnormal_flag" queryExpression="f.line_abnormal_flag = &apos;N&apos; and ${@line_abnormal_flag} = &apos;Y&apos;"/>
+        <!-- <bm:query-field name="line_quantity_error_from" queryExpression="f.quantity &gt;= ${@line_quantity_error_from}"/>
+        <bm:query-field name="line_quantity_error_to" queryExpression="f.quantity &lt;= ${@line_quantity_error_to}"/>
+        <bm:query-field name="line_amount_error_from" queryExpression="f.amount &gt;= ${@line_amount_error_from}"/>
+        <bm:query-field name="line_amount_error_to" queryExpression="f.amount &lt;= ${@line_amount_error_to}"/> -->
+    </bm:query-fields>
+</bm:model>

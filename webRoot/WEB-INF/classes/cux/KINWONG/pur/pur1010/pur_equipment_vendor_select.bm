@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    t1.*,
+                    DECODE(
+                    (SELECT
+                        MAX(kwc.version) FROM KW_EQUIP_SURVEY_COMPARE_SCORE kwc WHERE kwc.equipment_name_id = ${@equipment_name_id} GROUP BY kwc.equipment_name_id
+                    ),NULL,1,
+                    (SELECT
+                        MAX(kwc.version) + 1
+                    FROM
+                        KW_EQUIP_SURVEY_COMPARE_SCORE kwc
+                    WHERE
+                        kwc.equipment_name_id = ${@equipment_name_id}
+                    GROUP BY
+                        kwc.equipment_name_id
+                    )) version
+                FROM
+                    (SELECT
+                        pvs.survey_header_id,
+                        pvs.survey_number,
+                        pvs.supplier_business_group,
+                        pvs.supplier_company_id,
+                        fcv.company_code vendor_code,
+                        fcv.company_full_name vendor_name,
+                        fcv.company_id,
+                        pvs.equipment_name_id,
+                        (SELECT
+                            (SELECT
+                                v.flex_desc
+                            FROM
+                                fnd_flex_values_v v
+                            WHERE
+                                v.flex_value_set_code = 'PUR_VENDOR_LIFE_CYCLE' AND
+                                v.flex_value          = l.stage_code
+                            )
+                        FROM
+                            pur_vendor_life_cycle l
+                        WHERE
+                            l.coop_company_id = fcv.company_id AND
+                            l.current_flag    = 'Y'
+                        ) stage_desc,
+                        (SELECT
+                            l.stage_code
+                        FROM
+                            pur_vendor_life_cycle l
+                        WHERE
+                            l.coop_company_id = fcv.company_id AND
+                            l.current_flag    = 'Y'
+                        ) stage_code,
+                        pvs.status,
+                        pvs.survey_description,
+                        pvs.created_by,
+                        (SELECT su.description FROM sys_user su WHERE su.user_id = pvs.created_by
+                        ) created_by_desc,
+                        TO_CHAR(pvs.creation_date, 'yyyy-mm-dd') creation_date,
+                        TO_CHAR(pvs.creation_date, 'yyyy-mm-dd') creation_date_desc,
+                        TO_CHAR(pvs.submit_date, 'yyyy-mm-dd') submit_date,
+                        NULL useless_id
+                    FROM
+                        pur_equipment_survey_headers pvs,
+                        fnd_companies_vl fcv
+                    WHERE
+                        pvs.status                 = '40_APPROVED' AND
+                        pvs.supplier_company_id    = fcv.company_id AND
+                        pvs.require_business_group = ${/session/@business_group} AND
+                        pvs.survey_header_id       =
+                        (SELECT
+                            MAX(ps.survey_header_id)
+                        FROM
+                            pur_equipment_survey_headers ps
+                        WHERE
+                            ps.supplier_company_id = pvs.supplier_company_id AND
+                            ps.status              = '40_APPROVED' AND
+                            ps.equipment_name_id   = pvs.equipment_name_id
+                        GROUP BY
+                            ps.supplier_company_id,
+                            status,
+                            equipment_name_id
+                        ) AND
+                        pvs.equipment_name_id = ${@equipment_name_id}
+                    ORDER BY
+                        pvs.last_update_date DESC
+                    )t1 #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="stage_code" queryExpression="t1.stage_code = ${@stage_code}"/>
+        <bm:query-field name="vendor_name" queryExpression="t1.vendor_name like &apos;%&apos;||${@vendor_name}||&apos;%&apos;"/>
+    </bm:query-fields>
+</bm:model>

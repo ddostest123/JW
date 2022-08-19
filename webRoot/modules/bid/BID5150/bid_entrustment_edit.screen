@@ -1,0 +1,1623 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: WangQiaosen  
+    $Date: 2013-3-11 下午1:27:02  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:c="aurora.application.action" xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure/>
+    <a:view>
+        <a:link id="bid5150_entrustment_save_link" url="${/request/@context_path}/modules/bid/BID5150/bid_entrustment_edit_save.svc"/>
+        <a:link id="bid5150_entrustment_expert_random_choose_link" url="${/request/@context_path}/modules/bid/BID5150/bid_entrustment_expert_random_choose.screen"/>
+        <a:link id="bid5150_entrustment_turn_over_link" url="${/request/@context_path}/modules/bid/BID5150/bid_entrustment_turn_over.screen"/>
+        <a:link id="bid5150_issue_entrustment_link" model="bid.BID5150.bid_issue" modelaction="execute"/>
+        <a:link id="bid5040_attachment_upload_link" url="${/request/@context_path}/modules/bid/BID5040/bid_entrustment_attachment_upload.screen"/>
+        <script><![CDATA[
+            var bid5150_prequalFun_flag = 'N'; //N为不可取消
+            var bid5150_prequalAttachement_flag = 'N'; //N为不可上传附件
+            
+            function bid5150EntrustmentEditCompareDate(start, end) {
+                if (start > end) {
+                    return false;
+                }
+                return true;
+            }
+            
+            //比较两个日期的大小
+            
+            function bid5150EntrustmentEditCompareDate_2(start, end) {
+            
+                if (typeof(start) == 'string') {
+                    start = new Date(start.replace(/-/g, '/'));
+                }
+            
+                if (typeof(end) == 'string') {
+                    end = new Date(end.replace(/-/g, '/'));
+                }
+            
+                if (start > end) {
+                    return false;
+                }
+                return true;
+            }
+            
+            function bid5150EntrustmentEditValidator(record, name, value) {
+                var start_date = record.get('bid_opening_start_date');
+                var bid_closing_date = record.get('bid_closing_date');
+                var prequal_flag = record.get('prequal_flag');
+                if (name == 'bid_opening_start_date') {
+            
+                    if (!bid5150EntrustmentEditCompareDate_2(bid_closing_date, start_date)) {
+                        return '${l:BID_OPEN_EARLIER_THAN_BID_END}';
+                    }
+            
+                    return true;
+                } else if (name == 'bid_closing_date') {
+                    var sysdate = new Date();
+                    if (!bid5150EntrustmentEditCompareDate_2(sysdate, bid_closing_date)) {
+                        return '${l:BID_END_EARLIER_THAN_NOW}';
+                    }
+            
+                    if (!bid5150EntrustmentEditCompareDate_2(bid_closing_date, start_date)) {
+                        return '${l:BID_OPEN_EARLIER_THAN_BID_END}';
+                    }
+                    if ($('bid5150_edit_entrustment_prequal').getAll().length > 0) {
+                        var prequal_closing_date = $('bid5150_edit_entrustment_prequal').getAt(0).get('closing_date');
+                        if (!bid5150EntrustmentEditCompareDate_2(prequal_closing_date, bid_closing_date) && prequal_flag == 'Y') {
+                            return '${l:BID_CLOSING_EARLIER_THAN_PREQUAL_CLOSING}';
+                        }
+            
+                    }
+            
+            
+                    return true;
+                }
+            }
+            
+            function bid5150EntrustmentPrequalEditValidator(record, name, value) {
+                var closing_date = record.get('closing_date');
+                var bid_closing_date = $('bid5150_edit_entustment_header_ds').getAt(0).get('bid_closing_date');
+                if (name == 'closing_date') {
+                    if (!bid5150EntrustmentEditCompareDate_2(closing_date, bid_closing_date)) {
+                        return '${l:BID_CLOSING_EARLIER_THAN_PREQUAL_CLOSING}';
+                    }
+            
+                    var sysdate = new Date();
+                    if (!bid5150EntrustmentEditCompareDate_2(sysdate, closing_date)) {
+                        return '${l:PREQUAL_CLOSING_EARLIER_THAN_SYSDATE}';
+                    }
+            
+                    return true;
+                }
+            }
+            
+            
+            function bid5150_onLnExpert_loadFun(ds) {
+                for (var i = 0;i < ds.getAll().length;i++) {
+                    var expert_rec = ds.getAll()[i];
+                    // var multistage_flag = expert_rec.get('multistage_flag');
+                    // //if (multistage_flag == 'N') {
+                    expert_rec.getField('expert_user_name').setReadOnly(false);
+                    expert_rec.getField('leader_flag').setReadOnly(false);
+                    // //}
+                }
+            }
+            
+            
+            function bid5150_setExpertEdit() {
+                //设置专家可维护
+                $('bid5150_ln_expert_1_grid_add_btu').enable();
+                $('bid5150_ln_expert_1_grid_delete_btu').enable();
+                $('bid5150_ln_expert_1_grid_random_btu').enable();
+                $('bid5150_ln_expert_2_grid_add_btu').enable();
+                $('bid5150_ln_expert_2_grid_delete_btu').enable();
+                $('bid5150_ln_expert_2_grid_random_btu').enable();
+                $('bid5150_ln_expert_grid_add_btu').enable();
+                $('bid5150_ln_expert_grid_delete_btu').enable();
+                $('bid5150_ln_expert_grid_random_btu').enable();
+            }
+            
+            
+            function bid5150_onEditEntrustmentPrequal_loadFun(ds) {
+                for (var i = 0;i < ds.getAll().length;i++) {
+                    var prequal_rec = ds.getAll()[i];
+                    var multistage_flag = prequal_rec.get('multistage_flag');
+                    var prequal_status = prequal_rec.get('status');
+                    if (multistage_flag == 'N') {
+                        if (prequal_status == 'RECHECK') {
+                            //资格预审重新作业
+                            //只维护预审信息中的申请截止日期
+                            //prequal_rec.getField('closing_date').setReadOnly(false);
+                            prequal_rec.getField('review_method_desc').setReadOnly(true);
+                            prequal_rec.getField('qualified_limit').setReadOnly(true);
+                            prequal_rec.getField('prequal_location').setReadOnly(true);
+                            prequal_rec.getField('file_free_flag').setReadOnly(true);
+                            prequal_rec.getField('proqual_file_expense').setReadOnly(true);
+                            prequal_rec.getField('comments').setReadOnly(true);
+                        } else if (prequal_status == 'SUBMITTED' || prequal_status == 'CANCELLED' || prequal_status == 'NEW') {
+                            //第一次进入招标作业可以新增/取消资格预审
+                            var review_method = prequal_rec.get('review_method');
+                            if (review_method == 'QUALIFICATION') {
+                                prequal_rec.getField('qualified_limit').setReadOnly(true);
+                                prequal_rec.getField('qualified_limit').setRequired(false);
+                            } else if (review_method == 'QUANTITY') {
+                                prequal_rec.getField('qualified_limit').setReadOnly(false);
+                                prequal_rec.getField('qualified_limit').setRequired(true);
+                            }
+            
+                            var file_free_flag = prequal_rec.get('file_free_flag');
+                            if (file_free_flag == 'Y') {
+                                prequal_rec.getField('proqual_file_expense').setReadOnly(true);
+                                prequal_rec.getField('proqual_file_expense').setRequired(false);
+                            } else {
+                                prequal_rec.getField('proqual_file_expense').setReadOnly(false);
+                                prequal_rec.getField('proqual_file_expense').setRequired(true);
+                            }
+                        }
+                    } else {
+                        var review_method = prequal_rec.get('review_method');
+                        if (review_method == 'QUALIFICATION') {
+                            prequal_rec.getField('qualified_limit').setReadOnly(true);
+                            prequal_rec.getField('qualified_limit').setRequired(false);
+                        } else if (review_method == 'QUANTITY') {
+                            prequal_rec.getField('qualified_limit').setReadOnly(false);
+                            prequal_rec.getField('qualified_limit').setRequired(true);
+                        }
+            
+                        var file_free_flag = prequal_rec.get('file_free_flag');
+                        if (file_free_flag == 'Y') {
+                            prequal_rec.getField('proqual_file_expense').setReadOnly(true);
+                            prequal_rec.getField('proqual_file_expense').setRequired(false);
+                        } else {
+                            prequal_rec.getField('proqual_file_expense').setReadOnly(false);
+                            prequal_rec.getField('proqual_file_expense').setRequired(true);
+                        }
+                    }
+                }
+            }
+            
+            function bid5150EntrustmentEditOnLoad(ds) {
+                var record = ds.getCurrentRecord(0);
+            
+                var entrustment_type_id = record.get('entrustment_type_id');
+                record.getField('invitation_tmpl_desc').setLovPara('entrustment_type_id', entrustment_type_id);
+                record.getField('bidding_tmpl_desc').setLovPara('entrustment_type_id', entrustment_type_id);
+                record.getField('evaluation_tmpl_desc').setLovPara('entrustment_type_id', entrustment_type_id);
+            
+                var company_id = record.get('company_id');
+                record.getField('tendering_agent_desc').setLovPara('company_id', company_id);
+            
+                var using_company_id = record.get('using_company_id');
+                record.getField('using_company_agent_desc').setLovPara('company_id', using_company_id);
+            
+                var margin_required_flag = record.get('margin_required_flag');
+                if (margin_required_flag == 'Y') {
+                    record.getMeta().getField('deposit_amount').setRequired(true);
+                } else if (margin_required_flag == 'N') {
+                    record.getMeta().getField('deposit_amount').setReadOnly(true);
+                }
+            
+                var suggested_bidding_method = record.get('suggested_bidding_method');
+                var bidding_method = record.get('bidding_method');
+            
+                if (bidding_method == 'OPEN') {
+                    $('bid5150_edit_entrustment_tab').setDisabled(0);
+                } else {
+                    $('bid5150_edit_entrustment_tab').setEnabled(0);
+                }
+            
+            
+                var prequal_flag = record.get('prequal_flag');
+                if (prequal_flag == 'Y') {
+                    document.getElementById('bid5150_prequal_div').style.display = "block";
+                    document.getElementById('bid5150_prequal').innerText = '${l:BID_ENTRUSTMENT_HEADERS.CANCEL_PREQUAL}';
+                } else {
+                    document.getElementById('bid5150_prequal_div').style.display = "none";
+                    document.getElementById('bid5150_prequal').innerText = '${l:BID_ENTRUSTMENT_HEADERS.ADD_PREQUAL}';
+                }
+            
+                if (using_company_id) {
+                    record.getMeta().getField('inv_organization_desc').setReadOnly(false);
+                    record.getField('inv_organization_desc').setLovPara('company_id', using_company_id);
+                }
+            
+                var score_mode = record.get('score_mode');
+                if (score_mode == 'TECH_BIZ') {
+                    record.getField('score_mode_desc').setRequired(true);
+                    document.getElementById('bid5150_expertScore_div').style.display = "block";
+                    document.getElementById('bid5150_expertScore_no_div').style.display = "none";
+                } else if (score_mode == 'BIZ_TECH') {
+                    record.getField('score_mode_desc').setRequired(true);
+                    document.getElementById('bid5150_expertScore_div').style.display = "block";
+                    document.getElementById('bid5150_expertScore_no_div').style.display = "none";
+                } else if (score_mode == 'SAME_TIME') {
+                    record.getField('score_mode_desc').setRequired(true);
+                    document.getElementById('bid5150_expertScore_div').style.display = "block";
+                    document.getElementById('bid5150_expertScore_no_div').style.display = "none";
+            
+                } else if (score_mode == 'NONDISTINCTION') {
+                    record.getField('score_mode_desc').setRequired(true);
+                    document.getElementById('bid5150_expertScore_div').style.display = "none";
+                    document.getElementById('bid5150_expertScore_no_div').style.display = "block";
+            
+                } else {
+                    record.getField('score_mode_desc').setRequired(false);
+                }
+            
+                if (score_mode == 'TECH_BIZ' || score_mode == 'BIZ_TECH' || score_mode == 'SAME_TIME') {
+                    //专家与评分要素查询
+                    $('bid5150_ln_expert_1_ds').setQueryParameter('sequence_num', record.get('sequence_num_1'));
+                    $('bid5150_ln_expert_1_ds').setQueryParameter('team', record.get('team_1'));
+                    $('bid5150_ln_expert_1_ds').query();
+                    $('bid5150_ln_expert_2_ds').setQueryParameter('sequence_num', record.get('sequence_num_2'));
+                    $('bid5150_ln_expert_2_ds').setQueryParameter('team', record.get('team_2'));
+                    $('bid5150_ln_expert_2_ds').query();
+                    $('bid5150_scoring_elements_1_assign_ds').setQueryParameter('sequence_num', record.get('sequence_num_1'));
+                    $('bid5150_scoring_elements_1_assign_ds').setQueryParameter('team', record.get('team_1'));
+                    $('bid5150_scoring_elements_1_assign_ds').query();
+                    $('bid5150_scoring_elements_2_assign_ds').setQueryParameter('sequence_num', record.get('sequence_num_2'));
+                    $('bid5150_scoring_elements_2_assign_ds').setQueryParameter('team', record.get('team_2'));
+                    $('bid5150_scoring_elements_2_assign_ds').query();
+                } else if (score_mode == 'NONDISTINCTION') {
+                    //专家与评分要素查询
+                    $('bid5150_ln_expert_ds').setQueryParameter('sequence_num', record.get('sequence_num_1'));
+                    $('bid5150_ln_expert_ds').setQueryParameter('team', record.get('team_1'));
+                    $('bid5150_ln_expert_ds').query();
+                    $('bid5150_scoring_elements_assign_ds').setQueryParameter('sequence_num', record.get('sequence_num_1'));
+                    $('bid5150_scoring_elements_assign_ds').setQueryParameter('team', record.get('team_1'));
+                    $('bid5150_scoring_elements_assign_ds').query();
+                }
+            
+                var expert_score_flag = record.get('expert_score_flag');
+                if (expert_score_flag == 'Y') {
+                    document.getElementById('bid5150_expertScore').innerText = '${l:BID_ENTRUSTMENT_HEADERS.NO_EXPERT_SCORE}';
+                } else {
+                    document.getElementById('bid5150_expertScore').innerText = '${l:BID_ENTRUSTMENT_HEADERS.EXPERT_SCORE}';
+            
+                }
+            
+                var multistage_flag = record.get('multistage_flag');
+                var prequal_status = record.get('prequal_status');
+                if (multistage_flag == 'Y') {
+                    //多轮报价回到招标作业时，预审信息不可改、专家信息不可改、评分要素可改
+                    record.getField('score_mode_desc').setReadOnly(false);
+                    record.getField('closed_bidding_flag').setReadOnly(false);
+                    bid5150_setExpertEdit();
+                    
+                    if (prequal_status == 'RECHECK') {
+                        bid5150_prequalFun_flag = 'N';
+                        bid5150_prequalAttachement_flag = 'Y';
+                        //资格预审重新作业
+                    } else if (prequal_status == 'SUBMITTED' || prequal_status == 'CANCELLED') {
+                        //第一次进入招标作业可以新增/取消资格预审，也可以维护专家和评分要素
+                        bid5150_prequalFun_flag = 'Y';
+                        bid5150_prequalAttachement_flag = 'Y';
+                    } else {
+                        bid5150_prequalFun_flag = 'Y';
+                        bid5150_prequalAttachement_flag = 'Y';
+                    }
+                } else {
+                    if (prequal_status == 'RECHECK') {
+                        bid5150_prequalFun_flag = 'N';
+                        bid5150_prequalAttachement_flag = 'Y';
+                        //资格预审重新作业
+                    } else if (prequal_status == 'SUBMITTED' || prequal_status == 'CANCELLED') {
+                        //第一次进入招标作业可以新增/取消资格预审，也可以维护专家和评分要素
+                        bid5150_prequalFun_flag = 'Y';
+                        bid5150_prequalAttachement_flag = 'Y';
+                    } else {
+                        bid5150_prequalFun_flag = 'Y';
+                        bid5150_prequalAttachement_flag = 'Y';
+                    }
+                    bid5150_setExpertEdit();
+                    record.getField('score_mode_desc').setReadOnly(false);
+                    record.getField('closed_bidding_flag').setReadOnly(false);
+                }
+            }
+            
+            function bid5150EntrustmentEditOnUpdate(ds, record, name, value, oldvalue) {
+                if (name == 'bidding_method') {
+                    if (value == 'OPEN') {
+                        $('bid5150_edit_entrustment_tab').setDisabled(0);
+                        //$('bid5150_edit_bidder_line_ds').removeAll();
+                    } else {
+                        $('bid5150_edit_entrustment_tab').setEnabled(0);
+                    }
+                } else if (name == 'score_mode') {
+                    if (value == 'TECH_BIZ') {
+                        record.set('team_1', 'TECHNOLOGY');
+                        record.set('team_2', 'BUSINESS');
+                        record.set('sequence_num_1', '1');
+                        record.set('sequence_num_2', '2');
+                        record.set('team_1_desc', '${l:BID_ENTRUSTMENT_TECHNOLOGY_TEAM}');
+                        record.set('team_2_desc', '${l:BID_ENTRUSTMENT_BUSINESS_TEAM}');
+                        document.getElementById('bid5150_expertScore_div').style.display = "block";
+                        document.getElementById('bid5150_expertScore_no_div').style.display = "none";
+                    } else if (value == 'BIZ_TECH') {
+                        record.set('team_1', 'BUSINESS');
+                        record.set('team_2', 'TECHNOLOGY');
+                        record.set('sequence_num_1', '1');
+                        record.set('sequence_num_2', '2');
+                        record.set('team_1_desc', '${l:BID_ENTRUSTMENT_BUSINESS_TEAM}');
+                        record.set('team_2_desc', '${l:BID_ENTRUSTMENT_TECHNOLOGY_TEAM}');
+                        document.getElementById('bid5150_expertScore_div').style.display = "block";
+                        document.getElementById('bid5150_expertScore_no_div').style.display = "none";
+                    } else if (value == 'SAME_TIME') {
+                        record.set('team_1', 'BUSINESS');
+                        record.set('team_2', 'TECHNOLOGY');
+                        record.set('sequence_num_1', '1');
+                        record.set('sequence_num_2', '1');
+                        record.set('team_1_desc', '${l:BID_ENTRUSTMENT_BUSINESS_TEAM}');
+                        record.set('team_2_desc', '${l:BID_ENTRUSTMENT_TECHNOLOGY_TEAM}');
+                        document.getElementById('bid5150_expertScore_div').style.display = "block";
+                        document.getElementById('bid5150_expertScore_no_div').style.display = "none";
+                    } else if (value == 'NONDISTINCTION') {
+                        record.set('team_1', 'NONDISTINCTION');
+                        record.set('team_1_desc', '');
+                        record.set('team_2', '');
+                        record.set('team_2_desc', '');
+                        record.set('sequence_num_1', '1');
+                        record.set('sequence_num_2', '');
+                        document.getElementById('bid5150_expertScore_div').style.display = "none";
+                        document.getElementById('bid5150_expertScore_no_div').style.display = "block";
+                    }
+            
+                    if (value == 'TECH_BIZ' || value == 'BIZ_TECH' || value == 'SAME_TIME') {
+                        //专家与评分要素查询
+                        $('bid5150_ln_expert_1_ds').setQueryParameter('sequence_num', record.get('sequence_num_1'));
+                        $('bid5150_ln_expert_1_ds').setQueryParameter('team', record.get('team_1'));
+                        $('bid5150_ln_expert_2_ds').setQueryParameter('sequence_num', record.get('sequence_num_2'));
+                        $('bid5150_ln_expert_2_ds').setQueryParameter('team', record.get('team_2'));
+                        $('bid5150_scoring_elements_1_assign_ds').setQueryParameter('sequence_num', record.get('sequence_num_1'));
+                        $('bid5150_scoring_elements_1_assign_ds').setQueryParameter('team', record.get('team_1'));
+                        $('bid5150_scoring_elements_2_assign_ds').setQueryParameter('sequence_num', record.get('sequence_num_2'));
+                        $('bid5150_scoring_elements_2_assign_ds').setQueryParameter('team', record.get('team_2'));
+                    } else if (value == 'NONDISTINCTION') {
+                        //专家与评分要素查询
+                        $('bid5150_ln_expert_ds').setQueryParameter('sequence_num', record.get('sequence_num_1'));
+                        $('bid5150_ln_expert_ds').setQueryParameter('team', record.get('team_1'));
+                        $('bid5150_scoring_elements_assign_ds').setQueryParameter('sequence_num', record.get('sequence_num_1'));
+                        $('bid5150_scoring_elements_assign_ds').setQueryParameter('team', record.get('team_1'));
+                    }
+            
+                    bid5150_ExpertScoreTeamChange(record.get('team_1'), record.get('sequence_num_1'), record.get('team_2'), record.get('sequence_num_2'));
+                } else if (name == 'bid_opening_start_date'){
+                    if(value){
+                        record.set('bid_closing_date',value);
+                    }
+                }
+            }
+            
+            function bid5150EntrustmentEditExpertOnUpdate(ds, record, name, value, oldValue) {
+                if (name == 'leader_flag') {
+                    var records = ds.getAll();
+                    if (value == 'Y') {
+                        for (var i = 0;i < records.length;i++) {
+                            if (ds.indexOf(record) != ds.indexOf(records[i])) {
+                                records[i].set('leader_flag', 'N');
+                            }
+                        }
+                    }
+                }
+            }
+            
+            function bid5150EntrustmentEditSave() {
+                var header_ds = $('bid5150_edit_entustment_header_ds');
+                var bidder_ds = $('bid5150_edit_bidder_line_ds');
+                var prequal_ds = $('bid5150_edit_entrustment_prequal');
+                var expert_ds = $('bid5150_ln_expert_ds');
+                var expert_1_ds = $('bid5150_ln_expert_1_ds');
+                var expert_2_ds = $('bid5150_ln_expert_2_ds');
+                var element_ds = $('bid5150_scoring_elements_assign_ds');
+                var element_1_ds = $('bid5150_scoring_elements_1_assign_ds');
+                var element_2_ds = $('bid5150_scoring_elements_2_assign_ds');
+            
+            
+                if (!header_ds.validate()) {
+                    return;
+                }
+                if (!bidder_ds.validate()) {
+                    return;
+                }
+            
+                var prequal_flag = header_ds.getCurrentRecord().get('prequal_flag');
+                if (prequal_flag == 'Y' && !prequal_ds.validate()) {
+                    return;
+                }
+            
+                var data = header_ds.getCurrentRecord().data;
+                data['bidders'] = bidder_ds.getJsonData();
+            
+                if (prequal_flag == 'Y') {
+                    data['prequal'] = prequal_ds.getJsonData();
+                }
+            
+            
+                var score_mode = header_ds.getCurrentRecord().get('score_mode');
+            
+                if (score_mode == 'TECH_BIZ' || score_mode == 'BIZ_TECH' || score_mode == 'SAME_TIME') {
+                    if (!expert_1_ds.validate() || !expert_2_ds.validate() || !element_1_ds.validate() || !element_2_ds.validate()) {
+                        return;
+                    }
+            
+                    data['experts_1'] = expert_1_ds.getJsonData();
+                    data['experts_2'] = expert_2_ds.getJsonData();
+                    data['elements_1'] = element_1_ds.getJsonData();
+                    data['elements_2'] = element_2_ds.getJsonData();
+                } else if (score_mode == 'NONDISTINCTION') {
+                    if (!expert_ds.validate() || !element_ds.validate()) {
+                        return;
+                    }
+            
+                    data['experts_1'] = expert_ds.getJsonData();
+                    data['elements_1'] = element_ds.getJsonData();
+                }
+            
+                Aurora.Masker.mask($('bid5150_operation_window').wrap, '${l:LOADING}');
+            
+                Aurora.request({
+                    url: $('bid5150_entrustment_save_link').getUrl(),
+                    para: data,
+                    success: function() {
+                        Aurora.Masker.unmask($('bid5150_operation_window').wrap);
+                        Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SAVED}', function() {
+                            $('bid5150_operation_window').close();
+                            //$('bid5150_operation_window').load($('bid5150_entrustment_edit_link').getUrl() + '?entrustment_header_id=${/parameter/@entrustment_header_id}');
+			                new Aurora.Window({
+			                    id: 'bid5150_operation_window',
+			                    title: '${l:BID_ENTRUSTMENT_HEADERS.ENTRUSTMENT_OPERATION}',
+			                    url: $('bid5150_entrustment_edit_link').getUrl() + '?entrustment_header_id=${/parameter/@entrustment_header_id}',
+			                    fullScreen: true
+			                }).on('beforeclose', function() {
+			                    try{
+			                    	$('bid6080_entrustment_result_ds').query();
+			                    }catch(e){
+			                        null;
+			                    }
+			                });
+                        });
+                    },
+                    failure: function() {
+                        Aurora.Masker.unmask($('bid5150_operation_window').wrap);
+                        return;
+                    },
+                    error: function() {
+                        Aurora.Masker.unmask($('bid5150_operation_window').wrap);
+                        return;
+                    }
+                });
+            }
+            
+            //Check Ds Record Dirty/New
+            
+            
+            function bid5150EntrustmentEditBulletinPreview() {
+                var header_ds = $('bid5150_edit_entustment_header_ds');
+                var bidder_ds = $('bid5150_edit_bidder_line_ds');
+                var prequal_ds = $('bid5150_edit_entrustment_prequal');
+                var expert_ds = $('bid5150_ln_expert_ds');
+                var expert_1_ds = $('bid5150_ln_expert_1_ds');
+                var expert_2_ds = $('bid5150_ln_expert_2_ds');
+                var element_ds = $('bid5150_scoring_elements_assign_ds');
+                var element_1_ds = $('bid5150_scoring_elements_1_assign_ds');
+                var element_2_ds = $('bid5150_scoring_elements_2_assign_ds');
+            
+                if (!header_ds.validate()) {
+                    return;
+                }
+            
+                if (!bidder_ds.validate()) {
+                    return;
+                }
+            
+                //Check Ds Record Dirty/New
+                if (header_ds.isModified() || bidder_ds.isModified()) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.PLEASE_SAVE}', function() {});
+                    return;
+                }
+            
+                var prequal_flag = header_ds.getCurrentRecord().get('prequal_flag');
+                if (prequal_flag == 'Y') {
+                    if (!prequal_ds.validate()) {
+                        return;
+                    }
+                    if (prequal_ds.isModified()) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.PLEASE_SAVE}', function() {});
+                        return;
+                    }
+                }
+            
+            
+                var score_mode = header_ds.getCurrentRecord().get('score_mode');
+            
+                if (score_mode == 'TECH_BIZ' || score_mode == 'BIZ_TECH' || score_mode == 'SAME_TIME') {
+                    if (!expert_1_ds.validate() || !expert_2_ds.validate() || !element_1_ds.validate() || !element_2_ds.validate()) {
+                        return;
+                    }
+                    
+                    if (expert_1_ds.isModified() || expert_2_ds.isModified() || element_1_ds.isModified() || element_2_ds.isModified()) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.PLEASE_SAVE}', function() {});
+                        return;
+                    }
+            
+                } else if (score_mode == 'NONDISTINCTION') {
+                    if (!expert_ds.validate() || !element_ds.validate()) {
+                        return;
+                    }
+                    if (expert_ds.isModified() || element_ds.isModified()) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.PLEASE_SAVE}', function() {});
+                        return;
+                    }
+                }
+            
+                var rec = header_ds.getCurrentRecord();
+                var entrustment_header_id = rec.get('entrustment_header_id');
+                var status = rec.get('status');
+                var round = rec.get('round');
+                var version = rec.get('version');
+            
+                Aurora.showConfirm('${l:PROMPT}', '${l:PROMPT.CONFIRM_RELEASE}？', function() {
+                    Aurora.Masker.mask($('bid5150_operation_window').wrap, '${l:LOADING}');
+            
+                    Aurora.request({
+                        url: $('bid5150_issue_entrustment_link').getUrl(),
+                        para: {
+                            'entrustment_header_id': entrustment_header_id,
+                            'status': status,
+                            'round': round,
+                            'version': version,
+                            'ignore_flag': 'N'
+                        },
+                        success: function(res) {
+                            Aurora.Masker.unmask($('bid5150_operation_window').wrap);
+                            if (!Ext.isEmpty(res.result.message)) {
+                                Aurora.showConfirm('${l:PROMPT}', res.result.message, function() {
+                                    bid5150EntrustmentIssueIgnore(entrustment_header_id, status, round, version)
+                                });
+                            } else {
+                                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.RELEASED}', function() {
+                                    $('bid5150_operation_window').close();
+                                });
+                            }
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask($('bid5150_operation_window').wrap);
+                            return;
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask($('bid5150_operation_window').wrap);
+                            return;
+                        }
+                    });
+                });
+            }
+            
+            function bid5150EntrustmentIssueIgnore(entrustment_header_id, status, round, version) {
+                Aurora.Masker.mask($('bid5150_operation_window').wrap, '${l:LOADING}');
+            
+                Aurora.request({
+                    url: $('bid5150_issue_entrustment_link').getUrl(),
+                    para: {
+                        'entrustment_header_id': entrustment_header_id,
+                        'status': status,
+                        'round': round,
+                        'version': version,
+                        'ignore_flag': 'Y'
+                    },
+                    success: function(res) {
+                        Aurora.Masker.unmask($('bid5150_operation_window').wrap);
+                        Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.RELEASED}', function() {
+                            $('bid5150_operation_window').close();
+                        });
+                    },
+                    failure: function() {
+                        Aurora.Masker.unmask($('bid5150_operation_window').wrap);
+                        return;
+                    },
+                    error: function() {
+                        Aurora.Masker.unmask($('bid5150_operation_window').wrap);
+                        return;
+                    }
+                });
+            }
+            
+            function bid5150EntrustmentEditTurnOver() {
+                var header_ds = $('bid5150_edit_entustment_header_ds');
+                var rec = header_ds.getCurrentRecord();
+                var entrustment_header_id = rec.get('entrustment_header_id');
+                var status = rec.get('status');
+                new Aurora.Window({
+                    id: 'bid5150_entrustment_turn_over_window',
+                    title: '${l:PROMPT.DELIVER}',
+                    url: $('bid5150_entrustment_turn_over_link').getUrl() + '?entrustment_header_id=' + entrustment_header_id + '&status=' + status,
+                    width: 280,
+                    height: 150
+                });
+            }
+            
+            function bid5150EntrustmentEditReturn() {
+                $('bid5150_operation_window').close();
+            }
+            
+            function bid5150EntrustmentEditExpertRandomChoose() {
+                if (!$('bid5150_edit_entustment_header_ds').validate()) {
+                    return;
+                }
+                if (!$('bid5150_edit_expert_line_ds').validate()) {
+                    return;
+                }
+                if (!$('bid5150_edit_bidder_line_ds').validate()) {
+                    return;
+                }
+                var head_record = $('bid5150_edit_entustment_header_ds').getAt(0);
+                // if (head_record.dirty) {
+                // Aurora.showMessage('${l:PROMPT}', '${l:SAVE_FIRST}');
+                // return;
+                // }
+                // var expert_records = $('bid5150_edit_expert_line_ds').getAll();
+                // for (var i = 0;i < expert_records.length;i++) {
+                // if (expert_records[i].dirty) {
+                // Aurora.showMessage('${l:PROMPT}', '${l:SAVE_FIRST}');
+                // return;
+                // }
+                // }
+                // var bidder_records = $('bid5150_edit_bidder_line_ds').getAll();
+                // for (var j = 0;i < bidder_records.length;j++) {
+                // if (bidder_records[j].dirty) {
+                // Aurora.showMessage('${l:PROMPT}', '${l:SAVE_FIRST}');
+                // return;
+                // }
+                // }
+            
+                new Aurora.Window({
+                    id: 'bid5150_entrustment_expert_random_choose_window',
+                    title: 'BID_ENTRUSTMENT_HEADERS.RANDOM_SELECT_EXPERT',
+                    url: $('bid5150_entrustment_expert_random_choose_link').getUrl() + '?entrustment_header_id=${/parameter/@entrustment_header_id}',
+                    height: 460,
+                    width: 540
+                });
+            }
+            
+            function bid5150EntrustmentEditExpertEditor(record, name) {
+                if (name == 'expert_user_name') {
+                    if (record.isNew) {
+                        return 'bid5150_edit_expert_lov';
+                    } else {
+                        var source_type = record.get('source_type');
+                        if (source_type == 'RANDOM') {
+                            return '';
+                        }
+                        return 'bid5150_edit_expert_lov';
+                    }
+                }
+            }
+            
+            function bid5150EntrustmentEditBidderEditor(record, name) {
+                if (name == 'bidder_code') {
+                    var suggested_flag = record.get('suggested_flag');
+                    if (record.isNew) {
+                        return 'bid5150_edit_bidder_lov';
+                    } else {
+                        if (!record.dirty && suggested_flag == 'Y') {
+                            return '';
+                        }
+                        return 'bid5150_edit_bidder_lov';
+                    }
+                }
+            }
+            
+            function bid5150EntrustmentEditAtmRender(value, rec, name) {
+                if (name == 'file_download_link') {
+                    var file_download_link = rec.get('file_download_link');
+                    return file_download_link;
+                }
+            }
+            
+            //Bidder CellClick
+            
+            
+            function bid5150_edit_entrustment_bidders_ds_cellclickFun(grid, row, name, record, value) {
+                if (name == 'contact_name') {
+                    record.getField('contact_name').setLovPara('vendor_company_id', record.get('bidder_company_id'));
+                } else if (name == 'bidder_code') {
+                    var using_company_id = $('bid5150_edit_entustment_header_ds').getCurrentRecord().get('using_company_id');
+                    record.getField('bidder_code').setLovPara('owner_company_id', using_company_id);
+                }
+            }
+            
+            function bid5150EntrustmentEditAtmUpload() {
+                if ('${/parameter/@entrustment_header_id}') {
+                    var url = $('bid5040_attachment_upload_link').getUrl()+'?header_id=${/parameter/@entrustment_header_id}';
+                    new Aurora.Window({
+                        url: url,
+                        title: '${l:ATM.UPLOAD_ATTACHMENT}',
+                        id: 'bid5150_entrustment_edit_atm_window',
+                        width: 650,
+                        height: 400
+                    }).on('beforeclose', function() {
+                        $('bid5150_edit_atm_files_ds').query();
+                    });
+                }
+            }
+            
+            function bid5150_onEditEntrustmentPrequal_updateFun(ds, record, name, value, oldvalue) {
+                if (name == 'review_method') {
+                    record.set('qualified_limit', '');
+                    if (value == 'QUALIFICATION') {
+                        record.getField('qualified_limit').setReadOnly(true);
+                        record.getField('qualified_limit').setRequired(false);
+                    } else if (value == 'QUANTITY') {
+                        record.getField('qualified_limit').setReadOnly(false);
+                        record.getField('qualified_limit').setRequired(true);
+                    }
+                } else if (name == 'file_free_flag') {
+                    record.set('proqual_file_expense', '');
+                    if (value == 'Y') {
+                        record.getField('proqual_file_expense').setReadOnly(true);
+                        record.getField('proqual_file_expense').setRequired(false);
+                    } else {
+                        record.getField('proqual_file_expense').setReadOnly(false);
+                        record.getField('proqual_file_expense').setRequired(true);
+                    }
+                }
+            }
+            
+            function bid5150_prequalFun() {
+                var header_rec = $('bid5150_edit_entustment_header_ds').getAt(0);
+                var prequal_flag = header_rec.get('prequal_flag');
+                if (bid5150_prequalFun_flag == 'Y') {
+                    if (prequal_flag == 'Y') {
+                        Aurora.showConfirm('${l:PROMPT}', '${l:BID_ENTRUSTMENT.CONFIRM_CANCEL}', function() {
+                            header_rec.set('prequal_flag', 'N');
+                            document.getElementById('bid5150_prequal_div').style.display = "none";
+                            document.getElementById('bid5150_prequal').innerText = '${l:BID_ENTRUSTMENT_HEADERS.ADD_PREQUAL}';
+                        });
+                    } else {
+                        header_rec.set('prequal_flag', 'Y');
+                        document.getElementById('bid5150_prequal_div').style.display = "block";
+                        document.getElementById('bid5150_prequal').innerText = '${l:BID_ENTRUSTMENT_HEADERS.CANCEL_PREQUAL}';
+                    }
+                }
+            }
+            
+            function bid5150_UploadPrequalAttachmentFun() {
+                var url;
+                if (bid5150_prequalAttachement_flag == 'Y') {
+                    url = "${/request/@context_path}/uploadFile.screen?table_name=BID_PREQUAL_HEADERS&header_id=${/parameter/@entrustment_header_id}";
+                    new Aurora.Window({
+                        url: url,
+                        title: '${l:ATM.UPLOAD_ATTACHMENT}',
+                        id: 'bid5150_prequal_upload_window',
+                        width: 610,
+                        height: 500
+                    });
+                } else {
+                    url = "${/request/@context_path}/check_uploadFile.screen?table_name=BID_PREQUAL_HEADERS&header_id=${/parameter/@entrustment_header_id}";
+                    new Aurora.Window({
+                        url: url,
+                        title: '${l:ATM.UPLOAD_ATTACHMENT}',
+                        id: 'bid5150_prequal_check_upload_window',
+                        width: 610,
+                        height: 500
+                    });
+                }
+            }
+            
+            function bid5150_onLnExper_updateFun(ds, record, name, value, oldValue) {
+                if (name == 'leader_flag') {
+                    var records = ds.getAll();
+                    if (value == 'Y') {
+                        for (var i = 0;i < records.length;i++) {
+                            if (ds.indexOf(record) != ds.indexOf(records[i])) {
+                                records[i].set('leader_flag', 'N');
+                            }
+                        }
+                    }
+                }
+            }
+            
+            function bid5150_onLnExpert1_updateFun(ds, record, name, value, oldValue) {
+                bid5150_onLnExper_updateFun(ds, record, name, value, oldValue);
+            }
+            
+            function bid5150_onLnExpert2_updateFun(ds, record, name, value, oldValue) {
+                bid5150_onLnExper_updateFun(ds, record, name, value, oldValue);
+            }
+            
+            function bid5150_onLnExpert_updateFun(ds, record, name, value, oldValue) {
+                bid5150_onLnExper_updateFun(ds, record, name, value, oldValue);
+            }
+            
+            function bid5150_ln_expert_1_grid_Editor(record, name) {
+                if (name == 'expert_user_name') {
+                    if (record.isNew) {
+                        return 'bid5150_ln_expert_1_grid_lov';
+                    } else {
+                        var source_type = record.get('source_type');
+                        if (source_type == 'RANDOM') {
+                            return '';
+                        }
+                        return 'bid5150_ln_expert_1_grid_lov';
+                    }
+                }
+            }
+            
+            function bid5150_ln_expert_2_grid_Editor(record, name) {
+                if (name == 'expert_user_name') {
+                    if (record.isNew) {
+                        return 'bid5150_ln_expert_2_grid_lov';
+                    } else {
+                        var source_type = record.get('source_type');
+                        if (source_type == 'RANDOM') {
+                            return '';
+                        }
+                        return 'bid5150_ln_expert_2_grid_lov';
+                    }
+                }
+            }
+            
+            function bid5150_ln_expert_grid_Editor(record, name) {
+                if (name == 'expert_user_name') {
+                    if (record.isNew) {
+                        return 'bid5150_ln_expert_grid_lov';
+                    } else {
+                        var source_type = record.get('source_type');
+                        if (source_type == 'RANDOM') {
+                            return '';
+                        }
+                        return 'bid5150_ln_expert_grid_lov';
+                    }
+                }
+            }
+            
+            function bid5150_ln_expert_1_RandomChoose() {
+                if (!$('bid5150_ln_expert_1_ds').validate()) {
+                    return;
+                }
+            
+                var header_rec = $('bid5150_edit_entustment_header_ds').getAt(0);
+                var score_mode = header_rec.get('score_mode');
+            
+                if (Ext.isEmpty(score_mode)) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:BID_ENTRUSTMENT_HEADERS.CHOOSE_SCORE_MODE}');
+                    return;
+                }
+            
+                new Aurora.Window({
+                    id: 'bid5150_entrustment_expert_random_choose_window',
+                    title: '${l:BID_ENTRUSTMENT_RANDOM_CHOOSE}',
+                    url: $('bid5150_entrustment_expert_random_choose_link').getUrl() + '?entrustment_header_id=${/parameter/@entrustment_header_id}&sequence_num=' + header_rec.get('sequence_num_1') + '&team=' + header_rec.get('team_1'),
+                    height: 460,
+                    width: 540
+                }).on('beforeclose', function() {
+                    $('bid5150_ln_expert_1_ds').query();
+                });
+            }
+            
+            function bid5150_ln_expert_2_RandomChoose() {
+                if (!$('bid5150_ln_expert_2_ds').validate()) {
+                    return;
+                }
+                var header_rec = $('bid5150_edit_entustment_header_ds').getAt(0);
+                var score_mode = header_rec.get('score_mode');
+            
+                if (Ext.isEmpty(score_mode)) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:BID_ENTRUSTMENT_HEADERS.CHOOSE_SCORE_MODE}');
+                    return;
+                }
+            
+                new Aurora.Window({
+                    id: 'bid5150_entrustment_expert_random_choose_window',
+                    title: '${l:BID_ENTRUSTMENT_RANDOM_CHOOSE}',
+                    url: $('bid5150_entrustment_expert_random_choose_link').getUrl() + '?entrustment_header_id=${/parameter/@entrustment_header_id}&sequence_num=' + header_rec.get('sequence_num21') + '&&team=' + header_rec.get('team_2'),
+                    height: 460,
+                    width: 540
+                }).on('beforeclose', function() {
+                    $('bid5150_ln_expert_2_ds').query();
+                });
+            }
+            
+            function bid5150_ln_expert_RandomChoose() {
+                if (!$('bid5150_ln_expert_ds').validate()) {
+                    return;
+                }
+                var header_rec = $('bid5150_edit_entustment_header_ds').getAt(0);
+                var score_mode = header_rec.get('score_mode');
+            
+                if (Ext.isEmpty(score_mode)) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:BID_ENTRUSTMENT_HEADERS.CHOOSE_SCORE_MODE}');
+                    return;
+                }
+            
+                new Aurora.Window({
+                    id: 'bid5150_entrustment_expert_random_choose_window',
+                    title: '${l:BID_ENTRUSTMENT_RANDOM_CHOOSE}',
+                    url: $('bid5150_entrustment_expert_random_choose_link').getUrl() + '?entrustment_header_id=${/parameter/@entrustment_header_id}&sequence_num=' + header_rec.get('sequence_num_1') + '&team=' + header_rec.get('team_1'),
+                    height: 460,
+                    width: 540
+                }).on('beforeclose', function() {
+                    $('bid5150_ln_expert_ds').query();
+                });
+            }
+            
+            function bid5150_expertScoreFun() {
+                var header_rec = $('bid5150_edit_entustment_header_ds').getAt(0);
+                var expert_score_flag = header_rec.get('expert_score_flag');
+                if (expert_score_flag == 'Y') {
+                    Aurora.showConfirm('${l:PROMPT}', '${l:BID_ENTRUSTMENT.CONFIRM_CANCEL}', function() {
+                        header_rec.set('expert_score_flag', 'N');
+                        header_rec.set('score_mode', '');
+                        header_rec.getField('score_mode_desc').setRequired(false);
+                        document.getElementById('bid5150_expertScore_div').style.display = "none";
+                        document.getElementById('bid5150_expertScore_no_div').style.display = "none";
+                        document.getElementById('bid5150_expertScore').innerText = '${l:BID_ENTRUSTMENT_HEADERS.EXPERT_SCORE}';
+                    });
+                } else {
+                    header_rec.set('expert_score_flag', 'Y');
+                    header_rec.getField('score_mode_desc').setRequired(true);
+                    document.getElementById('bid5150_expertScore_div').style.display = "block";
+                    document.getElementById('bid5150_expertScore_no_div').style.display = "none";
+                    document.getElementById('bid5150_expertScore').innerText = '${l:BID_ENTRUSTMENT_HEADERS.NO_EXPERT_SCORE}';
+                }
+            }
+            
+            function bid5150_edit_onLnExpertScore_expert1_addFun(ds, record, index) {
+                var header_rec = $('bid5150_edit_entustment_header_ds').getAt(0);
+                var score_mode = header_rec.get('score_mode');
+            
+                if (Ext.isEmpty(score_mode)) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:BID_ENTRUSTMENT_HEADERS.CHOOSE_SCORE_MODE}');
+                    return false;
+                }
+                record.getField('expert_user_name').setReadOnly(false);
+                record.getField('leader_flag').setReadOnly(false);
+            
+                record.set('team', header_rec.get('team_1'));
+                record.set('sequence_num', header_rec.get('sequence_num_1'));
+            }
+            
+            function bid5150_edit_onLnExpertScore_expert2_addFun(ds, record, index) {
+                var header_rec = $('bid5150_edit_entustment_header_ds').getAt(0);
+                var score_mode = header_rec.get('score_mode');
+            
+                if (Ext.isEmpty(score_mode)) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:BID_ENTRUSTMENT_HEADERS.CHOOSE_SCORE_MODE}');
+                    return false;
+                }
+                record.getField('expert_user_name').setReadOnly(false);
+                record.getField('leader_flag').setReadOnly(false);
+                record.set('team', header_rec.get('team_2'));
+                record.set('sequence_num', header_rec.get('sequence_num_2'));
+            }
+            
+            function bid5150_edit_onLnExpertScore_expert_addFun(ds, record, index) {
+                var header_rec = $('bid5150_edit_entustment_header_ds').getAt(0);
+                var score_mode = header_rec.get('score_mode');
+            
+                if (Ext.isEmpty(score_mode)) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:BID_ENTRUSTMENT_HEADERS.CHOOSE_SCORE_MODE}');
+                    return false;
+                }
+                record.getField('expert_user_name').setReadOnly(false);
+                record.getField('leader_flag').setReadOnly(false);
+                record.set('team', header_rec.get('team_1'));
+                record.set('sequence_num', header_rec.get('sequence_num_1'));
+            }
+            
+            function bid5150_edit_onLnExpertScore_element1_addFun(ds, record, index) {
+                var header_rec = $('bid5150_edit_entustment_header_ds').getAt(0);
+                var score_mode = header_rec.get('score_mode');
+            
+                if (Ext.isEmpty(score_mode)) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:BID_ENTRUSTMENT_HEADERS.CHOOSE_SCORE_MODE}');
+                    return false;
+                }
+            
+                record.set('team', header_rec.get('team_1'));
+                record.set('sequence_num', header_rec.get('sequence_num_1'));
+            }
+            
+            function bid5150_edit_onLnExpertScore_element2_addFun(ds, record, index) {
+                var header_rec = $('bid5150_edit_entustment_header_ds').getAt(0);
+                var score_mode = header_rec.get('score_mode');
+            
+                if (Ext.isEmpty(score_mode)) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:BID_ENTRUSTMENT_HEADERS.CHOOSE_SCORE_MODE}');
+                    return false;
+                }
+            
+                record.set('team', header_rec.get('team_2'));
+                record.set('sequence_num', header_rec.get('sequence_num_2'));
+            }
+            
+            function bid5150_edit_onLnExpertScore_element_addFun(ds, record, index) {
+                var header_rec = $('bid5150_edit_entustment_header_ds').getAt(0);
+                var score_mode = header_rec.get('score_mode');
+            
+                if (Ext.isEmpty(score_mode)) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:BID_ENTRUSTMENT_HEADERS.CHOOSE_SCORE_MODE}');
+                    return false;
+                }
+            
+                record.set('team', header_rec.get('team_1'));
+                record.set('sequence_num', header_rec.get('sequence_num_1'));
+            }
+            
+            function bid5150_ExpertScoreTeamChangeLoop(ds, team, sequence_num) {
+                var records = ds.getAll();
+                for (var i = 0;i < records.length;i++) {
+                    records[i].set('team', team);
+                    records[i].set('sequence_num', sequence_num);
+                }
+            }
+            
+            function bid5150_ExpertScoreTeamChange(team_1, sequence_num_1, team_2, sequence_num_2) {
+                bid5150_ExpertScoreTeamChangeLoop($('bid5150_ln_expert_1_ds'), team_1, sequence_num_1);
+                bid5150_ExpertScoreTeamChangeLoop($('bid5150_ln_expert_2_ds'), team_2, sequence_num_2);
+                bid5150_ExpertScoreTeamChangeLoop($('bid5150_ln_expert_ds'), team_1, sequence_num_1);
+            
+                bid5150_ExpertScoreTeamChangeLoop($('bid5150_scoring_elements_1_assign_ds'), team_1, sequence_num_1);
+                bid5150_ExpertScoreTeamChangeLoop($('bid5150_scoring_elements_2_assign_ds'), team_2, sequence_num_2);
+                bid5150_ExpertScoreTeamChangeLoop($('bid5150_scoring_elements_assign_ds'), team_1, sequence_num_1);
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="bid5150_edit_bidding_types_ds" lookupCode="BID_BIDDING_TYPES"/>
+            <a:dataSet id="bid5150_edit_score_modes_ds" lookupCode="BID_ENTRUSTMENT_SCORE_MODES"/>
+            <a:dataSet id="bid5150_edit_entustment_header_ds" autoQuery="true" model="bid.BID5150.bid_entrustment_headers" queryUrl="${/request/@context_path}/autocrud/bid.BID5150.bid_entrustment_headers/query?entrustment_header_id=${/parameter/@entrustment_header_id}">
+                <a:fields>
+                    <a:field name="bid_closing_date" required="true" validator="bid5150EntrustmentEditValidator"/>
+                    <a:field name="opening_place_id" required="true"/>
+                    <a:field name="opening_place_desc" autoComplete="true" autoCompleteField="place_desc" lovHeight="505" lovService="bid.public.bid_opening_places_vl" lovWidth="500" required="true" title="BID_ENTRUSTMENT_HEADERS.OPENING_PLACE_DESC">
+                        <a:mapping>
+                            <a:map from="place_id" to="opening_place_id"/>
+                            <a:map from="place_desc" to="opening_place_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="bid_opening_start_date" required="true" validator="bid5150EntrustmentEditValidator"/>
+                    <a:field name="score_mode_desc" displayField="code_value_name" options="bid5150_edit_score_modes_ds" readOnly="true" returnField="score_mode" valueField="code_value"/>
+                    <a:field name="closed_bidding_flag" checkedValue="Y" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="team_1" readOnly="true"/>
+                    <a:field name="team_1_desc" readOnly="true"/>
+                    <a:field name="team_2" readOnly="true"/>
+                    <a:field name="team_2_desc" readOnly="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="bid5150EntrustmentEditOnLoad"/>
+                    <a:event name="update" handler="bid5150EntrustmentEditOnUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="bid5150_edit_expert_line_ds" autoCount="true" autoPageSize="true" autoQuery="true" model="bid.BID5150.bid_entrustment_ln_experts" queryUrl="${/request/@context_path}/autocrud/bid.BID5150.bid_entrustment_ln_experts/query?entrustment_header_id=${/parameter/@entrustment_header_id}" selectable="true">
+                <a:fields>
+                    <a:field name="entrustment_header_id" defaultValue="${/parameter/@entrustment_header_id}"/>
+                    <a:field name="line_expert_id"/>
+                    <a:field name="expert_user_name" lovGridHeight="320" lovHeight="450" lovService="bid.BID5150.bid_expert_employee_lov" lovWidth="500" required="true" title="BID_ENTRUSTMENT_LN_EXPERTS.EXPERT">
+                        <a:mapping>
+                            <a:map from="expert_id" to="expert_id"/>
+                            <a:map from="user_name" to="expert_user_name"/>
+                            <a:map from="full_name" to="expert_user_desc"/>
+                            <a:map from="source_type" to="source_type"/>
+                            <a:map from="source_type_desc" to="source_type_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="name"/>
+                    <a:field name="expert_id"/>
+                    <a:field name="source_type"/>
+                    <a:field name="source_type_desc"/>
+                    <a:field name="leader_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="bid5150EntrustmentEditExpertOnUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="bid5150_edit_bidder_line_ds" autoCount="true" autoPageSize="true" autoQuery="true" model="bid.BID5150.bid_entrustment_ln_bidders" queryUrl="${/request/@context_path}/autocrud/bid.BID5150.bid_entrustment_ln_bidders/query?entrustment_header_id=${/parameter/@entrustment_header_id}" selectable="true">
+                <a:fields>
+                    <a:field name="entrustment_header_id" defaultValue="${/parameter/@entrustment_header_id}"/>
+                    <a:field name="line_bidder_id"/>
+                    <a:field name="bidder_id"/>
+                    <a:field name="suggested_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="bidder_code" autoComplete="true" autoCompleteField="code_name" lovHeight="480" lovService="bid.public.bid_bidders_lov" lovWidth="500" required="true" title="BID_ENTRUSTMENT_HEADERS.BIDDER">
+                        <a:mapping>
+                            <a:map from="bidder_company_id" to="bidder_company_id"/>
+                            <a:map from="bidder_code" to="bidder_code"/>
+                            <a:map from="bidder_desc" to="bidder_desc"/>
+                            <a:map from="bidder_business_group" to="bidder_business_group"/>
+                            <a:map from="contact_id" to="contact_id"/>
+                            <a:map from="contact_name" to="contact_name"/>
+                            <a:map from="mobile_phone" to="mobile_phone"/>
+                            <a:map from="telephone" to="telephone"/>
+                            <a:map from="email" to="email"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="contact_name" autoComplete="false" lovHeight="480" lovUrl="${/request/@context_path}/modules/public/fnd_com_sup_contacts_lov.screen" lovWidth="560" title="BID_ENTRUSTMENT_LN_ITEMS.CONTACT_ID" tooltip="您可以直接输入联系人姓名">
+                        <a:mapping>
+                            <a:map from="contact_id" to="contact_id"/>
+                            <a:map from="contact_name" to="contact_name"/>
+                            <a:map from="mobile_phone" to="mobile_phone"/>
+                            <a:map from="telephone" to="telephone"/>
+                            <a:map from="email" to="email"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="sms_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+            <!-- <a:dataSet id="bid5150_scoring_elements_assign_ds" autoCount="true" autoPageSize="true" autoQuery="true" model="bid.BID5150.bid_scoring_elements_assign" queryUrl="${/request/@context_path}/autocrud/bid.BID5150.bid_scoring_elements_assign/query?entrustment_header_id=${/parameter/@entrustment_header_id}" selectable="true">
+                <a:fields>
+                    <a:field name="entrustment_header_id" defaultValue="${/parameter/@entrustment_header_id}"/>
+                    <a:field name="scoring_elements_code" autoComplete="true" autoCompleteField="code_name" lovGridHeight="350" lovHeight="510" lovService="public.bid_scoring_elements_lov" lovWidth="500" required="true" title="BID_SCORING_ELEMENTS.SCORING_ELEMENTS">
+                        <a:mapping>
+                            <a:map from="scoring_elements_id" to="scoring_elements_id"/>
+                            <a:map from="scoring_elements_code" to="scoring_elements_code"/>
+                            <a:map from="scoring_elements_desc" to="scoring_elements_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="highest_scores" required="true"/>
+                </a:fields>
+            </a:dataSet> -->
+            <a:dataSet id="bid5150_edit_atm_files_ds" autoCount="true" autoQuery="true" fetchAll="true" model="bid.public.bid_entrustment_header_attachment" queryUrl="${/request/@context_path}/autocrud/bid.public.bid_entrustment_header_attachment/query?pk_value=${/parameter/@entrustment_header_id}"/>
+            <a:dataSet id="bid5150_edit_prequal_review_methods_ds" lookupCode="BID_PREQUAL_REVIEW_METHODS"/>
+            <a:dataSet id="bid5150_edit_entrustment_prequal" autoCreate="true" autoQuery="true" model="bid.BID5150.bid_entrustment_prequal" queryUrl="${/request/@context_path}/autocrud/bid.BID5150.bid_entrustment_prequal/query?entrustment_header_id=${/parameter/@entrustment_header_id}">
+                <a:fields>
+                    <a:field name="entrustment_header_id" defaultValue="${/parameter/@entrustment_header_id}"/>
+                    <a:field name="closing_date" required="true" validator="bid5150EntrustmentPrequalEditValidator"/>
+                    <a:field name="review_method_desc" displayField="code_value_name" options="bid5150_edit_prequal_review_methods_ds" returnField="review_method" valueField="code_value"/>
+                    <a:field name="qualified_limit"/>
+                    <a:field name="file_free_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="proqual_file_expense"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="bid5150_onEditEntrustmentPrequal_loadFun"/>
+                    <a:event name="update" handler="bid5150_onEditEntrustmentPrequal_updateFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 1 EXPERT -->
+            <a:dataSet id="bid5150_ln_expert_1_ds" autoCount="true" autoPageSize="true" model="bid.BID5150.bid_entrustment_ln_experts" queryUrl="${/request/@context_path}/autocrud/bid.BID5150.bid_entrustment_ln_experts/query?entrustment_header_id=${/parameter/@entrustment_header_id}&amp;sequence_num=1" selectable="true">
+                <a:fields>
+                    <a:field name="entrustment_header_id" defaultValue="${/parameter/@entrustment_header_id}"/>
+                    <a:field name="team"/>
+                    <a:field name="sequence_num" defaultValue="1"/>
+                    <a:field name="line_expert_id"/>
+                    <a:field name="expert_user_name" lovGridHeight="320" lovHeight="450" lovService="bid.BID5150.bid_expert_employee_lov" lovWidth="500" readOnly="true" required="true" title="BID5160.EXPERT">
+                        <a:mapping>
+                            <a:map from="expert_id" to="expert_id"/>
+                            <a:map from="user_name" to="expert_user_name"/>
+                            <a:map from="full_name" to="expert_user_desc"/>
+                            <a:map from="source_type" to="source_type"/>
+                            <a:map from="source_type_desc" to="source_type_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="name" readOnly="true"/>
+                    <a:field name="expert_id"/>
+                    <a:field name="source_type"/>
+                    <a:field name="source_type_desc" readOnly="true"/>
+                    <a:field name="leader_flag" checkedValue="Y" defaultValue="N" readOnly="true" uncheckedValue="N"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="bid5150_edit_onLnExpertScore_expert1_addFun"/>
+                    <a:event name="update" handler="bid5150_onLnExpert1_updateFun"/>
+                    <a:event name="load" handler="bid5150_onLnExpert_loadFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 2 EXPERT -->
+            <a:dataSet id="bid5150_ln_expert_2_ds" autoCount="true" autoPageSize="true" model="bid.BID5150.bid_entrustment_ln_experts" queryUrl="${/request/@context_path}/autocrud/bid.BID5150.bid_entrustment_ln_experts/query?entrustment_header_id=${/parameter/@entrustment_header_id}&amp;sequence_num=2" selectable="true">
+                <a:fields>
+                    <a:field name="entrustment_header_id" defaultValue="${/parameter/@entrustment_header_id}"/>
+                    <a:field name="team"/>
+                    <a:field name="sequence_num" defaultValue="2"/>
+                    <a:field name="line_expert_id"/>
+                    <a:field name="expert_user_name" lovGridHeight="320" lovHeight="450" lovService="bid.BID5150.bid_expert_employee_lov" lovWidth="500" readOnly="true" required="true" title="BID5160.EXPERT">
+                        <a:mapping>
+                            <a:map from="expert_id" to="expert_id"/>
+                            <a:map from="user_name" to="expert_user_name"/>
+                            <a:map from="full_name" to="expert_user_desc"/>
+                            <a:map from="source_type" to="source_type"/>
+                            <a:map from="source_type_desc" to="source_type_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="name" readOnly="true"/>
+                    <a:field name="expert_id"/>
+                    <a:field name="source_type"/>
+                    <a:field name="source_type_desc" readOnly="true"/>
+                    <a:field name="leader_flag" checkedValue="Y" defaultValue="N" readOnly="true" uncheckedValue="N"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="bid5150_edit_onLnExpertScore_expert2_addFun"/>
+                    <a:event name="update" handler="bid5150_onLnExpert2_updateFun"/>
+                    <a:event name="load" handler="bid5150_onLnExpert_loadFun"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="bid5150_ln_expert_ds" autoCount="true" autoPageSize="true" model="bid.BID5150.bid_entrustment_ln_experts" queryUrl="${/request/@context_path}/autocrud/bid.BID5150.bid_entrustment_ln_experts/query?entrustment_header_id=${/parameter/@entrustment_header_id}&amp;sequence_num=1" selectable="true">
+                <a:fields>
+                    <a:field name="entrustment_header_id" defaultValue="${/parameter/@entrustment_header_id}"/>
+                    <a:field name="team"/>
+                    <a:field name="sequence_num" defaultValue="1"/>
+                    <a:field name="line_expert_id"/>
+                    <a:field name="expert_user_name" lovGridHeight="320" lovHeight="450" lovService="bid.BID5150.bid_expert_employee_lov" lovWidth="500" readOnly="true" required="true" title="BID5160.EXPERT">
+                        <a:mapping>
+                            <a:map from="expert_id" to="expert_id"/>
+                            <a:map from="user_name" to="expert_user_name"/>
+                            <a:map from="full_name" to="expert_user_desc"/>
+                            <a:map from="source_type" to="source_type"/>
+                            <a:map from="source_type_desc" to="source_type_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="name" readOnly="true"/>
+                    <a:field name="expert_id"/>
+                    <a:field name="source_type"/>
+                    <a:field name="source_type_desc" readOnly="true"/>
+                    <a:field name="leader_flag" checkedValue="Y" defaultValue="N" readOnly="true" uncheckedValue="N"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="bid5150_edit_onLnExpertScore_expert_addFun"/>
+                    <a:event name="update" handler="bid5150_onLnExpert_updateFun"/>
+                    <a:event name="load" handler="bid5150_onLnExpert_loadFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 1 ELEMENTS -->
+            <a:dataSet id="bid5150_scoring_elements_1_assign_ds" autoCount="true" autoPageSize="true" model="bid.BID5150.bid_scoring_elements_assign" queryUrl="${/request/@context_path}/autocrud/bid.BID5150.bid_scoring_elements_assign/query?entrustment_header_id=${/parameter/@entrustment_header_id}&amp;sequence_num=1" selectable="true">
+                <a:fields>
+                    <a:field name="entrustment_header_id" defaultValue="${/parameter/@entrustment_header_id}"/>
+                    <a:field name="team"/>
+                    <a:field name="sequence_num" defaultValue="1"/>
+                    <a:field name="scoring_elements_code" autoComplete="true" autoCompleteField="code_name" lovHeight="480" lovService="public.bid_scoring_elements_lov" lovWidth="500" required="true" title="BID_SCORING_ELEMENTS.SCORING_ELEMENTS">
+                        <a:mapping>
+                            <a:map from="scoring_detail" to="scoring_rules"/>
+                            <a:map from="scoring_elements_id" to="scoring_elements_id"/>
+                            <a:map from="scoring_elements_code" to="scoring_elements_code"/>
+                            <a:map from="scoring_elements_desc" to="scoring_elements_desc"/>
+                            <a:map from="default_highest_score" to="highest_scores"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="scoring_rules"/>
+                    <a:field name="highest_scores" required="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="bid5150_edit_onLnExpertScore_element1_addFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 2 ELEMENTS -->
+            <a:dataSet id="bid5150_scoring_elements_2_assign_ds" autoCount="true" autoPageSize="true" model="bid.BID5150.bid_scoring_elements_assign" queryUrl="${/request/@context_path}/autocrud/bid.BID5150.bid_scoring_elements_assign/query?entrustment_header_id=${/parameter/@entrustment_header_id}&amp;sequence_num=2" selectable="true">
+                <a:fields>
+                    <a:field name="entrustment_header_id" defaultValue="${/parameter/@entrustment_header_id}"/>
+                    <a:field name="team"/>
+                    <a:field name="sequence_num" defaultValue="2"/>
+                    <a:field name="scoring_elements_code" autoComplete="true" autoCompleteField="code_name" lovHeight="480" lovService="public.bid_scoring_elements_lov" lovWidth="500" required="true" title="BID_SCORING_ELEMENTS.SCORING_ELEMENTS">
+                        <a:mapping>
+                            <a:map from="scoring_detail" to="scoring_rules"/>
+                            <a:map from="scoring_elements_id" to="scoring_elements_id"/>
+                            <a:map from="scoring_elements_code" to="scoring_elements_code"/>
+                            <a:map from="scoring_elements_desc" to="scoring_elements_desc"/>
+                            <a:map from="default_highest_score" to="highest_scores"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="scoring_rules"/>
+                    <a:field name="highest_scores" required="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="bid5150_edit_onLnExpertScore_element2_addFun"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="bid5150_scoring_elements_assign_ds" autoCount="true" autoPageSize="true" model="bid.BID5150.bid_scoring_elements_assign" queryUrl="${/request/@context_path}/autocrud/bid.BID5150.bid_scoring_elements_assign/query?entrustment_header_id=${/parameter/@entrustment_header_id}&amp;sequence_num=1" selectable="true">
+                <a:fields>
+                    <a:field name="entrustment_header_id" defaultValue="${/parameter/@entrustment_header_id}"/>
+                    <a:field name="team"/>
+                    <a:field name="sequence_num" defaultValue="1"/>
+                    <a:field name="scoring_elements_code" autoComplete="true" autoCompleteField="code_name" lovGridHeight="350" lovHeight="510" lovService="public.bid_scoring_elements_lov" lovWidth="500" required="true" title="BID_SCORING_ELEMENTS.SCORING_ELEMENTS">
+                        <a:mapping>
+                            <a:map from="scoring_detail" to="scoring_rules"/>
+                            <a:map from="scoring_elements_id" to="scoring_elements_id"/>
+                            <a:map from="scoring_elements_code" to="scoring_elements_code"/>
+                            <a:map from="scoring_elements_desc" to="scoring_elements_desc"/>
+                            <a:map from="default_highest_score" to="highest_scores"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="scoring_rules"/>
+                    <a:field name="highest_scores" required="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="bid5150_edit_onLnExpertScore_element_addFun"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="bid5150EntrustmentEditSave" text="PROMPT.SAVE" width="100"/>
+                <!-- <a:toolbarButton click="bid5150EntrustmentEditBulletinPreview" text="BID_ENTRUSTMENT.ANNOUNCEMENT_PREVIEW" width="100"/> -->
+                <a:toolbarButton click="bid5150EntrustmentEditBulletinPreview" text="PROMPT.RELEASE" width="100"/>
+                <a:toolbarButton click="bid5150EntrustmentEditTurnOver" text="PROMPT.DELIVER" width="100"/>
+                <a:toolbarButton click="bid5150EntrustmentEditReturn" text="PROMPT.BACK" width="100"/>
+            </a:screenTopToolbar>
+            <a:vBox>
+                <a:hBox labelWidth="100">
+                    <a:dateTimePicker name="bid_opening_start_date" bindTarget="bid5150_edit_entustment_header_ds" prompt="BID_OPENING_PLACE_SCHEDULES.DATE_FROM"/>
+                    <!-- 隐藏 “投标截止时间” 栏位 -->
+                    <a:dateTimePicker name="bid_closing_date" bindTarget="bid5150_edit_entustment_header_ds" hidden="true" prompt="BID_ENTRUSTMENT_HEADERS.BID_CLOSING_DATE"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:lov name="opening_place_desc" bindTarget="bid5150_edit_entustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.OPENING_PLACE_DESC"/>
+                </a:hBox>
+            </a:vBox>
+            <a:vBox>
+                <a id="bid5150_prequal" href="javascript:void(0)" onclick="bid5150_prequalFun()" style="margin-top: 38px;line-height: 20px;"><![CDATA[${l:BID_ENTRUSTMENT_HEADERS.ADD_PREQUAL}]]></a>
+                <div id="bid5150_prequal_div" style="display:none">
+                    <a:accordionPanel id="bid5150_prequal_div_dim" height="170" showIcon="true" singleMode="false" width="900">
+                        <a:accordions>
+                            <a:accordion prompt="BID_ENTRUSTMENT_HEADERS.PREQUAL_FLAG" selected="true">
+                                <a:hBox>
+                                    <a:toolbarButton click="bid5150_UploadPrequalAttachmentFun" text="BID_ENTRUSTMENT_HEADERS.PREQUAL_FILE_UPLOAD" width="100"/>
+                                </a:hBox>
+                                <a:hBox labelWidth="100">
+                                    <a:dateTimePicker name="closing_date" bindTarget="bid5150_edit_entrustment_prequal" prompt="BID_PREQUAL_HEADERS.CLOSING_DATE"/>
+                                    <a:comboBox name="review_method_desc" bindTarget="bid5150_edit_entrustment_prequal" prompt="BID_PREQUAL_HEADERS.REVIEW_METHOD"/>
+                                    <a:numberField name="qualified_limit" allowDecimals="false" allowNegative="false" bindTarget="bid5150_edit_entrustment_prequal" prompt="BID_PREQUAL_HEADERS.QUALIFIED_LIMIT"/>
+                                </a:hBox>
+                                <a:hBox labelWidth="100">
+                                    <a:textField name="prequal_location" bindTarget="bid5150_edit_entrustment_prequal" prompt="BID_PREQUAL_HEADERS.PREQUAL_LOCATION"/>
+                                    <a:checkBox name="file_free_flag" bindTarget="bid5150_edit_entrustment_prequal" prompt="BID_PREQUAL_HEADERS.FILE_FREE_FLAG" width="150"/>
+                                    <a:numberField name="proqual_file_expense" allowDecimals="false" allowNegative="false" bindTarget="bid5150_edit_entrustment_prequal" prompt="BID_PREQUAL_HEADERS.PROQUAL_FILE_EXPENSE"/>
+                                </a:hBox>
+                                <a:hBox labelWidth="100">
+                                    <a:textField name="comments" bindTarget="bid5150_edit_entrustment_prequal" prompt="BID_PREQUAL_HEADERS.COMMENTS" width="750"/>
+                                </a:hBox>
+                            </a:accordion>
+                        </a:accordions>
+                    </a:accordionPanel>
+                </div>
+            </a:vBox>
+            <a:vBox>
+                <a id="bid5150_expertScore" href="javascript:void(0)" onclick="bid5150_expertScoreFun()" style="margin-top: 38px;line-height: 20px;"><![CDATA[${l:BID_ENTRUSTMENT_HEADERS.EXPERT_SCORE}]]></a>
+                <div id="bid5150_expertScore_div" style="display:none">
+                    <a:accordionPanel id="bid5150_expertScore_div_dim" height="600" showIcon="true" singleMode="false" width="900">
+                        <a:accordions>
+                            <a:accordion prompt="BID_ENTRUSTMENT_HEADERS.EXPERT_SCORE" selected="true">
+                                <a:hBox>
+                                    <a:comboBox name="score_mode_desc" bindTarget="bid5150_edit_entustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.SCORE_MODE"/>
+                                    <!-- <a:checkBox name="closed_bidding_flag" bindTarget="bid5150_edit_entustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.CLOSED_BIDDING_FLAG"/> -->
+                                </a:hBox>
+                                <a:tabPanel id="bid5150_edit_experScore_tab" width="896">
+                                    <a:tabs>
+                                        <a:tab prompt="BID_ENTRUSTMENT_LN_EXPERTS.EXPERT" width="100">
+                                            <a:textField name="team_1_desc" bindTarget="bid5150_edit_entustment_header_ds" prompt="BID_ENTRUSTMENT_TEAM_NAME" style="margin-top:10px;"/>
+                                            <a:grid id="bid5150_ln_expert_1_grid" bindTarget="bid5150_ln_expert_1_ds" height="200" navBar="true" width="890">
+                                                <a:toolBar>
+                                                    <a:button id="bid5150_ln_expert_1_grid_add_btu" disabled="true" type="add"/>
+                                                    <a:button id="bid5150_ln_expert_1_grid_delete_btu" disabled="true" type="delete"/>
+                                                    <a:button id="bid5150_ln_expert_1_grid_random_btu" click="bid5150_ln_expert_1_RandomChoose" disabled="true" text="BID_ENTRUSTMENT_RANDOM_CHOOSE"/>
+                                                </a:toolBar>
+                                                <a:columns>
+                                                    <a:column name="expert_user_name" align="left" editorFunction="bid5150_ln_expert_1_grid_Editor" prompt="BID_ENTRUSTMENT_LN_EXPERTS.EXPERT_EMP_NUMBER" width="120"/>
+                                                    <a:column name="expert_user_desc" align="left" prompt="BID_ENTRUSTMENT_LN_EXPERTS.EXPERT_EMP_NAME" width="120"/>
+                                                    <a:column name="source_type_desc" align="center" prompt="BID_ENTRUSTMENT_LN_EXPERTS.SOURCE_TYPE" width="100"/>
+                                                    <a:column name="leader_flag" align="center" editor="bid5150_ln_expert_1_grid_cb" prompt="BID_ENTRUSTMENT_LN_EXPERTS.LEADER_FLAG" width="60"/>
+                                                </a:columns>
+                                                <a:editors>
+                                                    <a:lov id="bid5150_ln_expert_1_grid_lov"/>
+                                                    <a:checkBox id="bid5150_ln_expert_1_grid_cb"/>
+                                                </a:editors>
+                                            </a:grid>
+                                            <a:textField name="team_2_desc" bindTarget="bid5150_edit_entustment_header_ds" prompt="BID_ENTRUSTMENT_TEAM_NAME" style="margin-top:10px;"/>
+                                            <a:grid id="bid5150_ln_expert_2_grid" bindTarget="bid5150_ln_expert_2_ds" height="200" navBar="true" width="890">
+                                                <a:toolBar>
+                                                    <a:button id="bid5150_ln_expert_2_grid_add_btu" disabled="true" type="add"/>
+                                                    <a:button id="bid5150_ln_expert_2_grid_delete_btu" disabled="true" type="delete"/>
+                                                    <a:button id="bid5150_ln_expert_2_grid_random_btu" click="bid5150_ln_expert_2_RandomChoose" disabled="true" text="BID_ENTRUSTMENT_RANDOM_CHOOSE"/>
+                                                </a:toolBar>
+                                                <a:columns>
+                                                    <a:column name="expert_user_name" align="left" editorFunction="bid5150_ln_expert_2_grid_Editor" prompt="BID_ENTRUSTMENT_LN_EXPERTS.EXPERT_EMP_NUMBER" width="120"/>
+                                                    <a:column name="expert_user_desc" align="left" prompt="BID_ENTRUSTMENT_LN_EXPERTS.EXPERT_EMP_NAME" width="120"/>
+                                                    <a:column name="source_type_desc" align="center" prompt="BID_ENTRUSTMENT_LN_EXPERTS.SOURCE_TYPE" width="100"/>
+                                                    <a:column name="leader_flag" align="center" editor="bid5150_ln_expert_2_grid_cb" prompt="BID_ENTRUSTMENT_LN_EXPERTS.LEADER_FLAG" width="60"/>
+                                                </a:columns>
+                                                <a:editors>
+                                                    <a:lov id="bid5150_ln_expert_2_grid_lov"/>
+                                                    <a:checkBox id="bid5150_ln_expert_2_grid_cb"/>
+                                                </a:editors>
+                                            </a:grid>
+                                        </a:tab>
+                                        <a:tab prompt="BID_SCORING_ELEMENTS.SCORING_ELEMENTS" width="100">
+                                            <a:textField name="team_1_desc" bindTarget="bid5150_edit_entustment_header_ds" prompt="BID_ENTRUSTMENT_TEAM_NAME" style="margin-top:10px;"/>
+                                            <a:grid id="bid5150_scoring_elements_1_assign_grid" bindTarget="bid5150_scoring_elements_1_assign_ds" height="200" navBar="true" width="890">
+                                                <a:toolBar>
+                                                    <a:button id="bid5150_scoring_elements_1_assign_grid_add_btu" type="add"/>
+                                                    <a:button id="bid5150_scoring_elements_1_assign_grid_delete_btu" type="delete"/>
+                                                </a:toolBar>
+                                                <a:columns>
+                                                    <a:column name="scoring_elements_code" align="left" editor="bid5150_scoring_elements_1_assign_lov" prompt="BID_SCORING_ELEMENTS.SCORING_ELEMENTS_CODE" width="100"/>
+                                                    <a:column name="scoring_elements_desc" align="left" prompt="BID_SCORING_ELEMENTS.SCORING_ELEMENTS_NAME" width="100"/>
+                                                    <a:column name="scoring_rules" align="left" editor="bid5150_scoring_elements_1_assign_tf" prompt="BID_SCORING_ELEMENTS_ASSIGN.SCORING_RULES" width="200"/>
+                                                    <a:column name="highest_scores" align="left" editor="bid5150_scoring_elements_1_assign_nf" prompt="权重" width="80"/>
+                                                </a:columns>
+                                                <a:editors>
+                                                    <a:lov id="bid5150_scoring_elements_1_assign_lov"/>
+                                                    <a:textField id="bid5150_scoring_elements_1_assign_tf" maxLength="300"/>
+                                                    <a:numberField id="bid5150_scoring_elements_1_assign_nf"/>
+                                                </a:editors>
+                                            </a:grid>
+                                            <a:textField name="team_2_desc" bindTarget="bid5150_edit_entustment_header_ds" prompt="BID_ENTRUSTMENT_TEAM_NAME" style="margin-top:10px;"/>
+                                            <a:grid id="bid5150_scoring_elements_2_assign_grid" bindTarget="bid5150_scoring_elements_2_assign_ds" height="200" navBar="true" width="890">
+                                                <a:toolBar>
+                                                    <a:button id="bid5150_scoring_elements_2_assign_grid_add_btu" type="add"/>
+                                                    <a:button id="bid5150_scoring_elements_2_assign_grid_delete_btu" type="delete"/>
+                                                </a:toolBar>
+                                                <a:columns>
+                                                    <a:column name="scoring_elements_code" align="left" editor="bid5150_scoring_elements_2_assign_lov" prompt="BID_SCORING_ELEMENTS.SCORING_ELEMENTS_CODE" width="100"/>
+                                                    <a:column name="scoring_elements_desc" align="left" prompt="BID_SCORING_ELEMENTS.SCORING_ELEMENTS_NAME" width="100"/>
+                                                    <a:column name="scoring_rules" align="left" editor="bid5150_scoring_elements_2_assign_tf" prompt="BID_SCORING_ELEMENTS_ASSIGN.SCORING_RULES" width="200"/>
+                                                    <a:column name="highest_scores" align="left" editor="bid5150_scoring_elements_2_assign_nf" prompt="权重" width="80"/>
+                                                </a:columns>
+                                                <a:editors>
+                                                    <a:lov id="bid5150_scoring_elements_2_assign_lov"/>
+                                                    <a:textField id="bid5150_scoring_elements_2_assign_tf" maxLength="300"/>
+                                                    <a:numberField id="bid5150_scoring_elements_2_assign_nf"/>
+                                                </a:editors>
+                                            </a:grid>
+                                        </a:tab>
+                                    </a:tabs>
+                                </a:tabPanel>
+                            </a:accordion>
+                        </a:accordions>
+                    </a:accordionPanel>
+                </div>
+                <div id="bid5150_expertScore_no_div" style="display:none">
+                    <a:accordionPanel id="bid5150_expertScore_no_div_dim" height="320" showIcon="true" singleMode="false" width="900">
+                        <a:accordions>
+                            <a:accordion prompt="BID_ENTRUSTMENT_HEADERS.EXPERT_SCORE" selected="true">
+                                <a:hBox>
+                                    <a:comboBox name="score_mode_desc" bindTarget="bid5150_edit_entustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.SCORE_MODE"/>
+                                    <!-- <a:checkBox name="closed_bidding_flag" bindTarget="bid5150_edit_entustment_header_ds" prompt="BID_ENTRUSTMENT_HEADERS.CLOSED_BIDDING_FLAG"/> -->
+                                </a:hBox>
+                                <a:tabPanel id="bid5150_edit_experScore_no_tab" width="896">
+                                    <a:tabs>
+                                        <a:tab prompt="BID_ENTRUSTMENT_LN_EXPERTS.EXPERT" width="100">
+                                            <a:grid id="bid5150_ln_expert_grid" bindTarget="bid5150_ln_expert_ds" height="200" navBar="true" width="890">
+                                                <a:toolBar>
+                                                    <a:button id="bid5150_ln_expert_grid_add_btu" disabled="true" type="add"/>
+                                                    <a:button id="bid5150_ln_expert_grid_delete_btu" disabled="true" type="delete"/>
+                                                    <a:button id="bid5150_ln_expert_grid_random_btu" click="bid5150_ln_expert_RandomChoose" disabled="true" text="BID_ENTRUSTMENT_RANDOM_CHOOSE"/>
+                                                </a:toolBar>
+                                                <a:columns>
+                                                    <a:column name="expert_user_name" align="left" editorFunction="bid5150_ln_expert_grid_Editor" prompt="BID_ENTRUSTMENT_LN_EXPERTS.EXPERT_EMP_NUMBER" width="120"/>
+                                                    <a:column name="expert_user_desc" align="left" prompt="BID_ENTRUSTMENT_LN_EXPERTS.EXPERT_EMP_NAME" width="120"/>
+                                                    <a:column name="source_type_desc" align="center" prompt="BID_ENTRUSTMENT_LN_EXPERTS.SOURCE_TYPE" width="100"/>
+                                                    <a:column name="leader_flag" align="center" editor="bid5150_ln_expert_grid_cb" prompt="BID_ENTRUSTMENT_LN_EXPERTS.LEADER_FLAG" width="60"/>
+                                                </a:columns>
+                                                <a:editors>
+                                                    <a:lov id="bid5150_ln_expert_grid_lov"/>
+                                                    <a:checkBox id="bid5150_ln_expert_grid_cb"/>
+                                                </a:editors>
+                                            </a:grid>
+                                        </a:tab>
+                                        <a:tab prompt="BID_SCORING_ELEMENTS.SCORING_ELEMENTS" width="100">
+                                            <a:grid id="bid5150_scoring_elements_assign_grid" bindTarget="bid5150_scoring_elements_assign_ds" height="200" marginWidth="70" navBar="true">
+                                                <a:toolBar>
+                                                    <a:button id="bid5150_scoring_elements_assign_grid_add_btu" type="add"/>
+                                                    <a:button id="bid5150_scoring_elements_assign_grid_delete_btu" type="delete"/>
+                                                </a:toolBar>
+                                                <a:columns>
+                                                    <a:column name="scoring_elements_code" align="left" editor="bid5150_scoring_elements_assign_lov" prompt="BID_SCORING_ELEMENTS.SCORING_ELEMENTS_CODE" width="100"/>
+                                                    <a:column name="scoring_elements_desc" align="left" prompt="BID_SCORING_ELEMENTS.SCORING_ELEMENTS_NAME" width="100"/>
+                                                    <a:column name="scoring_rules" align="left" editor="bid5150_scoring_elements_assign_tf" prompt="BID_SCORING_ELEMENTS_ASSIGN.SCORING_RULES" width="200"/>
+                                                    <a:column name="highest_scores" align="left" editor="bid5150_scoring_elements_assign_nf" prompt="权重" width="80"/>
+                                                </a:columns>
+                                                <a:editors>
+                                                    <a:lov id="bid5150_scoring_elements_assign_lov"/>
+                                                    <a:textField id="bid5150_scoring_elements_assign_tf" maxLength="300"/>
+                                                    <a:numberField id="bid5150_scoring_elements_assign_nf"/>
+                                                </a:editors>
+                                            </a:grid>
+                                        </a:tab>
+                                    </a:tabs>
+                                </a:tabPanel>
+                            </a:accordion>
+                        </a:accordions>
+                    </a:accordionPanel>
+                </div>
+            </a:vBox>
+            <a:tabPanel id="bid5150_edit_entrustment_tab" height="420" marginWidth="60">
+                <a:tabs>
+                    <!-- <a:tab prompt="BID_ENTRUSTMENT_LN_EXPERTS.EXPERT" width="100">
+                        <a:placeHolder id="bid5150_edit_expert_line_placeHolder"/>
+                    </a:tab> -->
+                    <a:tab prompt="BID_ENTRUSTMENT_HEADERS.ENTRUSTMENT_BIDDERS" width="100">
+                        <a:grid id="bid5150_edit_bidder_line_grid" bindTarget="bid5150_edit_bidder_line_ds" height="380" marginWidth="70" navBar="true">
+                            <a:toolBar>
+                                <a:button type="add"/>
+                                <a:button type="delete"/>
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="bidder_code" align="left" editorFunction="bid5150EntrustmentEditBidderEditor" prompt="BID_ENTRUSTMENT_HEADERS.BIDDER_CODE" width="120"/>
+                                <a:column name="bidder_desc" align="left" prompt="BID_ENTRUSTMENT_HEADERS.BIDDER_NAME" width="150"/>
+                                <a:column name="contact_name" align="left" editor="bid5150_edit_bidder_lov" prompt="BID_ENTRUSTMENT_LN_ITEMS.CONTACT_ID" width="100"/>
+                                <a:column name="mobile_phone" align="left" editor="bid5150_edit_bidder_tf" prompt="BID_ENTRUSTMENT_LN_ITEMS.MOBILE_PHONE" width="80"/>
+                                <a:column name="email" align="left" editor="bid5150_edit_bidder_tf" prompt="BID_ENTRUSTMENT_LN_ITEMS.EMAIL" width="80"/>
+                                <a:column name="telephone" align="left" editor="bid5150_edit_bidder_tf" prompt="BID_ENTRUSTMENT_LN_ITEMS.TELEPHONE" width="80"/>
+                                <!-- <a:column name="sms_flag" align="left" editor="bid5150_edit_bidder_cb" prompt="BID_ENTRUSTMENT_LN_ITEMS.SMS_FLAG" width="60"/> -->
+                                <a:column name="suggested_flag" align="center" editor="bid5150_edit_bidder_cb" prompt="BID_ENTRUSTMENT_LN_ITEMS.ENTRUSTMENT_BIDDERS" width="60"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:lov id="bid5150_edit_bidder_lov"/>
+                                <a:checkBox id="bid5150_edit_bidder_cb"/>
+                                <a:textField id="bid5150_edit_bidder_tf"/>
+                            </a:editors>
+                            <a:events>
+                                <a:event name="cellclick" handler="bid5150_edit_entrustment_bidders_ds_cellclickFun"/>
+                            </a:events>
+                        </a:grid>
+                    </a:tab>
+                    <!-- <a:tab prompt="BID_SCORING_ELEMENTS.SCORING_ELEMENTS" width="100">
+                        <a:grid id="bid5150_scoring_elements_assign_grid" bindTarget="bid5150_scoring_elements_assign_ds" height="380" marginWidth="50" navBar="true">
+                            <a:toolBar>
+                                <a:button type="add"/>
+                                <a:button type="delete"/>
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="scoring_elements_code" align="left" editor="bid5150_scoring_elements_assign_lov" prompt="BID_SCORING_ELEMENTS.SCORING_ELEMENTS_CODE" width="100"/>
+                                <a:column name="scoring_elements_desc" align="left" prompt="BID_SCORING_ELEMENTS.SCORING_ELEMENTS_NAME" width="100"/>
+                                <a:column name="scoring_rules" align="left" editor="bid5150_scoring_elements_assign_tf" prompt="BID_SCORING_ELEMENTS_ASSIGN.SCORING_RULES" width="200"/>
+                                <a:column name="highest_scores" align="left" editor="bid5150_scoring_elements_assign_nf" prompt="BID_SCORING_ELEMENTS_ASSIGN.HIGHEST_SCORES" width="80"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:lov id="bid5150_scoring_elements_assign_lov"/>
+                                <a:textField id="bid5150_scoring_elements_assign_tf" maxLength="300"/>
+                                <a:numberField id="bid5150_scoring_elements_assign_nf"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab> -->
+                    <a:tab prompt="PROMPT.ATTACHMENT" width="100">
+                        <a:grid id="bid5150_edit_atm_files_grid" bindTarget="bid5150_edit_atm_files_ds" height="380" marginWidth="70" navBar="true">
+                            <a:toolBar>
+                                <a:button click="bid5150EntrustmentEditAtmUpload" text="PROMPT.UPLOAD_DELETE"/>
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="attachment_type" align="left" prompt="PUR_VENDORS.ATTACHMENT_TYPE" width="60"/>
+                                <a:column name="file_download_link" align="left" prompt="PROMPT.ATTACHMENT_NAME" renderer="bid5150EntrustmentEditAtmRender" width="150"/>
+                                <a:column name="upload_user_name" align="left" prompt="PROMPT.UPLOADED_BY" width="80"/>
+                                <a:column name="upload_date" align="center" prompt="PROMPT.UPLOAD_DATE" renderer="Aurora.formatDateTime" width="80"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+    </a:view>
+    <!-- <a:view-config>
+        <c:create-config targetId="bid5150_edit_expert_line_placeHolder">
+            <p:switch test="/parameter/@multistage_flag">
+                <p:case value="N">
+                    <c:process-config>
+                        <a:grid id="bid5150_edit_expert_line_grid" bindTarget="bid5150_edit_expert_line_ds" height="380" marginWidth="50" navBar="true">
+                            <a:toolBar>
+                                <a:button type="add"/>
+                                <a:button type="delete" />
+                                <a:button click="bid5150EntrustmentEditExpertRandomChoose" text="随机抽取"/>
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="expert_user_name" align="left" editorFunction="bid5150EntrustmentEditExpertEditor" prompt="BID_ENTRUSTMENT_LN_EXPERTS.EXPERT_EMP_NUMBER" width="120"/>
+                                <a:column name="expert_user_desc" align="left" prompt="BID_ENTRUSTMENT_LN_EXPERTS.EXPERT_EMP_NAME" width="120"/>
+                                <a:column name="source_type_desc" align="center" prompt="BID_ENTRUSTMENT_LN_EXPERTS.SOURCE_TYPE" width="100"/>
+                                <a:column name="leader_flag" align="center" editor="bid5150_edit_expert_cb" prompt="BID_ENTRUSTMENT_LN_EXPERTS.LEADER_FLAG" width="60"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:lov id="bid5150_edit_expert_lov"/>
+                                <a:checkBox id="bid5150_edit_expert_cb"/>
+                            </a:editors>
+                        </a:grid>
+                    </c:process-config>
+                </p:case>
+                <p:case value="Y">
+                    <c:process-config>
+                        <a:grid id="bid5150_edit_expert_line_grid" bindTarget="bid5150_edit_expert_line_ds" height="380" marginWidth="50" navBar="true">
+                            <a:columns>
+                                <a:column name="expert_user_name" align="left" prompt="BID_ENTRUSTMENT_LN_EXPERTS.EXPERT_EMP_NUMBER" width="80"/>
+                                <a:column name="expert_user_desc" align="left" prompt="BID_ENTRUSTMENT_LN_EXPERTS.EXPERT_EMP_NAME" width="100"/>
+                                <a:column name="source_type_desc" align="center" prompt="BID_ENTRUSTMENT_LN_EXPERTS.SOURCE_TYPE" width="60"/>
+                                <a:column name="leader_flag" align="center" prompt="BID_ENTRUSTMENT_LN_EXPERTS.LEADER_FLAG" width="40"/>
+                            </a:columns>
+                        </a:grid> 
+                    </c:process-config>
+                </p:case>
+            </p:switch>
+        </c:create-config>
+    </a:view-config> -->
+</a:screen>

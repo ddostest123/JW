@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: FelixDru
+    $Date: 2014-10-18 10:54:00  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*
+                FROM
+                    (SELECT DISTINCT
+                        p.owner_business_group,
+                        p.coop_business_group,
+                        p.coop_company_id,
+                        (SELECT
+                            fc.company_code
+                        FROM
+                            fnd_companies_vl fc
+                        WHERE
+                            fc.company_id = p.coop_company_id
+                        ) vendor_code,
+                        (SELECT
+                            fc.company_full_name
+                        FROM
+                            fnd_companies_vl fc
+                        WHERE
+                            fc.company_id = p.coop_company_id
+                        ) vendor_desc,
+                        NULL AS vendor_code_desc,
+                        NVL(
+                        (SELECT
+                            decode(bl.black_list_flag,'Y','是','否')
+                        FROM
+                            pur_vendor_black_list bl
+                        WHERE
+                            bl.owner_business_group = p.owner_business_group AND
+                            bl.coop_company_id      = p.coop_company_id AND
+                            (
+                                bl.black_list_expiry_date IS NULL OR
+                                bl.black_list_expiry_date >= TRUNC(SYSDATE)
+                            )
+                        ), '否') AS black_list_display,
+                        (SELECT
+                            csc.contact_id
+                        FROM
+                            fnd_com_sup_contacts csc
+                        WHERE
+                            csc.company_id           = p.coop_company_id AND
+                            csc.enabled_flag         = 'Y' AND
+                            csc.default_contact_flag = 'Y' AND
+                            rownum                   = 1
+                        ) AS contact_id,
+                        (SELECT
+                            csc.contact_name
+                        FROM
+                            fnd_com_sup_contacts csc
+                        WHERE
+                            csc.company_id           = p.coop_company_id AND
+                            csc.enabled_flag         = 'Y' AND
+                            csc.default_contact_flag = 'Y' AND
+                            rownum                   = 1
+                        ) AS contact_person,
+                        (SELECT
+                            csc.mobile_phone
+                        FROM
+                            fnd_com_sup_contacts csc
+                        WHERE
+                            csc.company_id           = p.coop_company_id AND
+                            csc.enabled_flag         = 'Y' AND
+                            csc.default_contact_flag = 'Y' AND
+                            rownum                   = 1
+                        ) AS contact_mobile,
+                        (SELECT
+                            csc.email
+                        FROM
+                            fnd_com_sup_contacts csc
+                        WHERE
+                            csc.company_id           = p.coop_company_id AND
+                            csc.enabled_flag         = 'Y' AND
+                            csc.default_contact_flag = 'Y' AND
+                            rownum                   = 1
+                        ) AS contact_mail,
+                        pvlc.stage_code,
+                        (SELECT
+                            v.flex_desc
+                        FROM
+                            fnd_flex_values_v v
+                        WHERE
+                            v.flex_value_set_code = 'PUR_VENDOR_LIFE_CYCLE' AND
+                            v.flex_value          = pvlc.stage_code
+                        ) AS stage_desc
+                    FROM
+                        fnd_coop_partner_vendors_vl p,
+                        pur_vendor_life_cycle pvlc,
+                        pur_vendor_class_assigns pvca
+                    WHERE
+                        pvca.coop_company_id(+)    = p.coop_company_id AND
+                        pvca.coop_business_group(+)= p.coop_business_group AND
+                        pvca.business_group(+)     = pvlc.owner_business_group AND
+                        pvca.business_group(+)     = p.owner_business_group AND
+                        pvlc.owner_business_group  = p.owner_business_group AND
+                        pvlc.coop_business_group   = p.coop_business_group AND
+                        pvlc.coop_company_id       = p.coop_company_id AND
+                        p.owner_business_group     = ${/session/@business_group} AND
+                        p.enabled_flag             = 'Y' AND
+                        pvlc.current_flag          = 'Y' AND
+                        p.vendor_flag              = 'Y' AND
+                        
+                        (
+                            DECODE(
+                            (SELECT
+                                cbi.bg_config_item_value FROM fnd_config_center_bg_item cbi WHERE cbi.config_item_code = 'RFX_13' AND
+                                cbi.business_group                                                                     = ${/session/@business_group}
+                            ),'Y',1,2)                                                                                 = 2 OR
+                            (
+                                EXISTS
+                                (SELECT
+                                    1
+                                FROM
+                                    pur_rfx_ln_items li,
+                                    pur_supply_ability_lns psal,
+                                    pur_supply_ability_hds psah
+                                WHERE
+                                    psal.supply_flag      = 'Y' AND
+                                    p.coop_company_id     = psah.vendor_id AND
+                                    psal.ability_hds_id   = psah.ability_hds_id AND
+                                    psah.business_group   = p.owner_business_group AND
+                                    li.rfx_finished_flag  = 'N' AND
+                                    li.cancel_flag        = 'N' AND
+                                    NVL(li.round_flag,'Y')='Y' AND
+                                    li.rfx_header_id      = ${@rfx_header_id} AND
+                                    psal.category_udf_id  = li.item_category_id
+                                )
+                            )
+                        )
+                        AND
+                        NOT EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            (SELECT
+                                pscc.supplier_classification
+                            FROM
+                                pur_supplier_control_class pscc
+                            WHERE
+                                pvca.vendor_class_id = to_number(pscc.supplier_classification) AND
+                                pscc.business_group  = ${/session/@business_group} AND
+                                pscc.source_type     = 'RFQ'
+                            )
+                        ) AND
+                        NOT EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            (SELECT
+                                all_stage_code
+                            FROM
+                                (SELECT
+                                    DECODE(psc.registered,'N',NULL,'Y','REGISTER') registered,
+                                    DECODE(psc.recommended ,'N',NULL,'Y','RECOMMEND') recommended,
+                                    DECODE(psc.potential ,'N',NULL,'Y','POTENTIAL') potential,
+                                    DECODE(psc.qualified ,'N',NULL,'Y','QUALIFIED') qualified,
+                                    DECODE(psc.eliminated ,'N',NULL,'Y','ELIMINATED') eliminated
+                                FROM
+                                    pur_sup_control_life_stage psc
+                                WHERE
+                                    business_group                       = ${/session/@business_group} AND
+                                    source_type                          = 'RFQ'
+                                ) unpivot(all_stage_code FOR stage_code IN(registered, recommended, potential, qualified, eliminated))
+                            ) pscv
+                        WHERE
+                            pscv.all_stage_code = pvlc.stage_code
+                        )
+                    ) v #AUTHORIY_FROM# #WHERE_CLAUSE# #AUTHORIY_WHERE#
+                ORDER BY
+                    v.vendor_code
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:fields>
+        <bm:field name="coop_business_group"/>
+        <bm:field name="coop_company_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="vendor_code" databaseType="VARCHAR2" datatype="java.lang.String" forDisplay="true" forQuery="true" prompt="PUR_VENDORS.VENDOR_CODE"/>
+        <bm:field name="vendor_desc" databaseType="VARCHAR2" datatype="java.lang.String" forDisplay="true" forQuery="true" prompt="PUR_VENDORS.VENDOR_NAME"/>
+        <bm:field name="black_list_display" databaseType="VARCHAR2" datatype="java.lang.String" prompt="PROMPT.BLACK_LIST"/>
+        <!--  <bm:field name="owner_business_group"/>
+        <bm:field name="owner_company_id"/> -->
+        <bm:field name="vendor_code_desc"/>
+        <bm:field name="contact_id"/>
+        <bm:field name="contact_person"/>
+        <bm:field name="contact_mobile"/>
+        <bm:field name="contact_mail"/>
+        <bm:field name="stage_code"/>
+        <bm:field name="stage_desc" databaseType="VARCHAR2" datatype="java.lang.String" prompt="供应商级别"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field name="vendor_code" queryExpression="vendor_code like &apos;%&apos;||${@vendor_code}||&apos;%&apos;"/>
+        <bm:query-field name="vendor_desc" queryExpression="vendor_desc like &apos;%&apos;||${@vendor_desc}||&apos;%&apos;"/>
+        <bm:query-field name="vendor_code_desc" queryExpression="(vendor_code like &apos;%&apos;||${@vendor_code_desc}||&apos;%&apos; or vendor_desc like &apos;%&apos;||${@vendor_code_desc}||&apos;%&apos;)"/>
+        <bm:query-field name="stage_desc" queryExpression="stage_desc like &apos;%&apos;||${@stage_desc}||&apos;%&apos;"/>
+        <!-- add by Harry 9952 2016/11/24 供应商类别查询 -->
+        <bm:query-field name="vendor_class_id" queryExpression="exists (select 1 from pur_vendor_class_assigns pa where pa.vendor_class_id IN ( SELECT regexp_substr( ${@vendor_class_id},&apos;\d+&apos;,1,LEVEL) FROM dual CONNECT BY LEVEL &lt;10 ) and pa.business_group = v.owner_business_group and pa.coop_business_group = v.coop_business_group and pa.coop_company_id = v.coop_company_id and pa.enabled_flag = &apos;Y&apos;)"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="1=1 and black_list_display=&apos;否&apos;"/>
+    </bm:data-filters>
+    <authority only_user_authority="Y">
+        <authority-segment source_alias="v" source_name="coop_company_id" type="VENDOR"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+            var cx = Packages.aurora.javascript.Context.getCurrentContext();
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

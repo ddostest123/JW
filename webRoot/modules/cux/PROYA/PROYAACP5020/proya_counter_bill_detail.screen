@@ -1,0 +1,288 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao
+    $Date: 2018年4月1日 下午6:01:44  
+    $Revision: 1.0  
+    $Purpose: 珀莱雅，柜台类对账申请，申请创建预览页面
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure/>
+    <a:view>
+        <a:link id="proyaacp5020_bill_detail_submit_link" url="${/request/@context_path}/modules/cux/PROYA/PROYAACP5020/proya_counter_bill_detail_submit.svc"/>
+        <a:link id="proyaacp5020_bill_line_maintain_link" url="${/request/@context_path}/modules/cux/PROYA/PROYAACP5020/proya_counter_bill_lines.screen"/>
+        <script><![CDATA[
+            //返回
+            
+            function proyaacp5020_backToCreat() {
+                $('proyaacp5020_counter_bill_detail_link_window').close();
+            }
+            
+            // 开票单创建并发布
+            
+            function proyaacp5020_detail_submit() {
+                var record = $('proyaacp5020_counter_bill_headers_ds').getCurrentRecord();
+                Aurora.showConfirm('${l:PROMPT}', '确认创建并提交吗？', function() {
+                    var datas;
+                    datas = {
+                        "action_type": 'SUBMIT',
+                        "company_id": record.get('company_id'),
+                        "vendor_id": record.get('vendor_id'),
+                        "vendor_site_id": record.get('vendor_site_id'),
+                        "currency_code": record.get('currency_code'),
+                        "bill_amount": record.get('bill_amount'),
+                        "vendor_create_flag": 'Y',
+                        "vendor_release_flag": 'Y',
+                        "header_vendor_desc": record.get('header_vendor_desc'),
+                        "pur_buyer_id": record.get('pur_buyer_id'),
+                        "pur_organization_id": record.get('pur_organization_id'),
+                        "base_to": '${/parameter/@base_to}',
+                        "tax_total_amount": record.get('tax_bill_amount'),
+                        "tax_amount": record.get('tax_amount'),
+                        "invoice_amount": record.get('invoice_amount'),
+                        "invoice_tax_amount": record.get('invoice_tax_amount'),
+                        "tax_invoice_num": record.get('tax_invoice_num'),
+                        "system_total_freight": record.get('system_total_freight'),
+                        "total_freight": record.get('total_freight')
+                    };
+                    var lines_data = [];
+                    var lines_records = $('proyaacp5020_counter_bill_lines_ds').getAll();
+                    for (var i = 0;i < lines_records.length;i++) {
+                        lines_data.push({
+                            "bill_line_num": lines_records[i].get('bill_line_num'),
+                            "item_id": lines_records[i].get('item_id'),
+                            "item_code": lines_records[i].get('item_code'),
+                            "item_name": lines_records[i].get('item_name'),
+                            "sum_quantity": lines_records[i].get('sum_quantity'),
+                            "unit_price": lines_records[i].get('unit_price'),
+                            "tax_unit_price": lines_records[i].get('tax_unit_price'),
+                            "tax_code_id": lines_records[i].get('tax_code_id'),
+                            "unit_meas_lookup_code": lines_records[i].get('unit_meas_lookup_code'),
+                            "vendor_desc": lines_records[i].get('vendor_desc')
+                        });
+                    }
+                    var details_data = [];
+                    var detail_records = $('proyaacp5020_counter_bill_detail_ds').getAll();
+                    for (var j = 0;j < detail_records.length;j++) {
+                        details_data.push({
+                            "rcv_trx_line_id": detail_records[j].get('rcv_trx_line_id'),
+                            "vendor_desc": detail_records[j].get('vendor_desc'),
+                            "base_to": '${/parameter/@base_to}'
+                        });
+                    }
+                    datas['lines_data'] = lines_data;
+                    datas['details_data'] = details_data;
+            
+                    Aurora.Masker.mask($('proyaacp5020_counter_bill_detail_link_window').wrap, '${l:LOADING}');
+                    Aurora.request({
+                        url: $('proyaacp5020_bill_detail_submit_link').getUrl(),
+                        para: datas,
+                        success: function(res) {
+                            //获取开票单号，并提示
+                            var bill_number = res.result.bill_number || '';
+                            var header_id = res.result.bill_header_id;
+                            Aurora.showMessage('${l:PROMPT}', '创建并提交成功，单号：' + bill_number, function() {
+                                Aurora.Masker.unmask($('proyaacp5020_counter_bill_detail_link_window').wrap);
+                                if (!Aurora.isEmpty(header_id)) {
+                                    new Aurora.Window({
+                                        id: 'proyaacp5020_bill_lines_link_window',
+                                        url: $('proyaacp5020_bill_line_maintain_link').getUrl() + '?header_id=' + header_id,
+                                        title: '柜台类对账申请维护',
+                                        fullScreen: true
+                                    }).on('beforeclose', function() {
+                                        proyaacp5020_counterBillQuery();
+                                    });
+                                }
+                                $('proyaacp5020_counter_bill_select_ds').removeAll();
+                                proyaacp5020_counterBillSourceQuery();
+                                proyaacp5020_counterBillQuery();
+                                proyaacp5020_backToMain();
+                                proyaacp5020_backToCreat();
+                            }, 360, 120);
+                        },
+                        failure: function(res) {
+                            Aurora.Masker.unmask($('proyaacp5020_counter_bill_detail_link_window').wrap);
+                        },
+                        error: function(res) {
+                            Aurora.Masker.unmask($('proyaacp5020_counter_bill_detail_link_window').wrap);
+                        },
+                        scope: this
+                    });
+                });
+            }
+            
+            // 开票单创建
+            
+            function proyaacp5020_detail_create() {
+                var record = $('proyaacp5020_counter_bill_headers_ds').getCurrentRecord();
+                Aurora.showConfirm('${l:PROMPT}', '确认创建吗？', function() {
+                    var datas;
+                    datas = {
+                        "action_type": 'NEW',
+                        "company_id": record.get('company_id'),
+                        "vendor_id": record.get('vendor_id'),
+                        "vendor_site_id": record.get('vendor_site_id'),
+                        "currency_code": record.get('currency_code'),
+                        "bill_amount": record.get('bill_amount'),
+                        "vendor_create_flag": 'Y',
+                        "vendor_release_flag": 'Y',
+                        "header_vendor_desc": record.get('header_vendor_desc'),
+                        "pur_buyer_id": record.get('pur_buyer_id'),
+                        "pur_organization_id": record.get('pur_organization_id'),
+                        "base_to": '${/parameter/@base_to}',
+                        "tax_total_amount": record.get('tax_bill_amount'),
+                        "tax_amount": record.get('tax_amount'),
+                        "invoice_amount": record.get('invoice_amount'),
+                        "invoice_tax_amount": record.get('invoice_tax_amount'),
+                        "tax_invoice_num": record.get('tax_invoice_num'),
+                        "system_total_freight": record.get('system_total_freight'),
+                        "total_freight": record.get('total_freight')
+                    };
+                    var lines_data = [];
+                    var lines_records = $('proyaacp5020_counter_bill_lines_ds').getAll();
+                    for (var i = 0;i < lines_records.length;i++) {
+                        lines_data.push({
+                            "bill_line_num": lines_records[i].get('bill_line_num'),
+                            "item_id": lines_records[i].get('item_id'),
+                            "item_code": lines_records[i].get('item_code'),
+                            "item_name": lines_records[i].get('item_name'),
+                            "sum_quantity": lines_records[i].get('sum_quantity'),
+                            "unit_price": lines_records[i].get('unit_price'),
+                            "tax_unit_price": lines_records[i].get('tax_unit_price'),
+                            "tax_code_id": lines_records[i].get('tax_code_id'),
+                            "unit_meas_lookup_code": lines_records[i].get('unit_meas_lookup_code'),
+                            "vendor_desc": lines_records[i].get('vendor_desc')
+                        });
+                    }
+                    var details_data = [];
+                    var detail_records = $('proyaacp5020_counter_bill_detail_ds').getAll();
+                    for (var j = 0;j < detail_records.length;j++) {
+                        details_data.push({
+                            "rcv_trx_line_id": detail_records[j].get('rcv_trx_line_id'),
+                            "vendor_desc": detail_records[j].get('vendor_desc'),
+                            "base_to": '${/parameter/@base_to}'
+                        });
+                    }
+                    datas['lines_data'] = lines_data;
+                    datas['details_data'] = details_data;
+            
+                    Aurora.Masker.mask($('proyaacp5020_counter_bill_detail_link_window').wrap, '${l:LOADING}');
+                    Aurora.request({
+                        url: $('proyaacp5020_bill_detail_submit_link').getUrl(),
+                        para: datas,
+                        success: function(res) {
+                            //获取开票单号，并提示
+                            var bill_number = res.result.bill_number || '';
+                            var header_id = res.result.bill_header_id;
+                            Aurora.showMessage('${l:PROMPT}', '创建成功，单号：' + bill_number, function() {
+                                Aurora.Masker.unmask($('proyaacp5020_counter_bill_detail_link_window').wrap);
+                                if (!Aurora.isEmpty(header_id)) {
+                                    new Aurora.Window({
+                                        id: 'proyaacp5020_bill_lines_link_window',
+                                        url: $('proyaacp5020_bill_line_maintain_link').getUrl() + '?header_id=' + header_id,
+                                        title: '柜台类对账申请维护',
+                                        fullScreen: true
+                                    }).on('beforeclose', function() {
+                                        proyaacp5020_counterBillQuery();
+                                    });
+                                }
+                                $('proyaacp5020_counter_bill_select_ds').removeAll();
+                                proyaacp5020_counterBillSourceQuery();
+                                proyaacp5020_counterBillQuery();
+                                proyaacp5020_backToMain();
+                                proyaacp5020_backToCreat();
+                            }, 360, 120);
+                        },
+                        failure: function(res) {
+                            Aurora.Masker.unmask($('proyaacp5020_counter_bill_detail_link_window').wrap);
+                        },
+                        error: function(res) {
+                            Aurora.Masker.unmask($('proyaacp5020_counter_bill_detail_link_window').wrap);
+                        },
+                        scope: this
+                    });
+                });
+            }
+            
+            function proyaacp5020_counterBillDetailDsRenderer(value, record, name) {
+                if (name == 'display_unit_price' || name == 'display_amount' || name == 'display_tax_unit_price' || name == 'display_tax_line_amount') {
+                    if (value == '***') {
+                        return value;
+                    } else {
+            
+                        //暂估标识
+                        var provisional_estimate_flag = record.get('provisional_estimate_flag');
+            
+                        if (name == 'display_unit_price' || name == 'display_tax_unit_price') {
+                            if (provisional_estimate_flag == 'Y') {
+                                return '<div style="color:#FF0000;font-weight:bold;">' + Aurora.formatNumber(value) + '</div>';
+                            } else {
+                                return Aurora.formatNumber(value);
+                            }
+                        } else {
+                            return Aurora.formatNumber(value);
+                        }
+                    }
+                }
+            }
+        ]]></script>
+        <a:dataSets/>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="proyaacp5020_detail_create" text="PROMPT.SAVE" width="100"/>
+                <a:toolbarButton click="proyaacp5020_detail_submit" text="PROMPT.SUBMIT" width="100"/>
+                <a:toolbarButton click="proyaacp5020_backToCreat" text="ACP_BILL.BACK" width="100"/>
+            </a:screenTopToolbar>
+            <a:form marginWidth="80">
+                <a:hBox labelWidth="100">
+                    <a:label name="bill_number" bindTarget="proyaacp5020_counter_bill_headers_ds" prompt="对账单号" width="200"/>
+                    <a:label name="company_name" bindTarget="proyaacp5020_counter_bill_headers_ds" prompt="ACP_BILL.COMPANY_NAME" width="200"/>
+                    <a:label name="business_unit_name" bindTarget="proyaacp5020_counter_bill_headers_ds" prompt="ACP_BILL_DETAILS.BUSINESS_UNIT_ID" width="200"/>
+                    <a:label name="pur_buyer_name" bindTarget="proyaacp5020_counter_bill_headers_ds" prompt="PUR_HEADERS_ALL.PUR_BUYER" width="200"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:label name="display_tax_bill_amount" bindTarget="proyaacp5020_counter_bill_headers_ds" prompt="含税总额(系统)" width="200"/>
+                    <a:label name="display_tax_amount" bindTarget="proyaacp5020_counter_bill_headers_ds" prompt="税额(系统)" width="200"/>
+                    <a:label name="display_system_total_freight" bindTarget="proyaacp5020_counter_bill_headers_ds" prompt="运费总额(系统)" width="200"/>
+                    <a:label name="currency_code" bindTarget="proyaacp5020_counter_bill_headers_ds" prompt="ACP_BILL_SOURCE.CURRENCY_CODE" width="200"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textField name="invoice_amount" bindTarget="proyaacp5020_counter_bill_headers_ds" prompt="发票总额" width="198"/>
+                    <a:textField name="invoice_tax_amount" bindTarget="proyaacp5020_counter_bill_headers_ds" prompt="发票税额" width="198"/>
+                    <a:textField name="tax_invoice_num" bindTarget="proyaacp5020_counter_bill_headers_ds" prompt="税务发票号" width="198"/>
+                    <a:textField name="total_freight" bindTarget="proyaacp5020_counter_bill_headers_ds" prompt="运费发票总额" width="198"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textField name="header_vendor_desc" bindTarget="proyaacp5020_counter_bill_headers_ds" prompt="ACP_BILL_HEADERS.VENDOR_DESC" width="1117"/>
+                </a:hBox>
+            </a:form>
+            <a:grid id="proyaacp5020_counter_bill_detail_ds_grid" autoAppend="false" bindTarget="proyaacp5020_counter_bill_detail_ds" marginHeight="320" marginWidth="80" navBar="false">
+                <a:columns>
+                    <a:column name="return_flag" prompt="退回" width="30"/>
+                    <a:column name="vendor_desc" align="left" editor="line_desc_tf" prompt="备注" width="60"/>
+                    <a:column name="receipt_num" align="center" prompt="ACP_BILL_DETAILS.RECEIPT_NUM" sortable="true" width="50"/>
+                    <a:column name="receipt_line_num" align="center" prompt="ACP_BILL_DETAILS.RECEIPT_LINE_NUM" sortable="true" width="35"/>
+                    <a:column name="from_po_display_number" align="center" prompt="ACP_BILL_DETAILS.SEGMENT1" sortable="true" width="60"/>
+                    <a:column name="from_po_line_num" align="center" prompt="ACP_BILL_DETAILS.PO_LINE_NUM" sortable="true" width="50"/>
+                    <a:column name="trx_date_fmt" align="center" prompt="ACP_BILL_DETAILS.TRANSACTION_DATE" sortable="true" width="60"/>
+                    <a:column name="item_code" align="center" prompt="ACP_BILL_LINES.ITEM_CODE" sortable="true" width="60"/>
+                    <a:column name="item_name" align="left" prompt="ACP_BILL_LINES.ITEM_NAME" sortable="true" width="120"/>
+                    <a:column name="terminal_information" align="left" prompt="终端信息" sortable="true" width="80"/>
+                    <a:column name="freight" align="right" prompt="运费金额" sortable="true" width="50"/>
+                    <a:column name="trx_quantity" align="right" prompt="ACP_BILL_DETAILS.AVAILABLE_QUANTITY" sortable="true" width="50"/>
+                    <a:column name="unit_meas_lookup_code" align="left" prompt="ACP_BILL_DETAILS.UNIT_MEAS_LOOKUP_CODE" sortable="true" width="50"/>
+                    <a:column name="actual_receiver_name" align="left" prompt="PUR_LINES_ALL.ACTUAL_RECEIVER_NAME" width="80"/>
+                    <a:column name="display_unit_price" align="right" prompt="ACP_BILL.NET_PRICE" renderer="proyaacp5020_counterBillDetailDsRenderer" sortable="true" width="50"/>
+                    <a:column name="display_amount" align="right" prompt="ACP_BILL.NET_LINE_AMOUNT" renderer="proyaacp5020_counterBillDetailDsRenderer" sortable="true" width="50"/>
+                    <a:column name="tax_rate" align="center" prompt="FND_TAX_TYPE_CODES.TAX_TYPE_RATE" sortable="true" width="50"/>
+                    <a:column name="display_tax_unit_price" align="right" prompt="ACP_BILL.TAX_PRICE" renderer="proyaacp5020_counterBillDetailDsRenderer" sortable="true" width="50"/>
+                    <a:column name="display_tax_line_amount" align="right" prompt="ACP_BILL.TAX_LINE_AMOUNT" renderer="proyaacp5020_counterBillDetailDsRenderer" sortable="true" width="50"/>
+                    <a:column name="currency_code" align="center" prompt="ACP_BILL_SOURCE.CURRENCY_CODE" sortable="true" width="40"/>
+                    <a:column name="rcv_trx_type_desc" align="left" prompt="ACP_BILL_DETAILS.TRANSACTION_TYPE" sortable="true" width="60"/>
+                </a:columns>
+                <a:editors>
+                    <a:textField id="line_desc_tf"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

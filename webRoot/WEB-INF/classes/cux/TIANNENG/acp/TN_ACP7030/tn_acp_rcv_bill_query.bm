@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Tu Guanghui6743
+    $Date: 2014-10-10 09:42:56  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="t1.trx_number desc,lpad(t1.line_number,30,&apos;0&apos;) asc">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    t1.*,(t1.trx_quantity - t1.billed_quantity) as unbilled_quantity,round((t1.trx_quantity - t1.billed_quantity) * t1.po_tax_unit_price,2) unbilled_amount
+                FROM
+                    (SELECT prth.rcv_trx_header_id,
+               prth.owner_business_group,
+               (SELECT fbu.company_id FROM fnd_business_units_vl fbu WHERE prtl.business_unit_id = fbu.business_unit_id) owner_company_id,
+               (SELECT fbu.business_unit_name
+                  FROM fnd_business_units_vl fbu
+                 WHERE prtl.business_unit_id = fbu.business_unit_id) owner_business_unit_name,
+               prtl.vendor_id,
+             
+               (SELECT nvl(pv.coop_company_id,
+                           -1)
+                  FROM pur_vendors_v pv
+                 WHERE pv.vendor_id = prtl.vendor_id) vendor_company_id,
+               (SELECT pv.display_vendor_code FROM pur_vendors_v pv WHERE pv.vendor_id = prtl.vendor_id) vendor_code,
+               (SELECT pv.full_name FROM pur_vendors_v pv WHERE pv.vendor_id = prtl.vendor_id) vendor_name,
+               prtl.vendor_site_id,
+               prth.display_number trx_number,
+               prth.trx_source_type header_trx_source_type,
+               prth.trx_source_id header_trx_source_id,
+               prth.processed_flag,
+               prth.comments header_comments,
+               prtl.rcv_trx_line_id,
+               prtl.line_number,
+               prtl.rcv_trx_type,
+               (SELECT prtt.description1 FROM pur_rcv_trx_types_vl prtt WHERE prtt.rcv_trx_type = prtl.rcv_trx_type) rcv_trx_type_desc,
+               prtl.trx_date,
+               to_char(prtl.trx_date,
+                       'yyyy-mm-dd hh24:mi:ss') trx_date_fmt,
+               decode(prtl.erp_rcv_trx_type,'102',-1,'106',-1,'122',-1,'161',-1,1)  * prtl.trx_quantity as trx_quantity,
+               prtl.currency_code,
+               prtl.trx_amount,
+               prtl.period_name,
+               prtl.item_id,
+               --msiv.display_item_code as item_code,
+               --msiv.item_name,
+               (SELECT pla.item_code FROM pur_lines_all pla WHERE pla.pur_line_id = prtl.from_po_line_id) item_code,
+               (SELECT pla.item_description FROM pur_lines_all pla WHERE pla.pur_line_id = prtl.from_po_line_id) item_name,
+           
+               prtl.inv_organization_id,
+               (SELECT iov.description
+                  FROM inv_organizations_vl iov
+                 WHERE iov.inv_organization_id = prtl.inv_organization_id) inv_organization_name,
+               prtl.uom_code,
+               (SELECT nvl(fuc.uom_desc,
+                           prtl.uom_code)
+                  FROM fnd_uom_codes_vl fuc
+                 WHERE fuc.uom_code = prtl.uom_code
+                       AND fuc.business_group = prtl.business_group) uom_name,
+               prtl.warehouse_id,
+               (SELECT iwv.description FROM inv_warehouses_vl iwv WHERE iwv.warehouse_id = prtl.warehouse_id) AS warehouse_name,
+               prtl.inv_location_id,
+               (SELECT ilv.description FROM inv_locations_vl ilv WHERE ilv.location_id = prtl.inv_location_id) inv_location_name,
+               prtl.stock_type,
+               prtl.serial_num,
+               prtl.functional_trx_price,
+               prtl.functional_trx_amount,
+               prtl.functional_currency_code,
+               prtl.exchange_rate_type,
+               prtl.exchange_rate,
+               prtl.bill_matched_flag bill_closed_flag,
+               prtl.business_unit_id,
+               decode(bill_matched_flag,
+                      'N',
+                      0,
+                      trx_quantity) quant_of_bill_matching,
+               decode(bill_matched_flag,
+                      'N',
+                      'NO_MATCHING',
+                      'ALL_MATCHING') bill_matching_status,
+               prtl.invoice_closed_flag,
+               prtl.invoice_matching_status,
+               prtl.quant_of_invoice_matching,
+               prtl.trx_source_type line_trx_source_type,
+               prtl.trx_source_id line_trx_source_id,
+               prtl.trx_source_line_id,
+               prtl.terms_id,
+               prtl.terms_code,
+               prtl.terms_name,
+               prtl.reverse_flag,
+               prtl.reverse_line_id,
+               prtl.from_po_header_id,
+               prtl.from_po_display_number from_po_number,
+               (SELECT pha.display_release_num FROM pur_headers_all pha WHERE pha.pur_header_id = prtl.from_po_header_id) from_display_release_num,
+               prtl.from_po_line_id,
+               prtl.from_po_line_num,
+               prtl.from_po_line_location_id,
+               prtl.from_po_line_location_num,
+               prtl.from_asn_header_id,
+               prtl.from_asn_number,
+               prtl.from_asn_display_number,
+               prtl.from_asn_line_id,
+               prtl.from_asn_line_num,
+               prtl.parent_rcv_trx_line_id,
+               prtl.comments line_comments,
+               nvl(prtl.po_unit_price,
+                   (SELECT round(la.unit_price,2) FROM pur_lines_all la WHERE la.pur_line_id = prtl.from_po_line_id)) AS po_unit_price,
+               ( SELECT pla.unit_price * (nvl(tc.tax_type_rate,0) / 100 + 1) FROM fnd_tax_type_codes tc,pur_lines_all pla where pla.pur_line_id = prtl.from_po_line_id and tc.tax_type_id = pla.tax_code_id) po_tax_unit_price,
+               prtl.receiver_id,
+               prtl.receiver_code,
+               prtl.receiver_name,
+               prtl.vendor_lots_num,
+               prtl.vendor_lots_validity_date,
+               null as useless_id_1,
+               null as useless_id_2,
+               null as useless_id_5,
+               null as useless_id_6,
+               null as useless_id_7,
+               null as useless_id_8,
+               null as useless_id_10,
+               null as useless_id_11,
+               null as useless_id_13,
+               nvl((SELECT SUM(nvl(tl.quantity,
+                          0))
+		             FROM tn_acp_bill_lines tl
+		            WHERE tl.certificate_num = prth.receipt_num
+		                  AND ltrim(prtl.line_number,
+		                            '0') = ltrim(tl.certificate_line_num,
+		                                             '0')
+		                  AND tl.enabled_flag = 'Y'),
+		           0) billed_quantity
+          from pur_rcv_trx_lines    prtl,
+               pur_rcv_trx_headers  prth
+         where prtl.rcv_trx_header_id = prth.rcv_trx_header_id
+           and prth.processed_flag = 'Y'
+           AND prtl.erp_rcv_trx_type in ('101','102','105','106','122','161','162') 
+           and prtl.business_group = ${/session/@business_group}
+                    ) t1 #AUTHORIY_FROM# #WHERE_CLAUSE# #AUTHORIY_WHERE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="rcv_trx_header_id" queryExpression="t1.rcv_trx_header_id=${@rcv_trx_header_id}"/>
+        <bm:query-field name="owner_company_id" queryExpression="t1.owner_company_id=${@owner_company_id}"/>
+        <bm:query-field name="owner_business_unit_id" queryExpression="t1.business_unit_id=${@owner_business_unit_id}"/>
+        <bm:query-field name="vendor_id" queryExpression="t1.vendor_id=${@vendor_id}"/>
+        <bm:query-field name="trx_number" queryExpression="t1.trx_number like &apos;%&apos;||${@trx_number}||&apos;%&apos;"/>
+        <bm:query-field name="trx_date_from" queryExpression="trunc(t1.trx_date) &gt;=to_date(${@trx_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="trx_date_to" queryExpression="trunc(t1.trx_date) &lt;=to_date(${@trx_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="item_id" queryExpression="t1.item_id=${@item_id}"/>
+        <bm:query-field name="inv_organization_id" queryExpression="t1.inv_organization_id=${@inv_organization_id}"/>
+        <bm:query-field name="from_po_number" queryExpression="t1.from_po_number=${@from_po_number}"/>
+        <bm:query-field name="from_po_display_number" queryExpression="t1.from_po_display_number like &apos;%&apos;||${@from_po_display_number}||&apos;%&apos;"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="1=1"/>
+    </bm:data-filters>
+    <authority foundation_code="PUR_RCV_TRX">
+        <authority-segment source_alias="t1" source_name="useless_id_1" type="CREATER"/>
+        <authority-segment source_alias="t1" source_name="useless_id_2" type="RECEIVER"/>
+        <authority-segment source_alias="t1" source_name="owner_company_id" type="COMPANY"/>
+        <authority-segment source_alias="t1" source_name="business_unit_id" type="BUSINESS_UNIT"/>
+        <authority-segment source_alias="t1" source_name="useless_id_5" type="INV_ORGANIZATION"/>
+        <authority-segment source_alias="t1" source_name="useless_id_6" type="PUR_ORGANIZATION"/>
+        <authority-segment source_alias="t1" source_name="useless_id_7" type="SD_ORGANIZATION"/>
+        <authority-segment source_alias="t1" source_name="useless_id_8" type="CLIENT"/>
+        <authority-segment source_alias="t1" source_name="vendor_company_id" type="VENDOR"/>
+        <authority-segment source_alias="t1" source_name="useless_id_10" type="PURHASE_MATERIAL"/>
+        <authority-segment source_alias="t1" source_name="useless_id_11" type="SALES_PRODUCTION"/>
+        <authority-segment source_alias="t1" source_name="vendor_site_id" type="VENDOR_SITE"/>
+        <authority-segment source_alias="t1" source_name="useless_id_13" type="CLIENT_SITE"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+            var cx = Packages.aurora.javascript.Context.getCurrentContext();
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

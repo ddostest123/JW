@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Wanq  
+    $Date: 2012-12-10 下午6:56:28  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="item_code_name" needAccessControl="true">
+    <bm:fields>
+        <bm:field name="item_id"/>
+        <bm:field name="item_code_name"/>
+        <bm:field name="item_code" forDisplay="true" forQuery="true" prompt="ERPINV_ITEMS_BASICS.ITEM_CODE"/>
+        <bm:field name="item_name" forDisplay="true" forQuery="true" prompt="ERPINV_ITEMS_BASICS.ITEM_NAME"/>
+        <bm:field name="item_specs" forDisplay="true" prompt="ERPINV_ITEMS_BASICS.ITEM_SPECS"/>
+        <bm:field name="trade_uom"/>
+        <bm:field name="trade_uom_name"/>
+        <bm:field name="primary_uom"/>
+        <bm:field name="primary_uom_name"/>
+        <bm:field name="tax_included_flag"/>
+        <bm:field name="tax_rate"/>
+        <bm:field name="tax_code_id"/>
+        <bm:field name="tax_code_desc"/>
+        <bm:field name="currency_code"/>
+        <bm:field name="price"/>
+        <bm:field name="company_id"/>
+    </bm:fields>
+    <bm:query-fields>
+        <bm:query-field name="item_code_name" queryExpression="((item_code like ${@item_code_name}|| &apos;%&apos;) or (item_name like &apos;%&apos;||${@item_code_name}||&apos;%&apos;) )"/>
+        <bm:query-field name="item_code" queryExpression="item_code like ${@item_code}||&apos;%&apos;"/>
+        <bm:query-field name="item_name" queryExpression="item_name like &apos;%&apos;||${@item_name}||&apos;%&apos;"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter name="company_id" expression="v.company_id=${/parameter/@company_id}"/>
+    </bm:data-filters>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        b.item_id,
+                        b.item_code
+                        || '-'
+                        || b.item_name item_code_name,
+                        b.item_code,
+                        b.item_name,
+                        b.item_specs,
+                        b.trade_uom,
+                        (SELECT
+                            c.uom_description
+                        FROM
+                            erpinv_uom_codes c
+                        WHERE
+                            c.uom_code       = b.trade_uom AND
+                            c.business_group = b.business_group AND
+                            c.company_id     = b.company_id
+                        ) trade_uom_name,
+                        b.primary_uom,
+                        (SELECT
+                            c.uom_description
+                        FROM
+                            erpinv_uom_codes c
+                        WHERE
+                            c.uom_code       = b.primary_uom AND
+                            c.business_group = b.business_group AND
+                            c.company_id     = b.company_id
+                        ) primary_uom_name,
+                        f.functional_currency_code currency_code,
+                        (SELECT
+                            i.price
+                        FROM
+                            erpfnd_biz_partner_items i
+                        WHERE
+                            i.item_id        = b.item_id AND
+                            i.partner_id     = ${/parameter/@vender_id} AND
+                            i.business_group = ${/session/@business_group} AND
+                            i.company_id     = ${/parameter/@company_id} AND
+                            i.item_property  = 'PUR'
+                        ) price,
+                        b.company_id,
+                        f.tax_rate,
+                        f.tax_code_id,
+                        (SELECT
+                            aa.description
+                        FROM
+                            fnd_tax_type_codes_vl aa
+                        WHERE
+                            aa.tax_type_id = f.tax_code_id
+                        ) tax_code_desc,
+                        NULL tax_included_flag
+                    FROM
+                        erpinv_items_basics b,
+                        erpfnd_companies f
+                    WHERE
+                        NOT EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            erpfnd_business_partners p
+                        WHERE
+                            p.partner_id = ${/parameter/@vender_id} AND
+                            'Y'          = p.management_flag
+                        ) AND
+                        b.business_group = ${/session/@business_group} AND
+                        b.company_id     = ${/parameter/@company_id} AND
+                        b.business_group = f.business_group AND
+                        b.enabled_flag   = 'Y' AND
+                        b.inventory_flag = 'Y'
+                    UNION
+                    SELECT
+                        i.item_id,
+                        b.item_code
+                        || '-'
+                        || b.item_name item_code_name,
+                        b.item_code,
+                        b.item_name,
+                        b.item_specs,
+                        i.trade_uom,
+                        (SELECT
+                            c.uom_description
+                        FROM
+                            erpinv_uom_codes c
+                        WHERE
+                            c.uom_code       = i.trade_uom AND
+                            c.business_group = i.business_group AND
+                            c.company_id     = i.company_id
+                        ) trade_uom_name,
+                        b.primary_uom,
+                        (SELECT
+                            c.uom_description
+                        FROM
+                            erpinv_items_basics b,
+                            erpinv_uom_codes c
+                        WHERE
+                            b.item_id        = i.item_id AND
+                            b.primary_uom    = c.uom_code AND
+                            b.business_group = c.business_group AND
+                            b.business_group = i.business_group AND
+                            b.company_id     = c.company_id AND
+                            b.company_id     = i.company_id
+                        ) primary_uom_name,
+                        i.currency_code,
+                        i.price,
+                        b.company_id,
+                        i.tax_rate,
+                        i.tax_code_id,
+                        (SELECT
+                            aa.description
+                        FROM
+                            fnd_tax_type_codes_vl aa
+                        WHERE
+                            aa.tax_type_id = i.tax_code_id
+                        ) tax_code_desc,
+                        i.tax_include_flag
+                    FROM
+                        erpfnd_biz_partner_items i,
+                        erpinv_items_basics b
+                    WHERE
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            erpfnd_business_partners p
+                        WHERE
+                            p.partner_id = ${/parameter/@vender_id} AND
+                            'Y'          = p.management_flag
+                        ) AND
+                        i.item_id        = b.item_id AND
+                        i.partner_id     = ${/parameter/@vender_id} AND
+                        i.business_group = ${/session/@business_group} AND
+                        i.company_id     = ${/parameter/@company_id} AND
+                        i.item_property  = 'PUR' AND
+                        b.inventory_flag = 'Y'
+                    ) v #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

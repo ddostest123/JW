@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    h.rfx_number,
+                    h.title,
+                    NVL(
+                    (SELECT
+                        DECODE(listagg(li.work_num) within GROUP(
+                    ORDER BY
+                        li.work_num), '', '', listagg('<p align="left"><t fontFamily="SimHei">'
+                        || li.work_num
+                        || '</t></p>', '') within GROUP(
+                    ORDER BY
+                        li.work_num))
+                    FROM
+                        pur_rfx_ln_items li
+                    WHERE
+                        li.rfx_header_id = h.rfx_header_id
+                    ), '<p><t></t></p>') work_num,
+        nvl((SELECT listagg('<p align="left"><t fontFamily="SimHei">' || li.item_desc || '</t></p>',
+                           '') within GROUP(ORDER BY li.item_desc)
+              FROM pur_rfx_ln_items li
+             WHERE li.rfx_line_item_id IN (SELECT lii.rfx_line_item_id
+                                             FROM pur_rfx_ln_items lii
+                                            WHERE lii.rfx_header_id = h.rfx_header_id
+                                                  AND rownum <= 3)) || CASE
+             WHEN (SELECT COUNT(1) FROM pur_rfx_ln_items lii WHERE lii.rfx_header_id = h.rfx_header_id) > 3 THEN
+              '<p><t>等...</t></p>'
+             ELSE
+              ''
+           END,
+           '<p><t></t></p>') item_desc,
+                    NVL(
+                    (SELECT
+                        lli.uom_code
+                    FROM
+                        pur_rfx_ln_items lli
+                    WHERE
+                        lli.rfx_header_id = h.rfx_header_id AND
+                        lli.line_num      =
+                        (SELECT
+                            MIN(li.line_num)
+                        FROM
+                            pur_rfx_ln_items li
+                        WHERE
+                            li.rfx_header_id = h.rfx_header_id
+                        )
+                    ),' ') uom_code,
+                    NVL(
+                    (SELECT
+                        listagg('<p align="center"><t fontFamily="SimHei">'
+                        ||fc.company_full_name
+                        ||'</t></p>', ',') within GROUP(
+                    ORDER BY
+                        fc.company_full_name)
+                    FROM
+                        fnd_companies_vl fc
+                    WHERE
+                        fc.company_id IN (
+                        (SELECT
+                            fh.coop_company_id
+                        FROM
+                            pur_rfx_feedback_lines fl,
+                            pur_rfx_feedback_headers fh
+                        WHERE
+                            fl.feedback_header_id = fh.feedback_header_id AND
+                            fh.rfx_header_id      = h.rfx_header_id AND
+                            fh.rfx_round          = h.round AND
+                            fh.rfx_version        = h.version AND
+                            fl.suggested_flag     = 'Y'
+                        ))
+                    ),'<p><t></t></p>') win_bid_company,
+                    NVL(
+                    (SELECT
+                        SUM(fl.allotted_quantity)
+                    FROM
+                        pur_rfx_feedback_lines fl,
+                        pur_rfx_feedback_headers fh
+                    WHERE
+                        fl.feedback_header_id = fh.feedback_header_id AND
+                        fh.rfx_header_id      = h.rfx_header_id AND
+                        fh.rfx_round          = h.round AND
+                        fh.rfx_version        = h.version AND
+                        fl.suggested_flag     = 'Y'
+                    ),0) quantity
+                FROM
+                    pur_rfx_headers h
+                WHERE
+                    h.rfx_header_id = ${@rfx_header_id}
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

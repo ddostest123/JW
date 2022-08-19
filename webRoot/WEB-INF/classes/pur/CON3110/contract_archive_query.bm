@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Leah  
+    $Date: 2015-3-19 下午12:37:49  
+    $Revision: 1.0  
+    $Purpose: 
+    where exists (select t.*
+                  from fnd_config_authority_user_v t
+                 where t.assign_type = 'PUR_AGENT_GROUP'
+                   and t.assign_id = h.pur_buyer_id
+                   and user_id = ${/session/@user_id})
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" alias="t1" needAccessControl="false">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    t1.*
+                FROM
+                    (SELECT
+                        h.contract_header_id,
+                        h.company_id,
+                        h.contract_type_id,
+                        h.contract_number,
+                        h.status,
+                        h.document_number,
+                        h.document_desc,
+                        TO_CHAR(h.document_date, 'YYYY-MM-DD') document_date,
+                        TO_CHAR(h.start_date, 'YYYY-MM-DD') start_date,
+                        TO_CHAR(h.end_date, 'YYYY-MM-DD') end_date,
+                        h.currency_code,
+                        h.unit_id,
+                        h.employee_id,
+                        h.payment_method,
+                        h.payment_term_id,
+                        h.partner_category,
+                        h.partner_id,
+                        TO_CHAR(h.approved_date,'YYYY-MM-DD') approved_date,
+                        h.version_number,
+                        h.version_desc,
+                        h.note,
+                        h.project_id,
+                        h.created_by,
+                        h.creation_date,
+                        h.last_updated_by,
+                        h.last_update_date,
+                        h.pur_organization_id,
+                        h.vendor_id,
+                        h.archive_number,
+                        --h.x3_doc_number,
+                        h.pur_buyer_id,
+                        h.is_manual,
+                        h.primary_contract_header_id,
+                        (SELECT
+                            ch.document_desc
+                        FROM
+                            con_contract_headers_new ch
+                        WHERE
+                            ch.contract_header_id=h.primary_contract_header_id
+                        ) AS primary_document_desc,
+                        (SELECT
+                            pv.BUYER_DESC
+                        FROM
+                            pur_buyers_vl pv
+                        WHERE
+                            pv.BUYER_id = h.pur_buyer_id
+                        ) pur_buyer_desc,
+                        (SELECT t.full_name FROM pur_vendors_vl t WHERE t.VENDOR_ID = h.vendor_id
+                        ) vendor_desc,
+                        (SELECT
+                            t.display_vendor_code
+                        FROM
+                            pur_vendors_vl t
+                        WHERE
+                            t.VENDOR_ID = h.vendor_id
+                        ) vendor_code,
+                        (SELECT
+                            t1.description_text
+                        FROM
+                            fnd_flex_values t,
+                            fnd_descriptions t1,
+                            FND_FLEX_VALUE_SETS t2
+                        WHERE
+                            t1.description_id      = t.description_id AND
+                            t1.language            = userenv('lang') AND
+                            t.flex_value_set_id    = t2.flex_value_set_id AND
+                            t2.flex_value_set_code = 'CONTRACT_STATUS_NEW' AND
+                            t.flex_value           = h.status
+                        ) status_desc,
+                        (SELECT
+                            SUM(l.quantity * l.unit_price)
+                        FROM
+                            con_contract_lines_new l
+                        WHERE
+                            l.contract_header_id = h.contract_header_id
+                        ) amount,
+                        (SELECT
+                            t.description
+                        FROM
+                            pur_organizations_vl t
+                        WHERE
+                            t.pur_organization_id = h.pur_organization_id
+                        ) pur_organization_name,
+                        (SELECT
+                            t.type_desc
+                        FROM
+                            pur_con_types t
+                        WHERE
+                            t.con_type_id = h.contract_type_id
+                        ) contract_type_desc,
+                        (SELECT
+                            fv.COMPANY_CODE
+                        FROM
+                            fnd_companies_vl fv
+                        WHERE
+                            fv.company_id = h.company_id
+                        ) company_code,
+                        (SELECT su.description FROM sys_user su WHERE su.user_id = h.created_by
+                        ) created_name,
+                        fnd_config_cnt_get_pkg.get_bg_item_value_cont_02(p_business_group	=> ${/session/@business_group}) AS cont_02_item_value
+                    FROM
+                        con_contract_headers_new h
+                    WHERE
+                        h.company_id IN
+                        (SELECT
+                            company_id
+                        FROM
+                            fnd_companies_vl
+                        WHERE
+                            business_group = ${/session/@business_group}
+                        )
+                    ) t1 #WHERE_CLAUSE#
+                ORDER BY
+                    t1.document_date DESC
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+            DECLARE
+            v_status_desc varchar2(30);
+            l_pur_req_operation_record pur_req_operation_records%ROWTYPE;
+            begin 
+			  update con_contract_headers_new t
+			     set t.status = ${@status}
+			   where t.contract_header_id = ${@contract_header_id};
+			   
+			   if ${@status}='CANCELED' then
+			     con_contract_pkg.con_contract_release(p_contract_header_id => ${@contract_header_id});
+			     v_status_desc := '取消';
+			     else
+			     v_status_desc := '变更';
+			   end if;
+			   
+			   SELECT
+                        pur_req_operation_records_s.nextval
+                    INTO
+                        l_pur_req_operation_record.record_id
+                    FROM
+                        dual;
+                        
+                    SELECT
+                        su.user_id,
+                        su.description
+                    INTO
+                        l_pur_req_operation_record.user_id,
+                        l_pur_req_operation_record.user_name
+                    FROM
+                        sys_user su
+                    WHERE
+                        su.user_id                             = ${/session/@user_id};
+                        
+                    l_pur_req_operation_record.status             := ${@status};
+                    l_pur_req_operation_record.status_desc        := v_status_desc;
+                    l_pur_req_operation_record.operation_table    := 'con_contract_headers_new';
+                    l_pur_req_operation_record.operation_table_id := ${@contract_header_id};
+                    l_pur_req_operation_record.created_by         := ${/session/@user_id};
+                    l_pur_req_operation_record.creation_date      := SYSDATE;
+                    l_pur_req_operation_record.last_updated_by    := ${/session/@user_id};
+                    l_pur_req_operation_record.last_update_date   := SYSDATE;
+                    INSERT INTO pur_req_operation_records VALUES l_pur_req_operation_record;
+			end;
+        ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter name="contract_number" expression="t1.contract_number is not null"/>
+        <bm:data-filter name="contract_number" expression="t1.contract_number is not null and t1.contract_number not like &apos;L%&apos;"/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field name="status" queryExpression="t1.status=${@status}"/>
+        <bm:query-field name="vendor_desc" queryExpression="t1.vendor_desc like &apos;%&apos;||${@vendor_desc}||&apos;%&apos;"/>
+        <bm:query-field name="vendor_id" queryExpression="t1.vendor_id=${@vendor_id}"/>
+        <bm:query-field name="company_id" queryExpression="t1.company_id=${@company_id}"/>
+        <bm:query-field name="contract_number" queryExpression="t1.contract_number like &apos;%&apos;||${@contract_number}||&apos;%&apos;"/>
+        <bm:query-field name="pur_organization_id" queryExpression="t1.pur_organization_id=${@pur_organization_id}"/>
+        <bm:query-field name="document_date_from" queryExpression="t1.document_date&gt;=${@document_date_from}"/>
+        <bm:query-field name="document_date_to" queryExpression="t1.document_date&lt;=${@document_date_to}"/>
+        <bm:query-field name="contract_type_id" queryExpression="t1.contract_type_id=${@contract_type_id}"/>
+        <bm:query-field name="pur_buyer_id" queryExpression="t1.pur_buyer_id=${@pur_buyer_id}"/>
+        <bm:query-field name="sales_order_num" queryExpression="exists (SELECT  *   from pur_lines_all l, con_contract_lines_new ccl  where l.pur_line_id = ccl.source_ref_id    and ccl.contract_header_id = t1.contract_header_id and l.sales_order_num like &apos;%&apos;||${@sales_order_num}||&apos;%&apos;)"/>
+        <bm:query-field name="ref_doc_num" queryExpression="exists (select * from con_contract_lines_new l where l.contract_header_id=t1.contract_header_id and l.ref_doc_num like &apos;%&apos;||${@ref_doc_num}||&apos;%&apos;)"/>
+        <bm:query-field name="document_desc" queryExpression="t1.document_desc like &apos;%&apos;||${@document_desc}||&apos;%&apos;"/>
+        <bm:query-field name="primary_document_desc" queryExpression="t1.primary_document_desc like &apos;%&apos;||${@primary_document_desc}||&apos;%&apos;"/>
+        <bm:query-field name="created_name" queryExpression="t1.created_name like &apos;%&apos;||${@created_name}||&apos;%&apos;"/>
+        <bm:query-field name="created_by" queryExpression="t1.created_by = ${@created_by}"/>
+        <bm:query-field name="x3_doc_number" queryExpression="t1.x3_doc_number like &apos;%&apos;||${@x3_doc_number}||&apos;%&apos;"/>
+        <bm:query-field name="note" queryExpression="t1.note like &apos;%&apos;||${@note}||&apos;%&apos;"/>
+        <bm:query-field name="item_code" queryExpression="exists (select 1 from con_contract_lines_new cl where cl.contract_header_id=t1.contract_header_id and cl.item_code like &apos;%&apos;||${@item_code}||&apos;%&apos;)"/>
+        <bm:query-field name="item_desc" queryExpression="exists (select 1 from con_contract_lines_new cl where cl.contract_header_id=t1.contract_header_id and cl.item_desc like &apos;%&apos;||${@item_desc}||&apos;%&apos;)"/>
+        <bm:query-field name="model" queryExpression="exists (select 1 from con_contract_lines_new cl where cl.contract_header_id=t1.contract_header_id and cl.model like &apos;%&apos;||${@model}||&apos;%&apos;)"/>
+        <bm:query-field name="line_comment" queryExpression="exists (select 1 from con_contract_lines_new cl where cl.contract_header_id=t1.contract_header_id and cl.line_comment like &apos;%&apos;||${@line_comment}||&apos;%&apos;)"/>
+    </bm:query-fields>
+</bm:model>

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:service xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <p:method-invoke className="uncertain.composite.CompositeUtil" methodName="collapse">
+            <p:arguments>
+                <p:argument path="/parameter" type="uncertain.composite.CompositeMap"/>
+            </p:arguments>
+        </p:method-invoke>
+        <!--接口用户校验-->
+        <a:model-execute model="ws_eitf.PUBLIC.eitf_check_user" path="/parameter"/>
+        <!--指定参数过滤数据:不同的接口,根据各自的业务表进行数据过滤-->
+        <a:model-execute model="ws_eitf.PUR_PO.eitf_interface_filter" path="/parameter"/>
+        <!--封装参数后，写入指定路径-->
+        <p:set field="/parameter/@interface_code" sourceField="/parameter/HEADER/@IF_CODE"/>
+        <p:set field="/parameter/@batch_num" sourceField="/parameter/HEADER/@BATCH_NUM"/>
+        <p:set field="/parameter/@seg_num" sourceField="/parameter/HEADER/@SEG_NUM"/>
+        <p:set field="/parameter/@total_seg_count" sourceField="/parameter/HEADER/@TOTAL_SEG_COUNT"/>
+        <!--实例校验：实例已归档或者导出数据为0，立即返回响应信息；否则，新建或更新实例传输-->
+        <s:server-script import="ws_eitf_construct_node.js"><![CDATA[
+            var ctx = $ctx.parameter;
+            var soapResponse = eitf_export_instances_checks(ctx.interface_code, ctx.batch_num, ctx.seg_num, ctx.total_seg_count);
+            if ($ctx.parameter.finished == 'Y') {
+                $ctx.addChild(soapResponse);
+            } else {
+                $bm('ws_eitf.PUBLIC.load_eitf_instances').execute();
+                $bm('ws_eitf.PUBLIC.eitf_export_start').execute();
+                // 收集要导出的接口数据,不同的接口自定义
+                $bm('ws_eitf.PUR_PO.eitf_interface_collect_enter').execute();
+                soapResponse = createResponse(ctx.eitf_instance_id, ctx.pack_eitf_instance_id, ctx.interface_code, ctx.batch_num, ctx.seg_num, ctx.total_seg_count, 'SUCCESS', 'SEND SUCCESSFULLY !');
+                $ctx.addChild(soapResponse);
+                $bm('ws_eitf.PUBLIC.eitf_instance_send').execute();
+            }
+        ]]></s:server-script>
+    </a:init-procedure>
+    <a:service-output output="/soapResponse"/>
+</a:service>

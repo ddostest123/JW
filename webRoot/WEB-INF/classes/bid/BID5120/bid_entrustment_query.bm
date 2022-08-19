@@ -1,0 +1,345 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy=" entrustment_header_number DESC">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        h.entrustment_header_id,
+                        h.entrustment_header_number,
+                        h.round,
+                        h.version,
+                        h.title,
+                        h.status,
+                        h.bidding_type,                        
+                        (SELECT
+                            scv.code_value_name
+                        FROM
+                            sys_code_values_v scv
+                        WHERE
+                            scv.code                    = 'BID_ENTRUSTMENT_STATUS' AND
+                            scv.code_enabled_flag       = 'Y' AND
+                            scv.code_value_enabled_flag = 'Y' AND
+                            scv.code_value              = h.status
+                        ) AS status_desc,
+                        h.applicant_id,
+                        (SELECT e.description FROM sys_user e WHERE e.user_id = h.applicant_id
+                        ) AS applicant_desc,
+                        h.application_date,
+                        h.company_id,
+                        (SELECT
+                            fc.company_short_name
+                        FROM
+                            FND_COMPANIES_SIMPLIFIED_VL fc
+                        WHERE
+                            fc.company_id = h.company_id
+                        ) AS company_desc,
+                        h.inv_organization_id,
+                        (SELECT
+                            io.description
+                        FROM
+                            inv_organizations_vl io
+                        WHERE
+                            io.inv_organization_id = h.inv_organization_id
+                        ) AS inv_organization_desc,
+                        h.using_company_id,
+                        h.owner_company_id,
+                        (SELECT
+                            fc.company_code
+                        FROM
+                            FND_COMPANIES_SIMPLIFIED_VL fc
+                        WHERE
+                            fc.company_id = h.using_company_id
+                        ) AS using_company_code,
+                        (SELECT
+                            fc.company_full_name
+                        FROM
+                            FND_COMPANIES_SIMPLIFIED_VL fc
+                        WHERE
+                            fc.company_id = h.using_company_id
+                        ) AS using_company_desc,
+                        h.entrustment_type_id,
+                        (SELECT
+                            bet.entrustment_type_desc
+                        FROM
+                            bid_entrustment_types_vl bet
+                        WHERE
+                            bet.entrustment_type_id = h.entrustment_type_id
+                        ) AS entrustment_type_desc,
+                        h.bidding_method,
+                        (SELECT
+                            scv.code_value_name
+                        FROM
+                            sys_code_values_v scv
+                        WHERE
+                            scv.code                    = 'BID_BIDDING_METHODS' AND
+                            scv.code_enabled_flag       = 'Y' AND
+                            scv.code_value_enabled_flag = 'Y' AND
+                            scv.code_value              = h.bidding_method
+                        ) AS bidding_method_desc,
+                        h.authorized_flag,
+                        (SELECT
+                            scv.code_value_name
+                        FROM
+                            sys_code_values_v scv
+                        WHERE
+                            scv.code                    = 'YES_NO' AND
+                            scv.code_enabled_flag       = 'Y' AND
+                            scv.code_value_enabled_flag = 'Y' AND
+                            scv.code_value              = h.authorized_flag
+                        ) AS authorized_flag_desc,
+                        h.bid_closing_date,
+                        TO_CHAR(h.bid_closing_date,'YYYY-MM-DD HH24:mi:ss') bid_closing_date_desc,
+                        h.margin_required_flag,
+                        h.bidder_qualified_flag,
+                        TO_CHAR(h.issue_date,'YYYY-MM-DD') issue_date ,
+                        lbd.bidder_id,
+                        lbd.bidder_company_id,
+                        lbd.bidder_desc,
+                        ROUND(h.bid_closing_date-sysdate,2) remain_time,
+                        h.bid_opening_start_date,
+                        h.owner_business_group,
+                        NULL useless_id,
+                        (SELECT
+                            belb.feedback_status
+                        FROM
+                            bid_entrustment_ln_bidders belb
+                        WHERE
+                            belb.entrustment_header_id = h.entrustment_header_id AND
+                            belb.bidder_company_id     = lbd.bidder_company_id
+                        ) feedback_status,                       
+                        (SELECT
+                            dh.coop_company_id
+                        FROM
+                            bid_bidding_docm_headers dh,
+                            fnd_companies fc
+                        WHERE
+                            dh.entrustment_header_id = h.entrustment_header_id AND
+                            dh.round                 = h.round AND
+                            dh.bidder_company_id     = fc.company_id AND
+                            fc.business_group        = ${/session/@business_group} AND
+                            fc.company_id            = lbd.bidder_company_id
+                        ) coop_company_id,
+                        h.prequal_flag,
+                        (SELECT
+                            bph.status
+                        FROM
+                            bid_prequal_headers bph
+                        WHERE
+                            bph.entrustment_header_id = h.entrustment_header_id
+                        ) prequal_status,
+                        (SELECT
+                            bpl.status
+                        FROM
+                            bid_prequal_headers bph,
+                            bid_prequal_lines bpl
+                        WHERE
+                            bph.entrustment_header_id = h.entrustment_header_id AND
+                            bph.prequal_header_id     = bpl.prequal_header_id AND
+                            bpl.bidder_company_id     = lbd.bidder_company_id
+                        ) bidder_prequal_status,
+                        (SELECT
+                            dh.bid_header_id
+                        FROM
+                            bid_bidding_docm_headers dh,
+                            fnd_companies fc
+                        WHERE
+                            dh.entrustment_header_id = h.entrustment_header_id AND
+                            dh.round                 = h.round AND
+                            dh.bidder_company_id     = fc.company_id AND
+                            fc.business_group        = ${/session/@business_group} AND
+                            fc.company_id            = lbd.bidder_company_id
+                        ) bid_header_id,
+                        (SELECT
+                            dh.status
+                        FROM
+                            bid_bidding_docm_headers dh,
+                            fnd_companies fc
+                        WHERE
+                            dh.entrustment_header_id = h.entrustment_header_id AND
+                            dh.round                 = h.round AND
+                            dh.bidder_company_id     = fc.company_id AND
+                            fc.business_group        = ${/session/@business_group} AND
+                            fc.company_id            = lbd.bidder_company_id
+                        ) bid_header_status,
+                        NVL(lbd.line_bidder_id,
+                        (SELECT
+                            lb.line_bidder_id
+                        FROM
+                            bid_entrustment_ln_bidders lb
+                        WHERE
+                            lb.bidder_company_id     = lbd.bidder_company_id AND
+                            lb.entrustment_header_id = h.entrustment_header_id AND
+                            rownum                   =1
+                        )) line_bidder_id
+                    FROM
+                        bid_entrustment_headers h,
+                        (SELECT
+                            'INVITATION' bidding_method,
+                            line_bidder_id,
+                            entrustment_header_id,
+                            bidder_id,
+                            fc.company_id bidder_company_id,
+                            fc.company_full_name bidder_desc
+                        FROM
+                            bid_entrustment_ln_bidders lb,
+                            FND_COMPANIES_SIMPLIFIED_VL fc
+                        WHERE
+                            lb.bidder_company_id = fc.company_id AND
+                            fc.business_group    = ${/session/@business_group}
+                        UNION ALL
+                        SELECT
+                            'OPEN' bidding_method,
+                            NULL,
+                            NULL,
+                            NULL,
+                            fcv.company_id bidder_company_id,
+                            fcv.company_full_name bidder_desc
+                        FROM
+                            FND_COMPANIES_SIMPLIFIED_VL fcv
+                        WHERE
+                            fcv.business_group = ${/session/@business_group}
+                        ) lbd
+                    WHERE
+                        h.status           = 'ISSUED' AND
+                        h.bid_closing_date > SYSDATE AND
+                        h.bidding_type     = 'ON_LINE' AND
+                        (
+                            (
+                                h.bidding_method  IN ('OPEN','ALL_OPEN') AND
+                                lbd.bidding_method = 'OPEN'
+                            )
+                            OR
+                            (
+                                h.bidding_method          = 'INVITATION' AND
+                                lbd.bidding_method        = 'INVITATION' AND
+                                lbd.entrustment_header_id = h.entrustment_header_id
+                            )
+                        )
+                        AND
+                        NOT EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            bid_entrustment_ln_bidders belb
+                        WHERE
+                            belb.feedback_status       = 'DROP_OUT' AND
+                            belb.entrustment_header_id = h.entrustment_header_id AND
+                            belb.bidder_company_id     = lbd.bidder_company_id
+                        ) AND
+                        (
+                            EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                bid_bidding_docm_headers dh,
+                                fnd_companies fc
+                            WHERE
+                                dh.entrustment_header_id = h.entrustment_header_id AND
+                                dh.round                 = h.round AND
+                                dh.bidder_company_id     = fc.company_id AND
+                                fc.business_group        = ${/session/@business_group} AND
+                                fc.company_id            = lbd.bidder_company_id AND
+                                dh.status               IN ('NEW', 'TAKEN_BACK', 'SUBMITTED')
+                            ) OR
+                            NOT EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                bid_bidding_docm_headers dh,
+                                fnd_companies fc
+                            WHERE
+                                dh.entrustment_header_id = h.entrustment_header_id AND
+                                dh.round                 = h.round AND
+                                dh.bidder_company_id     = fc.company_id AND
+                                fc.business_group        = ${/session/@business_group} AND
+                                fc.company_id            = lbd.bidder_company_id
+                            )
+                        )
+                        AND
+                        (
+                            (
+                                h.prequal_flag = 'Y' AND
+                                EXISTS
+                                (SELECT
+                                    1
+                                FROM
+                                    bid_prequal_headers bph
+                                WHERE
+                                    bph.entrustment_header_id = h.entrustment_header_id AND
+                                    (
+                                        (
+                                            bph.status       = 'SUBMITTED' AND
+                                            bph.closing_date > SYSDATE
+                                        )
+                                        OR
+                                        (
+                                            bph.status       = 'APPROVED' AND
+                                            bph.closing_date < SYSDATE AND
+                                            EXISTS
+                                            (SELECT
+                                                1
+                                            FROM
+                                                bid_prequal_lines bpl,
+                                                bid_entrustment_ln_bidders belbd
+                                            WHERE
+                                                bph.prequal_header_id       = bpl.prequal_header_id AND
+                                                bpl.bidder_company_id       = lbd.bidder_company_id AND
+                                                bpl.status                  = 'APPROVED' AND
+                                                bpl.bidder_company_id       = belbd.bidder_company_id AND
+                                                belbd.entrustment_header_id = h.entrustment_header_id
+                                            )
+                                        )
+                                    )
+                                )
+                            )
+                            OR
+                            h.prequal_flag  = 'N' OR
+                            h.prequal_flag IS NULL
+                        )
+                        AND
+                        h.owner_business_group <>${/session/@business_group}
+                    ) t #AUTHORIY_FROM# #WHERE_CLAUSE# #AUTHORIY_WHERE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="entrustment_header_number" queryExpression="entrustment_header_number like &apos;%&apos;||${@entrustment_header_number}||&apos;%&apos;"/>
+        <bm:query-field name="application_date_from" queryExpression="application_date &gt;= to_date(${@application_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="application_date_to" queryExpression="application_date &lt;= to_date(${@application_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="complete_date_from" queryExpression="complete_date &gt;= to_date(${@complete_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="complete_date_to" queryExpression="complete_date &lt;= to_date(${@complete_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="entrustment_type_id" queryExpression="entrustment_type_id = ${@entrustment_type_id}"/>
+        <bm:query-field name="bidding_method" queryExpression="bidding_method = ${@bidding_method}"/>
+        <bm:query-field name="status" queryExpression="status = ${@status}"/>
+        <bm:query-field name="entrustment_header_id" queryExpression="entrustment_header_id = ${@entrustment_header_id}"/>
+        <bm:query-field name="using_company_id" queryExpression="using_company_id = ${@using_company_id}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="1 = 1"/>
+    </bm:data-filters>
+    <authority foundation_code="BID_BIDDING_DOCM">
+        <authority-segment source_alias="t" source_name="useless_id" type="CREATER"/>
+        <authority-segment source_alias="t" source_name="bidder_company_id" type="COMPANY"/>
+        <authority-segment source_alias="t" source_name="useless_id" type="RECEIVER"/>
+        <authority-segment source_alias="t" source_name="useless_id" type="BUSINESS_UNIT"/>
+        <authority-segment source_alias="t" source_name="useless_id" type="PUR_ORGANIZATION"/>
+        <authority-segment source_alias="t" source_name="useless_id" type="INV_ORGANIZATION"/>
+        <authority-segment source_alias="t" source_name="useless_id" type="SD_ORGANIZATION"/>
+        <authority-segment source_alias="t" source_name="useless_id" type="VENDOR"/>
+        <authority-segment source_alias="t" source_name="owner_company_id" type="CLIENT"/>
+        <authority-segment source_alias="t" source_name="useless_id" type="PURHASE_MATERIAL"/>
+        <authority-segment source_alias="t" source_name="useless_id" type="SALES_PRODUCTION"/>
+        <authority-segment source_alias="t" source_name="useless_id" type="CLIENT_SITE"/>
+        <authority-segment source_alias="t" source_name="useless_id" type="VENDOR_SITE"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+            var cx = Packages.aurora.javascript.Context.getCurrentContext();
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

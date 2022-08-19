@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:service xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <s:server-script import="itf_construct_node.js"><![CDATA[
+            $ctx.parameter.interface_code = 'INV_ASN_EXPORT';
+            $ctx.parameter.interface_category_code = 'INV_ASN';
+            //list info
+            var list = new ModelService('eitf.ws.public.eitf_interface_list_query').queryAsMap().getChildren();
+            var soapResponse = new CompositeMap('soapResponse');
+            
+            for (var i = 0;i < list.length;i++) {
+                $ctx.parameter.business_group = list[i].business_group;
+                $ctx.parameter.external_system_code = list[i].external_system_code;
+
+                //init
+                $bm('eitf.ws.public.eitf_export_init').execute();
+                var record = createRecordNode('record', soapResponse, list[i].url);
+                var request = createNode('REQUEST', record);
+                //parameter：request、bg、es、itf_cate_code、itf_code、user_name、password、batch、seg、total_seg
+                var header = createHeaderNode(request,$ctx.parameter.interface_category_code, $ctx.parameter.interface_code, $ctx.parameter.batch_num, $ctx.parameter.seg_num, $ctx.parameter.total_seg_count);
+
+                //context
+                var context = createNode('CONTEXT', request);
+                //asn
+                var inv_asn_header = createNode('INV_ASN_HEADER', context);
+                var inv_asn_line = createNode('INV_ASN_LINE', context);
+            
+                createDataNode('eitf.ws.INV_ASN.eitf_inv_asn_header_query', inv_asn_header);
+                createDataNode('eitf.ws.INV_ASN.eitf_inv_asn_line_query', inv_asn_line);
+            
+                //packed
+                $bm('eitf.ws.public.eitf_instance_pack').execute();
+            }
+            
+            $ctx.addChild(soapResponse);
+        ]]></s:server-script>
+        <a:batch-apply sourcepath="/soapResponse">
+            <p:echo/>
+            <p:echo message="url = ${@current_parameter/@url}"/>
+            <!-- <t:test xmlns:t="aurora.application.action"/> -->
+            <a:ws-invoker inputPath="@current_parameter/REQUEST" raiseExceptionOnError="false" returnPath="@current_parameter/RESPONSE" url="${@current_parameter/@url}"/>
+            <!-- <p:catch Exception="*" destination="/parameter/error_info" nextStep="batch-apply"/> -->
+            <a:model-execute model="eitf.ws.public.eitf_instance_send"/>
+        </a:batch-apply>
+    </a:init-procedure>
+</a:service>

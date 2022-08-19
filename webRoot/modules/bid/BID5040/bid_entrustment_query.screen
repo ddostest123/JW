@@ -1,0 +1,455 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: WangQiaosen  
+    $Date: 2013-3-11 下午1:27:02  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:view>
+        <a:link id="bid5040_entrustment_create_link" url="${/request/@context_path}/modules/bid/BID5040/bid_entrustment_create.screen"/>
+        <a:link id="bid5040_entrustment_edit_link" url="${/request/@context_path}/modules/bid/BID5040/bid_entrustment_edit.screen"/>
+        <a:link id="bid5040_entrustment_cancel_link" url="${/request/@context_path}/modules/bid/BID5040/bid_entrustment_cancel.svc"/>
+        <a:link id="bid5040_operation_record_link" url="${/request/@context_path}/modules/bid/public/bid_operation_record.screen"/>
+        <a:link id="bid_entrustment_demandpool_init_link" url="${/request/@context_path}/modules/bid/BID5040/bid_entrustment_demandpool_init.svc"/>
+        <!-- 通过需求池创建招投标预览界面 -->
+        <a:link id="pur5130_bidFromDemandPoolPreview_link" url="${/request/@context_path}/modules/bid/BID5040/pur_bid_demandpool_maintain.screen"/>
+        <a:link id="bid_entrustment_edit_link" url="${/request/@context_path}/modules/bid/BID5040/bid_entrustment_edit.screen"/>
+        <script><![CDATA[
+            function bid5040EntrustmentCreate() {
+                new Aurora.Window({
+                    id: 'bid5040_entrustment_create_window',
+                    title: '${l:BID5040.IFB_CREATION}',
+                    url: $('bid5040_entrustment_create_link').getUrl(),
+                    fullScreen: true
+                });
+            }
+            
+            function bid5040EntrustmentCancel() {
+                var header_ds = $('bid5040_entrustment_result_ds');
+                var records = header_ds.getSelected();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.PLEASE_SELECT}!');
+                    return;
+                }
+            
+                var datas = [];
+                for (var i = 0;i < records.length;i++) {
+                    records[i].data._status = 'cancel';
+                    datas.push(records[i].data);
+                }
+            
+                Aurora.showConfirm('${l:PROMPT}', '${l:BID_ENTRUSTMENT_HEADERS.CONFIRM_CANCEL_MSG}？', function() {
+                    Aurora.Masker.mask(Ext.getBody(), '${l:LOADING}');
+                    Aurora.request({
+                        url: $('bid5040_entrustment_cancel_link').getUrl(),
+                        para: datas,
+                        success: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            Aurora.showMessage('${l:PROMPT}', '${l:BID_ENTRUSTMENT_HEADERS.CANCELED_MSG}!');
+                            $('bid5040_entrustment_result_ds').query();
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            return;
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            return;
+                        }
+                    });
+                });
+            }
+            
+            function bid5040Query() {
+                $('bid5040_entrustment_result_ds').query();
+            }
+            
+            function bid5040EntrustmentResultRender(value, record, name) {
+                var entrustment_header_id = record.get('entrustment_header_id');
+                if (name == 'entrustment_header_number') {
+                    return '<a href="javascript:bid5040EntrustmentEdit(' + entrustment_header_id + ')">' + value + '</a>';
+                } else if (name == 'operation_record') {
+                    return '<a href="javascript:bid5040OperationRecord(' + entrustment_header_id + ')">${l:PROMPT.OPERATION_RECORD}</a>';
+                }
+            }
+            
+            function bid5040EntrustmentEdit(entrustment_header_id) {
+                new Aurora.Window({
+                    id: 'bid5040_entrustment_edit_window',
+                    title: '${l:BID_ENTRUSTMENT_HEADERS.ENTRUSTMENT_APPLICATION_MAINTAIN}',
+                    url: $('bid5040_entrustment_edit_link').getUrl() + '?entrustment_header_id=' + entrustment_header_id,
+                    fullScreen: true
+                }).on('beforeclose', function() {
+                    bid5040Query();
+                });
+            }
+            
+            function bid5040OperationRecord(entrustment_header_id) {
+                new Aurora.Window({
+                    id: 'bid5040_operation_record_window',
+                    title: '${l:PROMPT.OPERATION_RECORD}',
+                    url: $('bid5040_operation_record_link').getUrl() + '?operation_table=BID_ENTRUSTMENT_HEADERS' + '&operation_table_id=' + entrustment_header_id,
+                    height: 450,
+                    width: 600
+                });
+            }
+            
+            function pur5130_demand_pool_assigned_result_ds_select(ds, record) {
+                var list_ds = $('pur5130_demand_pool_assigned_result_selected_ds');
+                var req_line_id = record.get('req_line_id');
+                var result_record = list_ds.find('req_line_id', req_line_id);
+                if (Aurora.isEmpty(result_record)) {
+                    $('pur5130_demand_pool_assigned_result_selected_ds').create(record.data);
+                }
+            }
+            
+            function pur5130_demand_pool_assigned_result_ds_unselect(ds, record) {
+                var list_ds = $('pur5130_demand_pool_assigned_result_selected_ds');
+                var req_line_id = record.get('req_line_id');
+                var result_record = list_ds.find('req_line_id', req_line_id);
+                if (!Aurora.isEmpty(result_record)) {
+                    list_ds.remove(result_record);
+                }
+            }
+            
+            // 页面执行重新查询时所做的操作
+            
+            function pur5130_demand_pool_assigned_result_ds_grid_render(grid) {
+                var ds = $('pur5130_demand_pool_assigned_result_ds');
+                var records = ds.getAll();
+                var list_ds = $('pur5130_demand_pool_assigned_result_selected_ds');
+                var list_records = list_ds.getAll();
+                for (var i = 0;i < records.length;i++) {
+                    var select_record = list_ds.find('req_line_id', records[i].get('req_line_id'));
+                    if (!Aurora.isEmpty(select_record)) {
+                        ds.select(records[i]);
+                    }
+                }
+            }
+            
+            function pur5130_demandPoolAssignedQueryFunction() {
+                $('pur5130_demand_pool_assigned_result_ds').query();
+            }
+            
+                 //通过需求池创建询价单预览界面
+            
+            function pur5130_rfxFromDemandPoolPreviewFunction(bid_header_id) {
+                new Aurora.Window({
+                    url: $('pur5130_bidFromDemandPoolPreview_link').getUrl() + '?bid_header_id=' + bid_header_id,
+                    title: '${l:BID_ENTRUSTMENT_HEADERS.PREVIEW_BUDDING}',
+                    id: 'bid5040_bidFromDemandPoolPreview_window',
+                    fullScreen: true
+                });
+            }
+            
+            //通过需求池创建询价单
+            
+            function pur5130_rfxFromDemandPool() {
+                var records = $('pur5130_demand_pool_assigned_result_selected_ds').getAll();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SELECT_ONE_RECORD_AT_LEAST}');
+                    return;
+                }
+                var datas = [];
+                for (var i = 0;i < records.length;i++) {
+                    datas.push(records[i].data);
+                }
+                Aurora.Masker.mask(Ext.getBody());
+                Aurora.request({
+                    url: $('bid_entrustment_demandpool_init_link').getUrl(),
+                    para: datas,
+                    success: function(res) {
+                        var bid_header_id = res.result.feedback_id;
+                        Aurora.Masker.unmask(Ext.getBody());
+                        $('pur5130_demand_pool_assigned_result_selected_ds').removeAll();
+                        pur5130_demandPoolAssignedQueryFunction();
+                        pur5130_rfxFromDemandPoolPreviewFunction(bid_header_id);
+                    },
+                    failure: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        pur5130_demandPoolAssignedQueryFunction();
+                    },
+                    error: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        pur5130_demandPoolAssignedQueryFunction();
+                    },
+                    scope: this,
+                    sync: true
+                });
+            }
+            
+            function pur5130_demand_pool_query_ds_onUpdate(ds, record, name, value, oldvalue) {
+                var field;
+                if (name == 'item_category_id') {
+                    field = record.getMeta().getField('item_name');
+                    if (!Aurora.isEmpty(value)) {
+                        field.setLovPara('item_category_id', value);
+                    } else {
+                        field.setLovPara('item_category_id', '');
+                    }
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="bid5040_bid_bidding_methods_ds" lookupCode="BID_BIDDING_METHODS"/>
+            <a:dataSet id="bid5040_bid_using_unit_types_ds" lookupCode="BID_USING_UNIT_TYPES"/>
+            <a:dataSet id="bid5040_bid_entrustment_status_ds" lookupCode="BID_ENTRUSTMENT_STATUS"/>
+            <a:dataSet id="bid5040_yes_no_ds" lookupCode="YES_OR_NO"/>
+            <a:dataSet id="bid5040_currency_code_ds" autoCount="false" autoQuery="true" fetchAll="true" model="public.currency_list"/>
+            <a:dataSet id="bid5040_entrustment_query_ds">
+                <a:fields>
+                    <a:field name="entrustment_type_desc" autoComplete="true" autoCompleteField="entrustment_type_desc" lovGridHeight="320" lovHeight="500" lovService="bid.public.bid_entrustment_types_lov" lovWidth="500" title="BID5040.ENTRUSTMENT_TYPE_DESC">
+                        <a:mapping>
+                            <a:map from="entrustment_type_id" to="entrustment_type_id"/>
+                            <a:map from="entrustment_type_desc" to="entrustment_type_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="suggested_bidding_method_desc" displayField="code_value_name" options="bid5040_bid_bidding_methods_ds" returnField="suggested_bidding_method" valueField="code_value"/>
+                    <a:field name="using_company_desc" autoComplete="true" autoCompleteField="company_full_name" lovGridHeight="320" lovHeight="500" lovService="bid.public.bid_company_lov" lovWidth="500" title="BID5040.USING_COMPANY_DESC">
+                        <a:mapping>
+                            <a:map from="company_id" to="using_company_id"/>
+                            <a:map from="company_code" to="using_company_code"/>
+                            <a:map from="company_full_name" to="using_company_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="inv_organization_desc" autoComplete="true" autoCompleteField="organization_name" lovGridHeight="320" lovHeight="500" lovService="public.inv_organizations_lov" lovWidth="500" title="INV_ORGANIZATIONS.INV_ORGANIZATION">
+                        <a:mapping>
+                            <a:map from="organization_id" to="inv_organization_id"/>
+                            <a:map from="organization_name" to="inv_organization_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="authorized_flag" checkedValue="Y" uncheckedValue="N"/>
+                    <a:field name="margin_required_flag_desc" displayField="code_value_name" options="bid5040_yes_no_ds" returnField="margin_required_flag" valueField="code_value"/>
+                    <a:field name="bidder_qualified_flag_desc" displayField="code_value_name" options="bid5040_yes_no_ds" returnField="bidder_qualified_flag" valueField="code_value"/>
+                    <a:field name="status_desc" displayField="code_value_name" options="bid5040_bid_entrustment_status_ds" returnField="status" valueField="code_value"/>
+                    <a:field name="tender_agent_id"/>
+                    <a:field name="tender_agent_desc" autoComplete="true" autoCompleteField="user_desc" lovHeight="480" lovService="bid.public.bid_tender_agents_lov" lovWidth="500" title="BID_ENTRUSTMENT_HEADERS.TENDER_AGENT_ID">
+                        <a:mapping>
+                            <a:map from="user_id" to="tender_agent_id"/>
+                            <a:map from="user_name" to="tender_agent_code"/>
+                            <a:map from="user_desc" to="tender_agent_desc"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="pur5130_demand_pool_assigned_query_ds">
+                <a:fields>
+                    <a:field name="business_unit_id"/>
+                    <a:field name="business_unit_name" autoComplete="true" autoCompleteField="business_unit_code_name" lovHeight="480" lovService="public.fnd_business_unit_lov" lovWidth="510" title="FND_BUSINESS_UNITS.BUSINESS_UNIT_QUERY">
+                        <a:mapping>
+                            <a:map from="business_unit_id" to="business_unit_id"/>
+                            <a:map from="business_unit_code" to="business_unit_code"/>
+                            <a:map from="business_unit_name" to="business_unit_name"/>
+                            <a:map from="company_id" to="company_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="item_category_id"/>
+                    <a:field name="item_category" autoComplete="true" autoCompleteField="category_code_name" lovHeight="480" lovService="pur.PUR5130.mtl_categories_user_defined_vl" lovWidth="510" title="PUR_REQUISITION_LNS.ITEM_CATEGORY_ID">
+                        <a:mapping>
+                            <a:map from="category_udf_id" to="item_category_id"/>
+                            <a:map from="category_code" to="item_category_code"/>
+                            <a:map from="category_name" to="item_category"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="item_id"/>
+                    <a:field name="item_name" autoComplete="true" autoCompleteField="item_code_name" lovAutoQuery="false" lovHeight="480" lovService="pur.PUR5130.mtl_system_item_lov" lovWidth="510" title="PUR_REQUISITION_LINES.ITEM_ID">
+                        <a:mapping>
+                            <a:map from="item_id" to="item_id"/>
+                            <a:map from="item_code" to="item_code"/>
+                            <a:map from="item_name" to="item_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="pur_buyer" autoComplete="true" autoCompleteField="buyer_code_desc" lovHeight="480" lovService="pur.PUR5130.pur_buyers_lov" lovWidth="510" title="PUR_HEADERS_ALL.PUR_BUYER">
+                        <a:mapping>
+                            <a:map from="buyer_id" to="buyer_id"/>
+                            <a:map from="buyer_code" to="buyer_code"/>
+                            <a:map from="buyer_desc" to="pur_buyer"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="pur5130_demand_pool_query_ds_onUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="bid5040_entrustment_result_ds" autoCount="true" autoPageSize="true" autoQuery="true" model="bid.BID5040.bid_entrustment_query" queryDataSet="bid5040_entrustment_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="prequal_flag" checkedValue="Y" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="pur5130_demand_pool_assigned_result_ds" autoCount="true" autoPageSize="true" model="pur.PUR5130.pur_demand_pool_assigned" queryDataSet="pur5130_demand_pool_assigned_query_ds" selectable="true">
+                <a:events>
+                    <a:event name="select" handler="pur5130_demand_pool_assigned_result_ds_select"/>
+                    <a:event name="unselect" handler="pur5130_demand_pool_assigned_result_ds_unselect"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="pur5130_demand_pool_assigned_result_selected_ds"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:tabPanel marginHeight="50" marginWidth="10">
+                <a:tabs>
+                    <a:tab prompt="BID_ENTRUSTMENT.PENDING_BIDDING_REQUISITION" width="130">
+                        <a:screenTopToolbar>
+                            <a:toolbarButton click="pur5130_rfxFromDemandPool" style="margin-left:20px;" text="BID_ENTRUSTMENT.REQUISITION_TURNS_BIDDING" width="100"/>
+                            <a:toolbarButton click="bid5040EntrustmentCreate" style="margin-left:20px;" text="BID_ENTRUSTMENT.MANUAL_BIDDING_CREATION" width="100"/>
+                        </a:screenTopToolbar>
+                        <a:queryForm bindTarget="pur5130_demand_pool_assigned_query_ds" resultTarget="pur5130_demand_pool_assigned_result_ds">
+                            <a:formToolBar>
+                                <a:hBox labelWidth="120">
+                                    <a:textField name="req_number" bindTarget="pur5130_demand_pool_assigned_query_ds" prompt="ACP_ACP_REQUISITION_HDS.REQUISITION_NUMBER">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_demandPoolAssignedQueryFunction"/>
+                                        </a:events>
+                                    </a:textField>
+                                    <a:lov name="business_unit_name" bindTarget="pur5130_demand_pool_assigned_query_ds" prompt="FND_BUSINESS_UNITS.BUSINESS_UNIT">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_demandPoolAssignedQueryFunction"/>
+                                        </a:events>
+                                    </a:lov>
+                                    <a:lov name="item_category" bindTarget="pur5130_demand_pool_assigned_query_ds" prompt="PUR_REQUISITION_LNS.ITEM_CATEGORY_ID">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_demandPoolAssignedQueryFunction"/>
+                                        </a:events>
+                                    </a:lov>
+                                </a:hBox>
+                            </a:formToolBar>
+                            <a:formBody>
+                                <a:hBox labelWidth="120">
+                                    <a:textField name="line_number" prompt="PUR_REQUISITION_LINES.LINE_NUMBER">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_demandPoolAssignedQueryFunction"/>
+                                        </a:events>
+                                    </a:textField>
+                                    <a:lov name="item_name" prompt="PUR_REQUISITION_LINES.ITEM_ID">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_demandPoolAssignedQueryFunction"/>
+                                        </a:events>
+                                    </a:lov>
+                                    <a:lov name="pur_buyer" prompt="PUR_HEADERS_ALL.PUR_BUYER">
+                                        <a:events>
+                                            <a:event name="enterdown" handler="pur5130_demandPoolAssignedQueryFunction"/>
+                                        </a:events>
+                                    </a:lov>
+                                </a:hBox>
+                            </a:formBody>
+                        </a:queryForm>
+                        <a:grid autoAppend="false" bindTarget="pur5130_demand_pool_assigned_result_ds" marginHeight="180" marginWidth="50" navBar="true">
+                            <a:columns>
+                                <a:column name="req_number" lock="true" prompt="ACP_ACP_REQUISITION_HDS.REQUISITION_NUMBER" width="100"/>
+                                <a:column name="line_num" lock="true" prompt="PUR_REQUISITION_LNS.LINE_NUMBER" width="40"/>
+                                <a:column name="item_code" lock="true" prompt="PUR_REQUISITION_LNS.ITEM_CODE" width="80"/>
+                                <a:column name="item_description" lock="true" prompt="PUR_REQUISITION_LNS.ITEM_DESC" width="100"/>
+                                <a:column name="item_category_desc" prompt="PUR_REQUISITION_LNS.ITEM_CATEGORY_ID" width="100"/>
+                                <a:column name="organization_desc" prompt="PUR_REQUISITION_LNS.INV_ORG_ID" width="100"/>
+                                <a:column name="quantity" align="right" prompt="PUR_REQUISITION_LINS.QUANTITY" width="40"/>
+                                <a:column name="unit_meas_lookup_code" prompt="PUR_REQUISITION_LNS.UNIT" width="40"/>
+                                <a:column name="currency_code" prompt="PUR_REQUISITION_LNS.CURRENCY" width="40"/>
+                                <a:column name="rate" prompt="PUR_REQUISITION_LNS.EXCHANGE_RATE" width="40"/>
+                                <a:column name="need_by_date" prompt="PUR_REQUISITION_LNS.NEED_BY_DATE" width="80"/>
+                                <a:column name="work_num" prompt="PUR_RFX_LN_ITEMS.WORK_NUMBER" width="60"/>
+                                <a:column name="bom_num" prompt="PUR_RFX_LN_ITEMS.BOM_NUMBER" width="60"/>
+                                <a:column name="specification" prompt="PUR_REQUISITION_LNS.SPECIFICATION" width="60"/>
+                                <a:column prompt="PUR_REQUISITION_LNS.REQUISITIONER" width="40"/>
+                                <a:column name="purchasing_agent_code" prompt="PUR_REQUISITION_LNS.BUYER" width="40"/>
+                                <a:column prompt="PUR_REQUISITION_LNS.DEPARTMENT" width="40"/>
+                                <a:column prompt="PUR_REQUISITION_LNS.REQUISITION_DATE" width="40"/>
+                                <a:column name="sm_comment" prompt="PUR_REQUISITION_LNS.NOTE" width="40"/>
+                                <a:column name="data_source" align="center" prompt="PUR_REQ_HEADERS.DATA_SOURCE" width="40"/>
+                                <a:column name="assigned_to_desc" align="center" prompt="PUR_REQ_HEADERS.ASSIGNER" width="100"/>
+                            </a:columns>
+                            <a:events>
+                                <a:event name="render" handler="pur5130_demand_pool_assigned_result_ds_grid_render"/>
+                            </a:events>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab prompt="BID_ENTRUSTMENT_HEADERS.UNDERWAY_IFB" selected="true" width="130">
+                        <a:screenTopToolbar>
+                            <!-- <a:toolbarButton click="bid5040EntrustmentCreate" text="PROMPT.INSERT" width="100"/> -->
+                            <a:toolbarButton click="bid5040EntrustmentCancel" text="PROMPT.CANCEL" width="100"/>
+                        </a:screenTopToolbar>
+                        <a:queryForm bindTarget="bid5040_entrustment_query_ds" resultTarget="bid5040_entrustment_result_ds" style="width:100%;border:none">
+                            <a:formToolBar labelWidth="100">
+                                <a:textField name="entrustment_header_number" bindTarget="bid5040_entrustment_query_ds" prompt="BID5040.IFB_NO">
+                                    <a:events>
+                                        <a:event name="enterdown" handler="bid5040Query"/>
+                                    </a:events>
+                                </a:textField>
+                                <a:textField name="title" bindTarget="bid5040_entrustment_query_ds" prompt="BID_ENTRUSTMENT_HEADERS.ENTRUSTMENT_TITLE">
+                                    <a:events>
+                                        <a:event name="enterdown" handler="bid5040Query"/>
+                                    </a:events>
+                                </a:textField>
+                                <a:lov name="tender_agent_desc" bindTarget="bid5040_entrustment_query_ds" prompt="BID_ENTRUSTMENT_HEADERS.TENDER_AGENT_ID">
+                                    <a:events>
+                                        <a:event name="enterdown" handler="bid5040Query"/>
+                                    </a:events>
+                                </a:lov>
+                            </a:formToolBar>
+                            <a:formBody>
+                                <a:vBox>
+                                    <a:hBox labelWidth="100">
+                                        <a:lov name="entrustment_type_desc" bindTarget="bid5040_entrustment_query_ds" prompt="BID5040.ENTRUSTMENT_TYPE_DESC">
+                                            <a:events>
+                                                <a:event name="enterdown" handler="bid5040Query"/>
+                                            </a:events>
+                                        </a:lov>
+                                        <a:comboBox name="suggested_bidding_method_desc" bindTarget="bid5040_entrustment_query_ds" prompt="BID5040.SUGGESTED_BIDDING_METHOD">
+                                            <a:events>
+                                                <a:event name="enterdown" handler="bid5040Query"/>
+                                            </a:events>
+                                        </a:comboBox>
+                                        <a:lov name="using_company_desc" bindTarget="bid5040_entrustment_query_ds" prompt="BID5040.USING_COMPANY_DESC">
+                                            <a:events>
+                                                <a:event name="enterdown" handler="bid5040Query"/>
+                                            </a:events>
+                                        </a:lov>
+                                    </a:hBox>
+                                    <a:hBox labelWidth="100">
+                                        <a:datePicker name="creation_date_from" bindTarget="bid5040_entrustment_query_ds" prompt="BID_ENTRUSTMENT_HEADERS.CREATION_DATE_FROM">
+                                            <a:events>
+                                                <a:event name="enterdown" handler="bid5040Query"/>
+                                            </a:events>
+                                        </a:datePicker>
+                                        <a:datePicker name="creation_date_to" bindTarget="bid5040_entrustment_query_ds" prompt="BID_ENTRUSTMENT_HEADERS.CREATION_DATE_TO">
+                                            <a:events>
+                                                <a:event name="enterdown" handler="bid5040Query"/>
+                                            </a:events>
+                                        </a:datePicker>
+                                        <!-- <a:comboBox name="bidder_qualified_flag_desc" bindTarget="bid5040_entrustment_query_ds" prompt="BID_ENTRUSTMENT_HEADERS.BIDDER_QUALIFIED_FLAG">
+                                <a:events>
+                                    <a:event name="enterdown" handler="bid5040Query"/>
+                                </a:events>
+                            </a:comboBox> -->
+                                        <a:textField name="eq_application_number" bindTarget="bid5040_entrustment_query_ds" prompt="设备工程申请单号">
+                                            <a:events>
+                                                <a:event name="enterdown" handler="bid5040Query"/>
+                                            </a:events>
+                                        </a:textField>
+                                    </a:hBox>
+                                </a:vBox>
+                            </a:formBody>
+                        </a:queryForm>
+                        <a:grid id="bid5040_entrustment_result_grid" autoAppend="false" bindTarget="bid5040_entrustment_result_ds" marginHeight="180" marginWidth="50" navBar="true">
+                            <a:columns>
+                                <a:column name="status_desc" align="center" lock="true" prompt="STATUS" width="60"/>
+                                <a:column name="entrustment_header_number" align="center" lock="true" prompt="BID5040.IFB_NO" renderer="bid5040EntrustmentResultRender" sortable="true" width="100"/>
+                                <a:column name="title" align="left" lock="true" prompt="BID_ENTRUSTMENT_HEADERS.ENTRUSTMENT_TITLE" width="100"/>
+                                <a:column name="prequal_flag" align="center" prompt="BID_ENTRUSTMENT_HEADERS.PREQUALIFICATION" width="60"/>
+                                <a:column name="round" align="left" prompt="BID_ENTRUSTMENT_HEADERS.ROUND" width="30"/>
+                                <a:column name="version" align="left" prompt="BID_ENTRUSTMENT_HEADERS.VERSION" width="30"/>
+                                <a:column name="entrustment_type_desc" align="left" prompt="BID_ENTRUSTMENT.BIDDING_TYPE" width="80"/>
+                                <a:column name="suggested_bidding_method_desc" align="left" prompt="BID_ENTRUSTMENT.BIDDING_MODE" width="50"/>
+                                <a:column name="creation_date_desc" align="center" prompt="BID_ENTRUSTMENT_HEADERS.CREATION_DATE" renderer="Aurora.formatDate" sortable="true" width="60"/>
+                                <a:column name="using_company_desc" align="center" prompt="BID5040.USING_COMPANY_DESC" sortable="true" width="100"/>
+                                <!-- <a:column name="agent_company_name" align="center" prompt="BID_ENTRUSTMENT_HEADERS.AGENT_COMPANY_ID" sortable="true" width="100"/> -->
+                                <a:column name="tender_agent_desc" align="center" prompt="BID_ENTRUSTMENT_HEADERS.TENDER_AGENT_ID" sortable="true" width="60"/>
+                                <a:column name="eq_application_number" align="center" prompt="设备工程申请单号" width="60"/>
+                                <a:column name="operation_record" align="center" prompt="PROMPT.OPERATION_RECORD" renderer="bid5040EntrustmentResultRender" width="50"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+    </a:view>
+</a:screen>

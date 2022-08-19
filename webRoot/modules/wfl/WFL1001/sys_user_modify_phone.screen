@@ -1,0 +1,263 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: hansen  
+    $Date: 2015-10-27 下午3:12:53  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="sys.sys_user_infor" rootPath="sys_user_infor"/>
+    </a:init-procedure>
+    <a:view>
+        <link href="${/request/@context_path}/css/main/main-person.css" rel="stylesheet" type="text/css"/>
+        <a:link id="fnd_para_sm_link" url="${/request/@context_path}/modules/sms/sys_sms_para_send.svc"/>
+        <a:link id="sys_user_password_link" model="sys.sys_user_infor" modelaction="execute"/>
+        <a:link id="sys_user_infor_update_link" model="sys.sys_user_infor" modelaction="insert"/>
+        <script><![CDATA[
+            var sys_user_mobile_key;
+            var sys_user_mobile;
+            
+            function getId(id) {
+                return document.getElementById(id);
+            }
+            
+            function sys_user_validate_password() {
+                var record = $('updateUserMobile_ds').getCurrentRecord();
+                Aurora.request({
+                    url: $('sys_user_password_link').getUrl(),
+                    para: {
+                        'user_id': '${/model/sys_user_infor/record/@user_id}',
+                        'password': record.get('password')
+                    },
+                    success: function(res) {
+                        var l = getId('contetn_8_step1');
+                        var p = getId('contetn_8_step2');
+                        l.style.display = 'none';
+                        p.style.display = 'block';
+                    },
+                    scope: this
+                });
+            }
+            
+            function sys_user_sendCode(_this) {
+                if(!_this.second){
+                    _this.innerText = '60秒后重发';
+                    _this.second = 60;
+                    sys_user_sendMessage();
+                }else{
+                    Aurora.showMessage('提示','60秒内请勿重复发送！');
+                    return;
+                }
+                var mobile_inter = setInterval(function() {
+                    if (_this.second > 0) {
+                        _this.second -= 1;
+                        _this.innerText = _this.second + '秒后重发';
+                    } else {
+                        _this.innerText = '获取验证码';
+                        clearInterval(mobile_inter);
+                    }
+                }, 1000);
+            }
+            
+            function sys_user_sendMessage() {
+                var mobile = $('updateUserMobile_ds').getAt(0).get('update_mobile');
+                var content = '修改短信验证码:VALIDATION_CODE';
+                Aurora.request({
+                    url: $('fnd_para_sm_link').getUrl(),
+                    para: {
+                        'action': 'validate_code',
+                        //短信发送类型
+                        'mobile': mobile,
+                        // 手机号码组，支持群发，号码用";"隔开
+                        'template': 'SYS_SMS_SEND_CODE',
+                        // 短信内容
+                        'overdue_date': '3000',
+                        //过期时间
+                        'reSend_date': '60',
+                        //重发时间限制
+                        'source': 'fnd9100',
+                        //来源
+                        'source_id': 'sys_user_bindMobile' + '${/model/sys_user_infor/record/@user_name}' //来源id
+                    },
+                    success: function(rs) {
+                        if (rs.result.action == 'validate_code') {
+                            if (rs.result.error_message == null) {
+                                sys_user_mobile_key = rs.result.key;
+                            } else {
+                                Aurora.showMessage('提示',rs.result.error_message);
+                            }
+                        }
+                    },
+                    scope: this,
+                    sync: true
+                });
+            }
+            
+            function sys_user_mobileValidate_byValidate() {
+                var code = $('updateUserMobile_ds').getAt(0).get('validate_code');
+                Aurora.request({
+                    url: $('fnd_para_sm_link').getUrl(),
+                    para: {
+                        'action': 'validation',
+                        //短信发送类型
+                        'key': sys_user_mobile_key,
+                        'code': code
+                    },
+                    success: function(rs) {
+                        if (rs.result.validate_flag == 'Y') {
+                            sys_user_mobileSubmit();
+                        } else if (rs.result.validate_flag == 'N') {
+                            Aurora.showMessage('提示', rs.result.error_message);
+                        }
+                    },
+                    scope: this,
+                    sync: true
+                });
+            }
+            
+            function sys_user_mobileSubmit() {
+                var record = $('updateUserMobile_ds').getCurrentRecord();
+                var mobile = record.get('update_mobile');
+                Aurora.request({
+                    url: $('sys_user_infor_update_link').getUrl(),
+                    para: {
+                        'user_id': '${/model/sys_user_infor/record/@user_id}',
+                        'mobile_phone': mobile
+                    },
+                    success: function(res) {
+                        var l = getId('contetn_8_step2');
+                        var p = getId('contetn_8_step3');
+                        l.style.display = 'none';
+                        p.style.display = 'block';
+                        sys_user_mobile = $('updateUserMobile_ds').getCurrentRecord().get('update_mobile');
+                        var span = getId('sys_user_mobileUpdated');
+                        span.innerText = sys_user_mobile;
+                        var timeout = setTimeout(function() {
+                            //location.reload();
+                            window.parent.sys_back();
+                        }, 3000);
+                    },
+                    scope: this
+                });
+            }
+            
+            function sys_user_mobileBakcQuery(){
+                window.parent.sys_back();
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="updateUserMobile_ds" autoCreate="true"/>
+        </a:dataSets>
+        <div id="content_8" class="li_content" style="background-color:#eee">
+            <div id="contetn_8_step1">
+                <ul class="process">
+                    <li>
+                        <div class="icon on"><![CDATA[1]]></div>
+                        <div class="line"/>
+                        <span><![CDATA[验证身份]]></span>
+                    </li>
+                    <li>
+                        <div class="icon non"><![CDATA[2]]></div>
+                        <div class="line"/>
+                        <span><![CDATA[修改手机]]></span>
+                    </li>
+                    <li style="margin-right:0">
+                        <div class="icon ok"/>
+                        <span><![CDATA[修改成功]]></span>
+                    </li>
+                </ul>
+                <div class="step_process" style="display:block;">
+                    <div class="box_tips">
+                        <i class="pic1 ii"/>
+                        <span><![CDATA[您正在使用 “]]></span>
+                        <span style="color:#fd7d23"><![CDATA[登入密码]]></span>
+                        <span><![CDATA[” 进行设置。]]></span>
+                    </div>
+                    <div class="main_process">
+                        <a:hBox labelWidth="120" style="margin:30px auto" width="350">
+                            <a:textField name="password" bindTarget="updateUserMobile_ds" prompt="登入密码" style="padding:2px;height:30px;*height:22px;" width="250"/>
+                        </a:hBox>
+                        <div class="pic1 btn_w" style="margin-top:30px">
+                            <div class="pic1 btn" onclick="sys_user_validate_password()"><![CDATA[下一步]]></div>
+                        </div>
+                        <span class="se_back" onclick="sys_user_mobileBakcQuery()" style="margin-top:35px"><![CDATA[返回]]></span>
+                    </div>
+                </div>
+            </div>
+            <div id="contetn_8_step2" style="display:none">
+                <ul class="process">
+                    <li>
+                        <div class="icon on"><![CDATA[1]]></div>
+                        <div class="line" style="background-color:#fc9c27;"/>
+                        <span><![CDATA[验证身份]]></span>
+                    </li>
+                    <li>
+                        <div class="icon on"><![CDATA[2]]></div>
+                        <div class="line"/>
+                        <span><![CDATA[修改手机]]></span>
+                    </li>
+                    <li style="margin-right:0">
+                        <div class="icon ok"/>
+                        <span><![CDATA[修改成功]]></span>
+                    </li>
+                </ul>
+                <div class="step_process">
+                    <div class="box_tips">
+                        <i class="pic1 ii"/>
+                        <span><![CDATA[您正在使用 “]]></span>
+                        <span style="color:#fd7d23"><![CDATA[登入密码]]></span>
+                        <span><![CDATA[” 进行设置。]]></span>
+                    </div>
+                    <div class="main_process">
+                        <a:vBox labelWidth="120" style="margin:30px auto" width="350">
+                            <a:textField name="update_mobile" bindTarget="updateUserMobile_ds" prompt="新手机" style="padding:2px;height:30px;*height:22px;" width="250"/>
+                        </a:vBox>
+                        <a:hBox labelWidth="95" style="margin:30px auto" width="350">
+                            <a:textField name="validate_code" allowDecimals="false" bindTarget="updateUserMobile_ds" prompt="验证码" style="padding:2px;height:30px;*height:22px;" width="150"/>
+                            <span class="inline right_buttom" onclick="sys_user_sendCode(this)"><![CDATA[获取验证码]]></span>
+                        </a:hBox>
+                        <div class="pic1 btn_w" style="margin-top:30px">
+                            <div class="pic1 btn" onclick="sys_user_mobileValidate_byValidate()"><![CDATA[下一步]]></div>
+                        </div>
+                        <span class="se_back" onclick="sys_user_mobileBakcQuery()" style="margin-top:35px"><![CDATA[返回]]></span>
+                    </div>
+                </div>
+            </div>
+            <div id="contetn_8_step3" style="display:none">
+                <ul class="process">
+                    <li>
+                        <div class="icon on"><![CDATA[1]]></div>
+                        <div class="line" style="background-color:#fc9c27;"/>
+                        <span><![CDATA[验证身份]]></span>
+                    </li>
+                    <li>
+                        <div class="icon on"><![CDATA[2]]></div>
+                        <div class="line" style="background-color:#fc9c27;"/>
+                        <span><![CDATA[修改手机]]></span>
+                    </li>
+                    <li style="margin-right:0">
+                        <div class="icon ok"/>
+                        <span><![CDATA[修改成功]]></span>
+                    </li>
+                </ul>
+                <div class="step_process">
+                    <div class="box_tips">
+                        <i class="pic1 ii"/>
+                        <span><![CDATA[您正在使用 “]]></span>
+                        <span style="color:#fd7d23"><![CDATA[验证短信+验证支付密码]]></span>
+                        <span><![CDATA[” 进行设置。]]></span>
+                    </div>
+                    <div class="main_process">
+                        <div class="tips" style="margin-top:30px">
+                            <div class="warn"/>
+                            <span><![CDATA[修改成功，新绑定的手机号为]]></span>
+                            <span id="sys_user_mobileUpdated"/>
+                            <span><![CDATA[！3秒后返回首页]]></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </a:view>
+</a:screen>

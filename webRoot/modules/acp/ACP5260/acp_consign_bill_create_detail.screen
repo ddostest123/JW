@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: WangQiaosen  
+    $Date: 2013-3-11 下午1:19:01  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure/>
+    <a:view>
+        <a:link id="acp5260_consign_bill_create_link" url="${/request/@context_path}/modules/acp/ACP5260/acp_consign_bill_create.svc"/>
+        <script><![CDATA[
+            
+            function acp5260ConsignBillCreateDetailReturn() {
+                $('acp5260_consign_bill_create_detail_window').close();
+            }
+            
+            //Load Function
+            
+            
+            function acp5260_poBillAmountQuery_loadFun(ds) {
+                //判断勾选行是否存在价格屏蔽
+                var result_ds = $('acp5260_consign_bill_source_result_ds');
+                var records = result_ds.getSelected();
+                var secrecy_flag;
+                for (var i = 0;i < records.length;i++) {
+                    if (records[i].get('bill_amount') == '***') {
+                        secrecy_flag = 'Y';
+                    }
+                }
+                if (secrecy_flag == 'Y') {
+                    $('acp5260_consign_bill_create_preview_ds').getAt(0).set('amount', '***');
+                } else {
+                    $('acp5260_consign_bill_create_preview_ds').getAt(0).set('amount', ds.getAt(0).get('amount'));
+                }
+            }
+            
+            function acp5260_csgn_bill_return() {
+                $('acp5260_consign_bill_create_detail_window').close();
+            }
+            
+            // 开票单创建
+            function acp5260_csgn_bille_create() {
+                if (!$('acp5260_csgn_bill_headers_ds').validate()) {
+                    return;
+                }
+                Aurora.showConfirm('${l:PROMPT}', '${l:ACP_CSGN_BILL.CONFIRM_CREATE}', function() {
+                    var record = $('acp5260_csgn_bill_headers_ds').getCurrentRecord();
+                    var datas;
+                    datas = {
+                        "action_type": 'NEW',
+                        "company_id": record.get('owner_company_id'),
+                        "business_unit_id": record.get('business_unit_id'),
+                        "vendor_id": record.get('vendor_id'),
+                        "vendor_site_id": record.get('vendor_site_id'),
+                        "currency_code": record.get('currency_code'),
+                        "bill_amount": record.get('bill_amount'),
+                        "tax_total_amount": record.get('tax_total_amount'),
+                        "supply_create_flag": 'Y',
+                        "vendor_comments": record.get('vendor_comments')
+                    };
+                    var lines_data = [];
+                    var lines_records = $('acp5260_csgn_bill_lines_ds').getAll();
+                    for (var i = 0;i < lines_records.length;i++) {
+                        lines_data.push({
+                            "bill_line_num": lines_records[i].get('bill_line_num'),
+                            "item_id": lines_records[i].get('item_id'),
+                            "item_code": lines_records[i].get('item_code'),
+                            "item_name": lines_records[i].get('item_name'),
+                            "sum_quantity": lines_records[i].get('sum_quantity'),
+                            "unit_price": lines_records[i].get('unit_price'),
+                            "unit_meas_lookup_code": lines_records[i].get('uom_code'),
+                            "tax_rate": lines_records[i].get('tax_rate'),
+                            "currency_code": lines_records[i].get('currency_code'),
+                            "line_desc": lines_records[i].get('line_desc'),
+                            "inv_org_id": lines_records[i].get('to_inv_org_id')
+                        });
+                    }
+                    var details_data = [];
+                    var detail_records = $('acp5260_csgn_bill_details_ds').getAll();
+                    for (var j = 0;j < detail_records.length;j++) {
+                        details_data.push({
+                            "trx_line_id": detail_records[j].get('trx_line_id')
+                        });
+                    }
+                    datas['lines_data'] = lines_data;
+                    datas['details_data'] = details_data;
+            
+                    Aurora.Masker.mask($('acp5260_consign_bill_create_detail_window').wrap, '${l:LOADING}');
+                    Aurora.request({
+                        url: $('acp5260_consign_bill_create_link').getUrl(),
+                        para: datas,
+                        success: function(res) {
+                            //获取开票单号，并提示
+                            var bill_number = res.result.bill_number || '';
+                            Aurora.showMessage('${l:PROMPT}', '${l:ACP_BILL.NEW}' + bill_number, function(){
+	                            Aurora.Masker.unmask($('acp5260_consign_bill_create_detail_window').wrap);
+	                            acp5260_query();
+	                            acp5260_csgn_bill_return();
+	                            $('acp5260_csgn_bill_select_ds').removeAll();
+	                            $('acp5260_csgn_bill_details_ds').removeAll();
+	                            $('acp5260_csgn_bill_lines_ds').removeAll();
+	                            $('acp5260_csgn_bill_headers_ds').removeAll();
+                            },360,120); 
+                        },
+                        failure: function(res) {
+                            Aurora.Masker.unmask($('acp5260_consign_bill_create_detail_window').wrap);
+                        },
+                        error: function(res) {
+                            Aurora.Masker.unmask($('acp5260_consign_bill_create_detail_window').wrap);
+                        },
+                        scope: this
+                    });
+                });
+            }
+
+            // 开票单创建并提交
+            function acp5260_csgn_bille_create_release() {
+                if (!$('acp5260_csgn_bill_headers_ds').validate()) {
+                    return;
+                }
+                Aurora.showConfirm('${l:PROMPT}', '${l:PROMPT.CONFIRM_RELEASE}？', function() {
+                    var record = $('acp5260_csgn_bill_headers_ds').getCurrentRecord();
+                    var datas;
+                    datas = {
+                        "action_type": 'RELEASED',
+                        "company_id": record.get('owner_company_id'),
+                        "business_unit_id": record.get('business_unit_id'),
+                        "vendor_id": record.get('vendor_id'),
+                        "vendor_site_id": record.get('vendor_site_id'),
+                        "currency_code": record.get('currency_code'),
+                        "bill_amount": record.get('bill_amount'),
+                        "tax_total_amount": record.get('tax_total_amount'),
+                        "supply_create_flag": 'Y',
+                        "vendor_comments": record.get('vendor_comments')
+                    };
+                    var lines_data = [];
+                    var lines_records = $('acp5260_csgn_bill_lines_ds').getAll();
+                    for (var i = 0;i < lines_records.length;i++) {
+                        lines_data.push({
+                            "bill_line_num": lines_records[i].get('bill_line_num'),
+                            "item_id": lines_records[i].get('item_id'),
+                            "item_code": lines_records[i].get('item_code'),
+                            "item_name": lines_records[i].get('item_name'),
+                            "sum_quantity": lines_records[i].get('sum_quantity'),
+                            "unit_price": lines_records[i].get('unit_price'),
+                            "unit_meas_lookup_code": lines_records[i].get('uom_code'),
+                            "tax_rate": lines_records[i].get('tax_rate'),
+                            "currency_code": lines_records[i].get('currency_code'),
+                            "line_desc": lines_records[i].get('line_desc'),
+                            "inv_org_id": lines_records[i].get('to_inv_org_id')
+                        });
+                    }
+                    var details_data = [];
+                    var detail_records = $('acp5260_csgn_bill_details_ds').getAll();
+                    for (var j = 0;j < detail_records.length;j++) {
+                        details_data.push({
+                            "trx_line_id": detail_records[j].get('trx_line_id')
+                        });
+                    }
+                    datas['lines_data'] = lines_data;
+                    datas['details_data'] = details_data;
+            
+                    Aurora.Masker.mask($('acp5260_consign_bill_create_detail_window').wrap, '${l:LOADING}');
+                    Aurora.request({
+                        url: $('acp5260_consign_bill_create_link').getUrl(),
+                        para: datas,
+                        success: function(res) {
+                            //获取开票单号，并提示
+                            var bill_number = res.result.bill_number || '';
+                            $('acp5260_csgn_bill_select_ds').removeAll();
+                            $('acp5260_csgn_bill_lines_ds').removeAll();
+                            $('acp5260_csgn_bill_headers_ds').removeAll();
+                            Aurora.showMessage('${l:PROMPT}', '${l:ACP_BILL.RELEASED}' + bill_number, function(){
+	                            Aurora.Masker.unmask($('acp5260_consign_bill_create_detail_window').wrap);
+	                            acp5260_query();
+	                            acp5260_csgn_bill_return();
+                            },360,120); 
+                        },
+                        failure: function(res) {
+                            Aurora.Masker.unmask($('acp5260_consign_bill_create_detail_window').wrap);
+                        },
+                        error: function(res) {
+                            Aurora.Masker.unmask($('acp5260_consign_bill_create_detail_window').wrap);
+                        },
+                        scope: this
+                    });
+                });
+            }
+        ]]></script>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="acp5260_csgn_bille_create_release" text="ACP_BILL.CREATE_AND_POST" width="100"/>
+                <a:toolbarButton click="acp5260_csgn_bille_create" text="ACP_BILL.CREATE" width="100"/>
+                <a:toolbarButton click="acp5260_csgn_bill_return" text="PROMPT.RETURN" width="100"/>
+            </a:screenTopToolbar>
+            <a:hBox labelWidth="120">
+                <!-- <a:textField name="company_code" bindTarget="acp5260_csgn_bill_headers_ds" prompt="ACP_CSGN_BILL_HEADERS.COMPANY_CODE" readOnly="true"/> -->
+                <a:textField name="bill_number" bindTarget="acp5260_csgn_bill_headers_ds" prompt="开票单编号" readOnly="true"/>
+                <a:textField name="company_name" bindTarget="acp5260_csgn_bill_headers_ds" prompt="ACP_CSGN_BILL_HEADERS.COMPANY_DESC" readOnly="true"/>
+                <!-- <a:textField name="to_inv_org_desc" bindTarget="acp5260_csgn_bill_headers_ds" prompt="ACP_BILL_DETAILS.ORGANIZATION_NAME" readOnly="true"/> -->
+                <a:textField name="business_unit_name" bindTarget="acp5260_csgn_bill_headers_ds" prompt="业务实体" readOnly="true"/>
+            </a:hBox>
+            <a:hBox labelWidth="120">
+                <a:textField name="vendor_code" bindTarget="acp5260_csgn_bill_headers_ds" prompt="ACP_CSGN_BILL_HEADERS.VENDOR_CODE" readOnly="true"/>
+                <a:textField name="vendor_name" bindTarget="acp5260_csgn_bill_headers_ds" prompt="ACP_CSGN_BILL_HEADERS.VENDOR_DESC" readOnly="true"/>
+                <a:textField name="vendor_site_name" bindTarget="acp5260_csgn_bill_headers_ds" prompt="ACP_CSGN_BILL_HEADERS.VENDOR_SITE_ID" readOnly="true"/>
+            </a:hBox>
+            <a:hBox labelWidth="120">
+                <a:textField name="bill_amount" bindTarget="acp5260_csgn_bill_headers_ds" prompt="净价总金额" readOnly="true" renderer="acp5260_moneyRenderFun"/>
+                <a:textField name="tax_total_amount" bindTarget="acp5260_csgn_bill_headers_ds" prompt="含税价总金额" readOnly="true" renderer="acp5260_moneyRenderFun"/>
+                <a:textField name="currency_code" bindTarget="acp5260_csgn_bill_headers_ds" prompt="ACP_CSGN_BILL_HEADERS.CURRENCY_CODE" readOnly="true"/>
+            </a:hBox>
+            <a:hBox labelWidth="120">
+                <a:textField name="vendor_comments" bindTarget="acp5260_csgn_bill_headers_ds" prompt="头备注" width="500"/>
+            </a:hBox>
+            <a:tabPanel id="acp5260_bill_tabPanel" marginHeight="280" marginWidth="80">
+                <a:tabs>
+                    <a:tab prompt="ACP_BILL_LINES.TITLE" width="100">
+                        <a:grid id="acp5260_consign_bill_create_line_grid" autoAppend="false" bindTarget="acp5260_csgn_bill_lines_ds" marginHeight="320" marginWidth="85" navBar="true">
+                            <a:columns>
+                                <a:column name="bill_line_num" align="center" prompt="行号" sortable="true" width="50"/>
+                                <a:column name="item_code" align="left" prompt="MTL_SYSTEM_ITEM.ITEM_CODE" sortable="true" width="60"/>
+                                <a:column name="item_name" align="left" prompt="MTL_SYSTEM_ITEM.ITEM_NAME" sortable="true" width="100"/>
+                                <a:column name="uom_code" align="left" prompt="ACP_BILL_DETAILS.UNIT_MEAS_LOOKUP_CODE" sortable="true" width="60"/>
+                                <a:column name="sum_quantity" align="left" prompt="ACP_BILL_DETAILS.AVAILABLE_QUANTITY" sortable="true" width="60"/>
+                                <a:column name="unit_price" align="left" prompt="ACP_BILL_LINES.UNIT_PRICE" renderer="Aurora.formatNumber" sortable="true" width="60"/>
+                                <a:column name="sum_amount" align="left" prompt="不含税行金额" renderer="Aurora.formatNumber" sortable="true" width="60"/>
+                                <a:column name="tax_sum_amount" align="left" prompt="含税行金额" renderer="Aurora.formatNumber" sortable="true" width="60"/>
+                                <a:column name="tax_rate" align="left" prompt="ACP_WEB_INVOICE_LINES.TAX_RATE" sortable="true" width="50"/>
+                                <a:column name="currency_code" align="left" prompt="ACP_CSGN_BILL_HEADERS.CURRENCY_CODE" sortable="true" width="60"/>
+                                <a:column name="to_inv_org_desc" align="left" prompt="ACP_BILL_DETAILS.ORGANIZATION_NAME" sortable="true" width="80"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab prompt="ACP_BILL_DETAILS.TITLE" width="100">
+                        <a:grid id="acp5260_consign_bill_create_detail_grid" autoAppend="false" bindTarget="acp5260_csgn_bill_details_ds" marginHeight="360" marginWidth="85" navBar="true">
+                            <a:columns>
+                                <a:column name="trx_number" align="left" prompt="WZ_ACP_CSGN_BILL_DETAILS.TRX_NUM" sortable="true" width="60"/>
+                                <a:column name="trx_line_number" align="left" prompt="事务行号" sortable="true" width="60"/>
+                                <a:column name="item_code" align="left" prompt="MTL_SYSTEM_ITEM.ITEM_CODE" sortable="true" width="60"/>
+                                <a:column name="item_name" align="left" prompt="MTL_SYSTEM_ITEM.ITEM_NAME" sortable="true" width="100"/>
+                                <a:column name="uom_code" align="left" prompt="ACP_BILL_DETAILS.UNIT_MEAS_LOOKUP_CODE" sortable="true" width="60"/>
+                                <a:column name="trx_quantity" align="left" prompt="ACP_BILL_DETAILS.AVAILABLE_QUANTITY" sortable="true" width="60"/>
+                                <a:column name="unit_price" align="left" prompt="ACP_BILL_LINES.UNIT_PRICE" renderer="Aurora.formatNumber" sortable="true" width="60"/>
+                                <a:column name="tax_rate" align="left" prompt="ACP_WEB_INVOICE_LINES.TAX_RATE" sortable="true" width="50"/>
+                                <a:column name="trx_type_desc" align="left" prompt="ACP_BILL_DETAILS.TRANSACTION_TYPE" sortable="true" width="100"/>
+                                <a:column name="trx_date" align="left" prompt="WZ_ACP_CSGN_BILL_DETAILS.TRX_DATE" sortable="true" width="80"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+    </a:view>
+</a:screen>

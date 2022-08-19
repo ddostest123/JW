@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Leah  
+    $Date: 2015-3-12 下午03:46:51  
+    $Revision: 1.0  
+    $Purpose: 
+    where t.vendor_id in (select su.vender_id
+					                                     from sys_user su
+					                                    where su.type = 'EXTERNAL'
+					                                      and su.user_id = ${/session/@user_id})
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" alias="t1" needAccessControl="false">
+    <bm:fields>
+        <bm:field name="pur_req_num"/>
+        <bm:field name="pur_req_line_num"/>
+        <bm:field name="vendor_code"/>
+        <bm:field name="vendor_desc"/>
+        <bm:field name="quantity_required" datatype="float"/>
+        <bm:field name="item_code"/>
+        <bm:field name="item_desc"/>
+        <bm:field name="price" datatype="float"/>
+        <bm:field name="currency_code"/>
+        <bm:field name="need_by_date"/>
+        <bm:field name="pur_buyer_desc"/>
+        <bm:field name="company_code"/>
+        <bm:field name="pur_organization_code"/>
+        <bm:field name="doc_type"/>
+        <bm:field name="quantity_created" datatype="float"/>
+        <bm:field name="pur_key_id"/>
+        <bm:field name="pur_req_type"/>
+        <bm:field name="version"/>
+        <bm:field name="sales_order_desc"/>
+    </bm:fields>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    t1.*
+                FROM
+                    (SELECT
+                        t.*
+                    FROM
+                        (SELECT
+                            t.pur_req_num,
+                            NVL(
+                            (SELECT
+                                SUM(ccl.quantity)
+                            FROM
+                                con_contract_lines_new ccl,
+                                con_contract_headers_new cch
+                            WHERE
+                                ccl.source_ref_id      = t.pool_id AND
+                                cch.contract_header_id = ccl.contract_header_id AND
+                                cch.status            <>'CANCELED'
+                            ),0) quantity_created,
+                            t.pool_id pur_key_id,
+                            to_number(t.pur_req_line_num) pur_req_line_num,
+                            t.company_id,
+                            to_number(t.pur_buyer_id) pur_buyer_id,
+                            t.item_id,
+                            t.sales_order_desc,
+                            t.vendor_id,
+                            t.vendor_code,
+                            t.vendor_desc,
+                            t.quantity_required,
+                            t.item_code,
+                            t.item_desc,
+                            t.price,
+                            NULL version,
+                            t.currency_code,
+                            TO_CHAR(t.need_by_date, 'YYYY-MM-DD') need_by_date,
+                            (SELECT v.buyer_desc FROM pur_buyers_vl v WHERE v.BUYER_id = t.pur_buyer_id
+                            ) pur_buyer_desc,
+                            (SELECT company_code FROM fnd_companies f WHERE f.company_id = t.company_id
+                            ) company_code,
+                            (SELECT
+                                pur_organization_code
+                            FROM
+                                pur_organizations_vl
+                            WHERE
+                                pur_organization_id = t.pur_organization_id AND
+                                rownum              = 1
+                            ) pur_organization_code,
+                            'PUR_REQ' pur_req_type,
+                            '采购申请' doc_type
+                        FROM
+                            pur_req_demand_pool t
+                        WHERE
+                            t.pur_method            = 'CONTRACT' AND
+                            t.status               <> 'NEW' AND
+                            NVL(t.visiable_flag,'Y')='Y'
+                        UNION ALL
+                        SELECT
+                            h.segment1 pur_req_num,
+                            NVL(
+                            (SELECT
+                                SUM(ccl.quantity)
+                            FROM
+                                con_contract_lines_new ccl,
+                                con_contract_headers_new cch
+                            WHERE
+                                ccl.ref_doc_num        = h.segment1 AND
+                                ccl.ref_doc_line_num   = l.line_num AND
+                                cch.contract_header_id = ccl.contract_header_id AND
+                                cch.status            <> 'CANCELED'
+                            ), 0) quantity_created,
+                            l.pur_line_id pur_key_id,
+                            to_number(l.line_num) pur_req_line_num,
+                            h.company_id,
+                            h.agent_id pur_buyer_id,
+                            l.item_id,
+                            l.sales_order_desc,
+                            h.vendor_id,
+                            h.vendor_code,
+                            h.vendor_name vendor_desc,
+                            l.quantity quantity_required,
+                            l.item_code,
+                            l.item_description item_desc,
+                            ROUND(l.market_price/l.list_price_per_unit,4) price,
+                            h.revision_num AS version,
+                            h.currency_code,
+                            TO_CHAR(l.creation_date, 'YYYY-MM-DD') need_by_date,
+                            (SELECT v.buyer_desc FROM pur_buyers_vl v WHERE v.BUYER_id = h.agent_id
+                            ) pur_buyer_desc,
+                            h.company_code,
+                            h.org_name pur_organization_code,
+                            'PUR_ORDER' pur_req_type,
+                            '采购订单' doc_type
+                        FROM
+                            pur_headers_all h,
+                            pur_lines_all l,
+                            pur_line_locations_all la
+                        WHERE
+                            h.pur_header_id = l.pur_header_id AND
+                            la.pur_line_id  = l.pur_line_id AND
+                            h.vendor_id    IN
+                            (SELECT
+                                s.vendor_id
+                            FROM
+                                pur_vendors_vl s
+                            WHERE
+                                s.coop_business_group = ${/session/@business_group}
+                            ) AND
+                            h.type_lookup_code NOT IN ('ZNB1', 'ZMF') AND
+                            h.revision_num          =
+                            (SELECT
+                                MAX(revision_num)
+                            FROM
+                                pur_headers_all ph1
+                            WHERE
+                                ph1.segment1 = h.segment1
+                            ) AND
+                            h.last_version='Y'
+                        ) t
+                    ) t1 #WHERE_CLAUSE#
+                ORDER BY
+                    t1.pur_req_num,
+                    t1.pur_req_line_num
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="pur_req_num" queryExpression="t1.pur_req_num like &apos;%&apos;||${@pur_req_num}||&apos;%&apos;"/>
+        <bm:query-field name="company_id" queryExpression="t1.company_id=${@company_id}"/>
+        <bm:query-field name="buyer_id" queryExpression="t1.pur_buyer_id=${@buyer_id}"/>
+        <bm:query-field name="item_id" queryExpression="t1.item_id=${@item_id}"/>
+        <bm:query-field name="item_code" queryExpression="t1.item_code like &apos;%&apos;||${@item_code}||&apos;%&apos;"/>
+        <bm:query-field name="vendor_id" queryExpression="t1.vendor_id=${@vendor_id}"/>
+        <bm:query-field name="vendor_desc" queryExpression="t1.vendor_desc like &apos;%&apos;||${@vendor_desc}||&apos;%&apos;"/>
+        <bm:query-field name="item_desc" queryExpression="t1.item_desc like &apos;%&apos;||${@item_desc}||&apos;%&apos;"/>
+        <bm:query-field name="pur_req_type" queryExpression="t1.pur_req_type=${@pur_req_type}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter name="quantity_required" expression="t1.quantity_required&gt;t1.quantity_created"/>
+    </bm:data-filters>
+</bm:model>

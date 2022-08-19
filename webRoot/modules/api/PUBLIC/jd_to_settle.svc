@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+	$Author: zhouweijia 
+    $Date: 2017/9/11
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:service xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="a.api_code=&apos;PRODUCT_SELL_PRICE&apos;" fetchAll="true" model="api.PUBLIC.jd_sku_method" rootPath="mes"/>
+        <a:model-query fetchAll="true" model="api.PUBLIC.jd_to_settle" rootPath="cart_detail"/>
+        <s:server-script import="request.js"><![CDATA[
+            var record = $ctx.model.getChild('mes').getChildren()[0];
+            var cart = $ctx.model.getChild('cart_detail').getChildren(); //[];
+            var v_str = record.url + record.app_key + record.access_token + record.timestamp; //请求固定参数
+            var stock = '&format=json&v=1.0&method=biz.stock.fororder.batget'; //库存方法
+            var m_gift = '&format=json&v=1.0&method=biz.product.skuGift.query'; //赠品方法
+            var record = $ctx.model.getChild('mes').getChildren()[0];
+            var d_str = v_str + record.method; //价格方法
+            //价格参数
+            var pre_str = '&param_json={%22sku%22:%22';
+            var p_last_str = '%22}';
+            //库存参数
+            var s_str = v_str + stock;
+            var s_last_str = '"}';
+            var t_pre_str = '&param_json={"skuNums":';
+            
+            //定义参数
+            var gift_url = [];
+            var p_mid_str = [];
+            var skuNums = [];
+            
+            //返回到前台的数据
+            var noStockSku = [];
+            var priceUpdateSku = [];
+            
+            
+            //1.接收传进来的参数
+            var province = $ctx.get('/parameter/@province'); //${@provinces}2
+            var city = $ctx.get('/parameter/@city'); //${@city}2833
+            var county = $ctx.get('/parameter/@county'); //${@county}51955
+            var town = $ctx.get('/parameter/@town'); //${@towns};0
+            var load_flag = $ctx.get('/parameter/@load_flag'); //0/1 0代表去结算 1代表默认加载
+          
+            
+            //校验商品价格
+            if (cart.length != 0) {
+                for (var z = 0;z < cart.length;z = z + 1) {
+                    //if (load_flag == 1) {
+                        //N N 校验所有主商品的价格，库存
+                        if (cart[z].gift_flag == 'N') {
+                            p_mid_str += cart[z].sku + ',';
+                            var param = {
+                                skuId: cart[z].sku,
+                                num: cart[z].quantity
+                            }
+                            skuNums.push(param);
+                        } 
+                       
+                }
+                var p_api_url = d_str + pre_str + p_mid_str + p_last_str; //价格url
+                var s_mid_str = JSON.stringify(skuNums) + ',"area":"' + province + '_' + city + '_' + county + '_' + town;
+                var s_api_url = s_str + t_pre_str + s_mid_str + s_last_str; //库存url
+            	//println(s_api_url);
+                //库存请求
+                request({
+                    url: s_api_url,
+                    //para: para,
+                    success: function(args) {
+                      if (args.biz_stock_fororder_batget_response.success == true) {  
+                        var result = args.biz_stock_fororder_batget_response.result;
+                        for (n = 0;n < cart.length;n++) {
+                            for (m = 0;m < result.length;m++) {
+                                if (cart[n].sku == result[m].skuId) {
+                                    if (result[m].stockStateDesc == '无货') {
+		                                noStockSku.push(cart[n].sku);
+                                        //raise_app_error('该商品库存不足：' + cart[n].name + '。请修改数量后确认购买!');
+                                    } else {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        
+            			$ctx.parameter.noStockSku = noStockSku;
+            			//println("库存不足：" + $ctx.parameter.noStockSku);
+            			 } else {
+                            raise_app_error(args.biz_stock_fororder_batget_response.resultMessage);
+                        }
+                    },
+                    failure: function(args) {
+                        raise_app_error(args.error.message);
+                    }
+                });
+            
+                //价格请求
+                request({
+                    url: p_api_url,
+                    //para: para,
+                    success: function(args) {
+                        if (args.biz_price_sellPrice_get_response.success == true) {
+                        var result = args.biz_price_sellPrice_get_response.result;
+                        for (a = 0;a < result.length;a++) {
+                            for (b = 0;b < cart.length;b++) {
+                                if (result[a].skuId == cart[b].sku) {
+                                    if (result[a].price != cart[b].price) {
+	                                    priceUpdateSku.push(cart[b].sku);
+	                                    //raise_app_error('此商品价格已变动：，' + cart[b].name + '。请刷新后确认购买!');
+	                                } else {
+	                                    break;
+	                                }
+                                }
+                            }
+                        }
+                        
+            			$ctx.parameter.priceUpdateSku = priceUpdateSku;
+            		} else {
+                            raise_app_error(args.biz_price_sellPrice_get_response.resultMessage);
+                        }
+                    },
+                    failure: function(args) {
+                        raise_app_error(args.error.message);
+                    }
+                });
+            } else {
+                null;
+            }
+        ]]></s:server-script>
+        <p:echo/>
+    </a:init-procedure>
+    <a:service-output output="/parameter/"/>
+</a:service>

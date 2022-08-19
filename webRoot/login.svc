@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:service xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script">
+    <a:init-procedure>
+        <s:server-script><![CDATA[
+        try{
+        	//判定用户名密码是否为空
+        	var p = $ctx.parameter;
+        	if (!p.user_name) {raise_app_error('Please input user name!');$session.writeValue('user_name', p.user_name);}
+            if (!p.user_password) raise_app_error('Please input user password!');
+            
+            //判定验证码
+        	var try_login_times = $session.try_login_times;
+        	if (!try_login_times){
+        	    $session.try_login_times = 0;
+        		try_login_times = 0;
+        	}
+        	
+        	if ($session.forbid_client_try_login){
+	        	if (new Date() - new Date($session.forbid_client_try_login) < 2400000){
+	        	    if (p.user_language == 'ZHS'){
+		        		raise_app_error('您的尝试登陆次数过多，已经被禁止!');
+	        	    }else{
+	        	    	raise_app_error('You try to log in too many, has been banned!');
+	        	    }	
+	        	}else{
+	        	    $session.writeValue('forbid_client_try_login', null);
+	        	    $session.writeValue('try_login_times', 0);
+	        	}
+        	}else if(try_login_times > 18){
+        	    $session.writeValue('forbid_client_try_login', (new Date()).toString());
+        	}
+        	//println($session.try_login_times);
+        	
+        	if (try_login_times > 3){
+        	    if (p.check_code.toLowerCase() != $session.validate_code.toLowerCase()){
+        	        try_login_times += 1;
+        	        $session.writeValue('try_login_times', try_login_times);
+        	        if (p.user_language == 'ZHS'){
+	        			raise_app_error('请输入正确的验证码!');
+	        	    }else{
+	        	    	raise_app_error('Please input right validate code!');
+	        	    }	
+        	    }
+        	}
+        	
+        	//判定二十分钟前是否已经被禁止登陆
+        	if ($session.account_forbid_login && (new Date() - new Date($session.account_forbid_login) < 1200000) && $session.user_name == p.user_name){
+        	    if (p.user_language == 'ZHS'){
+        			raise_app_error('您的账户已被禁止登录!');
+        	    }else{
+        	    	raise_app_error('Your account has been banned to log in!');
+        	    }	
+        	}
+        	
+        	//执行login bm
+        	$bm('sys.sys_user_login_with_userid').execute();
+        	
+        	//先判定后台是否禁止登录
+        	if (p.error_number == -33){
+        	    $session.writeValue('account_forbid_login', (new Date()).toString());
+        	}else{
+	        	if (p.error_number != 0 && p.error_number != -9){
+	        	    try_login_times += 1;
+	        	    $cookie.put('try_login_times', try_login_times);
+	        	    $session.writeValue('try_login_times', try_login_times);
+	        	    
+        	     	if (p.can_check_times && p.can_check_times < 1){
+	        	 		$session.writeValue('account_forbid_login', (new Date()).toString());
+	        	    }else{
+	        	    	$session.writeValue('account_forbid_login', null);
+	        	    }
+        	    
+	        	}else{
+	    	     	$session.clear();
+	    	     	$session.writeValue('account_forbid_login', null);
+		            $session.writeValue('lang', p.user_language);
+		            $session.writeValue('try_login_times', 0);
+		            
+		            $cookie.put('JSID', p.encryted_session_id);
+		            $cookie.put('IS_NTLM', 'N');
+		            $cookie.put('try_login_times', 0);
+		            $cookie.put('lang', p.user_language);
+	        	    
+	        	    //写入session权限
+	        	    var fas_bm = new ModelService('fnd.fnd_authority_sessions');
+					fas_bm.fetchDescriptor = {
+						fetchAll:true
+					};
+					var fas_res = fas_bm.queryAsMap().getChildren();
+					if (fas_res.length > 0){
+						fas_res = fas_res[0];
+						if (fas_res.assign_type == 'COMPANY'){
+						    $session.default_company_id = fas_res.default_id;
+						    $session.default_company_code = fas_res.default_code;
+						    $session.default_company_desc = fas_res.default_desc;
+						}
+						
+						if (fas_res.assign_type == 'INV_ORGANIZATION'){
+						    $session.default_inv_organization_id = fas_res.default_id;
+						    $session.default_inv_organization_code = fas_res.default_code;
+						    $session.default_inv_organization_desc = fas_res.default_desc;
+						}
+					}
+	        	}
+	        	$session.writeValue('validate_code', '');
+        	}
+        }finally{
+            $session.writeValue('validate_code', '');
+        }
+        	$session.copy();
+        ]]></s:server-script>
+        <a:session-write source="/session"/>
+    </a:init-procedure>
+    <a:service-output output="/parameter"/>
+</a:service>

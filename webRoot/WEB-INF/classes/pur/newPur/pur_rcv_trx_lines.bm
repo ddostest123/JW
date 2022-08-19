@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lily  
+    $Date: 2015-8-13 14:32:56  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="true">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+				 SELECT *
+				  FROM (SELECT tl.rcv_trx_line_id,
+				               th.display_number AS trx_number,
+				               tl.rcv_trx_type,
+				               (SELECT ttv.description1 FROM pur_rcv_trx_types_vl ttv WHERE ttv.rcv_trx_type = tl.rcv_trx_type)AS rcv_trx_type_desc,
+				               tl.erp_rcv_trx_type,
+				               tl.erp_rcv_trx_type_desc,
+				               tl.trx_date,
+				               to_char(tl.trx_date,'yyyy-mm-dd hh24:mi:ss')as trx_date_fmt,
+				               tl.business_unit_id as owner_business_unit_id,
+				               (SELECT bu.business_unit_name FROM fnd_business_units_vl bu WHERE bu.business_unit_id = tl.business_unit_id) AS business_unit_name,
+				               (SELECT bu.company_id FROM fnd_business_units bu WHERE bu.business_unit_id = tl.business_unit_id) AS company_id,
+				               (SELECT fc.company_full_name
+				                  FROM fnd_business_units bu,
+				                       fnd_companies_vl   fc
+				                 WHERE fc.company_id = bu.company_id
+				                       AND bu.business_unit_id = tl.business_unit_id) AS company_name,
+				               --(select p.coop_company_id from pur_vendors_v p where p.vendor_id = tl.vendor_id) coop_company_id,
+				               pvv.coop_company_id,
+				               tl.inv_organization_id,
+				               (SELECT ov.inv_organization_code FROM inv_organizations_vl ov WHERE ov.inv_organization_id = tl.inv_organization_id) AS inv_organization_code,
+               				   (SELECT ov.description FROM inv_organizations_vl ov WHERE ov.inv_organization_id = tl.inv_organization_id) AS inv_organization_name,
+				               tl.vendor_id,
+				               (SELECT pvv.display_vendor_code FROM pur_vendors_v pvv WHERE pvv.vendor_id = tl.vendor_id) AS vendor_code,
+				               (SELECT pvv.full_name FROM pur_vendors_v pvv WHERE pvv.vendor_id = tl.vendor_id) AS vendor_name,
+				               tl.vendor_site_id,
+				               (SELECT pvs.display_site_code FROM pur_vendor_sites_vl pvs WHERE pvs.vendor_site_id = tl.vendor_site_id) AS vendor_site_code,
+				               (SELECT pvs.site_name FROM pur_vendor_sites_vl pvs WHERE pvs.vendor_site_id = tl.vendor_site_id) AS vendor_site_name,
+				               (SELECT l.item_id FROM pur_lines_all l WHERE l.pur_line_id = tl.from_po_line_id) AS item_id,
+				               (SELECT l.item_code FROM pur_lines_all l WHERE l.pur_line_id = tl.from_po_line_id) AS item_code,
+				               (SELECT l.item_description FROM pur_lines_all l WHERE l.pur_line_id = tl.from_po_line_id) AS item_name,
+				               nvl((CASE
+         							WHEN tt.deliver_flag = 'Y' THEN
+          								tl.trx_quantity
+         							WHEN tt.return_to_receiving_flag = 'Y' THEN
+          								tl.trx_quantity * -1
+       								END), 0) AS trx_quantity,
+				               (SELECT l.unit_meas_lookup_code FROM pur_lines_all l WHERE l.pur_line_id = tl.from_po_line_id) AS unit_meas_lookup_code,
+				               (SELECT l.unit_price FROM pur_lines_all l WHERE l.pur_line_id = tl.from_po_line_id) AS unit_price,
+				               (SELECT (CASE
+                 							WHEN tt.deliver_flag = 'Y' THEN
+                  								l.unit_price * tl.trx_quantity
+                 							WHEN tt.return_to_receiving_flag = 'Y' THEN
+                  								l.unit_price * tl.trx_quantity * -1
+               								END) FROM pur_lines_all l WHERE l.pur_line_id = tl.from_po_line_id) AS amount,
+				               fnd_config_cnt_price_pkg.get_price_shield(p_config_classify_code  => 'BILL',
+                                                                         p_config_item_code      => 'BILL_04',
+                                                                         p_ctrl_business_group   => pvv.coop_business_group,
+                                                                         p_ctrl_company_id       => pvv.coop_company_id,
+                                                                         p_ctrl_business_unit_id => null,
+                                                                         p_client_business_group => th.owner_business_group,
+                                                                         p_role_id               => ${/session/@role_id},
+                                                                         p_value                 => (SELECT l.unit_price FROM pur_lines_all l WHERE l.pur_line_id = tl.from_po_line_id)) AS display_unit_price,
+                               fnd_config_cnt_price_pkg.get_price_shield(p_config_classify_code  => 'BILL',
+                                                                         p_config_item_code      => 'BILL_04',
+                                                                         p_ctrl_business_group   => pvv.coop_business_group,
+                                                                         p_ctrl_company_id       => pvv.coop_company_id,
+                                                                         p_ctrl_business_unit_id => null,
+                                                                         p_client_business_group => th.owner_business_group,
+                                                                         p_role_id               => ${/session/@role_id},
+                                                                         p_value                 => (SELECT (CASE
+                                                                                                                WHEN tt.deliver_flag = 'Y' THEN
+                                                                                                                    l.unit_price * tl.trx_quantity
+                                                                                                                WHEN tt.return_to_receiving_flag = 'Y' THEN
+                                                                                                                    l.unit_price * tl.trx_quantity * -1
+                                                                                                                END)
+                                                                                                          FROM pur_lines_all l 
+                                                                                                         WHERE l.pur_line_id = tl.from_po_line_id)) AS display_amount,  
+				               tl.terms_id,
+				               tl.uom_code,
+				               th.receipt_num,
+				               to_number(tl.line_number) as receipt_line_num,
+				               tl.exchange_rate_type,
+               				   tl.exchange_rate,
+				               tl.currency_code,
+				               tl.from_po_header_id,
+				               tl.from_po_display_number,
+				               tl.from_po_line_id,
+				               tl.from_po_line_num,
+				               tl.from_po_line_location_id,
+				               tl.from_po_line_location_num,
+				               tl.from_po_distribution_id,
+				               tl.from_po_distribution_num,
+				               NULL as useless_id_1,
+				               NULL as useless_id_2,
+				               NULL as useless_id_3,
+				               NULL as useless_id_4,
+				               NULL as useless_id_5,
+				               NULL as useless_id_6,
+				               NULL as useless_id_7,
+				               NULL as useless_id_8,
+				               NULL as useless_id_9,
+				               NULL as useless_id_10,
+				               NULL as useless_id_11,
+				               NULL as useless_id_12
+				          FROM pur_rcv_trx_lines   tl,
+				               pur_rcv_trx_headers th,
+				               pur_rcv_trx_types   tt,
+				               pur_vendors_v       pvv
+				         WHERE tl.rcv_trx_header_id = th.rcv_trx_header_id
+				          and tl.from_po_header_id in ${:@po_nums}
+				               AND tl.bill_matched_flag = 'N'
+				               AND tl.rcv_trx_type = tt.rcv_trx_type
+       							AND tt.create_bill_flag = 'Y'
+				               and tl.stock_type<>'CONSIGNMENT'
+				               and tl.vendor_id = pvv.vendor_id(+))v 
+				               
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

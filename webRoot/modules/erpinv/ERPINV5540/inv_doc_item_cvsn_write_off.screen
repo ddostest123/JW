@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="t1.business_type_code=&apos;UOI&apos;" fetchAll="true" model="erpinv.public.inv_get_transaction_type_by_bustype" rootPath="erpinv5540_wo_transaction_type_init_ds"/>
+        <a:model-query defaultWhereClause="t1.source_transaction_type_code=${/parameter/@transaction_type}" fetchAll="true" model="erpinv.public.inv_get_transaction_type_by_bustype" rootPath="erpinv5540_wo_transaction_type_init_query"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="inv_get_item_quantities_link" model="erpinv.public.inv_get_item_quantities" modelaction="execute"/>
+        <script><![CDATA[
+            function erpinv5540_wo_init() {
+                var index = ${/parameter/@index};
+                var head_record_data = $('erpinv5540_item_cvsn_result_ds').getAt(index);
+                var head_record;
+                if (!$('erpinv5540_wo_head_ds').getAt(0).get('transaction_type')) {
+                    head_record = $('erpinv5540_wo_head_ds').getAt(0);
+                    head_record.set('item_desc', head_record_data.get('item_desc'));
+                    head_record.set('line_number', ${/parameter/@line_number});
+                    head_record.set('primary_quantity', head_record_data.get('primary_quantity'));
+                    head_record.set('primary_uom_desc', head_record_data.get('primary_uom_desc'));
+                    head_record.set('document_date', Aurora.formatDate($('erpinv5540_item_cvsn_head_ds').getAt(0).get('document_date')));
+                    head_record.set('document_number', $('erpinv5540_item_cvsn_head_ds').getAt(0).get('document_number'));
+                    line_record = $('erpinv5540_item_cvsn_result_ds').getCurrentRecord();
+                    head_record.set('note', line_record.get('notes'));
+                    head_record.set('transaction_type_desc', '${/model/erpinv5540_wo_transaction_type_init_query/record/@transaction_type_desc}');
+                    head_record.set('transaction_type', '${/model/erpinv5540_wo_transaction_type_init_query/record/@transaction_type_code}');
+                    /*   if ('${/model/get_negative_stock_allowed/record/@negative_stock_allowed}' == 'N') {
+                     $('erpinv5540_outsource_wo_result_add').disable();
+                     $('erpinv5540_outsource_wo_result_del').disable();
+                     }
+                     */
+                    if (Aurora.isEmpty('${/model/erpinv5540_wo_transaction_type_init_query/record/@transaction_type_code}')) {
+                        Aurora.showMessage('提示', '未取到对应核销事务类型，请检查库存事务类型定义是否正确!');
+                        $('erpinv5540_oitem_wo_save_btn_id').disable();
+                    }
+                } else {
+                    head_record = $('erpinv5540_wo_head_ds').getAt(0);
+                    head_record.set('primary_quantity', head_record_data.get('primary_quantity'));
+                    head_record.set('primary_uom_desc', head_record_data.get('primary_uom_desc'));
+                    head_record.set('item_desc', head_record_data.get('item_desc'));
+                    head_record.set('document_date', Aurora.formatDate($('erpinv5540_item_cvsn_head_ds').getAt(0).get('document_date')));
+                    head_record.set('document_number', $('erpinv5540_item_cvsn_head_ds').getAt(0).get('document_number'));
+                    head_record.set('note', $('erpinv5540_item_cvsn_head_ds').getAt(0).get('description'));
+                }
+            }
+            
+            function erpinv5540_item_wo_back_btn() {
+                $('erpinv5540_item_cvsn_wo_win').close();
+            }
+            
+            function erpinv5540_oitem_wo_save_btn() {
+                var ds = $('erpinv5540_wo_lines_ds');
+                if (ds.validateSelf()) {
+                    Aurora.Masker.mask(Ext.getBody(), '正在保存...');
+                    var records = ds.getAll();
+                    if (records.length == 0) {
+                        Aurora.showMessage('提示', '转换核销物品不能为空，请新增转换核销物品！');
+                        return;
+                    } else {
+                        $('erpinv5540_wo_head_ds').submit();
+                    }
+                }
+            }
+            
+            function erpinv5540_wo_head_submitsuccess() {
+                Aurora.Masker.unmask(Ext.getBody());
+            }
+            
+            function erpinv5540_wo_head_submitfailed() {
+                Aurora.Masker.unmask(Ext.getBody());
+            }
+            
+            function erpinv_5540_primary_quantity_vali(record, name, value) {
+                if (value == 0) {
+                    return '核销数量不允许为0';
+                }
+                var inv_quantity = record.get('warehouse_quantity');
+                if (value > inv_quantity) {
+                    return '核销数量不能大于库存数量';
+                }
+                return true;
+            }
+            
+            function erpinv5540_wo_line_update(ds, record, name, value, oldvalue) {
+                if (name == 'warehouse_id') {
+                    var para = {};
+                    var warehouse_id = value;
+                    var item_id = record.get('item_id');
+                    para = {
+                        'warehouse_id': warehouse_id,
+                        'item_id': item_id,
+                        'company_id': ${/parameter/@company_id}
+                    };
+                    var url = $('inv_get_item_quantities_link').getUrl();
+                    Aurora.request({
+                        url: url,
+                        para: para,
+                        success: function(res) {
+                            var item_quantities = res.result.item_quantities;
+                            record.set('warehouse_quantity', item_quantities);
+                        }
+                    });
+                    record.getField('item_desc').setLovPara('warehouse_id', value);
+                } else if (name == 'item_id') {
+                    var warehouse_id = record.get('warehouse_id');
+                    var item_id = value;
+                    para = {
+                        'warehouse_id': warehouse_id,
+                        'item_id': item_id,
+                        'company_id': ${/parameter/@company_id}
+                    };
+                    var url = $('inv_get_item_quantities_link').getUrl();
+                    Aurora.request({
+                        url: url,
+                        para: para,
+                        success: function(res) {
+                            var item_quantities = res.result.item_quantities;
+                            record.set('warehouse_quantity', item_quantities);
+                        }
+                    });
+                    record.getField('warehouse_name_desc').setLovPara('item_id', value);
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="erpinv5540_wo_transaction_type_ds" fetchAll="true">
+                <a:datas dataSource="/model/erpinv5540_wo_transaction_type_init_ds"/>
+            </a:dataSet>
+            <a:dataSet id="erpinv5540_warehouse_name_ds" autoQuery="true" fetchAll="true" model="erpinv.ERPINV5540.inv_warehouse_onhand_lov" queryUrl="${/request/@context_path}/autocrud/erpinv.ERPINV5540.inv_warehouse_onhand_lov/query?company_id=${/parameter/@company_id}"/>
+            <a:dataSet id="erpinv5540_wo_head_ds" loadData="true" model="erpinv.ERPINV5540.inv_doc_item_cvsn_iss_hds_tmp" queryUrl="${/request/@context_path}/autocrud/erpinv.ERPINV5540.inv_doc_item_cvsn_iss_hds_tmp/query?company_id=${/parameter/@company_id}" submitUrl="${/request/@context_path}/modules/erpinv/ERPINV5540/inv_doc_item_cvsn_wo_submit.svc">
+                <a:fields>
+                    <a:field name="company_id" defaultValue="${/parameter/@company_id}"/>
+                    <a:field name="item_desc" readOnly="true"/>
+                    <a:field name="transaction_type_desc" displayField="transaction_type_desc" options="erpinv5540_wo_transaction_type_ds" readOnly="true" returnField="transaction_type" valueField="transaction_type_code"/>
+                    <a:field name="item_desc" readOnly="true"/>
+                    <a:field name="primary_quantity" readOnly="true"/>
+                    <a:field name="document_number" readOnly="true"/>
+                    <a:field name="document_date" readOnly="true"/>
+                    <a:field name="note" readOnly="true"/>
+                    <a:field name="line_number" defaultValue="${/parameter/@line_number}"/>
+                    <a:field name="tmp_header_id" defaultValue="${/parameter/@tmp_header_id}"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="submitsuccess" handler="erpinv5540_wo_head_submitsuccess"/>
+                    <a:event name="submitfailed" handler="erpinv5540_wo_head_submitfailed"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="erpinv5540_wo_lines_ds" autoQuery="true" bindName="result_ds" bindTarget="erpinv5540_wo_head_ds" fetchAll="true" model="erpinv.ERPINV5540.inv_doc_item_cvsn_iss_lns_tmp" queryDataSet="erpinv5540_wo_head_ds" selectable="true">
+                <a:fields>
+                    <a:field name="item_desc" autoComplete="true" autoCompleteField="item_desc" autoCompleteSize="1" lovGridHeight="370" lovHeight="490" lovService="erpinv.public.inv_items_query_lov?inventory_flag=Y&amp;enabled_flag=Y&amp;company_id=${/parameter/@company_id}" lovWidth="500" required="true" title="ORD.ITEM_QUERY">
+                        <a:mapping>
+                            <a:map from="item_desc" to="item_desc"/>
+                            <a:map from="item_id" to="item_id"/>
+                            <a:map from="primary_quantity" to="warehouse_quantity"/>
+                            <a:map from="primary_uom" to="primary_uom"/>
+                            <a:map from="primary_uom_desc" to="primary_uom_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="warehouse_name_desc" displayField="warehouse_desc" options="erpinv5540_warehouse_name_ds" required="true" title="ORD.WAREHOUSE_QUERY" valueField="warehouse_code">
+                        <a:mapping>
+                            <a:map from="warehouse_desc" to="warehouse_name_desc"/>
+                            <a:map from="warehouse_id" to="warehouse_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="primary_quantity" required="true" validator="erpinv_5540_primary_quantity_vali"/>
+                    <a:field name="company_id" defaultValue="${/parameter/@company_id}"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="erpinv5540_wo_line_update"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:defaultScreen>
+            <a:screenTopToolbar>
+                <a:toolbarButton id="erpinv5540_oitem_wo_save_btn_id" className="item-rbtn-blue button-save" click="erpinv5540_oitem_wo_save_btn" text="HAP_SAVE" width="100"/>
+                <a:toolbarButton className="item-rbtn-blue back" click="erpinv5540_item_wo_back_btn" style="margin-left:5px;" text="GLD_ACCOUNTS.BACK" width="100"/>
+            </a:screenTopToolbar>
+            <a:hBox labelWidth="70" padding="0">
+                <a:textField name="item_desc" bindTarget="erpinv5540_wo_head_ds" prompt="ERPORD_SALES_ORDER_LINES.ITEM_DESCRIPTION" width="200"/>
+                <a:textField name="primary_quantity" bindTarget="erpinv5540_wo_head_ds" prompt="ERPINV5530.RECEIVE_QUANTITY_THIS_TIME" width="200"/>
+            </a:hBox>
+            <a:hBox labelWidth="70" padding="0">
+                <a:textField name="transaction_type_desc" bindTarget="erpinv5540_wo_head_ds" prompt="ERPINV_TRANSACTION_TYPE" width="200"/>
+                <a:textField name="document_number" bindTarget="erpinv5540_wo_head_ds" prompt="ERPINV_TRANSACTION_NUMBER" width="200"/>
+                <a:textField name="document_date" bindTarget="erpinv5540_wo_head_ds" prompt="ERPINV_TRANSACTION_DATE" width="200"/>
+            </a:hBox>
+            <a:hBox labelWidth="70" padding="0">
+                <a:textField name="note" bindTarget="erpinv5540_wo_head_ds" prompt="ERPGLD_ACCOUNT_CONFIG.REMARK" width="744"/>
+            </a:hBox>
+            <a:grid id="erpinv5540_item_wo_result_gd" bindTarget="erpinv5540_wo_lines_ds" marginHeight="180" marginWidth="50" width="450">
+                <a:toolBar>
+                    <a:button id="erpinv5540_outsource_wo_result_add" type="add"/>
+                    <a:button id="erpinv5540_outsource_wo_result_del" type="delete"/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="warehouse_name_desc" editor="erpinv5540_wo_com_ed" prompt="ERPINV5530.WAREHOUSE" width="80"/>
+                    <a:column name="item_desc" editor="erpinv5540_wo_lov_ed" prompt="ERPORD_SALES_ORDER_LINES.ITEM_DESCRIPTION" width="110"/>
+                    <a:column name="primary_quantity" align="right" editor="erpinv5540_wo_quantity_ed" prompt="ERPINV5530.WRITEOF_QUANTITY" renderer="erpinv5540_quantity_ren_fun" width="50"/>
+                    <a:column name="primary_uom_desc" prompt="ERPINV_PRIMARY_UOM" width="40"/>
+                    <a:column name="warehouse_quantity" align="right" prompt="ERPINV5530.WAREHOUSE_QUANTITY" renderer="erpinv5540_quantity_ren_fun" width="50"/>
+                    <a:column name="notes" editor="erpinv5540_wo_text_ed" prompt="ERPGLD_ACCOUNT_CONFIG.REMARK" width="100"/>
+                </a:columns>
+                <a:editors>
+                    <a:lov id="erpinv5540_wo_lov_ed"/>
+                    <a:textField id="erpinv5540_wo_text_ed"/>
+                    <a:comboBox id="erpinv5540_wo_com_ed"/>
+                    <a:numberField id="erpinv5540_wo_quantity_ed" allowNegative="false" decimalPrecision="2"/>
+                </a:editors>
+            </a:grid>
+        </a:defaultScreen>
+        <script><![CDATA[
+        	erpinv5540_wo_init();
+        ]]></script>
+    </a:view>
+</a:screen>

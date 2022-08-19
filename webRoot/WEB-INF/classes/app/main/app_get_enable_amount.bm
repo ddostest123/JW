@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wangcheng6595  
+    $Date: 2014-11-25 20:16:23
+    $Revision: 1.0  
+    $Purpose: APP，登录后首页，待接收、待发货、待付款、待开票BM
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:fields>
+        <bm:field name="enable_amount" databaseType="NUMBER" datatype="java.lang.Long" physicalName="ENABLE_AMOUNT"/>
+        <bm:field name="enable_segment" databaseType="VARCHAR2" datatype="java.lang.String" physicalName="ENABLE_SEGMENT"/>
+    </bm:fields>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    'ENABLE_TO_SHIP' AS enable_segment,
+                    COUNT(1) AS enable_amount
+                FROM
+                    (SELECT
+                        pha.pur_header_id
+                    FROM
+                        pur_headers_all pha
+                    WHERE
+                        pha.erp_status   = 'OPEN' AND
+                        pha.last_version = 'Y' AND
+                        pha.srm_status  IN ('RELEASED', 'CONFIRMED') AND
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            pur_line_locations_all pll
+                        WHERE
+                            pll.pur_header_id = pha.pur_header_id AND
+                            (
+                                pll.quantity - NVL(pll.occupy_quantity, 0) + NVL(pll.quantity_return_to_vendor, 0)
+                            )
+                            > 0
+                        ) AND
+                        pha.owner_business_group = ${@business_group} AND
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            fnd_user_authority fua
+                        WHERE
+                            fua.authority_type = 'VENDOR' AND
+                            fua.assign_id      = pha.vendor_id AND
+                            fua.user_id        = ${@user_id}
+                        )
+                    ) v
+                UNION
+                SELECT
+                    'ENABLE_TO_RECEIVE' AS enable_segment,
+                    COUNT(1) AS enable_amount
+                FROM
+                    (SELECT
+                        ah.asn_header_id
+                    FROM
+                        inv_asn_headers ah
+                    WHERE
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            inv_asn_lines al
+                        WHERE
+                            al.asn_header_id                       = ah.asn_header_id AND
+                            al.status                              = 'SEND_OUT' AND
+                            NVL(al.cancel_flag, 'N')               = 'N' AND
+                            NVL(al.close_flag, 'N')                = 'N' AND
+                            NVL(al.receive_status, 'PART_RECEIVE') = 'PART_RECEIVE'
+                        ) AND
+                        ah.coop_business_group = ${@business_group} AND
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            fnd_user_authority fua
+                        WHERE
+                            fua.authority_type = 'VENDOR' AND
+                            fua.assign_id      = ah.vendor_id AND
+                            fua.user_id        = ${@user_id}
+                        )
+                    ) v
+                UNION
+                SELECT 'ENABLE_TO_PAY' AS enable_segment, 0 AS enable_amount FROM dual
+                UNION
+                SELECT 'ENABLE_TO_INVOICE' AS enable_segment, 0 AS enable_amount FROM dual
+            ]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter name="business_group"/>
+                <bm:parameter name="user_id"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

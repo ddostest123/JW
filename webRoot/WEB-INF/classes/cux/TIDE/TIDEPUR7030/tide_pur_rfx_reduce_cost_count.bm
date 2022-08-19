@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lyj  
+    $Date: 2017-1-17 下午7:18:49  
+    $Revision: 1.0  
+    $Purpose: 泰德询价降本统计
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        (SELECT
+                            scv.code_value_name
+                        FROM
+                            sys_code_values_vl scv,
+                            sys_codes_vl sc
+                        WHERE
+                            sc.code_id = scv.code_id AND
+                            scv.code_value = h.status AND
+                            sc.code        = 'PUR_RFX_STATUS'
+                        ) status_desc,                                               --状态
+                        h.rfx_number,                                              --询价单号
+                        h.round,                                                   --轮次
+                        h.line_num,                                               --行号
+                        TO_CHAR(h.rfx_creation_date, 'yyyy-mm-dd') creation_date_desc, --创建日期
+                       h.rfx_creation_date,
+                        (SELECT
+                            pb.rfx_type_desc
+                        FROM
+                            pur_bg_rfx_types_vl pb
+                        WHERE
+                            pb.rfx_type_id = h.rfx_type_id
+                        ) rfx_type_desc, --rfx询价单类型
+                       h.title,       --询价单标题
+                        (SELECT
+                            bu.business_unit_name
+                        FROM
+                            fnd_business_units_vl bu
+                        WHERE
+                            bu.business_unit_id = h.business_unit_id
+                        ) business_unit_name, --业务实体
+                        h.business_unit_id,
+                        (SELECT
+                            io.description
+                        FROM
+                            inv_organizations_vl io
+                        WHERE
+                            io.inv_organization_id = h.inv_organization_id
+                        ) inv_organization_desc, --库存组织
+                       h.item_code,          --物品编码
+                       h.item_desc,          --物品描述
+                        (SELECT
+                            ic.category_name
+                        FROM
+                            mtl_categories_user_defined_vl ic
+                        WHERE
+                            ic.category_udf_id = h.item_category_id
+                        ) item_category_desc,--物品分类
+                        h.quantity,       --需求数量
+                        h.bid_total_amount, --中标总金额 多值没改 要取总和
+                        h.bid_avg_price,--中标均价  中标总金额/需求数量
+                        decode(h.guide_price,null,'-',rtrim(TO_CHAR(h.guide_price, 'FM99999999990.99999999'), '.')) guide_price,--基准价格  根据基准价格类型判断
+                        h.guide_rfx_num,--基准询价单号
+                        h.guide_rfx_line_num,--基准询价单行号
+                        h.guide_rfx_round, --基准轮次
+                        h.bigger_principal_price,--超本金额 中标金额-基准价格*需求数量     只显示非负数  可计算前显示为空
+                       decode(h.bigger_principal_percent,null,null,rtrim(TO_CHAR(h.bigger_principal_percent*100, 'FM99999999990.99'), '.')||'%') bigger_principal_percent,--超本百分比 超本金额/中标金额 *100%          可计算前显示为空
+                        h.lower_principal_price,--降本金额 基准价格*需求数量-中标金额     只显示非负数  可计算前显示为空
+                        decode(h.lower_principal_percent,null,null,rtrim(TO_CHAR(h.lower_principal_percent*100, 'FM99999999990.99'), '.')||'%') lower_principal_percent, --降本百分比 超本金额/中标金额 *100%          可计算前显示为空
+						h.reduce_cost_header_id
+                     FROM tide_pur_reduce_cost_h h
+                where   h.session_id = ${/session/@session_id} and
+                        h.business_group = ${/session/@business_group}
+                        and h.created_by = ${/session/@user_id}
+                    ) v #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:parameters>
+                <bm:parameter name="reduce_cost_header_id" input="false" output="true" outputPath="@reduce_cost_header_id"/>
+            </bm:parameters>
+            <bm:update-sql><![CDATA[
+            	BEGIN
+                  tide_pur_rfx_reduce_cost_pkg.init_reduce_cost(x_reduce_cost_header_id    => ${@reduce_cost_header_id},
+                                                           p_business_group   => ${/session/@business_group},
+				                                           p_benchmark_price_type       => ${@benchmark_price_type},
+				                                           p_benchmark_date_from => to_date(${@benchmark_date_from},
+				                                                                         'YYYY-MM-DD'),
+				                                           p_benchmark_date_to      => to_date(${@benchmark_date_to},
+				                                                                         'YYYY-MM-DD'),
+				                                           p_currency_code        => ${@currency_code},
+				                                           p_rfx_number          => ${@rfx_number},
+				                                           p_line_num => ${@line_num},
+				                                           p_create_date_from   => to_date(${@create_date_from},
+				                                                                         'YYYY-MM-DD'),
+				                                           p_create_date_to      => to_date(${@create_date_to},
+				                                                                         'YYYY-MM-DD'),
+				                                           p_item_code        => ${@item_code},
+				                                           p_item_category_id       => ${@item_category_id},
+				                                           p_item_desc         => ${@item_desc},
+				                                           p_business_unit_id        => ${@business_unit_id},
+				                                           p_inv_organization_id          => ${@inv_organization_id},
+				                                           p_user_id          => ${/session/@user_id},
+				                                           p_session_id          => ${/session/@session_id});
+                END;
+
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <!--  <bm:query-fields>
+        <bm:query-field name="currency_desc" queryExpression="v.currency_desc = ${@currency_desc}"/>
+        <bm:query-field name="rfx_number" queryExpression="v.rfx_number like &apos;%&apos;||trim(${@rfx_number})||&apos;%&apos;"/>
+        <bm:query-field name="line_num" queryExpression="v.line_num = ${@line_num}"/>
+        <bm:query-field name="create_date_from" queryExpression="trunc(v.creation_date) &gt;= to_date(${@create_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="create_date_to" queryExpression="trunc(v.creation_date) &lt;= to_date(${@create_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="item_code" queryExpression="v.item_code = ${@item_code}"/>
+        <bm:query-field name="item_desc" queryExpression="v.item_desc like &apos;%&apos;||trim(${@item_desc})||&apos;%&apos;"/>
+        <bm:query-field name="item_category_desc" queryExpression="v.item_category_desc = ${@item_category_desc}"/>
+        <bm:query-field name="business_unit_name" queryExpression="v.business_unit_name = ${@business_unit_name}"/>
+        <bm:query-field name="inv_organization_desc" queryExpression="v.inv_organization_desc like &apos;%&apos;||${@inv_organization_desc}||&apos;%&apos;"/>
+    </bm:query-fields> -->
+</bm:model>

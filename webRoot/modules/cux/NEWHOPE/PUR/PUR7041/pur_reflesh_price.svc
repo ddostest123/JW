@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:service xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchALL="true" model="cux.NEWHOPE.PUR.PUR7041.pur_reflesh_price" rootPath="price_data"/>
+        <p:echo/>
+        <s:server-script import="request.js"><![CDATA[
+            var logger = $logger('server-script');
+            
+            function log(msg) {
+                logger.info(msg);
+            }
+            
+            var record = $ctx.model.getChild('price_data').getChildren()[0];
+            if (record.api_url) {
+                request({
+                    url: record.api_url,
+                    para: record.request_data,
+                    success: function(args) {
+                        var rec = {
+                            'history_id': record.history_id,
+                            'url': record.api_url,
+                            'config_id': record.config_id,
+                            'api_id': record.api_id,
+                            'request_data': record.request_data,
+                            'response_data': args
+                        };
+                        $bm("api.PUBLIC.api_exec_process").insert(rec);
+                        var param = $ctx.parameter;
+                        var data = JSON.parse(args);
+                        if (data['success'] == true) {
+                            run_fun(data, record);
+                            var price = data['result'][0]['price'];
+                            var state = data['result'][0]['stockStateId'];
+                            param.price = price;
+                            param.state = state;
+                        }
+                    },
+                    failure: function(args) {
+                        // raise_app_error(args.error.message);
+                        log(args.error.message);
+                    }
+                });
+            }
+        ]]></s:server-script>
+        <p:echo/>
+    </a:init-procedure>
+    <a:service-output output="/parameter"/>
+</a:service>

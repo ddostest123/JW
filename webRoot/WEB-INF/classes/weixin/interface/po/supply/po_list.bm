@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao  
+    $Date: 2015-09-08 下午04:38:31  
+    $Revision: 1.0  
+    $Purpose: 微信企业号，订单列表-供应商
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:fields>
+        <bm:field name="pur_header_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="po_num" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="release_num" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="revision_num" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="company_name" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="vendor_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="vendor_name" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="srm_status" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="srm_status_name" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="release_date" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="release_time" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="release_day" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="urgent_status" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="urgent_flag" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="attachment_flag" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="owner_company_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="coop_business_group" databaseType="VARCHAR2" datatype="java.lang.String"/>
+        <bm:field name="coop_company_id" databaseType="NUMBER" datatype="java.lang.Long"/>
+        <bm:field name="useless_id" databaseType="VARCHAR2" datatype="java.lang.String"/>
+    </bm:fields>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT *
+				  FROM (SELECT h.pur_header_id,
+				               nvl(h.display_po_number,
+				                   h.segment1) AS po_num,
+				               nvl(h.display_release_num,
+				                   h.release_num) AS release_num,
+				               h.revision_num,
+				               h.company_name,
+				               h.vendor_id,
+				               h.vendor_name,
+				               h.srm_status,
+				               (SELECT cvv.code_value_name
+				                  FROM sys_code_values_v cvv
+				                 WHERE cvv.code = 'SRM_STATUS'
+				                       AND cvv.code_value = h.srm_status) AS srm_status_name,
+				               to_char(h.release_date,
+				                       'yyyy-mm-dd') AS release_date,
+				               to_char(h.release_date,
+				                       'hh24:mi') AS release_time,
+				               decode(to_char(h.release_date - 1,
+				                              'd'),
+				                      '1',
+				                      '星期一',
+				                      '2',
+				                      '星期二',
+				                      '3',
+				                      '星期三',
+				                      '4',
+				                      '星期四',
+				                      '5',
+				                      '星期五',
+				                      '6',
+				                      '星期六',
+				                      '7',
+				                      '星期日') AS release_day,
+				               h.urgent_status,
+				               decode(h.urgent_status,
+				                      'URGENT',
+				                      'Y',
+				                      'N') AS urgent_flag,
+				               decode((SELECT COUNT(1)
+				                        FROM fnd_atm_attachment_multi aam
+				                       WHERE aam.table_name = 'PUR_PO_ATTACHMENT'
+				                             AND aam.table_pk_value = h.pur_header_id),
+				                      '0',
+				                      'N',
+				                      'Y') AS attachment_flag,
+				               h.owner_company_id,
+				               pvv.coop_business_group,
+				               pvv.coop_company_id,
+				               NULL useless_id
+				          FROM pur_headers_all_v       h,
+				               pur_po_relation_vendors prv,
+				               pur_po_rlt_vendor_auth  pva,
+				               pur_vendors_v           pvv
+				         WHERE h.last_version = 'Y'
+				               AND pvv.vendor_id = prv.vendor_id
+				               AND prv.po_rltion_vendor_id = pva.po_rltion_vendor_id
+				               AND h.pur_header_id = prv.pur_header_id
+				               AND pva.document_type = 'PO'
+				               AND pva.query_flag = 'Y'
+				               AND h.srm_status IN ('RELEASED',
+				                                    'CONFIRMED')
+				         ORDER BY h.release_date DESC) v
+                  #AUTHORIY_FROM# #WHERE_CLAUSE# #AUTHORIY_WHERE# #ORDER_BY_CLAUSE# 
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="po_num" queryExpression="v.po_num like &apos;%&apos;||${@po_num}||&apos;%&apos;"/>
+        <bm:query-field name="release_date_from" queryExpression="v.release_date_date &gt;= to_date(${@release_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="release_date_to" queryExpression="v.release_date_date &lt;= to_date(${@release_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="srm_status" queryExpression="v.srm_status = ${@srm_status}"/>
+        <bm:query-field name="ready_to_shipped_flag" queryExpression="(${@ready_to_shipped_flag} = &apos;Y&apos; and EXISTS (SELECT 1 FROM inv_asn_headers iah,inv_asn_lines ial,pur_line_locations_all pll WHERE iah.asn_header_id = ial.asn_header_id AND iah.status = &apos;NEW&apos; AND ial.line_location_id = pll.pur_line_location_id and pll.pur_header_id = v.pur_header_id))"/>
+        <bm:query-field name="already_shipped_flag" queryExpression="(${@already_shipped_flag} = &apos;Y&apos; and EXISTS (SELECT 1 FROM inv_asn_headers iah,inv_asn_lines ial,pur_line_locations_all pll WHERE iah.asn_header_id = ial.asn_header_id AND iah.status = &apos;SEND_OUT&apos; AND ial.line_location_id = pll.pur_line_location_id and pll.pur_header_id = v.pur_header_id))"/>
+        <bm:query-field name="vendor_id" queryExpression="v.vendor_id = ${@vendor_id}"/>
+        <bm:query-field name="only_urgent" queryExpression="((${@only_urgent} = &apos;Y&apos; and v.urgent_status = &apos;URGENT&apos;) or (${@only_urgent} = &apos;N&apos; and 1=1))"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="1=1"/>
+        <bm:data-filter expression="v.coop_business_group = ${/session/@business_group}"/>
+    </bm:data-filters>
+    <authority foundation_code="PUR_PO">
+        <authority-segment source_alias="v" source_name="useless_id" type="CREATER"/>
+        <authority-segment source_alias="v" source_name="coop_company_id" type="COMPANY"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="RECEIVER"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="BUSINESS_UNIT"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="PUR_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="INV_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="SD_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="VENDOR"/>
+        <authority-segment source_alias="v" source_name="owner_company_id" type="CLIENT"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="PURHASE_MATERIAL"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="SALES_PRODUCTION"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="CLIENT_SITE"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="VENDOR_SITE"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="PUR_ORG"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="PUR_BUYER"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+            var cx = Packages.aurora.javascript.Context.getCurrentContext();
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

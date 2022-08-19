@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: PineYoung  
+    $Date: 2017-04-12 上午10:44:21  
+    $Revision: 1.0  
+    $Purpose: 单点登录 - 权限认证通过后，允许用户单点登录到系统
+-->
+<a:service xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <s:server-script><![CDATA[
+        
+        	var p = $ctx.parameter;
+        	
+        	//记录日志
+        	//var logger = Packages.uncertain.logging.LoggingContext.getLogger($ctx.getData(), "server-script");
+            //logger.log(p.toXML());
+			
+			//判定token是否为空
+    	    if (!p.token) raise_app_error('Please input token!');
+    	    
+    		//判定用户名是否为空
+        	if (!p.uid) raise_app_error('Please input uid!');					
+ 						
+ 			//校验token是否有效
+ 			$bm('itf.OAUTH.itf_check_access_auth').execute();		
+ 			
+ 			var validate_flag = $ctx.parameter.validate_flag;
+ 			
+ 			//println("validate_flag:" + validate_flag); 	
+        	
+        	var auth_resource_url = $ctx.parameter.auth_resource_url;
+        	//println("auth_resource_url:" + auth_resource_url); 	
+        	
+        	var client_info_id = $ctx.parameter.client_info_id;
+        	
+        	if (validate_flag == "Y") {
+        	    
+	        	//执行login bm
+	        	$bm('sys.sys_user_oauth_login_with_userid').execute();
+	        	
+	        	$session.clear();
+		     	$session.writeValue('account_forbid_login', null);
+	            $session.writeValue('lang', 'ZHS');
+	            $session.writeValue('try_login_times', 0);
+	            
+	            $cookie.put('JSID', p.encryted_session_id);
+	            $cookie.put('IS_NTLM', 'N');
+	            $cookie.put('try_login_times', 0);
+	            $cookie.put('lang', 'ZHS');
+	    	    
+	    	    //写入session权限
+	    	    var fas_bm = new ModelService('fnd.fnd_authority_sessions');
+				fas_bm.fetchDescriptor = {
+					fetchAll:true
+				};
+				var fas_res = fas_bm.queryAsMap().getChildren();
+				if (fas_res.length > 0){
+					fas_res = fas_res[0];
+					if (fas_res.assign_type == 'COMPANY'){
+					    $session.default_company_id = fas_res.default_id;
+					    $session.default_company_code = fas_res.default_code;
+					    $session.default_company_desc = fas_res.default_desc;
+					}
+					
+					if (fas_res.assign_type == 'INV_ORGANIZATION'){
+					    $session.default_inv_organization_id = fas_res.default_id;
+					    $session.default_inv_organization_code = fas_res.default_code;
+					    $session.default_inv_organization_desc = fas_res.default_desc;
+					}
+				}
+	        	$session.copy();
+        	} else {
+        	    $session.clear();
+        	    raise_app_error($ctx.parameter.error_code + ':' + $ctx.parameter.error_msg);	
+        	}
+        	
+        ]]></s:server-script>
+        <a:session-write source="/session"/>
+    </a:init-procedure>
+    <a:service-output output="/parameter"/>
+</a:service>

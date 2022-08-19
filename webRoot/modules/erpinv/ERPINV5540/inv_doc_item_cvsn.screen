@@ -1,0 +1,355 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <!-- <a:model-query defaultWhereClause="t1.business_type_code=&apos;UOR&apos;" fetchAll="true" model="erpinv.public.inv_get_transaction_type_by_bustype" rootPath="erpinv5540_transaction_type_init_ds"/> -->
+        <a:model-query defaultWhereClause="t1.business_type_code=&apos;UOR&apos; and t1.transaction_type_code=&apos;UOR&apos;" fetchAll="true" model="erpinv.public.inv_get_transaction_type_by_bustype" rootPath="erpinv5540_transaction_type_init_query"/>
+        <a:model-query model="erpinv.ERPINV5410.inv_get_period_name_date" rootPath="erpinv5540_period_date_init"/>
+        <!-- <a:model-query defaultWhereClause="enabled_flag=&apos;Y&apos; and warehouse_type in(&apos;NORMAL&apos;)" fetchAll="true" model="erpinv.public.inv_warehouses_lov" queryOrderBy="warehouse_code" rootPath="erpinv5540_inv_warehouses_list"/> -->
+        <a:model-execute model="erpinv.ERPINV5540.inv_doc_iss_tmp_del"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="erpinv5540_get_period_name_link" model="db.erpgld_periods_pkg.get_open_inv_period" modelaction="query"/>
+        <a:link id="erpinv5540_new_item_cvsn_link" url="${/request/@context_path}/modules/erpinv/ERPINV5540/inv_doc_item_cvsn.screen"/>
+        <a:link id="erpinv5540_item_cvsn_wo_link" url="${/request/@context_path}/modules/erpinv/ERPINV5540/inv_doc_item_cvsn_write_off.screen"/>
+        <a:link id="erpinv5540_item_cvsn_wo_read_link" url="${/request/@context_path}/modules/erpinv/ERPINV5540/inv_doc_item_write_off_readOnly.screen"/>
+        <a:link id="erpinv5540_get_line_num_link" model="erpinv.ERPINV5540.get_tmp_line_number" modelaction="query"/>
+        <script src="${/request/@context_path}/modules/erpord/ord.js" type="text/javascript"/>
+        <script><![CDATA[
+            /*全局变量作为行号*/
+            var erpinv5540_line_num = 10; /*初始化*/
+            
+            function erpinv5540_head_init() {
+                var head_record = $('erpinv5540_item_cvsn_head_ds').getCurrentRecord();
+                head_record.getField('document_number').setReadOnly(true);
+                head_record.set('document_number', '${l:ERPINV_NUM_WAITING_FOR_CREATE}');
+                // if (typeof('${/model/erpinv5540_period_date_init/record/@end_date}') != 'undefined' && '${/model/erpinv5540_period_date_init/record/@end_date}' != '') {
+                //head_record.set('document_date', '${/model/erpinv5540_period_date_init/record/@end_date}');
+                //head_record.set('period_name', '${/model/erpinv5540_period_date_init/record/@period_name}');
+                //head_record.set('transaction_type_desc', '${/model/erpinv5540_transaction_type_init_query/record/@transaction_type_desc}');
+                //head_record.set('transaction_type', '${/model/erpinv5540_transaction_type_init_query/record/@transaction_type_code}');
+                // } else {
+                // Aurora.showMessage('${l:HAP_PROMPT}', '${l:INV_NO_OPEN_PERIOD}');
+                // }
+            }
+            /*
+             按钮
+             */
+            
+            function erpinv5540_item_cvsn_add_btn() {
+                if ($('erpinv5540_item_cvsn_head_ds').getAt(0).isNew) {
+                    Aurora.showConfirm('${l:HAP_PROMPT}', '${l:ERPINV_CONFIRM_NEW_CLEAR_INFO}', function() {
+                        Aurora.go($('erpinv5540_new_item_cvsn_link').getUrl());
+                    });
+                } else {
+                    Aurora.go($('erpinv5540_new_item_cvsn_link').getUrl());
+                }
+            }
+            
+            function erpinv5540_item_cvsn_post_btn() {
+                if ($('erpinv5540_item_cvsn_result_ds').getAll().length <= 0) {
+                    Aurora.showMessage('${l:HAP_PROMPT}', '${l:ERPINV_CANNT_POST_WITHOUT_LINES}');
+                    return;
+                }
+                if ($('erpinv5540_item_cvsn_head_ds').validate()) {
+                    Aurora.showConfirm('${l:HAP_PROMPT}', '${l:ERPINV_CONFIRM_POST}', function() {
+                        Aurora.Masker.mask(Ext.getBody(), '${l:PROMPT.POST_NOW}');
+                        $('erpinv5540_item_cvsn_head_ds').submit();
+                    });
+                }
+            }
+            
+            /*
+             事件，先头后行
+             */
+            //头更新事件
+            //提交成功事件（过账）
+            
+            function erpinv5410_head_submit_sucess() {
+                Aurora.Masker.unmask(Ext.getBody());
+                $('erpinv5540_post_btn_id').disable();
+                $('erpinv5540_line_add_btn').disable();
+                $('erpinv5540_line_del_btn').disable();
+                $('erpinv5540_item_cvsn_head_ds').getAt(0).getField('transaction_type_desc').setReadOnly(true);
+                $('erpinv5540_item_cvsn_head_ds').getAt(0).getField('description').setReadOnly(true);
+                $('erpinv5540_item_cvsn_head_ds').getAt(0).getField('document_date').setReadOnly(true);
+            
+                Aurora.SideBar.enable = true;
+                Aurora.SideBar.show({
+                    msg: '过账成功!',
+                    duration: 6000
+                });
+            }
+            
+            function erpinv5410_head_submitfailed() {
+                Aurora.Masker.unmask(Ext.getBody());
+            }
+            
+            //行更新事件
+            
+            //行新增前事件
+            
+            function erpinv5540_line_before_add() { //头上信息没有填写完全 不能够新增行信息
+                if ($('erpinv5540_item_cvsn_head_ds').validateSelf()) {
+                    return true;
+                }
+                return false;
+            }
+            //行新增事件
+            
+            function erpinv5540_line_add(ds, record, index) {
+                /*  $A.request({
+                 url: $('erpinv5540_get_line_num_link').getUrl(),
+                 success: function(res) {
+                 record.set('line_number', res.result.record.line_num);
+                 },
+                 sync:true
+                 }); */
+            
+                record.set('line_number', erpinv5540_line_num);
+                erpinv5540_line_num = erpinv5540_line_num + 10;
+                var record_head = $('erpinv5540_item_cvsn_head_ds').getAt(0);
+                record_head.getField('warehouse_name').setReadOnly(true);
+                // record_head.getField('document_date').setReadOnly(true);
+                // record_head.getField('return_flag').setReadOnly(true);
+                record_head.getField('transaction_type_desc').setReadOnly(true);
+                record_head.getField('company_name').setReadOnly(true);
+                record.getField('item_desc').setLovPara('warehouse_id', record_head.get('warehouse_id'));
+                record.set('warehouse_id', record_head.get('warehouse_id'));
+                record.set('vender_id', record_head.get('partner_id'));
+                record.set('company_id', record_head.get('company_id'));
+            
+            }
+            //行删除事件
+            
+            function erpinv5540_line_remove(ds, record, index) {
+                if (ds.getAll().length <= 0) { //当行数为0，则头的相关信息可以修改
+                    var record_head = $('erpinv5540_item_cvsn_head_ds').getAt(0);
+                    record_head.getField('warehouse_name').setReadOnly(false);
+                    record_head.getField('document_date').setReadOnly(false);
+                    // record_head.getField('return_flag').setReadOnly(false);
+                    record_head.getField('transaction_type_desc').setReadOnly(false);
+                }
+            }
+            /*
+             render
+             */
+            
+            function erpinv5540_quantity_ren_fun(value, record, name) {
+                return show_price_num(value, 2);
+            }
+            
+            function erpinv5540_item_cvsn_ren_fun(value, record, name) {
+                if ($('erpinv5540_item_cvsn_head_ds').getAt(0).get('return_flag') == 'N') {
+                    var line_num = record.get('line_number');
+                    var index = $('erpinv5540_item_cvsn_result_ds').indexOf(record);
+                    var transaction_type = $('erpinv5540_item_cvsn_head_ds').getAt(0).get('transaction_type');
+                    var company_id = $('erpinv5540_item_cvsn_head_ds').getAt(0).get('company_id');
+                    var url;
+                    if (record.isNew) {
+                        url = $('erpinv5540_item_cvsn_wo_link').getUrl() + '?line_number=' + line_num + '&index=' + index + '&transaction_type=' + transaction_type + '&company_id=' + company_id;
+                    } else {
+                        url = $('erpinv5540_item_cvsn_wo_read_link').getUrl() + '?line_number=' + line_num + '&index=' + index + '&transaction_type=' + transaction_type + '&company_id=' + company_id;
+                    }
+                    return '<a href="javascript:erpinv5540_jump_wo_detail(\'' + url + '\',' + index + ');">${l:INV5540.ITEM_TRANSAFER_WRITEOF}</a>';
+                }
+                return;
+            }
+            
+            function erpinv5540_jump_wo_detail(url, index) {
+                new Aurora.Window({
+                    id: 'erpinv5540_item_cvsn_wo_win',
+                    url: url,
+                    title: '${l:ERPINV5540.ITEM_TRANSAFER_WRITEOF}',
+                    fullScreen: true
+                });
+            }
+            /*
+             validator 校验
+             */
+            
+            function erpinv5540_document_date_vali_fun(record, name, value) {
+                if (record.get('company_id')) {
+                    var flag = true;
+                    Aurora.request({
+                        url: $('erpinv5540_get_period_name_link').getUrl() + '?date=' + Aurora.formatDate(value) + '&company_id=' + record.get('company_id'),
+                        success: function(res) {
+                            if (typeof(res.result.record.period_name) != 'undefined') {
+                                record.set('period_name', res.result.record.period_name);
+                            } else {
+                                record.set('period_name', '');
+                                flag = '${l:ERPINV_CURDATE_PERIOD_NOT_OPEN}';
+                            }
+                        },
+                        scope: this,
+                        sync: true
+                    });
+                    return flag;
+                }
+            }
+            
+            //数量校验
+            
+            function erpinv5540_transfer_quantity_vali(record, name, value) {
+                if (value == 0) {
+                    return '${l:ERPINV5530.RECEIVE_QUANTITY_CANNT_BE_ZERO}';
+                }
+                return true;
+            }
+            //单位成本校验
+            
+            function erpinv5540_price_vali(record, name, value) {
+                if (value == 0) {
+                    return '${l:ERPINV5530.PRICE_CANNT_BE_ZERO}';
+                }
+                return true;
+            }
+            //总金额校验
+            
+            function erpinv5540_amount_vali(record, name, value) {
+                if (value == 0) {
+                    return '${l:ERPINV5530.AMOUNT_CANNT_BE_ZERO}';
+                }
+                return true;
+            } /*动态编辑器*/
+            
+            function erpinv5540_lov_ed_fun(record, name) {
+                if (record.isNew) {
+                    return 'erpinv5540_lov_ed';
+                }
+                return '';
+            }
+            
+            function erpinv5540_quantity_ed_fun(record, name) {
+                if (record.isNew) {
+                    return 'erpinv5540_quantity_ed';
+                }
+                return '';
+            }
+            
+            function erpinv5540_text_ed_fun(record, name) {
+                if (record.isNew) {
+                    return 'erpinv5540_text_ed';
+                }
+                return '';
+            }
+            
+            function erpinv5540_cellclick(grid, row, name, record) {
+                if (name == 'item_desc') {
+                    var company_id = $('erpinv5540_item_cvsn_head_ds').getCurrentRecord().get('company_id');
+                    record.getMeta().getField('item_desc').setLovPara('company_id', company_id);
+                }
+            }
+            
+            function erpinv5410_head_update(dataset, record, name, value, oldValue) {
+                if (name == 'company_id') {
+                    
+                    record.set('transaction_type_code', '');
+                    record.set('transaction_type_desc', '');
+                    $('erpinv5540_transaction_type_ds').setQueryParameter('company_id', value);
+                    $('erpinv5540_transaction_type_ds').setQueryParameter('business_type_code', 'UOR');
+                    $('erpinv5540_transaction_type_ds').query();
+                    
+                    
+                    record.set('warehouse_id', '');
+                    record.set('warehouse_name', '');
+                    record.set('warehouse_type', '');
+                    $('erpinv5540_warehouse_list_ds').setQueryParameter('company_id', value);
+                    $('erpinv5540_warehouse_list_ds').setQueryParameter('enabled_flag', 'Y');
+                    $('erpinv5540_warehouse_list_ds').setQueryParameter('warehouse_type', '(\'NORMAL\')');
+                    $('erpinv5540_warehouse_list_ds').query();
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="erpinv5540_transaction_type_ds" fetchAll="true" model="erpinv.public.inv_get_transaction_type_by_bustype"/>
+            <a:dataSet id="erpinv5540_warehouse_list_ds" fetchAll="true" model="erpinv.public.inv_warehouses_lov"/>
+            <a:dataSet id="erpinv5540_assign_company_ds" loadData="true" model="public.fnd_company_list"/>
+            <a:dataSet id="erpinv5540_item_cvsn_head_ds" autoCreate="true" model="erpinv.ERPINV5530.inv_document_pur_trx_headers" submitUrl="${/request/@context_path}/modules/erpinv/ERPINV5540/inv_doc_item_cvsn_submit.svc">
+                <a:fields>
+                    <a:field name="document_number" required="true"/>
+                    <a:field name="transaction_type_desc" displayField="transaction_type_desc" options="erpinv5540_transaction_type_ds" required="true" returnField="transaction_type" valueField="transaction_type_code"/>
+                    <a:field name="document_date" required="true" validator="erpinv5540_document_date_vali_fun"/>
+                    <a:field name="period_name" readOnly="true"/>
+                    <a:field name="status" defaultValue="VERIFIED"/>
+                    <a:field name="return_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="warehouse_name" displayField="warehouse_desc" options="erpinv5540_warehouse_list_ds" required="true" valueField="warehouse_id">
+                        <a:mapping>
+                            <a:map from="warehouse_id" to="warehouse_id"/>
+                            <a:map from="warehouse_type" to="warehouse_type"/>
+                            <a:map from="warehouse_desc" to="warehouse_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="company_id" defaultValue="${/session/@default_company_id}"/>
+                    <a:field name="company_name" defaultValue="${/session/@default_company_name}" displayField="company_full_name" options="erpinv5540_assign_company_ds" required="true" returnField="company_id" valueField="company_id"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="submitsuccess" handler="erpinv5410_head_submit_sucess"/>
+                    <a:event name="submitfailed" handler="erpinv5410_head_submitfailed"/>
+                    <a:event name="update" handler="erpinv5410_head_update"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="erpinv5540_item_cvsn_result_ds" bindName="result_ds" bindTarget="erpinv5540_item_cvsn_head_ds" model="erpinv.ERPINV5540.inv_doc_item_cvsn_rcv_lns" selectable="true">
+                <a:fields>
+                    <a:field name="item_desc" autoComplete="true" autoCompleteField="item_desc" autoCompleteSize="1" lovGridHeight="370" lovHeight="490" lovService="erpinv.public.inv_items_query_lov?enabled_flag=Y&amp;inventory_flag=Y&amp;company_id=$(&apos;erpinv5540_item_cvsn_head_ds&apos;).getAt(0).get(&apos;company_id&apos;)" lovWidth="500" required="true" title="物品">
+                        <a:mapping>
+                            <a:map from="item_id" to="item_id"/>
+                            <a:map from="item_code" to="item_code"/>
+                            <a:map from="item_desc" to="item_desc"/>
+                            <a:map from="primary_uom" to="primary_uom"/>
+                            <a:map from="primary_uom_desc" to="primary_uom_desc"/>
+                            <a:map from="partner_primary_quantity" to="warehouse_quantity"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="primary_quantity" required="true" validator="erpinv5540_transfer_quantity_vali"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="erpinv5540_line_add"/>
+                    <a:event name="beforecreate" handler="erpinv5540_line_before_add"/>
+                    <a:event name="remove" handler="erpinv5540_line_remove"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenTopToolbar>
+            <a:screenTitle/>
+            <a:toolbarButton className="item-rbtn-blue button-add" click="erpinv5540_item_cvsn_add_btn" style="margin-left:20px;" text="HAP_NEW" width="100"/>
+            <a:toolbarButton id="erpinv5540_post_btn_id" className="item-rbtn-blue post" click="erpinv5540_item_cvsn_post_btn" text="过账" width="100"/>
+        </a:screenTopToolbar>
+        <a:form column="1" marginWidth="50" style="margin-left:10px;margin-top:10px;">
+            <a:hBox>
+                <a:comboBox name="company_name" bindTarget="erpinv5540_item_cvsn_head_ds" prompt="公司"/>
+                <a:comboBox name="transaction_type_desc" bindTarget="erpinv5540_item_cvsn_head_ds" prompt="ERPINV_TRANSACTION_TYPE"/>
+                <a:textField name="document_number" bindTarget="erpinv5540_item_cvsn_head_ds" prompt="ERPINV_TRANSACTION_NUMBER"/>
+                <a:datePicker name="document_date" bindTarget="erpinv5540_item_cvsn_head_ds" prompt="ERPINV_TRANSACTION_DATE"/>
+                <a:comboBox name="warehouse_name" bindTarget="erpinv5540_item_cvsn_head_ds" prompt="ERPINV5530.WAREHOUSE"/>
+            </a:hBox>
+            <a:hBox>
+                <a:textField name="description" bindTarget="erpinv5540_item_cvsn_head_ds" prompt="ERPGLD_ACCOUNT_CONFIG.REMARK" width="800"/>
+            </a:hBox>
+        </a:form>
+        <a:grid id="erpinv5540_item_cvsn_result_gd" bindTarget="erpinv5540_item_cvsn_result_ds" marginHeight="180" marginWidth="50" submask="false" width="450">
+            <a:toolBar>
+                <a:button id="erpinv5540_line_add_btn" type="add"/>
+                <a:button id="erpinv5540_line_del_btn" type="delete"/>
+            </a:toolBar>
+            <a:columns>
+                <a:column name="item_desc" editorFunction="erpinv5540_lov_ed_fun" prompt="ERPORD_SALES_ORDER_LINES.ITEM_DESCRIPTION" width="150"/>
+                <a:column name="warehouse_quantity" align="right" prompt="ERPINV5530.WAREHOUSE_QUANTITY" renderer="erpinv5540_quantity_ren_fun" width="50"/>
+                <a:column name="primary_quantity" align="right" editorFunction="erpinv5540_quantity_ed_fun" prompt="ERPINV5530.RECEIVE_QUANTITY_THIS_TIME" renderer="erpinv5540_quantity_ren_fun" width="50"/>
+                <a:column name="primary_uom_desc" prompt="ERPINV_PRIMARY_UOM" width="30"/>
+                <a:column name="notes" editorFunction="erpinv5540_text_ed_fun" prompt="ERPGLD_ACCOUNT_CONFIG.REMARK" width="100"/>
+                <a:column name="item_writeoff" align="center" prompt="ERPINV5540.ITEM_TRANSAFER_WRITEOF" renderer="erpinv5540_item_cvsn_ren_fun" width="50"/>
+            </a:columns>
+            <a:editors>
+                <a:lov id="erpinv5540_lov_ed"/>
+                <a:textField id="erpinv5540_text_ed"/>
+                <a:numberField id="erpinv5540_quantity_ed" allowNegative="false" decimalPrecision="2"/>
+            </a:editors>
+            <a:events>
+                <a:event name="cellclick" handler="erpinv5540_cellclick"/>
+            </a:events>
+        </a:grid>
+        <script><![CDATA[
+        	erpinv5540_head_init();
+        ]]></script>
+    </a:view>
+</a:screen>

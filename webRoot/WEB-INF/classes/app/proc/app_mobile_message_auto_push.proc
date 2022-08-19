@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<p:procedure xmlns:s="aurora.plugin.script" xmlns:as="aurora.service" xmlns:t="aurora.application.action" xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+        <a:model-execute model="app.fnd.app_mobile_message_instance_create"/>
+        <a:model-query model="app.fnd.app_mobile_message_check_instance" rootPath="check_instance"/>
+        <!-- 判断是否生成实例 -->
+        <p:switch test="/model/check_instance/record/@instance_flag">
+            <p:case value="Y">
+                <s:server-script import="app_mobile_construct_node.js"><![CDATA[
+            //数据处理  /model/push_url/record/@push_url
+            var soapResponse = app_message_auto_push();
+            $ctx.addChild(soapResponse);
+        ]]></s:server-script>
+                <p:echo/>
+                <p:method-invoke className="uncertain.composite.CompositeUtil" methodName="expand">
+                    <p:arguments>
+                        <p:argument path="/soapResponse" type="uncertain.composite.CompositeMap"/>
+                    </p:arguments>
+                </p:method-invoke>
+                <a:model-query model="app.fnd.app_mobile_message_push_url" rootPath="push_url"/>
+                <a:ws-invoker inputPath="/soapResponse/HEADER/REQUEST" raiseExceptionOnError="true" returnPath="/soapResponse/RESPONSE" url="${/model/push_url/record/@push_url}"/>
+                <s:server-script import="app_mobile_construct_node.js"><![CDATA[
+             $ctx.parameter.response_status = $ctx.getChild('soapResponse').getChild('RESPONSE').getChild('RESPONSE_HEADER').getChild('RESPONSE_STATUS').getText();
+            $ctx.parameter.response_message = $ctx.getChild('soapResponse').getChild('RESPONSE').getChild('RESPONSE_HEADER').getChild('RESPONSE_MESSAGE').getText();
+        ]]></s:server-script>
+                <p:switch test="/parameter/@response_status">
+                    <p:case value="SUCCESS">
+                        <a:model-insert model="app.fnd.app_mobile_message_instance_create"/>
+                    </p:case>
+                    <p:case value="*">
+                        <a:model-update model="app.fnd.app_mobile_message_instance_create"/>
+                    </p:case>
+                </p:switch>
+            </p:case>
+        </p:switch>
+</p:procedure>

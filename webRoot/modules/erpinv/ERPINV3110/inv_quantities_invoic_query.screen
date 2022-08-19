@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lhc  
+    $Date: 2012-11-9 上午10:55:46  
+    $Revision: 1.0  
+    $Purpose: 物品库存数量进销存统计
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-execute model="erpinv.ERPINV3110.inv_get_monthly_period" rootPath="erpinv3110_period"/>
+        <!-- <a:model-query defaultWhereClause="g.period_name = ${/parameter/@period_name} AND g.company_id  = ${/session/@company_id}" model="erpinv.ERPINV5610.inv_get_start_end_date" rootPath="erpinv3110_start_end_date"/> -->
+        <!-- <a:model-query model="db.erpfnd_precision_pkg.get_quantity_precision" rootPath="erpinv3110_quantity_percision"/> -->
+    </a:init-procedure>
+    <a:view>
+        <a:link id="erpinv3110_quantities_query_svc_link" url="${/request/@context_path}/modules/erpinv/ERPINV3110/inv_quantities_query_svc.svc"/>
+        <script><![CDATA[
+            function erpinv_3110_excel() {
+                var fileName = '物品库存数量进销存统计';
+                $('erpinv3110_quantities_result_grid')._export('xls', fileName);
+            }
+            
+            function erpinv_3110_query() {
+                var ds = $('erpinv3110_quantities_query_ds');
+                var result_ds = $('erpinv3110_quantities_result_ds');
+                var obj = ds.getAt(0).getObject();
+                var url = $('erpinv3110_quantities_query_svc_link').getUrl();
+                if (ds.validate()) {
+                    Aurora.request({
+                        url: url,
+                        para: obj,
+                        success: function() {
+                            result_ds.query();
+                        }
+                    });
+                }
+                $('erpinv3110_query_form_id').close();
+            }
+            
+            function erpinv3110_query_ds_update(ds, record, name, value, oldvalue) {
+                if (name == 'company_id'){
+                    record.set('period_from', '');
+                    record.set('period_to', '');
+                    $('erpinv3110_period_name_list_ds').setQueryParameter('company_id', value);
+                    $('erpinv3110_period_name_list_ds').query();
+                    //debugger;
+                    record.set('warehouse_name','');
+                    $('erpinv3110_warehouse_list_ds').setQueryParameter('company_id', value);
+                    $('erpinv3110_warehouse_list_ds').query();
+                    record.set('partner_desc','');
+                    record.set('item_code','');
+                    record.set('item_name','');
+                    
+                    var metadata = record.getMeta();
+                    var f1 = metadata.getField('partner_desc');
+                    if (!record.get('company_id') || record.get('company_id') == '') {
+                        f1.setLovService('');
+                    } else {
+                        f1.setLovService('erpinv.ERPINV3020.pur_customer_lov');
+                        f1.setLovPara('company_id', record.get('company_id') || '');
+                    }
+                }
+                if (name == 'warehouse_type') {
+                    if (value == 'NORMAL') {
+                        record.getField('partner_desc').setLovPara('enabled_flag', 'Y');
+                        record.getField('partner_desc').setLovService('erpinv.ERPINV3020.pur_customer_lov');
+                        //record.getField('partner_desc').setReadOnly(false);
+                    } else if (value == 'OUTSOURCE') {
+                        record.getField('partner_desc').setLovPara('enabled_flag', 'Y');
+                        record.getField('partner_desc').setLovService('erppur.public.pur_vender_basic_lov');
+                        //record.getField('partner_desc').setReadOnly(false);
+                    } else if (value == 'ISSUE') {
+                        record.getField('partner_desc').setLovPara('enabled_flag', 'Y');
+                        record.getField('partner_desc').setLovService('erpord.public.ord_customer_lov');
+                        //record.getField('partner_desc').setReadOnly(false);
+                    } else {
+                        record.set('business_partner_id', null);
+                        record.set('partner_desc', '');
+                        //record.getField('partner_desc').setReadOnly(true);
+                    }
+                }else if(name == 'period_from'||name == 'period_to'){
+                    record.validate((name == 'period_from') ? 'period_to' : 'period_from');
+                }
+            }
+            
+            function erpinv3110_quantity_rend(value, record, name) {
+                return Aurora.formatNumber(value, '${/model/erpinv3110_quantities_result_ds/record/@value}');
+            }
+            
+            function erpinv3110_period_from_validator(record, name, value) {
+                var period_to = record.get('period_to');
+                if (!Aurora.isEmpty(period_to)) {
+                    if (value > period_to) {
+                        return '期间从必须小于或等于期间至';
+                    }
+                }
+                return true;
+            }
+            
+            function erpinv3110_period_to_validator(record, name, value) {
+                var period_from = record.get('period_from');
+                if (!Aurora.isEmpty(period_from)) {
+                    if (value < period_from) {
+                        return '期间至必须大于或等于期间从';
+                    }
+                }
+                return true;
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="erpinv3110_assign_company_ds" loadData="true" model="public.fnd_company_list"/>
+            <a:dataSet id="erpinv3110_period_name_list_ds" fetchAll="true" loadData="true" model="erpinv.ERPINV3110.inv_period_name_list"/>
+            <a:dataSet id="erpinv3110_warehouse_list_ds" fetchAll="true" loadData="true" model="erpinv.public.inv_warehouses_lov"/>
+            <a:dataSet id="erpinv3110_quantities_query_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="company_id"/>
+                    <a:field name="company_name" displayField="company_full_name" options="erpinv3110_assign_company_ds" required="true" returnField="company_id" valueField="company_id"/>
+                    <a:field name="period_from" displayField="period_name" options="erpinv3110_period_name_list_ds" required="true" returnField="period_name" validator="erpinv3110_period_from_validator" valueField="period_name"/>
+                    <a:field name="period_to" displayField="period_name" options="erpinv3110_period_name_list_ds" required="true" returnField="period_name" validator="erpinv3110_period_to_validator" valueField="period_name"/>
+                    <a:field name="warehouse_name" displayField="warehouse_name" options="erpinv3110_warehouse_list_ds" returnField="warehouse_id" valueField="warehouse_id">
+                        <a:mapping>
+                            <a:map from="warehouse_code" to="warehouse_code"/>
+                            <a:map from="warehouse_type" to="warehouse_type"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="warehouse_code"/>
+                    <a:field name="item_code"/>
+                    <a:field name="item_name"/>
+                    <a:field name="partner_desc" autoComplete="true" autoCompleteField="code_name" lovHeight="500" lovLabelWidth="140" lovWidth="570" title="供应商/客户">
+                        <a:mapping>
+                            <a:map from="code_name" to="partner_desc"/>
+                            <a:map from="partner_id" to="business_partner_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="business_partner_id"/>
+                    <a:field name="zero_show_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="erpinv3110_query_ds_update"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="erpinv3110_quantities_result_ds" autoCount="true" autoPageSize="true" autoQuery="false" model="erpinv.ERPINV3110.inv_period_qty_onhand_tmp" queryDataSet="erpinv3110_quantities_query_ds">
+                <a:fields>
+                    <a:field name="company_id"/>
+                    <a:field name="company_name" autoComplete="true" autoCompleteSize="1" lovGridHeight="300" lovHeight="430" lovService="erppublic.fnd_company_list" lovWidth="500" title="SRM.QUERY">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_full_name" to="company_name"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenTopToolbar>
+            <a:screenTitle/>
+            <a:gridButton bind="erpinv3110_quantities_result_grid" style="margin-left:20px;" text="导出" type="excel" width="100"/>
+        </a:screenTopToolbar>
+        <a:queryForm id="erpinv3110_query_form_id" bindTarget="erpinv3110_quantities_query_ds" createSearchButton="false" defaultQueryHint="请输入物品代码或者物品名称" resultTarget="erpinv3110_quantities_result_ds" style="width:100%;border:none">
+            <a:formToolBar labelWidth="100">
+                <a:hBox labelWidth="100">
+                    <a:comboBox name="company_name" bindTarget="erpinv3110_quantities_query_ds" prompt="公司">
+                        <a:events>
+                            <a:event name="enterdown" handler="erpinv_3110_query"/>
+                        </a:events>
+                    </a:comboBox>
+                    <a:comboBox name="period_from" bindTarget="erpinv3110_quantities_query_ds" prompt="库存期间从">
+                        <a:events>
+                            <a:event name="enterdown" handler="erpinv_3110_query"/>
+                        </a:events>
+                    </a:comboBox>
+                    <a:comboBox name="period_to" bindTarget="erpinv3110_quantities_query_ds" prompt="库存期间至">
+                        <a:events>
+                            <a:event name="enterdown" handler="erpinv_3110_query"/>
+                        </a:events>
+                    </a:comboBox>
+                    <a:checkBox name="zero_show_flag" bindTarget="erpinv3110_quantities_query_ds" prompt="显示0数量物品"/>
+                </a:hBox>
+                <a:toolbarButton className="item-rbtn-gray" click="erpinv_3110_query" text="查询" width="80"/>
+            </a:formToolBar>
+            <a:formBody>
+                <a:box column="3" labelWidth="100">
+                    <a:comboBox name="warehouse_name" bindTarget="erpinv3110_quantities_query_ds" prompt="库房类型">
+                        <a:events>
+                            <a:event name="enterdown" handler="erpinv_3110_query"/>
+                        </a:events>
+                    </a:comboBox>
+                    <a:lov name="partner_desc" bindTarget="erpinv3110_quantities_query_ds" prompt="供应商/客户">
+                        <a:events>
+                            <a:event name="enterdown" handler="erpinv_3110_query"/>
+                        </a:events>
+                    </a:lov>
+                    <a:textField name="item_code" bindTarget="erpinv3110_quantities_query_ds" prompt="物品代码">
+                        <a:events>
+                            <a:event name="enterdown" handler="erpinv_3110_query"/>
+                        </a:events>
+                    </a:textField>
+                    <a:textField name="item_name" bindTarget="erpinv3110_quantities_query_ds" prompt="物品名称">
+                        <a:events>
+                            <a:event name="enterdown" handler="erpinv_3110_query"/>
+                        </a:events>
+                    </a:textField>
+                </a:box>
+            </a:formBody>
+        </a:queryForm>
+        <a:grid id="erpinv3110_quantities_result_grid" bindTarget="erpinv3110_quantities_result_ds" marginHeight="115" marginWidth="50" navBar="true" style="border:none" width="660">
+            <a:columns>
+                <a:column name="company_name" prompt="公司" width="100"/>
+                <a:column name="item" prompt="物品" width="120"/>
+                <a:column name="primary_uom_desc" prompt="主单位" width="60"/>
+                <a:column name="warehouse_type" prompt="库房" width="80"/>
+                <a:column name="business_partner" prompt="供应商/客户" width="100"/>
+                <a:column name="period_beginning_qty" align="right" prompt="期初数量" width="40"/>
+                <a:column name="period_receive_qty" align="right" prompt="本期接收" width="40"/>
+                <a:column name="period_issue_qty" align="right" prompt="本期发出" width="40"/>
+                <a:column name="period_balance_qty" align="right" prompt="本期结余" width="40"/>
+            </a:columns>
+        </a:grid>
+        <script><![CDATA[
+        	function erpinv3110_init(){
+        	    var record = $('erpinv3110_quantities_query_ds').getAt(0);
+        	    record.getField('partner_desc').setLovPara('enabled_flag','Y');
+                //record.getField('partner_desc').setLovService('erpinv.ERPINV3020.pur_customer_lov');
+        	}
+        	erpinv3110_init();
+        ]]></script>
+    </a:view>
+</a:screen>

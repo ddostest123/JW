@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lily  
+    $Date: 2013-1-21 下午06:50:56  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="release_date_desc DESC,display_po_number desc,display_release_num desc">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        h.pur_header_id,
+                        h.segment1,
+                        h.display_po_number,
+                        h.type_lookup_code,
+                        NVL(h.type_lookup_desc,h.erp_po_type_desc) type_lookup_desc,
+                        h.erp_status,
+                        DECODE(h.erp_status, 'OPEN', (DECODE(h.confirm_update_flag, 'Y', '有更新', 'N', '新订单')),
+                        (SELECT
+                            v.code_value_name
+                        FROM
+                            sys_code_values_v v
+                        WHERE
+                            v.code       = 'PUR_HEADER_ERP_STATUS' AND
+                            v.code_value = h.erp_status
+                        )) AS erp_status_desc,
+                        h.agent_id,
+                        h.agent_name,
+                        h.release_id,
+                        h.release_num,
+                        h.display_release_num,
+                        h.revision_num,
+                        h.company_id,
+                        h.company_name,
+                        DECODE(
+                        (SELECT
+                            fbc.contrast_code FROM fnd_bg_code_contrast fbc WHERE h.owner_business_group=fbc.business_group_code
+                        ),'JINKO',('合同号：'
+                        ||
+                        (SELECT
+                            pha.CONTRACT_NUM
+                        FROM
+                            pur_headers_all pha
+                        WHERE
+                            pha.pur_header_id = h.pur_header_id
+                        )
+                        ||chr(13)
+                        ||h.comments),h.comments) comments,
+                        h.currency_code,
+                        fnd_document_control_pkg.get_reality_value( p_rule_code => 'PRICE_SECRECY', p_role_id => ${/session/@role_id}, p_foundation_code => 'PUR_PO', p_document_id => h.pur_header_id, p_control_area => 'EXTERNAL', p_business_group => ${/session/@business_group}, p_value =>
+                        (SELECT
+                            SUM(DECODE(h.type_lookup_code,'BLANKET',(l.unit_price * pll.quantity), DECODE(l.quantity,0,(l.unit_price * pll.quantity),NULL,(l.unit_price * pll.quantity),NVL(TRUNC((pll.quantity/l.quantity)*l.NO_TAX_AMOUNT,2),(l.unit_price * pll.quantity)))))
+                        FROM
+                            pur_lines_all l,
+                            pur_line_locations_all pll
+                        WHERE
+                            l.pur_line_id            = pll.pur_line_id AND
+                            l.pur_header_id          = h.pur_header_id AND
+                            NVL(pll.cancel_flag,'N') = 'N'
+                        ) ) sum_amount,
+                        (SELECT
+                            SUM(l.original_unit_price * pll.quantity)
+                        FROM
+                            pur_lines_all l,
+                            pur_line_locations_all pll
+                        WHERE
+                            l.pur_line_id             = pll.pur_line_id AND
+                            l.pur_header_id           = h.pur_header_id AND
+                            NVL(pll.cancel_flag, 'N') = 'N'
+                        ) tax_sum_amount,
+                        TO_CHAR(NVL(h.erp_creation_date,h.creation_date), 'yyyy-mm-dd hh24:mi') AS creation_date_desc,
+                        NVL(h.erp_creation_date,h.creation_date) AS creation_date,
+                        NVL(h.ship_to_location_name,h.ship_to_location_address) ship_to_location_name,
+                        h.bill_to_location_code,
+                        h.bill_to_location_name,
+                        h.vendor_site_id,
+                        h.vendor_site_name,
+                        h.release_date,
+                        TO_CHAR(h.release_date, 'yyyy-mm-dd hh24:mi') AS release_date_desc,
+                        TO_CHAR(h.reply_date, 'yyyy-mm-dd hh24:mi') AS reply_date_desc,
+                        h.reply_date,
+                        h.data_source,
+                        h.vendor_id,
+                        h.owner_business_group,
+                        h.owner_company_id,
+                        pvv.coop_business_group,
+                        pvv.coop_company_id ,
+                        h.vendor_name,
+                        (SELECT
+                            iov.description
+                        FROM
+                            inv_organizations_vl iov,
+                            pur_line_locations_all pll
+                        WHERE
+                            iov.inv_organization_id = pll.ship_to_organization_id AND
+                            pll.pur_header_id       = h.pur_header_id AND
+                            rownum                  = 1
+                        ) ship_to_organization_name,
+                        h.urgent_status,
+                        (SELECT
+                            code_value_name
+                        FROM
+                            sys_code_values_v sc
+                        WHERE
+                            sc.code_value = h.urgent_status AND
+                            sc.code       = 'PUR_PO_URGENT_STATUS'
+                        ) urgent_status_desc,
+                        TO_CHAR(h.urgent_date,'yyyy-mm-dd hh24:mi') urgent_date_desc,
+                        h.urgent_date,
+                        h.business_unit_id,
+                        bu.business_unit_name,
+                        h.pur_organization_id,
+                        (SELECT
+                            pov.description
+                        FROM
+                            pur_organizations_vl pov
+                        WHERE
+                            pov.pur_organization_id = h.pur_organization_id
+                        ) pur_organization_name,
+                        NULL useless_id_1,
+                        NULL useless_id_3,
+                        NULL useless_id_4,
+                        NULL useless_id_5,
+                        NULL useless_id_6,
+                        NULL useless_id_7,
+                        NULL useless_id_8,
+                        NULL useless_id_9,
+                        NULL useless_id_10,
+                        NULL useless_id_11,
+                        h.confirm_update_flag
+                    FROM
+                        pur_headers_all_v h,
+                        fnd_business_units_vl bu,
+                        pur_po_relation_vendors prv,
+                        pur_po_rlt_vendor_auth pva,
+                        pur_vendors_v pvv
+                    WHERE
+                        1                  = 1 AND
+                        h.business_unit_id = bu.business_unit_id(+) AND
+                        h.srm_status       = 'RELEASED' AND
+                        h.confirm_flag     = 'N' AND
+                        h.last_version     = 'Y' AND
+                        h.closed_code      = 'OPEN' AND
+                        (
+                            (
+                                h.comments     IS NOT NULL AND
+                                h.comments NOT IN ('体外诊断试剂申领','SIMS')
+                            )
+                            OR
+                            h.comments IS NULL
+                        )
+                        AND
+                        pvv.coop_business_group = ${/session/@business_group} AND
+                        pvv.vendor_id           = prv.vendor_id AND
+                        prv.po_rltion_vendor_id = pva.po_rltion_vendor_id AND
+                        pva.document_type       = 'PO' AND
+                        pva.query_flag          = 'Y' AND
+                        h.pur_header_id         = prv.pur_header_id AND
+                        (
+                            h.release_rule_code  = 'ALL' OR
+                            h.release_rule_code  = 'VENDOR' OR
+                            h.release_rule_code  = 'INVALID' OR
+                            h.release_rule_code IS NULL
+                        )
+                    ) v #AUTHORIY_FROM# #WHERE_CLAUSE# #AUTHORIY_WHERE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="pur_header_id" queryExpression="v.pur_header_id = ${@pur_header_id}"/>
+        <bm:query-field name="display_po_number" queryExpression="display_po_number like &apos;%&apos;||trim(${@display_po_number})||&apos;%&apos;"/>
+        <bm:query-field name="comments" queryExpression="comments like &apos;%&apos;||trim(${@comments})||&apos;%&apos;"/>
+        <bm:query-field name="company_id" queryExpression="v.company_id = ${@company_id}"/>
+        <bm:query-field name="type_lookup_code" queryExpression="v.type_lookup_code = ${@type_lookup_code}"/>
+        <bm:query-field name="type_lookup_desc" queryExpression="type_lookup_desc like &apos;%&apos;||trim(${@type_lookup_desc})||&apos;%&apos;"/>
+        <bm:query-field name="display_release_num" queryExpression="v.display_release_num = ${@display_release_num}"/>
+        <bm:query-field name="release_date_begin" queryExpression="v.release_date &gt;= to_date(${@release_date_begin},&apos;YYYY-MM-DD&apos;)"/>
+        <bm:query-field name="release_date_end" queryExpression="v.release_date &lt;= to_date(${@release_date_end},&apos;YYYY-MM-DD&apos;)+1"/>
+        <bm:query-field name="reply_date_from" queryExpression="v.reply_date &gt;= to_date(${@reply_date_from},&apos;YYYY-MM-DD&apos;)"/>
+        <bm:query-field name="reply_date_to" queryExpression="v.reply_date &lt;= to_date(${@reply_date_to},&apos;YYYY-MM-DD&apos;)+1"/>
+        <bm:query-field name="urgent_status" queryExpression="v.urgent_status = ${@urgent_status}"/>
+        <bm:query-field name="urgent_date_from" queryExpression="v.urgent_date &gt;= to_date(${@urgent_date_from},&apos;YYYY-MM-DD hh24:mi:ss&apos;)"/>
+        <bm:query-field name="urgent_date_to" queryExpression="v.urgent_date &lt;= to_date(${@urgent_date_to},&apos;YYYY-MM-DD hh24:mi:ss&apos;)"/>
+        <bm:query-field name="erp_status" queryExpression="erp_status = ${@erp_status}"/>
+        <bm:query-field name="business_unit_id" queryExpression="business_unit_id = ${@business_unit_id}"/>
+        <bm:query-field name="vendor_site_id" queryExpression="vendor_site_id = ${@vendor_site_id}"/>
+        <bm:query-field name="seven_day_orders_flag" queryExpression="(${@seven_day_orders_flag}=&apos;Y&apos; and v.creation_date &gt;= (sysdate-7) or ${@seven_day_orders_flag}=&apos;N&apos; )"/>
+        <bm:query-field name="agent_name" queryExpression="agent_name like &apos;%&apos;||trim(${@agent_name})||&apos;%&apos;"/>
+        <bm:query-field name="show_new_order_flag" queryExpression="(${@show_new_order_flag} = &apos;Y&apos; and v.confirm_update_flag = &apos;N&apos; or ${@show_new_order_flag} = &apos;N&apos; )"/>
+        <bm:query-field name="creation_date_from" queryExpression="v.creation_date &gt;= to_date(${@creation_date_from},&apos;YYYY-MM-DD&apos;)"/>
+        <bm:query-field name="creation_date_to" queryExpression="v.creation_date &lt;= to_date(${@creation_date_to},&apos;YYYY-MM-DD&apos;)"/>
+        <bm:query-field name="is_pur_type" queryExpression="((${@is_pur_type} = &apos;Y&apos; and exists(select 1 from pur_line_locations_all pla where pla.c_attribute4 is not null and pla.pur_header_id = v.pur_header_id)) or (${@is_pur_type} = &apos;N&apos; ))"/>
+        <bm:query-field name="category_name" queryExpression=" v.pur_header_id in(select pla.pur_header_id FROM pur_lines_all pla where pla.item_id in ( select mci.item_id FROM mtl_category_classify_items mci where mci.category_udf_id in (select mdv.category_udf_id from mtl_categories_user_defined_vl mdv where mdv.category_name like &apos;%&apos;||trim(${@category_name})||&apos;%&apos;)))"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="1=1"/>
+    </bm:data-filters>
+    <authority foundation_code="PUR_PO">
+        <authority-segment source_alias="v" source_name="useless_id_1" type="CREATER"/>
+        <authority-segment source_alias="v" source_name="coop_company_id" type="COMPANY"/>
+        <authority-segment source_alias="v" source_name="useless_id_3" type="RECEIVER"/>
+        <authority-segment source_alias="v" source_name="useless_id_4" type="BUSINESS_UNIT"/>
+        <authority-segment source_alias="v" source_name="useless_id_5" type="PUR_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id_6" type="INV_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id_7" type="SD_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id_8" type="VENDOR"/>
+        <authority-segment source_alias="v" source_name="owner_company_id" type="CLIENT"/>
+        <authority-segment source_alias="v" source_name="useless_id_10" type="PURHASE_MATERIAL"/>
+        <authority-segment source_alias="v" source_name="useless_id_11" type="SALES_PRODUCTION"/>
+        <authority-segment source_alias="v" source_name="useless_id_4" type="CLIENT_SITE"/>
+        <authority-segment source_alias="v" source_name="useless_id_6" type="VENDOR_SITE"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+        	var cx = Packages.aurora.javascript.Context.getCurrentContext();
+			Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+        	Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

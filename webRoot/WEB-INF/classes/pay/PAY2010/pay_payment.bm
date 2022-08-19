@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: weiqinglong  
+    $Date: 2017-1-11 下午6:04:40  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+				select *
+				  from (select g.business_group_code business_group,
+				               f.description_text business_group_name,
+				               p.payment_id,
+				               to_char(g.creation_date, 'yyyy-mm-dd') creation_date,
+				               to_char(pay_payment_pkg.get_charge_date(p.business_group),
+				                       'yyyy-mm-dd') charge_date,
+				               pay_payment_pkg.get_probation(p.business_group) probation,
+				               p.valid_until valid_until1,
+				               to_char(p.valid_until, 'yyyy-mm-dd') valid_until,
+				               (case
+				                 when p.business_group is null then
+				                  'N'
+				                 else
+				                  'Y'
+				               end) payed_flag,
+				               (select listagg(core_code_name, ',') within group(order by business_group_code)
+				                  from (select fg.business_group_code || '-' ||
+				                               fg.business_group_name core_code_name,
+				                               fg.business_group_code
+				                          from fnd_bg_code_contrast     fg,
+				                               fnd_cooperative_partners fp
+				                         where fp.owner_business_group =
+				                               fg.business_group_code
+				                           and fp.enabled_flag = 'Y'
+				                           and fp.coop_business_group = g.business_group_code
+				                        union
+				                        select c.business_group_code || '-' ||
+				                               c.business_group_name core_code_name,
+				                               c.business_group_code
+				                          from fnd_bg_code_contrast c
+				                         where c.business_group_code = g.business_group_code)) core_code_name
+				          from pay_payment_information p,
+				               fnd_business_groups     g,
+				               fnd_descriptions        f
+				         where p.business_group(+) = g.business_group_code
+				           and g.business_group_name_id = f.description_id
+				           and f.language(+) = userenv('LANG')
+				           and f.ref_table(+) = 'FND_BUSINESS_GROUPS'
+				           and f.ref_field(+) = 'BUSINESS_GROUP_NAME_ID') v
+				#WHERE_CLAUSE#
+				#ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:update-sql><![CDATA[
+                begin
+                    pay_payment_pkg.pay(p_business_group => ${@business_group},
+                                        p_package_id     => ${@package_id},
+                                        p_password       => ${@password},
+                                        p_user_id        => ${/session/@user_id});
+                end;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="business_group" queryExpression="business_group like &apos;%&apos;||${@business_group}||&apos;%&apos;"/>
+        <bm:query-field name="business_group_name" queryExpression="business_group_name like &apos;%&apos;||${@business_group_name}||&apos;%&apos;"/>
+        <bm:query-field name="valid_until_from" queryExpression="to_char(nvl(valid_until1, sysdate - 1), &apos;yyyy-mm-dd&apos;) &gt;= ${@valid_until_from}"/>
+        <bm:query-field name="valid_until_to" queryExpression="to_char(nvl(valid_until1, sysdate - 1), &apos;yyyy-mm-dd&apos;)  &lt;= ${@valid_until_to}"/>
+        <bm:query-field name="core_code_name" queryExpression="core_code_name like &apos;%&apos;||${@core_code_name}||&apos;%&apos;"/>
+        <bm:query-field name="payed_flag" queryExpression="payed_flag = ${@payed_flag}"/>
+    </bm:query-fields>
+</bm:model>

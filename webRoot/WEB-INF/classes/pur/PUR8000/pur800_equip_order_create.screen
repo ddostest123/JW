@@ -1,0 +1,360 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;FND_QUOTE_EQUIT_TYPE&apos; " fetchAll="true" model="public.fnd_flex_value_v_lov" rootPath="pur8000_equit_order_type"/>
+        <a:model-query defaultWhereClause="user_id=${/session/@user_id}" model="pur.PUR8000.pur8000_user_name_lov" rootPath="PUR8000_user_name"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="PUR8000_equit_delete_link" model="pur.PUR8000.equip_headers" modelaction="delete"/>
+        <a:link id="pur8000_equit_release_link" model="pur.PUR8000.equip_headers" modelaction="execute"/>
+        <!-- <a:link id="PUR8000_line_delete_link" url="${/request/@context_path}/modules/pur/PUR8000/pur8000_equip_order_save.svc" />  -->
+        <script><![CDATA[
+            function PUR8000_edit_return() {
+                $('pur8000_equip_order_create_win').close();
+            }
+            
+            function PUR8000_release_return() {
+                $('pur8000_equip_order_create_win').close();
+            }
+            
+             function pur8000_maskWindow() {
+                if ($('pur8000_equip_order_create_win')) {
+                    Aurora.Masker.mask($('pur8000_equip_order_create_win').wrap, '...');
+                } else {
+                    Aurora.Masker.mask(Ext.getBody(), '..');
+                }
+            }
+            
+            function pur8000_unmaskWindow() {
+                if ($('pur8000_equip_order_create_win')) {
+                    Aurora.Masker.unmask($('pur8000_equip_order_create_win').wrap);
+                } else {
+                    Aurora.Masker.unmask(Ext.getBody());
+                }
+            }
+            //保存
+            
+            function PUR8000_edit_save() {
+                 debugger;
+                var header_record = $('PUR8000_equit_headers_ds').getAt(0);
+                var line_records = $('PUR8000_equit_lines_ds').getAll();
+                var req_header_id = header_record.get('req_header_id');
+                
+                if (line_records.length == 0) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '请添加需要询价的供应商');
+                    return '';
+                }
+                
+                if (!$('PUR8000_equit_headers_ds').validate()) {
+                    Aurora.showInfoMessage('${l:PROMPT}', '信息填写有误，请检查之后再保存！');
+                    return;
+                } else {
+                    if (req_header_id == '' || req_header_id == null || req_header_id == 'undefined') {
+                        header_record.isNew = 'true';
+                    }
+                    
+                     var los = [];
+                    for (var i = 0;i < line_records.length;i++) {
+                            var llo = {}; 
+                            var req_line_id = line_records[i].get('req_line_id'); 
+                            if(req_line_id == '' ||req_line_id == null || req_line_id == 'undefined' ){
+                            llo['supplier_company_id'] = line_records[i].get('supplier_company_id');
+                            llo['_status'] = 'insert';
+                            llo['line_number'] = i+1;
+                            los.push(llo);
+                            }else{
+                              llo['req_header_id'] = line_records[i].get('req_header_id');  
+                              llo['req_line_id'] = line_records[i].get('req_line_id');  
+                              llo['supplier_company_id'] = line_records[i].get('supplier_company_id');
+                              llo['line_number'] = i+1;
+                              llo['_status'] = 'update';
+                              los.push(llo);  
+                            }
+                    }
+                    header_record.data['lines'] = los;
+                  //  $('PUR8000_equit_headers_ds').submit();
+                     Aurora.Masker.mask(Ext.getBody());
+                    $('PUR8000_equit_headers_ds').submit();
+                    Aurora.Masker.unmask(Ext.getBody());
+                   
+                }  
+            }
+            
+            //发布
+            
+            function PUR8000_edit_release() {
+              var record = $('PUR8000_equit_headers_ds').getAt(0);
+              var req_header_id = record.get('req_header_id');
+               Aurora.showConfirm('${l:PROMPT}', '是否按订单发布？', function() {
+                    if (req_header_id == null || req_header_id == 'undefined' || req_header_id == '') {
+                         Aurora.showMessage('${l:PROMPT}', '请先保存设备询价单', null);
+                    } else {
+                       var lines_rerord = $('PUR8000_equit_lines_ds').getAll() ;
+                      //   Aurora.Masker.mask(Ext.getBody(), '${l:LOADING}');
+                         Aurora.request({
+                            url: $('pur8000_equit_release_link').getUrl(),
+                            para: {
+                                "req_header_id": req_header_id
+                            },
+                            success: function(res) {
+                                Aurora.showMessage('${l:PROMPT}', '发布成功！', null);
+                                PUR8000_edit_return();
+                            },
+                            scope: this
+                        });
+                    }
+                });
+            }
+            
+            //删除
+            function PUR8000_edit_delete() {
+                var record = $('PUR8000_equit_headers_ds').getAt(0);
+                var req_header_id = record.get('req_header_id');
+                Aurora.showConfirm('${l:PROMPT}', '是否删除设备询价单？', function() {
+                    if (req_header_id == null || req_header_id == 'undefined' || req_header_id == '') {
+                        PUR8000_edit_return();
+                    } else {
+                        
+                       var lines_rerord = $('PUR8000_equit_lines_ds').getAll() ;
+                       for (var i = 0 ; i< lines_rerord.length;i++){
+                          if(lines_rerord[i].get('line_status') != 'NEW'){
+                              Aurora.showMessage('${l:PROMPT}', '行记录存在不是新建的状态的询价单，无法删除', null);
+                              return '';
+                          }
+                       }
+                       //  Aurora.Masker.mask(Ext.getBody(), '${l:LOADING}');
+                         Aurora.request({
+                            url: $('PUR8000_equit_delete_link').getUrl(),
+                            para: {
+                                "req_header_id": req_header_id
+                            },
+                            success: function(res) {
+                               Aurora.showMessage('${l:PROMPT}', '删除成功！', null);
+                           //    Aurora.Masker.unmask($('pur8000_equip_order_create_win').wrap);
+                               PUR8000_edit_return();
+                            },
+                            scope: this
+                        });
+                     //   Aurora.Masker.unmask($('pur8000_equip_order_create_win').wrap);
+                    }
+                });
+            }
+             
+            function PUR8000_on_equit_headers_ds_loadFun(dataSet, res){
+                /* var myDate = new Date();
+                var time=Ext.Date.format(curDate, 'Y-m-d');
+                dataSet.setValue('quote_end_date',time); */
+            }
+             
+            function PUR8000_on_equit_headers_ds_submitsuccessFun(dataSet, res) {
+                var req_header_id = dataSet.getAt(0).get('req_header_id');
+                if (req_header_id == '' || req_header_id == '' || req_header_id == 'undefined') {
+                    req_header_id = res.result.record.req_header_id;
+                }
+                 Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SAVE_SUCCESS}', null);
+                $('PUR8000_equit_headers_ds').setQueryParameter('req_header_id', req_header_id);
+                $('PUR8000_equit_headers_ds').query();
+            }
+            
+            function init_status_fun(){
+                var req_header_id = '${/parameter/@req_header_id}';
+                var header_status = '${/parameter/@header_status}';
+                if(header_status == null || header_status == 'undefined' || header_status == ''||header_status == 'NEW') {
+                   return ''; 
+                }
+                 
+                 $('list_grid_add').disable(); 
+                 $('list_grid_del').disable(); 
+                 $('PUR8000_edit_save_id').disable();
+                 $('PUR8000_edit_release_id').disable();
+                 $('PUR8000_edit_delete').disable();
+                var header_record = $('PUR8000_equit_headers_ds').getAt(0);
+                header_record.getMeta().getField('business_unit_name').setReadOnly(true);
+                header_record.getMeta().getField('use_sqe').setReadOnly(true);
+                header_record.getMeta().getField('request_qty').setReadOnly(true);
+                header_record.getMeta().getField('quote_end_date').setReadOnly(true);
+                header_record.getMeta().getField('equipment_spic').setReadOnly(true);
+                header_record.getMeta().getField('need_by_date').setReadOnly(true);
+                header_record.getMeta().getField('deliver_address').setReadOnly(true);
+                header_record.getMeta().getField('technique_contact').setReadOnly(true);
+                header_record.getMeta().getField('equipment_name').setReadOnly(true);
+                header_record.getMeta().getField('request_number').setReadOnly(true);
+            }
+          
+          
+          function pur8010_vendor_suvey_fun(value, record, name) {
+                 var header_status = '${/parameter/@header_status}';
+                if(header_status == null || header_status == 'undefined' || header_status == ''||header_status == 'NEW') {
+                   return 'pur8010_vendor_suvey_headers_lov';
+                } 
+            }
+          
+          function list_del_btn(){
+              var lines_rerord = $('PUR8000_equit_lines_ds') ;
+              var records =$('PUR8000_equit_lines_ds').getSelected(); 
+              var datas = [];
+              var req_line_id ;
+              var line_status;
+              var header_record = {};
+                for (var i = 0;i < records.length;i++) {
+                    req_line_id = records[i].get('req_line_id');
+                    line_status = records[i].get('line_status');
+                    if(req_line_id != null || req_line_id != 'undefined' || req_line_id != '' || req_line_id != 'NEW')
+                     { 
+                      if(line_status != 'NEW'){
+                         Aurora.showMessage('${l:PROMPT}', '所选择的行信息中，不是新建状态不允许删除!');
+                         return '';
+                       }
+                       records[i].set("_status",'delete');  
+                       datas.push(records[i].data);
+                       
+                    }
+                }
+                
+                header_record['lines'] = datas;
+                Aurora.showConfirm('${l:PROMPT}', '是否删除行记录？', function() {
+                    Aurora.Masker.mask(Ext.getBody(), '${l:LOADING}');
+                    Aurora.request({
+                        url: $('pur8000_equip_batch_line_link').getUrl(),
+                        para: header_record,
+                        success: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            Aurora.showMessage('${l:PROMPT}', '删除成功!');
+                            lines_rerord.remove(records);
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            return;
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            return;
+                        }
+                    });
+                });
+          }  
+              
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="pur8000_equit_order_type_ds">
+                <a:datas dataSource="pur8000_equit_order_type"/>
+            </a:dataSet>
+            <a:dataSet id="pur8000_user_name_ds">
+                <a:datas dataSource="PUR8000_user_name"/>
+            </a:dataSet>
+            <a:dataSet id="PUR8000_equit_headers_ds" autoCreate="true" loadData="true" model="pur.PUR8000.equip_headers" queryUrl="${/request/@context_path}/autocrud/pur.PUR8000.equip_headers/query?req_header_id=${/parameter/@req_header_id}" submitUrl="${/request/@context_path}/modules/pur/PUR8000/pur8000_equip_order_save.svc">
+                <a:fields>
+                    <a:field name="_status"/>
+                    <a:field name="header_status" defaultValue="NEW"/>
+                    <a:field name="header_status_desc" displayField="flex_desc" options="pur8000_equit_order_type_ds" returnField="header_status" valueField="flex_value"/>
+                    <a:field name="req_header_id"/>
+                    <a:field name="order_number" readOnly="true"/>
+                    <a:field name="create_id" defaultValue="${/session/@user_id}"/>
+                    <a:field name="request_number" autoComplete="true" lovHeight="480" lovService="pur.PUR8000.pur8000_requet_number_lov" lovWidth="500" required="true" requiredMessage="请选择设备工程采购申请单号" title="设备工程采购申请单号选择">
+                        <a:mapping>
+                            <a:map from="eq_application_number" to="request_number"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="created_by_desc" displayField="login_name" options="pur8000_user_name_ds" returnField="create_id" valueField="user_id"/>
+                    <a:field name="creation_date"/>
+                    <a:field name="equipment_name" required="true"/>
+                    <a:field name="business_unit_id"/>
+                    <a:field name="business_unit_name" autoComplete="true" autoCompleteField="business_unit_name" lovGridHeight="360" lovHeight="500" lovService="pur.PUR8000.pur8000_business_unit_lov" lovWidth="500" required="true" title="事业部">
+                        <a:mapping>
+                            <a:map from="business_unit_id" to="business_unit_id"/>
+                            <a:map from="business_unit_name" to="business_unit_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="use_sqe" required="true"/>
+                    <a:field name="request_qty" datatype="java.Long.Integer" required="true"/>
+                    <a:field name="quote_end_date" required="true"/>
+                    <a:field name="equipment_spic" required="true"/>
+                    <a:field name="need_by_date" required="true"/>
+                    <a:field name="deliver_address" required="true"/>
+                    <a:field name="technique_contact" required="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="PUR8000_on_equit_headers_ds_loadFun"/>
+                    <!-- <a:event name="update" handler="PUR8000_on_equit_headers_ds_updateFun"/> -->
+                    <a:event name="submitsuccess" handler="PUR8000_on_equit_headers_ds_submitsuccessFun"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="PUR8000_equit_lines_ds" autoQuery="true" model="pur.PUR8000.equip_lines" pageSize="15" queryUrl="${/request/@context_path}/autocrud/pur.PUR8000.equip_lines/query?req_header_id=${/parameter/@req_header_id}" selectable="true">
+                <a:fields>
+                    <a:field name="_status"/>
+                    <a:field name="req_header_id" datatype="java.lang.Integer"/>
+                    <a:field name="req_line_id" datatype="java.lang.Integer"/>
+                    <a:field name="supplier_company_id" datatype="java.lang.Integer"/>
+                    <a:field name="vendor_code" autoComplete="true" autoCompleteField="vendor_code" lovGridHeight="360" lovHeight="500" lovService="pur.PUR8000.pur8000_line_vendor_lov" lovWidth="500" required="true" title="PUR5170.VENDOR_QUERY">
+                        <a:mapping>
+                            <a:map from="coop_company_id" to="supplier_company_id"/>
+                            <a:map from="vendor_code" to="vendor_code"/>
+                            <a:map from="vendor_name" to="vendor_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="vendor_name"/>
+                    <a:field name="line_status_desc"/>
+                    <a:field name="join_flg"/>
+                    <a:field name="quote_date"/>
+                    <a:field name="delivery_date"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton id="PUR8000_edit_save_id" click="PUR8000_edit_save" text="PROMPT.SAVE" width="100"/>
+                <a:toolbarButton id="PUR8000_edit_release_id" click="PUR8000_edit_release" text="PROMPT.RELEASE" width="100"/>
+                <a:toolbarButton id="PUR8000_edit_delete" click="PUR8000_edit_delete" text="PROMPT.DELETE" width="100"/>
+                <a:toolbarButton click="PUR8000_edit_return" text="HAP_BACK" width="100"/>
+                <a:label hidden="true" width="100"/>
+                <a:label name="comments" bindTarget="PUR8000_comments_ds" prompt="PUR8000.COMMENTS" style="color:red" width="300"/>
+            </a:screenTopToolbar>
+            <a:fieldSet marginWidth="30" style="margin-top:5px;margin-left:2px;" title="基本信息">
+                <a:hBox labelWidth="120">
+                    <a:textField name="order_number" bindTarget="PUR8000_equit_headers_ds" prompt="询价单编号" readOnly="true"/>
+                    <a:textField name="header_status_desc" bindTarget="PUR8000_equit_headers_ds" prompt="状态" readOnly="true"/>
+                    <a:textField name="created_by_desc" bindTarget="PUR8000_equit_headers_ds" prompt="询价发起人" readOnly="true"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:lov name="business_unit_name" bindTarget="PUR8000_equit_headers_ds" prompt="事业部"/>
+                    <a:textField name="equipment_name" bindTarget="PUR8000_equit_headers_ds" prompt="设备名称"/>
+                    <a:lov name="request_number" bindTarget="PUR8000_equit_headers_ds" prompt="设备采购申请单号"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:textField name="use_sqe" bindTarget="PUR8000_equit_headers_ds" prompt="使用工序"/>
+                    <a:textField name="request_qty" allowDecimals="true" allowNegative="false" bindTarget="PUR8000_equit_headers_ds" prompt="需求数量" renderer="Aurora.formatNumber"/>
+                    <a:dateTimePicker name="quote_end_date" bindTarget="PUR8000_equit_headers_ds" prompt="报价截止时间"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:textArea name="equipment_spic" bindTarget="PUR8000_equit_headers_ds" height="20" prompt="设备规格要求" width="702"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:dateTimePicker name="need_by_date" bindTarget="PUR8000_equit_headers_ds" prompt="要求交货时间"/>
+                    <a:textField name="deliver_address" bindTarget="PUR8000_equit_headers_ds" prompt="要求交货地点"/>
+                    <a:textField name="technique_contact" bindTarget="PUR8000_equit_headers_ds" prompt="技术负责人联系方式"/>
+                </a:hBox>
+            </a:fieldSet>
+            <a:grid id="PUR8000_vendor_list_grid" bindTarget="PUR8000_equit_lines_ds" height="400" marginWidth="30" style="margin-top:5px;margin-left:2px;">
+                <a:toolBar>
+                    <!--  <a:gridButton id="PUR8000_addbtn" bind="PUR8000_vendor_list_grid"  type="add"  /> -->
+                    <a:button id="list_grid_add" bindTarget="PUR8000_vendor_list_grid" type="add"/>
+                    <a:button id="list_grid_del" bindTarget="PUR8000_vendor_list_grid" click="list_del_btn" text="删除"/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="vendor_code" align="center" editorFunction="pur8010_vendor_suvey_fun" prompt="供应商代码" width="60"/>
+                    <a:column name="vendor_name" align="center" prompt="供应商名称" width="100"/>
+                    <a:column name="line_status_desc" align="center" prompt="行状态" width="100"/>
+                    <a:column name="join_flg" align="center" prompt="是否参与" width="100"/>
+                    <a:column name="quote_date" align="center" prompt="报价时间" width="100"/>
+                    <a:column name="delivery_date" align="center" prompt="设备交期" width="100"/>
+                </a:columns>
+                <a:editors>
+                    <a:lov id="pur8010_vendor_suvey_headers_lov"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+        <script><![CDATA[
+           init_status_fun();
+        ]]></script>
+    </a:view>
+</a:screen>

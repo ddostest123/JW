@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[SELECT new_node_id,TYPE,
+       user_id,
+       approval_person
+  FROM (SELECT v.*,
+               ceil(rownum / nvl(${@page_size},
+                                 5)) AS page_num
+          FROM (SELECT *from (SELECT 'COMPANY' TYPE,
+       s.company_id user_id,
+       s.company_full_name approval_person,
+       null new_node_id
+  FROM fnd_companies_simplified_vl s,
+       fnd_companies               f
+ WHERE s.business_group = ${/session/@business_group}
+       AND f.enabled_flag = 'Y'
+       AND s.company_id = f.company_id
+       AND (${@user_id} IS NULL  )
+       AND EXISTS (SELECT 1
+          FROM cux_wfl_node_approval   cw,
+               hrm_employee_user_v     heu,
+               hrm_employee_position_v hep
+         WHERE cw.record_id = ${@record_id}
+               AND cw.employee_id = heu.user_id
+               AND heu.employee_id = hep.employee_id
+               AND hep.company_id = s.company_id
+               AND hep.assign_enabled_flag = 'Y'
+               AND hep.employee_enabled_flag = 'Y')
+UNION ALL
+SELECT 'UNIT' TYPE,
+       hu.unit_id,
+       hu.unit_desc,
+       null new_node_id
+  FROM hrm_units_vl hu
+ WHERE hu.business_group = ${/session/@business_group}
+       AND hu.enabled_flag = 'Y'
+       AND ((hu.company_id = ${@user_id} AND 'COMPANY' = ${@type}  and hu.parent_unit_id is null) OR
+       (hu.parent_unit_id = ${@user_id} AND 'UNIT' = ${@type}) )
+       AND EXISTS (SELECT 1
+          FROM cux_wfl_node_approval   cw,
+               hrm_employee_user_v     heu,
+               hrm_employee_position_v hep
+         WHERE cw.record_id = ${@record_id}
+               AND cw.employee_id = heu.user_id
+               AND heu.employee_id = hep.employee_id
+               AND hep.unit_id = hu.unit_id
+               AND hep.assign_enabled_flag = 'Y'
+               AND hep.employee_enabled_flag = 'Y')
+UNION ALL
+SELECT 'USER',
+       a.user_id,
+       nvl(heu.name,
+           a.description) || '(' || a.user_name || ')' AS approval_person,
+       cw.new_node_id
+  FROM cux_wfl_node_approval   cw,
+       sys_user                a,
+       hrm_employee_user_v     heu,
+       hrm_employee_position_v hep
+ WHERE cw.record_id = ${@record_id}
+       and cw.employee_id = a.user_id
+       and a.user_id = heu.user_id(+)
+       AND heu.employee_id = hep.employee_id(+)
+       AND hep.employee_enabled_flag(+) = 'Y'
+       AND hep.assign_enabled_flag(+) = 'Y'
+       AND a.business_group = ${/session/@business_group}
+       AND ((hep.unit_id = ${@user_id} AND 'UNIT' = ${@type}) or ${@name_code} is not null)
+        GROUP BY a.user_id,
+          nvl(heu.name,
+              a.description),
+          a.user_name ,
+          new_node_id)
+                 #WHERE_CLAUSE#
+                 ORDER BY TYPE,approval_person) v )
+ WHERE ((${@page_num} IS NOT NULL AND ${@page_num} = page_num) OR (${@page_num} IS NULL AND 1 = 1))
+]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter name="page_size"/>
+                <bm:parameter name="record_id"/>
+                <bm:parameter name="page_num"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="name_code" queryExpression="approval_person like &apos;%&apos;||trim(${@name_code})||&apos;%&apos;   and type = &apos;USER&apos;"/>
+    </bm:query-fields>
+</bm:model>

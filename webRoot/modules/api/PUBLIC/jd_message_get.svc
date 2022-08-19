@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+	$Author: zhouweijia 
+    $Date: 2017/9/26
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:service xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="a.api_code=&apos;PRODUCT_SELL_PRICE&apos;" fetchAll="true" model="api.PUBLIC.jd_sku_method" rootPath="mes"/>
+        <s:server-script import="request.js"><![CDATA[
+            var record = $ctx.model.getChild('mes').getChildren()[0];
+            var v_str = record.url + record.app_key + record.access_token + record.timestamp;
+            var g_message = '&format=json&v=1.0&method=biz.message.get'; //消息获取
+            var d_message = '&format=json&v=1.0&method=biz.message.del'; //消息删除
+            var gm_str = v_str + g_message;
+            var dm_str = v_str + d_message;
+            //消息获取参数
+            var g_pre_str = '&param_json={';
+            var g_last_str = '};';
+            var g_mid_str = '"type":"1,25,10,14,15,50"'; //业务参数
+            var g_api_url = gm_str + g_pre_str + g_mid_str + g_last_str; //消息请求URL
+            
+            function loadMssage() {
+                request({
+                    url: g_api_url,
+                    //消息获取请求
+                    //para: para,
+                    success: function(args) {
+                            var result = args.biz_message_get_response.result;
+                            if (result != null) {
+                                $ctx.parameter.message = 'Y'; //有新消息
+                                for (i = 0;i < result.length;i++) {
+                                    var res = {
+                                        'id': result[i].id,
+                                        'result': JSON.stringify(result[i].result),
+                                        'time': result[i].time,
+                                        'type': result[i].type
+                                    };
+                                    $bm('api.PUBLIC.jd_message').insert(res);
+                                    if (result[i].type == 1) { // 更新订单状态为已支付
+                                        res_order = {
+                                            'jd_order_id': result[i].result.pOrder,
+                                            'order_status': 'PAID'
+                                        };
+                                        $bm('GoingBuy.JD.jd_order_headers_save').update(res_order);
+                                    }
+                                    var d_pre_str = '&param_json={';
+                                    var d_last_str = '};';
+                                    var d_mid_str = '"id":' + result[i].id; //业务参数
+                                    var d_api_url = dm_str + d_pre_str + d_mid_str + d_last_str; //消息删除URL
+            
+                                    request({
+                                        url: d_api_url,
+                                        success: function(args) {
+                                            if (args.biz_message_del_response.success == true) {
+                                                var response = args.biz_message_del_response;
+                                            } else {
+                                                raise_app_error(args.biz_message_del_response.resultMessage);
+                                            }
+                                        },
+                                        failure: function(args) {
+                                            raise_app_error(args.error.message);
+                                            }
+                                    });
+                                }
+                                if (result.length == 100) {
+                                    loadMssage();
+                                    }
+                            } else {
+                                $ctx.parameter.message = 'N';
+                                } //没有新消息
+                    },
+                    failure: function(args) {
+                        raise_app_error(args.error.message);
+                    }
+                });
+            }
+            loadMssage();
+        ]]></s:server-script>
+        <p:echo/>
+    </a:init-procedure>
+    <a:service-output output="/parameter/"/>
+</a:service>

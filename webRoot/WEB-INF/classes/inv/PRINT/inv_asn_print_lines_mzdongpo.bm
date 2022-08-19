@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao  
+    $Date: 2015-04-03 下午04:38:31  
+    $Revision: 1.0  
+    $Purpose: 送货单打印，送货单行信息查询BM
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="l.segment1 asc,l.line_num asc,l.shipment_num asc">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT v.*,rownum AS line_sequence,
+                	round(v.tax_unit_price * v.ship_quantity,5) tax_total_amount,
+                	round(v.tax_unit_price * v.ship_quantity / (1 + tax_rate/100),5) no_tax_amount,
+                	round(v.tax_unit_price * v.ship_quantity / (1 + tax_rate/100) * (tax_rate/100) ,5) tax_amount
+				  FROM (SELECT 
+				               (SELECT nvl(ph.display_po_number,
+				                           ph.segment1)
+				                  FROM pur_line_locations_all pll,
+				                       pur_headers_all_v      ph
+				                 WHERE pll.pur_header_id = ph.pur_header_id
+				                       AND pll.pur_line_location_id = l.line_location_id) AS segment,
+				                (SELECT nvl(ph.display_release_num,'')
+				                  FROM pur_line_locations_all pll,
+				                       pur_headers_all_v      ph
+				                 WHERE pll.pur_header_id = ph.pur_header_id
+				                       AND pll.pur_line_location_id = l.line_location_id) AS release_num,
+				               (SELECT nvl(ph.display_po_number,
+				                           ph.segment1)|| nvl2(ph.display_release_num,'-'||ph.display_release_num,'')
+				                  FROM pur_line_locations_all pll,
+				                       pur_headers_all_v      ph
+				                 WHERE pll.pur_header_id = ph.pur_header_id
+				                       AND pll.pur_line_location_id = l.line_location_id) AS segment1,
+				               (SELECT pla.line_num
+				                  FROM pur_line_locations_all pll,
+				                       pur_lines_all          pla
+				                 WHERE pll.pur_line_id = pla.pur_line_id
+				                       AND pll.pur_line_location_id = l.line_location_id) AS line_num,   
+				               l.shipment_num,
+				               l.erp_asn_ship_num,
+				               l.item_id,
+				               (SELECT nvl(siv.display_item_code,
+				                           l.item_code)
+				                  FROM mtl_system_items_vl siv
+				                 WHERE siv.item_id = l.item_id) AS item_code,
+				               nvl(l.item_name,(SELECT m.item_name FROM mtl_system_items_vl m WHERE m.item_id = l.item_id)) AS item_name,
+				               inv_asn_outside_barcode_pkg.get_print_item_name(nvl(nvl((SELECT nvl(o.c_attribute1,
+				                                                                                  m.item_name)
+				                                                                         FROM mtl_item_inv_organization o,
+				                                                                              mtl_system_items_vl       m
+				                                                                        WHERE m.item_id = l.item_id
+				                                                                              AND o.inventory_organization_id =
+				                                                                              h.ship_to_organization_id
+				                                                                              AND o.item_id = m.item_id),
+				                                                                       l.item_code),
+				                                                                   l.item_name)) supply_item_name,
+				               (SELECT mvv.partner_item_code FROM mtl_item_mapping_vendor_v mvv WHERE mvv.item_id = l.item_id) AS vendor_item_code,
+				               l.uom_code AS unit_meas_lookup_code,
+				               nvl((SELECT vl.uom_desc
+				                     FROM fnd_uom_codes_vl vl
+				                    WHERE l.uom_code = vl.uom_code
+				                          AND vl.business_group = h.coop_business_group),
+				                   l.uom_code) uom_desc,
+				               to_char(l.need_by_date,
+				                       'yyyy-mm-dd') AS need_by_date,
+				               l.comments AS line_desc,
+				               l.ship_quantity,
+				               l.lots_num,
+				               nvl2(l.lots_validity_date,'有效期：'||TO_CHAR(l.lots_validity_date, 'yyyy-mm-dd'),'') lots_validity_date,
+				               nvl2(l.serial_num,'序列号：'||l.serial_num,'') serial_num,
+				               nvl2(l.invoice_num,'发票号：'||l.invoice_num,'') invoice_num,
+				               (SELECT '库房-'||iwv.warehouse_code FROM inv_warehouses_vl iwv WHERE iwv.warehouse_id = l.inv_warehouse_id) AS inv_warehouse_desc,
+				               (SELECT '库位-'||ilv.location_code FROM inv_locations_vl ilv WHERE ilv.location_id = l.inv_location_id) AS inv_location_desc,
+				               l.asn_line_num,
+				               (SELECT pla.line_num
+				                  FROM pur_line_locations_all pll,
+				                       pur_lines_all          pla
+				                 WHERE pll.pur_line_id = pla.pur_line_id
+				                       AND pll.pur_line_location_id = l.line_location_id) AS po_line_num,
+				               l.packet_quantity,
+       						   (SELECT nvl(pl.unit_price,0)
+						          FROM pur_line_locations_all pll,
+						               pur_lines_all          pl
+						         WHERE pll.pur_line_id = pl.pur_line_id
+						               AND pll.pur_line_location_id = l.line_location_id) AS unit_price,
+						              (SELECT  nvl(tc.tax_type_rate,0)
+						          FROM pur_line_locations_all pll,
+						               pur_lines_all          pl,
+						               fnd_tax_type_codes     tc
+						         WHERE pll.pur_line_id = pl.pur_line_id
+						               AND pl.tax_code_id = tc.tax_type_id(+)
+						               AND pll.pur_line_location_id = l.line_location_id) AS tax_rate,
+				               (SELECT nvl(pl.original_unit_price,nvl(pl.unit_price,0) * (1 + nvl(tc.tax_type_rate,0)/ 100))
+						          FROM pur_line_locations_all pll,
+						               pur_lines_all          pl,
+						               fnd_tax_type_codes     tc
+						         WHERE pll.pur_line_id = pl.pur_line_id
+						               AND pl.tax_code_id = tc.tax_type_id(+)
+						               AND pll.pur_line_location_id = l.line_location_id) AS tax_unit_price,
+						       l.contacts_info,
+						       l.package_number,
+						       l.deliver_weight
+				          FROM inv_asn_lines l,
+               				   inv_asn_headers h,
+				               inv_asn_print p
+				         WHERE l.asn_line_id = p.asn_line_id
+				         	   AND h.asn_header_id = p.asn_header_id
+				               AND nvl(l.cancel_flag,
+				                       'N') = 'N'
+				               AND nvl(l.close_flag,
+				                       'N') = 'N'
+				               AND p.session_id = ${/session/@session_id}
+				               AND l.asn_header_id = ${/parameter/@asn_header_id}
+				         ORDER BY l.item_code,segment ,lpad(line_num,30,'0') asc,release_num ,l.asn_line_num ASC) v
+				   WHERE (inv_asn_print_pkg.check_asn_print_authority(${/session/@session_id},
+				                                                      ${/session/@role_id},
+				                                                      ${/session/@user_id}) = 0)
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

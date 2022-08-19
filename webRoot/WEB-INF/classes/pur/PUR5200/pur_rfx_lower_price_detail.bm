@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Jolly
+    $Date: 2018-9-12 14:14:16  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            	SELECT r.*,
+					   rownum line_num,
+				       round(r.total_quantity / 3,
+				             2) average_quantity,
+				       round(r.package_price * r.total_quantity / 3,
+				             2) package_price_amount,
+				       round(r.valid_fb_retail_price * r.total_quantity / 3,
+				             2) retail_price_amount,
+				       
+				       round((r.valid_fb_retail_price - r.package_price) * r.total_quantity / 3,
+				             2) balance_price_amount,
+				       round((r.valid_fb_retail_price - r.package_price) / r.package_price,
+				             2) * 100 || '%' balance_price_rate
+				  FROM (SELECT rl.item_id,
+				               rl.item_code,
+				               rl.item_desc,
+				               (SELECT SUM(pl.quantity)
+				                  FROM pur_headers_all ph,
+				                       pur_lines_all   pl
+				                 WHERE ph.pur_header_id = pl.pur_header_id
+				                       --AND ph.business_unit_id = rh.owner_business_unit_id
+				                       AND pl.item_id = rl.item_id
+				                       AND ph.last_version = 'Y'
+				                       AND pl.cancel_flag = 'N'
+				                       AND to_char(ph.approved_date,
+				                                   'yyyymm') >= to_char((add_months(SYSDATE,
+				                                                                        -3)),
+				                                                            'yyyymm')
+				                       AND to_char(ph.approved_date,
+				                                   'yyyymm') <= to_char((add_months(SYSDATE,
+				                                                                        -1)),
+				                                                            'yyyymm')) total_quantity, --average_quantity
+				               (SELECT al.no_tax_amount
+				                  FROM pack_agreement_headers ah,
+				                       pack_agreement_lines   al
+				                 WHERE ah.eitf_header_id = al.eitf_header_id
+				                       AND ah.vendor_id =
+				                       (SELECT vendor_id FROM pur_vendors pv WHERE pv.coop_company_id = rh.coop_company_id)
+				                       AND ah.business_unit_id = rh.owner_business_unit_id
+				                       AND al.item_id = rl.item_id
+				                       AND to_date(al.expiration_date,
+				                                   'yyyy-mm-dd') > SYSDATE) package_price,
+                               (SELECT al.tax_amount
+				                  FROM pack_agreement_headers ah,
+				                       pack_agreement_lines   al
+				                 WHERE ah.eitf_header_id = al.eitf_header_id
+				                       AND ah.vendor_id =
+				                       (SELECT vendor_id FROM pur_vendors pv WHERE pv.coop_company_id = rh.coop_company_id)
+				                       AND ah.business_unit_id = rh.owner_business_unit_id
+				                       AND al.item_id = rl.item_id
+				                       AND to_date(al.expiration_date,
+				                                   'yyyy-mm-dd') > SYSDATE) tax_package_price,
+				               rl.valid_fb_retail_price,
+				               (SELECT fc.company_full_name FROM fnd_companies_vl fc WHERE fc.company_id = rh.coop_company_id) vendor_name
+				          FROM pur_rfx_feedback_headers rh,
+				               pur_rfx_feedback_lines   rl
+				         WHERE rh.feedback_header_id = rl.feedback_header_id
+				         	   AND rh.feedback_header_id = ${@feedback_header_id}
+				         	   AND rh.coop_company_id = ${@coop_company_id}) r
+		 ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

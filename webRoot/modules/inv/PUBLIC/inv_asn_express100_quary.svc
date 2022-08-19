@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:service xmlns:s="aurora.plugin.script" xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+    <a:init-procedure>
+        <s:server-script><![CDATA[
+        
+            importPackage(Packages.http);
+            //importPackage(Packages.utils);
+            var logger = $logger('server-script');
+            
+            function log(msg) {
+                logger.info(msg);
+            };
+            
+            function insert_express_info(ret_json, asn_header_id, express_com, ordercode) {
+            
+                //分别逐个取出对象下的每个对象
+                //反馈消息 ok:正常
+                var message = ret_json.message;
+            
+                //调用成功
+                if (message == 'ok') {
+            
+                    //条件
+                    var condition = ret_json.condition;
+            
+                    //接口状态
+                    var status = ret_json.status;
+            
+                    //state物流状态：0在途中、1已揽收、2疑难、3已签收、4退签、5同城派送中、6退回、7转单等7个状态，其中4-7需要另外开通才有效
+                    var state = ret_json.state;
+            
+                    //物流详细信息
+                    var detail_info_data = ret_json.data;
+            
+                    //日志
+                    log('message:' + message);
+                    log('ordercode:' + ordercode);
+                    log('condition:' + condition);
+                    log('express_com:' + express_com);
+                    log('status:' + status);
+                    log('state:' + state);
+            
+                    //保存ASN物流头信息
+                    new ModelService('inv.PUBLIC.inv_asn_logistics_save').execute({
+                        asn_header_id: asn_header_id,
+                        logistics_company: express_com,
+                        logistics_number: ordercode,
+                        returncode: ret_json.status,
+                        message: message,
+                        status: ret_json.status
+                    });
+            
+                    //循环行信息
+                    for (var i = 0;i < detail_info_data.length;i++) {
+            
+                        //日志
+                        log('time:' + detail_info_data[i].time);
+                        log('ftime:' + detail_info_data[i].ftime);
+                        log('context:' + detail_info_data[i].context);
+            
+                        //保存ASN物流头信息
+                        new ModelService('inv.PUBLIC.inv_asn_logistics_save').update({
+                            logistics_time: detail_info_data[i].time,
+                            logistics_context: detail_info_data[i].context
+                        });
+                    }
+            
+                } else {
+            
+                    //保存ASN物流头信息
+                    new ModelService('inv.PUBLIC.inv_asn_logistics_save').execute({
+                        asn_header_id: asn_header_id,
+                        logistics_company: express_com,
+                        logistics_number: ordercode,
+                        returncode: ret_json.returnCode,
+                        message: message,
+                        status: ret_json.returnCode
+                    });
+            
+                }
+            }
+            
+            //获取页面参数
+            var parameter = $ctx.parameter;
+            
+            //日志
+            log('asn_header_id:' + parameter.asn_header_id);
+            log('logistics_company:' + parameter.logistics_company);
+            log('express_number:' + parameter.express_number);
+            
+            //*************
+            //测试数据，模拟传入可调试成功的物流公司和单号
+            //*************
+            // parameter.logistics_company = 'shunfeng';
+            // parameter.express_number = '367477739364';
+            
+            //定义对象
+            var query = new HttpClientInvoker();
+            
+            //url地址
+            var url = 'http://poll.kuaidi100.com/poll/query.do';
+            
+            //执行方法
+            var method = 'POST';
+            
+            //字符集
+            var encode = 'utf-8';
+            
+            //企业接口必输编码
+            var customer = "24E2923AAD95E9D993AE3C2C0A843D13";
+            
+            //企业接口必输秘钥
+            var key = "pDRuyUWs9239";
+            
+            //快递公司
+            var express_com = parameter.logistics_company;
+            
+            //快递单号
+            var ordercode = parameter.express_number;
+            
+            //拼接签名参数
+            var param = "{\"com\":\"" + express_com + "\",\"num\":\"" + ordercode + "\"}";
+            
+            //生成加密码
+            var sign = Packages.utils.MD5.encode(param + key + customer);
+            
+            //日志
+            log('sign:' + sign);
+            
+            //拼接传入参数
+            var params = "{\"param\":" + param + ";" + "\"sign\":\"" + sign + "\";\"customer\":\"" + customer + "\"}";
+            
+            //日志
+            log('params:' + params);
+            
+            //获取反馈消息
+            try {
+                var res = query.request(params, url, method, encode);
+                
+                //日志
+                log('返回数据:' + res);
+                
+                //*************
+	            //测试数据，模拟接口调用成功
+	            //*************
+                // res = '{"message":"ok","nu":"367477739364","ischeck":"1","condition":"F00","com":"shunfeng","status":"200","state":"3","data":[{"time":"2018-02-24 09:00:39","ftime":"2018-02-24 09:00:39","context":"[杭州市]已签收(何煜峰 ),感谢使用顺丰,期待再次为您服务"},{"time":"2018-02-24 08:51:05","ftime":"2018-02-24 08:51:05","context":"[杭州市]快件交给蒋达江，正在派送途中（联系电话：15967169618）"},{"time":"2018-02-24 07:58:28","ftime":"2018-02-24 07:58:28","context":"[杭州市]快件交给唐楚舒，正在派送途中（联系电话：13706515435）"},{"time":"2018-02-24 06:39:51","ftime":"2018-02-24 06:39:51","context":"[杭州市]快件到达 【杭州西湖西溪软件园营业点】"},{"time":"2018-02-24 05:17:25","ftime":"2018-02-24 05:17:25","context":"[杭州市]快件在【杭州总集散中心】装车，已发往 【杭州西湖西溪软件园营业点】"},{"time":"2018-02-24 04:03:32","ftime":"2018-02-24 04:03:32","context":"[杭州市]快件到达 【杭州总集散中心】"},{"time":"2018-02-23 19:45:10","ftime":"2018-02-23 19:45:10","context":"[深圳市]快件在【深圳总集散中心】装车，已发往下一站"},{"time":"2018-02-23 16:42:13","ftime":"2018-02-23 16:42:13","context":"[深圳市]快件到达 【深圳总集散中心】"},{"time":"2018-02-23 13:44:04","ftime":"2018-02-23 13:44:04","context":"[中山市]快件在【中山东升集散中心】装车，已发往下一站"},{"time":"2018-02-23 13:06:36","ftime":"2018-02-23 13:06:36","context":"[中山市]快件到达 【中山东升集散中心】"},{"time":"2018-02-23 12:08:40","ftime":"2018-02-23 12:08:40","context":"[珠海市]快件在【珠海唐家湾蒙中棚营业部】装车，已发往下一站"},{"time":"2018-02-23 11:29:38","ftime":"2018-02-23 11:29:38","context":"[珠海市]顺丰速运 已收取快件"}]}';
+            
+                //输出文本转换成object类型
+                var ret_json = JSON.parse(res);
+            
+            } catch (e) {
+                raise_app_error(e);
+            }
+            
+            //处理反馈消息
+            insert_express_info(ret_json,parameter.asn_header_id,express_com,ordercode);
+            
+        ]]></s:server-script>
+    </a:init-procedure>
+</a:service>

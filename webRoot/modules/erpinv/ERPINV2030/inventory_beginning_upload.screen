@@ -1,0 +1,366 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <!-- <a:model-query defaultWhereClause="enabled_flag=&apos;Y&apos;" fetchAll="true" model="erpinv.ERPINV2030.inv_warehouses_lov" rootPath="erpinv2030_warehouses_root"/> -->
+        <a:model-query defaultWhereClause="parameter_code = &apos;NEGATIVE_STOCK_ALLOWED&apos;" model="erpfnd.ERPFND1130.fnd_parameters" rootPath="negative_stock_allowed"/>
+        <a:model-query model="erppublic.get_fnd_interface_header_id" rootPath="erpinv2030_fnd_interface_header"/>
+        <!-- <a:model-query model="db.fnd_precision_pkg.get_amount_precision" rootPath="inv2030_amount_percision"/>
+        <a:model-query model="db.fnd_precision_pkg.get_price_precision" rootPath="inv2030_price_percision"/>
+        <a:model-query model="db.fnd_precision_pkg.get_quantity_precision" rootPath="inv2030_quantity_percision"/> -->
+        <a:import-excel header_id="${/parameter/@header_id}" separator="," status_field="/parameter/@ImportSuccess" template_code="ERPINV2030_OPENING_BALANCE" user_id="${/session/@user_id}"/>
+        <a:model-query defaultWhereClause="template_code=&apos;Com_Inv_Init&apos;" model="erpsys.public.sys_attachment_template" rootPath="attachment_template_root"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="erpinv2030_upload_load_check_link" model="erpinv.ERPINV2030.inv_balances_interface" modelaction="execute"/>
+        <a:link id="erpinv2030_error_log_link" url="${/request/@context_path}/modules/erpinv/ERPINV2030/inventory_beginning_error_log.screen"/>
+        <a:link id="erpinv2030_balance_check_link" model="db.erpinv_balances_interface_pkg.balance_check" modelaction="execute"/>
+        <a:link id="erpinv2030_balance_submit_link" model="db.erpinv_balances_interface_pkg.balance_submit" modelaction="execute"/>
+        <a:link id="erpinv2030_balance_insert_link" model="db.erpinv_balances_interface_pkg.insert_interface" modelaction="execute"/>
+        <a:link id="erpinv2030_balance_reload_link" url="${/request/@context_path}/modules/erpinv/ERPINV2030/inventory_beginning_import.screen"/>
+        <a:link id="erpinv2030_atm_download_link" url="${/request/@context_path}/atm_download.svc"/>
+        <script><![CDATA[
+            function erpinv2030_upload_init() {
+                var param = {};
+                param['header_id'] = '${/parameter/@header_id}';
+                Aurora.request({
+                    url: $('erpinv2030_upload_load_check_link').getUrl(),
+                    para: param,
+                    success: function(res) {
+                        if (res.result.validated_flag == 'N') {
+                            erpinv2030_error_msg();
+                        }
+                        // $('inv2030_balances_interface_ds').setQueryParameter('interface_header_id', '${/parameter/@header_id}');
+                        $('erpinv2030_balances_interface_ds').query();
+                    },
+                    scope: this
+                });
+            }
+            
+            function erpinv2030_downloadFile() {
+                var attachment_id = '${/model/attachment_template_root/record/@attachment_id}';
+                if (Aurora.isEmpty(attachment_id)) {
+                    return;
+                }
+                var url = $('erpinv2030_atm_download_link').getUrl() + '?attachment_id=' + attachment_id + '&table_name=ERPSYS_ATTACHMENT_TEMPLATE&table_pk_value=' + '${/model/attachment_template_root/record/@template_id}';
+                window.location.href = url;
+            }
+            
+            function erpinv2030_save() {
+                if (document.getElementById('erpinv2030_importFile').value) {
+                    var fileName = document.getElementById('erpinv2030_importFile').value;
+                    var fileType = fileName.substr(fileName.lastIndexOf("."));
+                    if (fileType != '.xls' && fileType != '.xlsx') {
+                        alert('${l:ERPINV.MESSAGE4}');
+                    } else {
+                        document.getElementById('erpinv2030_importForm').submit();
+                    }
+                }
+            }
+            
+            function erpinv2030_submit() {
+                var records = $('erpinv2030_balances_interface_ds').getAll();
+                if (records.length < 1) {
+                    return;
+                } else if (!$('erpinv2030_balances_interface_ds').isModified()) {
+                    Aurora.showConfirm('${l:SRM.RECOGNISE}', '${l:ERPINV.MESSAGE34}', function() {
+                        var param = {};
+                        param['interface_header_id'] = '${/parameter/@header_id}';
+                        Aurora.request({
+                            url: $('erpinv2030_balance_submit_link').getUrl(),
+                            para: param,
+                            success: function(res) {
+                                if (res.result.validated_flag == 'N') {
+                                    inv2030_error_msg();
+                                } else {
+                                    Aurora.go($('erpinv2030_balance_reload_link').getUrl());
+                                }
+                            },
+                            lockMessage: '${l:ERPFND.SUBMITTING}',
+                            scope: this
+                        });
+                    });
+                } else if ($('erpinv2030_balances_interface_ds').isModified()) {
+                    Aurora.showMessage('${l:SRM.PROMPT}', '${l:ERPINV.MESSAGE5}');
+                }
+            }
+            
+            function erpinv2030_check() {
+                if (!$('erpinv2030_balances_interface_ds').isModified()) {
+                    var param = {};
+                    param['header_id'] = '${/parameter/@header_id}';
+                    Aurora.request({
+                        url: $('erpinv2030_balance_check_link').getUrl(),
+                        para: param,
+                        success: function(res) {
+                            if (res.result.validated_flag == 'N') {
+                                inv2030_error_msg();
+                            } else {
+                                Aurora.showMessage('${l:SRM.PROMPT}', '${l:ERPINV.MESSAGE6}');
+                            }
+                        },
+                        lockMessage: '${l:SRM.CHECKING}',
+                        scope: this
+                    });
+                } else {
+                    Aurora.showMessage('${l:SRM.PROMPT}', '${l:ERPINV.MESSAGE20}');
+                }
+            }
+            
+            function erpinv2030_error_msg() {
+                new Aurora.Window({
+                    id: 'erpinv2030_error_log_window',
+                    url: $('erpinv2030_error_log_link').getUrl() + '?header_id=' + '${/parameter/@header_id}',
+                    title: '${l:ERPINV.ERROR_MESSAGE}',
+                    height: 350,
+                    width: 530
+                });
+            }
+            
+            function erpinv2030_balances_interface_ds_add(dataSet, record, index) {
+                record.set('line_number', index + 1);
+            }
+            
+            function erpinv2030_balances_interface_ds_update(dataSet, record, name, value, oldvalue) {
+                var record_obj = record.getObject();
+                var amount = record_obj.amount;
+                var quantity = record_obj.primary_quantity;
+                if (Aurora.isEmpty(amount)) {
+                    amount = 0;
+                }
+                if (Aurora.isEmpty(quantity)) {
+                    quantity = 0;
+                }
+            
+                if (name == 'primary_quantity') {
+                    if (value == 0) {
+                        record.set('unit_cost', 0);
+                        return;
+                    }
+                    record.set('unit_cost', amount / value);
+                }
+            
+                if (name == 'amount') {
+                    record.set('unit_cost', value / quantity);
+                }
+            
+                if (name == 'company_id') {
+                    record.set('item_id', '');
+                    record.set('item_code', '');
+                    record.set('item_desc', '');
+                    record.set('primary_uom', '');
+                    record.set('primary_uom_name', '');
+            
+                    record.set('business_partner_id', '');
+                    record.set('business_partner_code', '');
+                    record.set('business_partner_desc', '');
+            
+                    record.set('warehouse_code_name', '');
+                    record.set('warehouse_id', '');
+                    record.set('warehouse_code', '');
+                    record.set('warehouse_desc', '');
+                    record.set('warehouse_type', '');
+                }
+            }
+            
+            function erpinv2030_editFun(record, name) {
+                if (name == 'business_partner_code') {
+                    var warehouse_type = record.get('warehouse_type');
+                    var business_partner_field = record.getField('business_partner_code');
+                    if (warehouse_type == 'OUTSOURCE') {
+                        business_partner_field.clear();
+                        business_partner_field.setRequired(true);
+                        business_partner_field.setLovService('erpinv.ERPINV2030.fnd_business_partners_vender');
+                        business_partner_field.setRequired(true);
+                        business_partner_field.setLovPara('vender_flag', 'Y');
+                        return 'erpinv2030_lov';
+                    } else if (warehouse_type == 'ISSUE') {
+                        business_partner_field.clear();
+                        business_partner_field.setRequired(true);
+                        business_partner_field.setLovService('erpinv.ERPINV2030.fnd_business_partners_customer');
+                        business_partner_field.setRequired(true);
+                        business_partner_field.setLovPara('customer_flag', 'Y');
+                        return 'erpinv2030_lov';
+                    } else {
+                        business_partner_field.clear();
+                        record.set('business_partner_code', '');
+                        record.set('business_partner_desc', '');
+                    }
+                    return '';
+                }
+            }
+            
+            function erpinv2030_amount_render(value, record, name) {
+                //return Aurora.formatNumber(value, '${/model/inv2030_amount_percision/record/@value}');
+                return Aurora.formatNumber(value, '2');
+            }
+            
+            function erpinv2030_unit_cost_render(value, record, name) {
+                //return Aurora.formatNumber(value, '${/model/inv2030_price_percision/record/@value}');
+                return Aurora.formatNumber(value, '2');
+            }
+            
+            function erpinv2030_quantity_render(value, record, name) {
+                //return Aurora.formatNumber(value, '${/model/inv2030_quantity_percision/record/@value}');
+                return Aurora.formatNumber(value, '2');
+            }
+            
+            function erpinv2030_balances_interface_unit_cost_valid(record, name, value) {
+                if (Aurora.isEmpty(value) || value < 0) {
+                    return '${l:ERPINV.MESSAGE21}';
+                }
+                return true;
+            }
+            
+            function erpinv2030_balances_interface_primary_quantity_valid(record, name, value) {
+                if ('${/model/negative_stock_allowed/record/@parameter_value}' == 'N') {
+                    if (value < 0) {
+                        return '${l:ERPINV.MESSAGE22}';
+                    }
+                }
+                return true;
+            }
+            
+            function erpinv2030_balances_interface_amount_valid(record, name, value) {
+                if ('${/model/negative_stock_allowed/record/@parameter_value}' == 'N') {
+                    if (value < 0) {
+                        return '${l:ERPINV.MESSAGE22}';
+                    }
+                }
+                return true;
+            }
+            
+            function erpinv2030_balances_interface_cellclick(grid, row, name, record) {
+                var metadata = record.getMeta();
+                var companyId = record.get('company_id');
+                if (name == 'item_code') {
+                    var item = metadata.getField('item_code');
+                    if (!companyId || companyId == '') {
+                        item.setLovService('');
+                    } else {
+                        item.setLovService('erppur.ERPPUR5010.inv_items_basics_lov');
+                        item.setLovPara('enabled_flag', 'Y');
+                        item.setLovPara('company_id', record.get('company_id') || '');
+                    }
+                } else if (name == 'business_partner_code') {
+                    var f1 = metadata.getField('business_partner_code');
+                    if (!companyId || companyId == '') {
+                        f1.setLovService('');
+                    } else {
+                        f1.setLovService('erpinv.ERPINV2030.fnd_business_partners');
+                        f1.setLovPara('company_id', record.get('company_id') || '');
+                    }
+                } else if (name == 'warehouse_code_name') {
+                    $('erpinv_2030_warehouses_ds').setQueryParameter('enabled_flag', 'Y');
+                    $('erpinv_2030_warehouses_ds').setQueryParameter('company_id', companyId);
+                    $('erpinv_2030_warehouses_ds').query();
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="sys_attachment_template_ds" fetchAll="true" loadData="true" model="erpsys.public.sys_attachment_template"/>
+            <a:dataSet id="erpinv_2030_warehouses_ds" model="erpinv.ERPINV2030.inv_warehouses_lov"/>
+            <a:dataSet id="erpinv_2030_assign_company_ds" loadData="true" model="public.fnd_company_list"/>
+            <a:dataSet id="erpinv2030_balances_interface_ds" model="erpinv.ERPINV2030.inv_balances_interface" queryUrl="${/request/@context_path}/autocrud/erpinv.ERPINV2030.inv_balances_interface_query/query?interface_header_id=${/parameter/@header_id}" selectable="true" selectionModel="multiple">
+                <a:fields>
+                    <a:field name="item_code" autoComplete="true" autoCompleteField="code_name" autoCompleteSize="1" lovGridHeight="320" lovHeight="450" lovService="erppur.ERPPUR5010.inv_items_basics_lov?enabled_flag=Y" lovWidth="500" title="ERPINV.MESSAGE23">
+                        <a:mapping>
+                            <a:map from="item_code" to="item_code"/>
+                            <a:map from="item_id" to="item_id"/>
+                            <a:map from="item_name" to="item_desc"/>
+                            <a:map from="primary_uom" to="primary_uom"/>
+                            <a:map from="primary_uom_name" to="primary_uom_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="primary_uom_name"/>
+                    <a:field name="primary_uom"/>
+                    <a:field name="item_id"/>
+                    <a:field name="item_desc"/>
+                    <a:field name="business_partner_code" autoComplete="true" autoCompleteField="code_name" autoCompleteSize="1" lovGridHeight="320" lovHeight="450" lovService="erpinv.ERPINV2030.fnd_business_partners" lovWidth="500" title="INV.MESSAGE24">
+                        <a:mapping>
+                            <a:map from="partner_id" to="business_partner_id"/>
+                            <a:map from="partner_code" to="business_partner_code"/>
+                            <a:map from="partner_name" to="business_partner_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="business_partner_id"/>
+                    <a:field name="business_partner_desc"/>
+                    <a:field name="warehouse_id"/>
+                    <a:field name="warehouse_desc"/>
+                    <a:field name="warehouse_code_name" displayField="code_name" options="erpinv_2030_warehouses_ds" required="true" valueField="warehouse_id">
+                        <a:mapping>
+                            <a:map from="code_name" to="warehouse_code_name"/>
+                            <a:map from="warehouse_code" to="warehouse_code"/>
+                            <a:map from="warehouse_id" to="warehouse_id"/>
+                            <a:map from="warehouse_name" to="warehouse_desc"/>
+                            <a:map from="warehouse_type" to="warehouse_type"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="primary_quantity" required="true"/>
+                    <a:field name="amount" required="true"/>
+                    <a:field name="interface_header_id" defaultValue="${/parameter/@header_id}"/>
+                    <!-- <a:field name="company_id" defaultValue="${/session/@company_id}"/> -->
+                    <a:field name="company_id" defaultValue="${/session/@default_company_id}"/>
+                    <a:field name="company_desc" defaultValue="${/session/@default_company_desc}" displayField="company_full_name" options="erpinv_2030_assign_company_ds" required="false" returnField="company_id" valueField="company_id"/>
+                    <a:field name="excel_load_flag" defaultValue="N"/>
+                    <a:field name="error_flag" defaultValue="Y"/>
+                    <a:field name="unit_cost" validator="erpinv2030_balances_interface_unit_cost_valid"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="erpinv2030_balances_interface_ds_add"/>
+                    <a:event name="update" handler="erpinv2030_balances_interface_ds_update"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:defaultScreen>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:toolbarButton className="item-rbtn-blue template" click="erpinv2030_downloadFile" style="margin-left:20px;" text="SRM.TEMPLATE" width="100"/>
+                <a:toolbarButton className="item-rbtn-blue import" click="erpinv2030_save" text="SRM.IMPORT" width="100"/>
+                <a:toolbarButton className="item-rbtn-blue verify" click="erpinv2030_check" text="SRM.VERIFY" width="100"/>
+                <a:toolbarButton className="item-rbtn-blue submit" click="erpinv2030_submit" text="SRM.SUBMIT" width="100"/>
+                <a:toolbarButton className="item-rbtn-blue error" click="erpinv2030_error_msg" text="SRM.ERROR" width="100"/>
+            </a:screenTopToolbar>
+            <a:hBox>
+                <form name="upload" id="erpinv2030_importForm" action="${/request/@context_path}/modules/erpinv/ERPINV2030/inventory_beginning_upload.screen?header_id=${/model/erpinv2030_fnd_interface_header/record/@header_id}" enctype="multipart/form-data" method="post">
+                    <label style="margin-left:10px;margin-top:10px;"><![CDATA[选择要引入的数据文件：]]></label>
+                    <input name="CONTENT" id="erpinv2030_importFile" type="file"/>
+                </form>
+            </a:hBox>
+            <a:grid id="erpinv_balances_interface_grid" bindTarget="erpinv2030_balances_interface_ds" height="400" marginHeight="108" marginWidth="50" navBar="true" width="1180">
+                <a:toolBar>
+                    <a:button type="add"/>
+                    <a:button type="delete"/>
+                    <a:button type="save"/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="line_number" editor="erpinv2030_notext" prompt="ERPINV_BALANCES_INTERFACE.LINE_NUMBER" width="50"/>
+                    <a:column name="company_desc" editor="erpinv2030_combb" prompt="ERPINV_BALANCES_INTERFACE.COMPANY_NAME" width="120"/>
+                    <a:column name="item_code" editor="erpinv2030_lov" prompt="ERPINV_BALANCES_INTERFACE.ITEM_CODE" width="120"/>
+                    <a:column name="item_desc" prompt="ERPINV_BALANCES_INTERFACE.ITEM_DESC" width="120"/>
+                    <a:column name="warehouse_code_name" editor="erpinv2030_combb" prompt="ERPINV_BALANCES_INTERFACE.WAREHOUSE_CODE_NAME" width="200"/>
+                    <a:column name="primary_quantity" align="right" editor="erpinv2030_numtext" prompt="ERPINV_BALANCES_INTERFACE.PRIMARY_QUANTITY" width="100"/>
+                    <a:column name="primary_uom_name" prompt="ERPINV_BALANCES_INTERFACE.PRIMARY_UOM_NAME" width="80"/>
+                    <a:column name="amount" align="right" editor="erpinv2030_amouttext" prompt="ERPINV_BALANCES_INTERFACE.AMOUNT" renderer="erpinv2030_amount_render" width="100"/>
+                    <a:column name="unit_cost" align="right" prompt="ERPINV_BALANCES_INTERFACE.UNIT_COST" renderer="erpinv2030_unit_cost_render" width="100"/>
+                    <a:column name="business_partner_code" editorFunction="erpinv2030_editFun" prompt="ERPINV_BALANCES_INTERFACE.BUSINESS_PARTNER_CODE" width="120"/>
+                    <a:column name="business_partner_desc" prompt="ERPINV_BALANCES_INTERFACE.BUSINESS_PARTNER_DESC" width="120"/>
+                </a:columns>
+                <a:editors>
+                    <a:numberField id="erpinv2030_numtext" allowDecimals="true" decimalPrecision="2"/>
+                    <!-- decimalPrecision="${/model/inv2030_quantity_percision/record/@value}" -->
+                    <a:numberField id="erpinv2030_amouttext" allowDecimals="true" decimalPrecision="2"/>
+                    <!-- decimalPrecision="${/model/inv2030_amount_percision/record/@value}" -->
+                    <a:lov id="erpinv2030_lov"/>
+                    <a:comboBox id="erpinv2030_combb"/>
+                    <a:numberField id="erpinv2030_notext" allowDecimals="false" allowNegative="false"/>
+                </a:editors>
+                <a:events>
+                    <a:event name="cellclick" handler="erpinv2030_balances_interface_cellclick"/>
+                </a:events>
+            </a:grid>
+        </a:defaultScreen>
+        <script><![CDATA[
+        erpinv2030_upload_init();
+        ]]></script>
+    </a:view>
+</a:screen>

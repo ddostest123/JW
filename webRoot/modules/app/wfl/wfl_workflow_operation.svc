@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:service xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <p:method-invoke className="uncertain.composite.CompositeUtil" methodName="collapse">
+            <p:arguments>
+                <p:argument path="/parameter" type="uncertain.composite.CompositeMap"/>
+            </p:arguments>
+        </p:method-invoke>
+        <a:model-execute model="app.login.app_mobile_login" path="/parameter"/>
+        <p:set field="/parameter/@instance_id" sourceField="/parameter/HEADER/@INSTANCE_ID"/>
+        <p:set field="/parameter/@record_id" sourceField="/parameter/HEADER/@RECORD_ID"/>
+        <p:set field="/parameter/@node_id" sourceField="/parameter/HEADER/@NODE_ID"/>
+        <p:set field="/parameter/@comments" sourceField="/parameter/HEADER/@COMMENTS"/>
+        <p:set field="/parameter/@action_id" sourceField="/parameter/HEADER/@ACTION_ID"/>
+        <p:set field="/parameter/@action_code" sourceField="/parameter/HEADER/@ACTION_CODE"/>
+        <p:set field="/parameter/@action_type" sourceField="/parameter/HEADER/@ACTION_TYPE"/>
+        <p:set field="/parameter/@log_operation_code" value="WFL_WORKFLOW_OPERATION"/>
+        <p:set field="/parameter/@log_document_type" value="WFL"/>
+        <p:set field="/parameter/@log_document_id" sourceField="/parameter/HEADER/@RECORD_ID"/>
+        <a:model-execute model="app.public.app_operation_history" path="/parameter"/>
+        <p:switch test="/parameter/HEADER/@ACTION_TYPE">
+            <p:case value="1">
+                <!--审批通过-->
+                <a:batch-apply sourcepath="/parameter/CONTEXT/USER">
+                    <a:model-execute model="app.wfl.cux_wfl_node_approval"/>
+                    <p:set field="/parameter/@wfl_user_id" sourceField="@current_parameter/@USER_ID"/>
+                </a:batch-apply>
+            </p:case>
+            <p:case value="3">
+                <!--跳转-->
+                <a:batch-apply sourcepath="/parameter/CONTEXT/USER">
+                    <a:model-execute model="app.wfl.cux_wfl_node_approval"/>
+                    <p:set field="/parameter/@wfl_user_id" sourceField="@current_parameter/@USER_ID"/>
+                </a:batch-apply>
+            </p:case>
+        </p:switch>
+        <p:switch test="/parameter/HEADER/@ACTION_CODE">
+            <p:case value="DELIVER">
+                <!--转交-->
+                <a:batch-apply sourcepath="/parameter/CONTEXT/USER">
+                    <p:set field="/parameter/@user_id" sourceField="@current_parameter/@USER_ID"/>
+                    <p:set field="/parameter/@wfl_user_id" sourceField="@current_parameter/@USER_ID"/>
+                </a:batch-apply>
+            </p:case>
+            <p:case value="NOTIFICATION">
+                <!--通知-->
+                <a:batch-apply sourcepath="/parameter/CONTEXT/USER">
+                    <p:set field="@current_parameter/@user_id" sourceField="@current_parameter/@USER_ID"/>
+                    <p:set field="/parameter/@wfl_user_id" sourceField="@current_parameter/@USER_ID"/>
+                    <a:model-insert model="app.wfl.wfl_notification_record_notification"/>
+                </a:batch-apply>
+            </p:case>
+            <p:case value="ADD_APPROVER_BEFORE">
+                <!--会办-->
+                <a:model-query model="wfl.wfl_approval_list_id" rootpath="wfl_approval_list_seq"/>
+                <p:set field="/parameter/@approval_list_id" sourceField="/model/wfl_approval_list_seq/record/@approval_list_id"/>
+                <a:batch-apply sourcepath="/parameter/CONTEXT/USER">
+                    <p:set field="@current_parameter/@approval_list_id" sourceField="/model/wfl_approval_list_seq/record/@approval_list_id"/>
+                    <p:set field="@current_parameter/@seq_number" sourceField="@current_parameter/@USER_ID"/>
+                    <p:set field="@current_parameter/@employee_id" sourceField="@current_parameter/@USER_ID"/>
+                    <p:set field="/parameter/@wfl_user_id" sourceField="@current_parameter/@USER_ID"/>
+                    <p:set field="@current_parameter/@session_id" value="1"/>
+                    <a:model-insert model="wfl.wfl_add_approval_list"/>
+                </a:batch-apply>
+                <p:set field="/parameter/@add_method_priority" value="BEFORE"/>
+                <p:set field="/parameter/@approvedesc" sourceField="/parameter/HEADER/@COMMENTS"/>
+                <a:model-execute model="db.wfl_core_pkg.workflow_add_approver"/>
+            </p:case>
+            <p:case value="ADD_APPROVER_AFTER">
+                <!--交办-->
+                <a:model-query model="wfl.wfl_approval_list_id" rootpath="wfl_approval_list_seq"/>
+                <p:set field="/parameter/@approval_list_id" sourceField="/model/wfl_approval_list_seq/record/@approval_list_id"/>
+                <a:batch-apply sourcepath="/parameter/CONTEXT/USER">
+                    <p:set field="@current_parameter/@approval_list_id" sourceField="/model/wfl_approval_list_seq/record/@approval_list_id"/>
+                    <p:set field="@current_parameter/@seq_number" sourceField="@current_parameter/@USER_ID"/>
+                    <p:set field="@current_parameter/@employee_id" sourceField="@current_parameter/@USER_ID"/>
+                    <p:set field="/parameter/@wfl_user_id" sourceField="@current_parameter/@USER_ID"/>
+                    <p:set field="@current_parameter/@session_id" value="1"/>
+                    <a:model-insert model="wfl.wfl_add_approval_list"/>
+                </a:batch-apply>
+                <p:set field="/parameter/@add_method_priority" value="AFTER"/>
+                <p:set field="/parameter/@approvedesc" sourceField="/parameter/HEADER/@COMMENTS"/>
+                <a:model-execute model="db.wfl_core_pkg.workflow_add_approver"/>
+            </p:case>
+        </p:switch>
+        <!--在node.js中封装wsdl中定义的数据结构-->
+        <s:server-script import="app_mobile_construct_node.js"><![CDATA[
+            var data_param = {};
+            var parameter = $ctx.parameter;
+            data_param.option_code = 'WFL_WORKFLOW_OPERATION';
+            
+            
+            //校验工作流审批时是否有选择目标对象(下一审批人、转交对象、通知对象等等)
+            $bm('app.wfl.wfl_approve_check_user').execute();
+            
+            
+            if(parameter.action_id){
+                 $bm('wfl.work_flow_approve').update();
+            }else if(parameter.action_code == 'DELIVER'){
+                $bm('app.wfl.wfl_deliver').execute();
+            }else if(parameter.action_code == 'NOTIFICATION'){
+            }else if(parameter.action_code == 'ADD_APPROVER'){
+            }
+            
+            var soapResponse = app_instance_runing(data_param);
+            
+            $ctx.addChild(soapResponse);
+        ]]></s:server-script>
+        <p:method-invoke className="uncertain.composite.CompositeUtil" methodName="expand">
+            <p:arguments>
+                <p:argument path="/soapResponse" type="uncertain.composite.CompositeMap"/>
+            </p:arguments>
+        </p:method-invoke>
+    </a:init-procedure>
+    <a:service-output output="/soapResponse"/>
+</a:service>

@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: yangqingsong $
+	$Date: 2015/05/6 11:43:22 $
+	$Revision: 1.0
+	$Purpose: 发票创建
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="invoice_status,acp_web_invoice_id desc">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+				 select v.*, (v.current_month_invoice_amount - v.invoiced_amount) can_invoice_amount
+					  from (
+					  	select d.acp_web_invoice_id,
+					  			d.coop_business_group,
+					  			d.owner_company_id company_id,
+						       d.vender_id,
+					           (SELECT pvv.full_name || '-' || pvv.display_vendor_code FROM pur_vendors_v pvv WHERE pvv.vendor_id = d.vender_id) AS vendor_name,
+					           (select c.company_full_name
+						                      from fnd_companies_vl c
+						                     where c.company_id = d.owner_company_id) owner_company_name,
+						       d.business_unit_id,
+												       (select u.business_unit_name
+												          from fnd_business_units_vl u
+												         where u.business_unit_id = d.business_unit_id) business_unit_name,
+						       (select c.code_value_name from sys_code_values_v c where c.code = 'LJ_ACP_INVOICE_STATUS' and c.code_value = d.invoice_status) status_dis,                             
+						       to_char(d.invoice_date,'yyyy-mm-dd') invoice_date,
+						       d.tax_number,   
+						       d.invoice_number,
+						       d.discount_amount,
+						       d.bill_number,
+						       d.invoice_status,
+						       d.current_month_invoice_amount,
+						       nvl((select sum(w.invoice_amount)
+			                      from lj_acp_web_invoice_data w
+			                     where w.enabled_flag = 'Y' and w.invoice_status = '30' and w.bill_number = d.bill_number),0) invoiced_amount,
+						       d.invoice_amount,
+						       d.currency,
+						       (select g.currency_name from gld_currency_vl g where g.currency_code = d.currency) currency_name                
+						 from LJ_ACP_WEB_INVOICE_DATA d
+						 where  d.invoice_status in ('10','40')
+						 		and d.coop_business_group = ${/session/@business_group}
+						 		and d.enabled_flag = 'Y'
+					  ) v
+                 #WHERE_CLAUSE# #ORDER_BY_CLAUSE# 
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+    			begin
+    			    lj_acp_bill_data_pkg.acp_invoice_submit(p_acp_web_invoice_id	=> ${@acp_web_invoice_id},
+    			    								   p_coop_business_group	=> ${/session/@business_group},
+				                                 	   p_user_id 	 		=> ${/session/@user_id});
+                end;
+    		]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:parameters>
+                <bm:parameter name="acp_web_invoice_id" dataType="java.lang.Long" input="false" output="true" outputPath="@acp_web_invoice_id"/>
+            </bm:parameters>
+            <bm:update-sql><![CDATA[
+	            begin
+	            	lj_acp_bill_data_pkg.acp_invoice_insert(x_acp_web_invoice_id  => ${@acp_web_invoice_id},
+                               p_coop_business_group => ${/session/@business_group},
+                               p_company_id          => ${@company_id},
+                               p_bill_number         => ${@bill_number},
+                               p_current_invoice_amount  => ${@current_month_invoice_amount}, 
+                               p_invoiced_amount         => ${@invoiced_amount}, 
+                               p_can_invoice_amount      => ${@can_invoice_amount}, 
+                               p_discount_amount		 => ${@discount_amount},
+                               p_invoice_date            => ${@invoice_date}, 
+                               p_tax_number              => ${@tax_number}, 
+                               p_invoice_amount          => ${@invoice_amount}, 
+                               p_currency                => ${@currency}, 
+                               p_user_id                 => ${/session/@user_id});
+	            end;                                 
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+	            begin
+	            	lj_acp_bill_data_pkg.acp_invoice_update(p_acp_web_invoice_id  => ${@acp_web_invoice_id},
+                               p_coop_business_group => ${/session/@business_group},
+                               p_company_id          => ${@company_id},
+                               p_bill_number         => ${@bill_number},
+                               p_current_invoice_amount  => ${@current_month_invoice_amount}, 
+                               p_invoiced_amount         => ${@invoiced_amount}, 
+                               p_can_invoice_amount      => ${@can_invoice_amount}, 
+                               p_discount_amount		 => ${@discount_amount},
+                               p_invoice_date            => ${@invoice_date}, 
+                               p_tax_number              => ${@tax_number}, 
+                               p_invoice_amount          => ${@invoice_amount}, 
+                               p_currency                => ${@currency}, 
+                               p_user_id                 => ${/session/@user_id});
+	            end;                                 
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+	            begin
+	            	lj_acp_bill_data_pkg.acp_invoice_delete(p_acp_web_invoice_id  => ${@acp_web_invoice_id},
+                               p_coop_business_group      => ${/session/@business_group},
+                               p_user_id             => ${/session/@user_id});
+	            end;                                 
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="acp_web_invoice_id" queryExpression="v.acp_web_invoice_id=${@acp_web_invoice_id}"/>
+        <bm:query-field name="invoice_status" queryExpression="v.invoice_status=${@invoice_status}"/>
+        <bm:query-field name="tax_number" queryExpression="v.tax_number like &apos;%&apos;|| ${@tax_number}||&apos;%&apos;"/>
+        <bm:query-field name="invoice_number" queryExpression="v.invoice_number like &apos;%&apos;|| ${@invoice_number}||&apos;%&apos;"/>
+        <bm:query-field name="bill_number" queryExpression="v.bill_number like &apos;%&apos;|| ${@bill_number}||&apos;%&apos;"/>
+        <bm:query-field name="invoice_date_from" queryExpression="v.invoice_date &gt;= ${@invoice_date_from}"/>
+        <bm:query-field name="invoice_date_to" queryExpression="v.invoice_date &lt;= ${@invoice_date_to}"/>
+        <bm:query-field name="vendor_id" queryExpression="v.vender_id=${@vendor_id}"/>
+    </bm:query-fields>
+</bm:model>

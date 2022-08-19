@@ -1,0 +1,278 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: FelixDru
+    $Date: 2016年11月17日 下午2:27:04  
+    $Revision: 1.0  
+    $Purpose: 供应商扣款录入
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure/>
+    <a:view package="aurora.ui.std" template="default">
+        <a:link id="acp4010_subjectDocumentSubmit_link" url="${/request/@context_path}/modules/acp/ACP4010/acp_subject_document_submit.svc"/>
+        <div/>
+        <script><![CDATA[
+            function acp4010_Query() {
+                $('acp4010_subjectDocumentResult_ds').query();
+            }
+            
+            function acp4010_subjectDocumentResultDs_loadFun(ds) {
+                var records = ds.getAll();
+                for (var i = 0;i < records.length;i++) {
+                    var record = records[i];
+                    var status = record.get('status');
+                    if (status == 'SUBMITTED' || status == 'APPROVED') {
+                        record.getField('vendor_code').setReadOnly(true);
+                        record.getField('subject_desc').setReadOnly(true);
+                        record.getField('debit_credit_display').setReadOnly(true);
+                        record.getField('voucher_money').setReadOnly(true);
+                        record.getField('standard_money').setReadOnly(true);
+                        record.getField('tax_included_flag').setReadOnly(true);
+                        record.getField('tax_type_rate').setReadOnly(true);
+                        record.getField('amount_include_tax').setReadOnly(true);
+                        record.getField('note').setReadOnly(true);
+                    } else {
+                        if (record.get('tax_included_flag') == 'Y') {
+                            record.getField('tax_type_rate').setReadOnly(false);
+                            record.getField('tax_type_rate').setRequired(true);
+                            record.getField('amount_include_tax').setReadOnly(false);
+                            record.getField('amount_include_tax').setRequired(true);
+            
+                            record.getField('voucher_money').setReadOnly(true);
+                        } else {
+                            record.getField('tax_type_rate').setRequired(false);
+                            record.getField('tax_type_rate').setReadOnly(true);
+                            record.getField('amount_include_tax').setRequired(false);
+                            record.getField('amount_include_tax').setReadOnly(true);
+            
+                            record.getField('voucher_money').setReadOnly(false);
+                        }
+                    }
+                }
+            }
+            
+            function acp4010_subjectDocumentResultDs_updateFun(ds, record, name, value, oldvalue) {
+                if (name == 'tax_included_flag') {
+                    record.set('tax_type_id', '');
+                    record.set('tax_type_code', '');
+                    record.set('tax_type_rate', '');
+                    record.set('amount_include_tax', '');
+                    if (value == 'Y') {
+                        record.getField('tax_type_rate').setReadOnly(false);
+                        record.getField('tax_type_rate').setRequired(true);
+                        record.getField('amount_include_tax').setReadOnly(false);
+                        record.getField('amount_include_tax').setRequired(true);
+            
+                        record.set('voucher_money', '');
+                        record.getField('voucher_money').setReadOnly(true);
+                    } else {
+                        record.getField('tax_type_rate').setRequired(false);
+                        record.getField('tax_type_rate').setReadOnly(true);
+                        record.getField('amount_include_tax').setRequired(false);
+                        record.getField('amount_include_tax').setReadOnly(true);
+            
+                        record.getField('voucher_money').setReadOnly(false);
+                    }
+                } else if (name == 'tax_type_rate' || name == 'amount_include_tax') {
+                    if (!Ext.isEmpty(record.get('tax_type_rate')) && !Ext.isEmpty(record.get('amount_include_tax'))) {
+                        record.set('voucher_money', parseFloat((record.get('amount_include_tax') / (1 + (record.get('tax_type_rate') / 100))).toFixed(2)));
+                    } else {
+                        record.set('voucher_money', '');
+                    }
+                }
+            }
+            
+            function acp4010_submitFun() {
+                var records = $('acp4010_subjectDocumentResult_ds').getSelected();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SELECT_ONE_RECORD_AT_LEAST}');
+                    return;
+                }
+                Aurora.showConfirm('${l:PROMPT}', '${l:DOCUMNET_SUBMIT_CONFIRM}', function() {
+                    var param = {};
+                    var lines = [];
+                    for (i = 0;i < records.length;i++) {
+                        lines.push(records[i].data);
+                    }
+                    param['lines'] = lines;
+                    Aurora.Masker.mask(Ext.getBody(), '${l:LOADING}');
+                    Aurora.request({
+                        url: $('acp4010_subjectDocumentSubmit_link').getUrl(),
+                        para: param,
+                        success: function(res) {
+                            acp4010_Query();
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        failure: function(res) {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        error: function(res) {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        scope: this
+                    });
+                });
+            }
+            
+            function acp4010_subjectDocumentResultDs_submitSuccessFun() {
+                acp4010_Query();
+            }
+            
+            function acp4010_upload(subject_document_id) {
+                var url = "${/request/@context_path}/uploadFile.screen?table_name=ACP_SUBJECT_DOCUMENTS&header_id=" + subject_document_id;
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:ATM.UPLOAD_ATTACHMENT}',
+                    id: 'acp_4010_po_attm_window',
+                    width: 610,
+                    height: 480
+                });
+            }
+            
+            function acp4010_check(subject_document_id) {
+                var url = "${/request/@context_path}/check_uploadFile.screen?table_name=ACP_SUBJECT_DOCUMENTS&header_id=" + subject_document_id;
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:PROMPT.VIEW_ATTACHMENT}',
+                    id: 'acp_4010_po_attm_window',
+                    width: 610,
+                    height: 480
+                });
+            }
+            
+            function acp4010_upload_renderer(value, record, name) {
+                var subject_document_id = record.get('subject_document_id');
+                var status = record.get('status');
+            
+                if (!Ext.isEmpty(subject_document_id)) {
+                    if (status == 'SUBMITTED' || status == 'APPROVED') {
+                         return '<a href="javascript:acp4010_check(' + subject_document_id + ')">${l:PROMPT.ATTACHMENT}</a>';
+                    } else {
+                        return '<a href="javascript:acp4010_upload(' + subject_document_id + ')">${l:PROMPT.ATTACHMENT}</a>';
+                    }
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="acp4010_debit_credit_list_ds" loadData="true" model="acp.ACP5270.get_debit_credit_list"/>
+            <a:dataSet id="acp4010_subjectDocumentStatusList_ds" lookupCode="ACP_SUBJECT_DOCUMENTS_STATUS"/>
+            <a:dataSet id="acp4010_subjectDefineList_ds" loadData="true" model="acp.PUBLIC.acp_subject_define_query"/>
+            <a:dataSet id="acp4010_subjectDocumentQuery_ds">
+                <a:fields>
+                    <a:field name="status_desc" displayField="code_value_name" options="acp4010_subjectDocumentStatusList_ds" returnField="status" valueField="code_value"/>
+                    <a:field name="subject_desc" displayField="subject_desc" options="acp4010_subjectDefineList_ds" returnField="subject_code" valueField="subject_code"/>
+                    <a:field name="vendor_name" autoComplete="true" autoCompleteField="vendor_name" lovHeight="480" lovService="public.pur_vendors_by_user_authority_lov" lovWidth="500" title="PROMPT.VENDOR">
+                        <a:mapping>
+                            <a:map from="vendor_id" to="vendor_id"/>
+                            <a:map from="vendor_code" to="vendor_code"/>
+                            <a:map from="vendor_name" to="vendor_name"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="acp4010_subjectDocumentResult_ds" autoCount="true" autoPageSize="true" model="acp.ACP4010.acp_subject_documents" queryDataSet="acp4010_subjectDocumentQuery_ds" selectable="true">
+                <a:fields>
+                    <a:field name="vendor_code" autoComplete="true" autoCompleteField="vendor_name" lovHeight="480" lovService="public.pur_vendors_by_user_authority_lov" lovWidth="500" required="true" title="PROMPT.VENDOR">
+                        <a:mapping>
+                            <a:map from="vendor_id" to="vendor_id"/>
+                            <a:map from="vendor_code" to="vendor_code"/>
+                            <a:map from="vendor_name" to="vendor_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="vendor_name" readOnly="true"/>
+                    <a:field name="subject_desc" displayField="subject_desc" options="acp4010_subjectDefineList_ds" required="true" returnField="subject_code" valueField="subject_code"/>
+                    <a:field name="debit_credit_display" displayField="debit_credit_name" options="acp4010_debit_credit_list_ds" required="true" returnField="debit_credit" valueField="debit_credit"/>
+                    <a:field name="voucher_money" required="true"/>
+                    <a:field name="standard_money" required="true"/>
+                    <a:field name="tax_included_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="tax_type_rate" autoComplete="true" autoCompleteField="tax_type_code" lovHeight="480" lovService="public.fnd_tax_type_code_lov?business_group=${/session/@business_group}" lovWidth="500" readOnly="true" title="ACP_WEB_INVOICE.TAX_RATE">
+                        <a:mapping>
+                            <a:map from="tax_type_id" to="tax_type_id"/>
+                            <a:map from="tax_type_code" to="tax_type_code"/>
+                            <a:map from="tax_type_rate" to="tax_type_rate"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="amount_include_tax" readOnly="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="acp4010_subjectDocumentResultDs_loadFun"/>
+                    <a:event name="submitsuccess" handler="acp4010_subjectDocumentResultDs_submitSuccessFun"/>
+                    <a:event name="update" handler="acp4010_subjectDocumentResultDs_updateFun"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:gridButton bind="acp4010_subjectDocumentResult_ds_grid" type="add" width="100"/>
+                <a:gridButton bind="acp4010_subjectDocumentResult_ds_grid" type="save" width="100"/>
+                <a:toolbarButton click="acp4010_submitFun" text="PROMPT.SUBMIT" width="100"/>
+                <a:gridButton bind="acp4010_subjectDocumentResult_ds_grid" type="delete" width="100"/>
+                <a:gridButton bind="acp4010_subjectDocumentResult_ds_grid" type="excel" width="100"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="acp4010_subjectDocumentQuery_ds" resultTarget="acp4010_subjectDocumentResult_ds" style="width:100%;border:none">
+                <a:formToolBar labelWidth="100">
+                    <a:textField name="subject_document_number" bindTarget="acp4010_subjectDocumentQuery_ds" prompt="ACP_SUBJECT_DOCUMENTS.SUBJECT_DOCUMENT_NUMBER">
+                        <a:events>
+                            <a:event name="enterdown" handler="acp4010_Query"/>
+                        </a:events>
+                    </a:textField>
+                    <a:comboBox name="status_desc" bindTarget="acp4010_subjectDocumentQuery_ds" prompt="STATUS">
+                        <a:events>
+                            <a:event name="enterdown" handler="acp4010_Query"/>
+                        </a:events>
+                    </a:comboBox>
+                    <a:comboBox name="subject_desc" bindTarget="acp4010_subjectDocumentQuery_ds" prompt="ACP_BILL.SUBJECT_NAME">
+                        <a:events>
+                            <a:event name="enterdown" handler="acp4010_Query"/>
+                        </a:events>
+                    </a:comboBox>
+                </a:formToolBar>
+                <a:formBody style="margin-left:-3px">
+                    <a:hBox labelWidth="100">
+                        <a:lov name="vendor_name" bindTarget="acp4010_subjectDocumentQuery_ds" prompt="PROMPT.VENDOR">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp4010_Query"/>
+                            </a:events>
+                        </a:lov>
+                        <a:textField name="bill_number" bindTarget="acp4010_subjectDocumentQuery_ds" prompt="ACP_SUBJECT_DOCUMENTS.BILL_NUMBER">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp4010_Query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:textField name="invoice_num" bindTarget="acp4010_subjectDocumentQuery_ds" prompt="ACP_SUBJECT_DOCUMENTS.INVOICE_NUM">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp4010_Query"/>
+                            </a:events>
+                        </a:textField>
+                    </a:hBox>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="acp4010_subjectDocumentResult_ds_grid" bindTarget="acp4010_subjectDocumentResult_ds" marginHeight="180" marginWidth="50" navBar="true">
+                <a:columns>
+                    <a:column name="status_desc" align="center" prompt="STATUS" sortable="true" width="50"/>
+                    <a:column name="subject_document_number" align="center" prompt="ACP_SUBJECT_DOCUMENTS.SUBJECT_DOCUMENT_NUMBER" sortable="true" width="100"/>
+                    <a:column name="vendor_code" align="center" editor="acp4010_subjectDocumentResult_lov" prompt="VENDER_CODE" sortable="true" width="80"/>
+                    <a:column name="vendor_name" align="center" prompt="ACP_BILL_HEADERS.VENDOR_NAME" sortable="true" width="100"/>
+                    <a:column name="subject_desc" align="center" editor="acp4010_subjectDocumentResult_cbb" prompt="ACP_BILL.SUBJECT_NAME" sortable="true" width="70"/>
+                    <a:column name="debit_credit_display" align="center" editor="acp4010_subjectDocumentResult_cbb" prompt="ACP_BILL.DEBIT_CREDIT" sortable="true" width="60"/>
+                    <a:column name="voucher_money" align="right" editor="acp4010_subjectDocumentResult_nf" prompt="ACP_BILL.VOUCHER_MONEY" width="60"/>
+                    <a:column name="standard_money" align="right" editor="acp4010_subjectDocumentResult_nf" prompt="ACP_BILL.STANDARD_MONEY" width="60"/>
+                    <a:column name="tax_included_flag" align="center" editor="acp4010_subjectDocumentResult_cb" prompt="ACP_INVOICE_LINES.TAX_INCLUDED_FLAG" width="40"/>
+                    <a:column name="tax_type_rate" align="right" editor="acp4010_subjectDocumentResult_lov" prompt="ACP_WEB_INVOICE.TAX_RATE" width="40"/>
+                    <a:column name="amount_include_tax" align="right" editor="acp4010_subjectDocumentResult_nf" prompt="ACP_SUBJECT_DOCUMENTS.AMOUNT_INCLUDE_TAX" width="60"/>
+                    <a:column name="note" align="left" editor="acp4010_subjectDocumentResult_tf" prompt="ACP_BILL.SUBJECT_NOTE" width="70"/>
+                    <a:column name="bill_number" align="center" prompt="ACP_SUBJECT_DOCUMENTS.BILL_NUMBER" width="80"/>
+                    <a:column name="invoice_num" align="center" prompt="ACP_SUBJECT_DOCUMENTS.INVOICE_NUM" width="80"/>
+                    <a:column name="attachment_id" align="center" prompt="PROMPT.ATTACHMENT" renderer="acp4010_upload_renderer" width="40"/>
+                    <a:column name="created_by_name" align="center" prompt="PROMPT.CREATOR" width="60"/>
+                </a:columns>
+                <a:editors>
+                    <a:lov id="acp4010_subjectDocumentResult_lov"/>
+                    <a:comboBox id="acp4010_subjectDocumentResult_cbb"/>
+                    <a:numberField id="acp4010_subjectDocumentResult_nf" allowDecimals="true" allowFormat="false" allowNegative="false" decimalPrecision="2"/>
+                    <a:textField id="acp4010_subjectDocumentResult_tf" maxLength="2000"/>
+                    <a:checkBox id="acp4010_subjectDocumentResult_cb"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

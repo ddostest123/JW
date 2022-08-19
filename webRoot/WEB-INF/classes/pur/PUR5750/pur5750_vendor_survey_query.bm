@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: weiqinglong
+    $Date: 2015-3-17 下午1:08:25  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+				select *
+				  from (select pvs.survey_header_id,
+				               pvs.survey_number,
+				               pvs.template_id,
+				               (select s.service_name
+						          from fnd_vendor_survey_template fvst, sys_service s
+						         where fvst.template_id = pvs.template_id
+						           and s.service_id = fvst.require_approve_service_id) service_name,
+				               pvs.require_business_group,
+				               pvs.require_company_id,
+				               (select fc.company_code
+				                  from fnd_companies_vl fc
+				                 where fc.company_id = pvs.require_company_id) company_code,
+				               (select fc.company_full_name
+				                  from fnd_companies_vl fc
+				                 where fc.company_id = pvs.require_company_id) company_name,
+				               pvs.supplier_business_group,
+				               pvs.supplier_company_id,
+				               fcv.company_code vendor_code,
+				               fcv.company_full_name vendor_name,
+				               fcs.supplier_categroy,
+				               (select v.code_value_name
+				                  from sys_code_values_v v
+				                 where v.code = 'FND_COM_SUP_INFOS.SUPPLIER_CATEGORY'
+				                   and v.code_value = fcs.supplier_categroy) supplier_categroy_desc,
+				               pvs.survey_type_code,
+				               (select fv.flex_desc
+				                  from fnd_flex_values_vl fv, fnd_flex_value_sets_vl fs
+				                 where fv.flex_value_set_id = fs.flex_value_set_id
+				                   and fs.flex_value_set_code = 'FND_VENDOR_SURVEY_TYPE'
+				                   and fv.flex_value = pvs.survey_type_code) survey_type_desc,
+				               pvs.status,
+				               (select fv.flex_desc
+				                  from fnd_flex_values_vl fv, fnd_flex_value_sets_vl fs
+				                 where fv.flex_value_set_id = fs.flex_value_set_id
+				                   and fs.flex_value_set_code = 'PUR_VENDOR_SURVEY_STATUS'
+				                   and fv.flex_value = pvs.status) status_desc,
+				               pvs.tmpl_hds_id,
+				               (select pt.template_name
+				                  from pur_survey_atm_tmpl_hds_vl pt
+				                 where pt.tmpl_hds_id = pvs.tmpl_hds_id) template_name,
+				               pvs.survey_description,
+				               pvs.created_by,
+				               (select su.description
+				                  from sys_user su
+				                 where su.user_id = pvs.created_by) created_by_desc,
+				               to_char(pvs.creation_date, 'yyyy-mm-dd') creation_date,
+				               (select su.description
+				                  from sys_user su
+				                 where su.user_id = pvs.submit_by) submit_by_desc,
+				               to_char(pvs.submit_date, 'yyyy-mm-dd') submit_date
+				          from pur_vendor_survey_headers pvs,
+				               fnd_companies_vl          fcv,
+				               fnd_com_sup_infos         fcs
+				               /* fnd_cooperative_partners  fcp */
+				         where pvs.require_business_group = ${/session/@business_group}
+				           and pvs.release_by = ${/session/@user_id} 
+				           and pvs.status = '30_SUBMITTED'
+				           and nvl(pvs.approve_flag, 'N') = 'N'
+				           /* and pvs.require_company_id = fcp.owner_company_id */
+				           and pvs.supplier_company_id = fcv.company_id
+				           and fcv.company_id = fcs.company_id(+)
+				           /* and fcp.owner_business_group = pvs.require_business_group
+				           and fcp.coop_company_id = fcv.company_id
+				           and fcv.company_id = fcp.coop_company_id
+				           and fcp.vendor_flag = 'Y'
+				           and fcp.enabled_flag = 'Y' */
+				          order by pvs.survey_number desc) t1
+                #WHERE_CLAUSE#
+                #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+        		begin
+        			pur_vendor_survey_pkg.update_survey_headers(p_survey_header_id => ${@survey_header_id},
+																p_survey_comment   => ${@survey_comment},
+                               									p_user_id          => ${/session/@user_id});
+        		end;
+        	]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+        		begin
+        			pur_vendor_survey_pkg.approve_survey(p_survey_header_id => ${@survey_header_id}, 
+							                    	    p_user_id          => ${/session/@user_id});
+        		end;
+        	]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="status" queryExpression="t1.status=${@status}"/>
+        <bm:query-field name="survey_number" queryExpression="t1.survey_number like &apos;%&apos;||${@survey_number}||&apos;%&apos;"/>
+        <bm:query-field name="tmpl_hds_id" queryExpression="t1.tmpl_hds_id=${@tmpl_hds_id}"/>
+        <bm:query-field name="survey_type_code" queryExpression="t1.survey_type_code=${@survey_type_code}"/>
+        <bm:query-field name="supplier_company_id" queryExpression="t1.supplier_company_id=${@supplier_company_id}"/>
+        <bm:query-field name="require_company_id" queryExpression="t1.require_company_id=${@require_company_id}"/>
+        <bm:query-field name="created_by_desc" queryExpression="t1.created_by_desc like &apos;%&apos;||${@created_by_desc}||&apos;%&apos;"/>
+        <bm:query-field name="creation_date_to" queryExpression="t1.creation_date &lt;= ${@creation_date_to}"/>
+        <bm:query-field name="creation_date_from" queryExpression="t1.creation_date &gt;= ${@creation_date_from}"/>
+    </bm:query-fields>
+</bm:model>

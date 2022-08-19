@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: IsaacF  
+    $Date: 2013-6-27 上午9:38:00  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        h.vendor_id,
+                        h.coop_company_id,
+                        fc.company_code vendor_code,
+                        fc.company_full_name vendor_desc,
+                        h.status header_status,
+                        h.rfx_round,
+                        h.rfx_version,
+                        h.rfx_header_id,
+                        l.rfx_line_item_id,
+                        (SELECT
+                            NVL(li.ladder_inquiry_flag,'Y')
+                        FROM
+                            pur_rfx_ln_items li
+                        WHERE
+                            li.rfx_line_item_id = l.rfx_line_item_id
+                        ) ladder_inquiry_flag,
+                        l.feedback_line_id,
+                        l.feedback_header_id,
+                        l.abandoned_flag,
+                        l.inv_organization_id,
+                        l.status,
+                        (SELECT
+                            scv.code_value_name
+                        FROM
+                            sys_code_values_vl scv,
+                            sys_codes_vl sc
+                        WHERE
+                            sc.code_id     = scv.code_id AND
+                            scv.code_value = l.status AND
+                            sc.code        = 'PUR_RFX_FEEDBACK_LINE_STATUS'
+                        ) status_desc,
+                        l.item_category_id,
+                        l.item_id,
+                        l.item_code,
+                        l.item_desc,
+                        l.item_note,
+                        l.item_parameter_config,
+                        l.uom_code,
+                        l.quantity,
+                        l.need_by_date,
+                        l.feedback_range,
+                        TO_CHAR(l.promised_date,'yyyy-mm-dd') promised_date,
+                        TO_CHAR(l.feedback_expiry_date_from,'yyyy-mm-dd') feedback_expiry_date_from,
+                        TO_CHAR(l.feedback_expiry_date_to,'yyyy-mm-dd') feedback_expiry_date_to,
+                        l.delivery_cycle,
+                        l.current_fb_by,
+                        (SELECT u.user_desc FROM sys_user_v u WHERE u.user_id = l.current_fb_by
+                        ) current_fb_by_desc,
+                        l.current_fb_quantity,
+                        l.current_fb_retail_price,
+                        l.current_fb_wholesale_price,
+                        l.current_fb_reason,
+                        l.current_bargain_by,
+                        (SELECT u.user_desc FROM sys_user_v u WHERE u.user_id = l.current_bargain_by
+                        ) current_bargain_by_desc,
+                        l.current_bargain_quantity,
+                        l.current_bargain_retail_price,
+                        l.current_bargain_whlsale_price,
+                        l.current_bargain_reason,
+                        l.valid_fb_by,
+                        (SELECT
+                            u.user_desc
+                        FROM
+                            sys_user_v u
+                        WHERE
+                            u.user_id = l.valid_fb_by
+                        ) valid_fb_by_desc,
+                        l.valid_fb_quantity,
+                        l.valid_fb_retail_price,
+                        DECODE (
+                        (SELECT
+                            rh.is_quot_quantity_flag FROM pur_rfx_headers rh WHERE rh.rfx_header_id = h.rfx_header_id
+                        ), 'Y',
+                        (SELECT
+                            NVL(fl.valid_fb_retail_price, 0) * NVL(fl.quote_quantity, 0)
+                        FROM
+                            pur_rfx_feedback_lines fl
+                        WHERE
+                            fl.feedback_line_id = l.feedback_line_id
+                        ),
+                        (SELECT
+                            NVL(fl.valid_fb_retail_price, 0) * NVL(li.quantity, 0)
+                        FROM
+                            pur_rfx_feedback_lines fl,
+                            pur_rfx_ln_items li
+                        WHERE
+                            fl.rfx_line_item_id = li.rfx_line_item_id AND
+                            fl.feedback_line_id = l.feedback_line_id
+                        ) ) valid_fb_total_price,
+                        l.valid_fb_wholesale_price,
+                        l.valid_fb_reason,
+                        l.valid_bargain_by,
+                        (SELECT u.user_desc FROM sys_user_v u WHERE u.user_id = l.valid_bargain_by
+                        ) valid_bargain_by_desc,
+                        l.valid_bargain_quantity,
+                        l.valid_bargain_retail_price,
+                        l.valid_bargain_wholesale_price,
+                        l.valid_bargain_reason,
+                        (SELECT
+                            li.line_num
+                        FROM
+                            pur_rfx_ln_items li
+                        WHERE
+                            li.rfx_line_item_id = l.rfx_line_item_id
+                        ) AS line_num,
+                        TO_CHAR(l.feedback_time,'yyyy-mm-dd hh24:mi:ss') feedback_time,
+                        TO_CHAR(l.bargained_time,'yyyy-mm-dd hh24:mi:ss') bargained_time,
+                        (SELECT
+                            quote_header_id
+                        FROM
+                            pur_rfx_quote_headers rqh
+                        WHERE
+                            rqh.rfx_line_item_id = l.rfx_line_item_id
+                        ) quote_header_id,
+                        l.min_purchase,
+                        l.min_package,
+                        pur_rfx_feedback_pkg.get_last_round_price(h.rfx_header_id, h.owner_business_group, h.coop_company_id, l.item_id, ${/session/@user_id}) AS last_valid_fb_retail_price,
+                        pur_rfx_feedback_pkg.get_floating_percentage(h.rfx_header_id, l.valid_fb_retail_price, h.owner_business_group, h.coop_company_id, l.item_id, ${/session/@user_id}) AS floating_percentage,
+                        (SELECT
+                            COUNT(*)
+                        FROM
+                            fnd_atm_attachment_multi am
+                        WHERE
+                            am.table_name     = 'PUR_RFX_FEEDBACK_LINES' AND
+                            am.table_pk_value = TO_CHAR(l.feedback_line_id)
+                        ) AS atm_counts,
+                        (SELECT
+                            rh.trans_cost_flag
+                        FROM
+                            pur_rfx_headers rh
+                        WHERE
+                            rh.rfx_header_id = h.rfx_header_id
+                        ) trans_cost_flag,
+                        l.trans_cost,
+                        l.tax_included_flag,
+                        l.tax_type_id,
+                        l.tax_type_code,
+                        l.tax_type_rate,
+                        l.quote_quantity,
+                        (pur_rfx_feedback_pkg.get_last_bid_price(p_rfx_header_id => h.rfx_header_id, p_item_id => l.item_id, p_business_group => ${/session/@business_group}, p_user_id => ${/session/@user_id}) )AS last_bid_price,
+                        l.place_of_product,
+	                    l.spec,
+	                    l.pur_cycle,
+	                    l.warranty_period,
+	                    l.sup_comments,
+	                    l.place_of_delivery,
+	                    l.brand,
+                        (SELECT
+                            fv.uom_desc
+                        FROM
+                            fnd_uom_codes_vl fv
+                        WHERE
+                            fv.uom_code       = l.uom_code AND
+                            fv.business_group = h.owner_business_group
+                        ) uom_desc,
+                        l.untax_price
+                    FROM
+                        pur_rfx_feedback_lines l,
+                        pur_rfx_feedback_headers h,
+                        fnd_companies_vl fc
+                    WHERE
+                        h.feedback_header_id = l.feedback_header_id AND
+                        fc.company_id        = h.coop_company_id
+                    ) t #WHERE_CLAUSE#
+                ORDER BY
+                    line_num
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+              BEGIN
+                pur_rfx_feedback_pkg.save_rfx_feedback_ln_bargain(p_feedback_line_id=>${@feedback_line_id},
+                                         p_header_status           =>${@header_status},
+                                         p_bargain_retail_price   => ${@current_bargain_retail_price},
+                                         p_bargain_wholesale_price =>${@current_bargain_whlsale_price},
+                                         p_bargain_reason   =>${@current_bargain_reason},
+                                         p_user_id          =>${/session/@user_id});
+              END;
+		      ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="feedback_line_id" queryExpression="feedback_line_id = ${@feedback_line_id}"/>
+        <bm:query-field name="rfx_line_item_id" queryExpression="rfx_line_item_id = ${@rfx_line_item_id}"/>
+        <bm:query-field name="item_id" queryExpression="item_id = ${@item_id}"/>
+        <bm:query-field name="vendor_id" queryExpression="vendor_id = ${@vendor_id}"/>
+        <bm:query-field name="rfx_header_id" queryExpression="rfx_header_id = ${@rfx_header_id}"/>
+        <bm:query-field name="round" queryExpression="rfx_round = ${@round}"/>
+        <bm:query-field name="version" queryExpression="rfx_version = ${@version}"/>
+        <bm:query-field name="coop_company_id" queryExpression="coop_company_id = ${/parameter/@coop_company_id}"/>
+    </bm:query-fields>
+    <flex-segmentBm applTableAliasName="l" headerIdPath="/parameter/@rfx_header_id" headerTableName="PUR_RFX_HEADERS" lineTableName="PUR_RFX_FEEDBACK_LINES" templateFieldName="template_id" type="grid_expanded_bm_query"/>
+    <bm:features>
+        <s:bm-script><![CDATA[
+        	var cx = Packages.aurora.javascript.Context.getCurrentContext();
+			Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+        	Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_grid_expanded_bm.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

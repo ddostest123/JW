@@ -1,0 +1,486 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        (SELECT d.description_text FROM fnd_descriptions d WHERE d.description_id = fcv.company_full_name_id AND d.language = userenv('LANG')) AS company_name,--公司全称
+                        fcv.company_code vendor_code,       --供应商编码
+                        (SELECT
+                            scv.code_value_name
+                        FROM
+                            sys_code_values_v scv
+                        WHERE
+                            fcv.enterprise_nature = scv.code_value AND
+                            scv.code              = 'FND_COM_SUP_INFOS.ENTERPRISE_NATURE'
+                        ) enterprise_nature_name, --公司类型
+                        (SELECT
+                            scv.code_value_name
+                        FROM
+                            sys_code_values_v scv
+                        WHERE
+                            fcv.supplier_categroy = scv.code_value AND
+                            scv.code              = 'FND_COM_SUP_INFOS.SUPPLIER_CATEGORY'
+                        ) supplier_categroy_name, --公司性质
+                         (SELECT taxpayer_type_name FROM (SELECT taxpayer_type_name from (SELECT scv.code_value_name taxpayer_type_name,fcv.last_update_date
+          FROM sys_code_values_v scv
+         WHERE fcv.taxpayer_type = scv.code_value
+               AND scv.code = 'FND_COM_SUP_INFOS.TAXPAYER_TYPE'
+               union
+               SELECT pvsbi.c_attribute2 taxpayer_type_name,pvsbi.last_update_date FROM pur_vendor_survey_basic_info pvsbi 
+             WHERE  pvsbi.survey_header_id = (SELECT  survey_header_id FROM pur_vendor_survey_headers 
+                    WHERE  last_update_date = (SELECT max(pvsh.last_update_date)
+                           from pur_vendor_survey_headers  pvsh
+                         WHERE    pvsh.supplier_company_id = fcv.company_id
+                        --  AND pvsh.supplier_business_group = fcpv.coop_business_group
+                          AND pvsh.status = '40_APPROVED'
+                          AND pvsh.approve_flag = 'Y' 
+                    ) and supplier_company_id = fcv.company_id
+                      and require_company_id = fcpv.owner_company_id
+                    ))tt order by tt.last_update_date desc)ttn WHERE rownum = 1
+               
+               
+               ) taxpayer_type_name, --纳税人身份 
+                        fcv.address,          --公司地址
+                        fcv.business_address, --经营地址
+                          (SELECT contact_name FROM ( SELECT mp.contact_name FROM (SELECT pvsc.contact_name,pvsc.last_update_date
+                     FROM pur_vendor_survey_contacts pvsc
+                    WHERE pvsc.survey_header_id = (SELECT  survey_header_id FROM pur_vendor_survey_headers 
+                    WHERE  last_update_date = (SELECT max(pvsh.last_update_date)
+                           from pur_vendor_survey_headers  pvsh
+                         WHERE    pvsh.supplier_company_id = fcv.company_id
+                        --  AND pvsh.supplier_business_group = fcpv.coop_business_group
+                          AND pvsh.status = '40_APPROVED'
+                          AND pvsh.approve_flag = 'Y' 
+                          AND nvl(pvsc.default_contact_flag,
+                                  'N') = 'Y'
+                    ) and supplier_company_id = fcv.company_id
+                      and require_company_id = fcpv.owner_company_id
+                    ) union
+                    SELECT fcsc.contact_name,fcsc.last_update_date
+              FROM fnd_com_sup_contacts fcsc
+             WHERE fcsc.company_id = fcv.company_id
+                   AND nvl(fcsc.default_contact_flag,
+                           'N') = 'Y'
+                    )mp order by mp.last_update_date desc)mpx WHERE rownum=1
+           ) contact_name,
+                          (SELECT email FROM ( SELECT mp.email FROM (SELECT pvsc.email,pvsc.last_update_date
+                     FROM pur_vendor_survey_contacts pvsc
+                    WHERE pvsc.survey_header_id = (SELECT  survey_header_id FROM pur_vendor_survey_headers 
+                    WHERE  last_update_date = (SELECT max(pvsh.last_update_date)
+                           from pur_vendor_survey_headers  pvsh
+                         WHERE    pvsh.supplier_company_id = fcv.company_id
+                        --  AND pvsh.supplier_business_group = fcpv.coop_business_group
+                          AND pvsh.status = '40_APPROVED'
+                          AND pvsh.approve_flag = 'Y' 
+                          AND nvl(pvsc.default_contact_flag,
+                                  'N') = 'Y'
+                    ) and supplier_company_id = fcv.company_id
+                      and require_company_id = fcpv.owner_company_id
+                    ) union
+                    SELECT fcsc.email,fcsc.last_update_date
+              FROM fnd_com_sup_contacts fcsc
+             WHERE fcsc.company_id = fcv.company_id
+                   AND nvl(fcsc.default_contact_flag,
+                           'N') = 'Y'
+                    )mp order by mp.last_update_date desc)mpx WHERE rownum=1
+           ) email,
+                           (SELECT mobile_phone FROM ( SELECT mp.mobile_phone FROM (SELECT pvsc.mobile_phone,pvsc.last_update_date
+                     FROM pur_vendor_survey_contacts pvsc
+                    WHERE pvsc.survey_header_id = (SELECT  survey_header_id FROM pur_vendor_survey_headers 
+                    WHERE  last_update_date = (SELECT max(pvsh.last_update_date)
+                           from pur_vendor_survey_headers  pvsh
+                         WHERE    pvsh.supplier_company_id = fcv.company_id
+                        --  AND pvsh.supplier_business_group = fcpv.coop_business_group
+                          AND pvsh.status = '40_APPROVED'
+                          AND pvsh.approve_flag = 'Y' 
+                          AND nvl(pvsc.default_contact_flag,
+                                  'N') = 'Y'
+                    ) and supplier_company_id = fcv.company_id
+                      and require_company_id = fcpv.owner_company_id
+                    ) union
+                    SELECT fcsc.mobile_phone,fcsc.last_update_date
+              FROM fnd_com_sup_contacts fcsc
+             WHERE fcsc.company_id = fcv.company_id
+                   AND nvl(fcsc.default_contact_flag,
+                           'N') = 'Y'
+                    )mp order by mp.last_update_date desc)mpx WHERE rownum=1
+           ) mobile_phone,
+                        (
+                        SELECT
+                            listagg(sbj.c_attribute1, ',') within GROUP(
+                        ORDER BY
+                            sbj.c_attribute1)
+                        FROM
+                            (SELECT
+                                pvspc.c_attribute1
+                            FROM
+                                pur_vendor_survey_pro_capacity pvspc
+                            WHERE
+                                pvspc.survey_header_id =
+                                (SELECT
+                                    MAX(pvsh.survey_header_id)
+                                FROM
+                                    pur_vendor_survey_headers pvsh
+                                WHERE
+                                    pvsh.supplier_company_id     = fcv.company_id AND
+                                    pvsh.supplier_business_group = fcpv.coop_business_group AND
+                                    pvsh.require_company_id      = fcpv.owner_company_id
+                                    -- and pvsh.require_business_group = fcpv.owner_business_group
+                                    AND
+                                    pvsh.status       = '40_APPROVED' AND
+                                    pvsh.approve_flag = 'Y'
+                                )
+                            )sbj
+                        ) c_attribute1, --标的物分类
+                        (SELECT
+                            c_attribute3
+                        FROM
+                            (SELECT
+                                pbi.c_attribute3
+                            FROM
+                                pur_vendor_survey_basic_info pbi,
+                                pur_vendor_survey_headers pvsh
+                            WHERE
+                                pbi.survey_header_id         = pvsh.survey_header_id AND
+                                pvsh.supplier_company_id     = fcv.company_id AND
+                                pvsh.supplier_business_group = fcpv.coop_business_group AND
+                                pvsh.status                  = '40_APPROVED' AND
+                                pvsh.approve_flag            = 'Y'
+                            ORDER BY
+                                pvsh.last_update_date DESC
+                            )
+                        WHERE
+                            rownum = 1
+                        ) c_attribute3, --成立日期
+                        (SELECT
+                            fcp.creation_date
+                        FROM
+                            fnd_cooperative_partners fcp
+                        WHERE
+                            fcp.coop_partner_id = fcpv.coop_partner_id
+                        ) approved_date, --审批通过日期
+                        (
+                        SELECT
+                            listagg(vcd.vendor_class_desc, ',') within GROUP(
+                        ORDER BY
+                            vcd.vendor_class_desc)
+                        FROM
+                            (SELECT
+                                pvcv.vendor_class_desc
+                            FROM
+                                pur_vendor_class_assigns pvca,
+                                pur_vendor_classes_vl pvcv
+                            WHERE
+                                pvca.vendor_id       = fcpv.coop_company_id AND
+                                pvca.business_group  = fcpv.owner_business_group AND
+                                pvca.coop_company_id = fcpv.coop_company_id AND
+                                pvca.vendor_class_id = pvcv.vendor_class_id
+                            )vcd
+                        ) vendor_class_desc, --供应商分类
+                        (
+                        SELECT
+                            listagg(vcd.vendor_class_code, ',') within GROUP(
+                        ORDER BY
+                            vcd.vendor_class_code)
+                        FROM
+                            (SELECT
+                                pvcv.vendor_class_code
+                            FROM
+                                pur_vendor_class_assigns pvca,
+                                pur_vendor_classes_vl pvcv
+                            WHERE
+                                pvca.vendor_id       = fcpv.coop_company_id AND
+                                pvca.business_group  = fcpv.owner_business_group AND
+                                pvca.coop_company_id = fcpv.coop_company_id AND
+                                pvca.vendor_class_id = pvcv.vendor_class_id
+                            )vcd
+                        ) vendor_class_code, --供应商分类代码
+                        fcpv.coop_company_id, 
+                        (SELECT
+                            DECODE(
+                            (SELECT
+                                NVL(a.is_comment_access_control, 0) FROM wfl_workflow_node a WHERE node_id = v.node_id
+                            ), 0, v.comment_text, 1,
+                            (SELECT
+                                DECODE(COUNT(*), 0, '', v.comment_text)
+                            FROM
+                                wfl_node_comment_access b
+                            WHERE
+                                b.node_id             = v.node_id AND
+                                b.can_access_node_id IN
+                                (SELECT node_id FROM wfl_approve_record a WHERE a.instance_id = v.instance_id
+                                UNION ALL
+                                SELECT
+                                    node_id
+                                FROM
+                                    wfl_instance_node_recipient
+                                WHERE
+                                    instance_id = v.instance_id
+                                )
+                            ), '') comment_text
+                        FROM
+                            wfl_approve_record_v v
+                        WHERE
+                            v.creation_date =
+                            (SELECT
+                                MAX(creation_date)
+                            FROM
+                                wfl_approve_record_v v
+                            WHERE
+                                (
+                                    no_display_flag IS NULL OR
+                                    no_display_flag  = 'N'
+                                )
+                                AND
+                                (SELECT
+                                        a.description_text
+                                    FROM
+                                        wfl_workflow_node t,
+                                        fnd_descriptions a
+                                    WHERE
+                                        t.name_id      = a.description_id(+) AND
+                                        a.language(+)  = 'ZHS' AND
+                                        a.ref_table(+) = 'WFL_WORKFLOW_NODE' AND
+                                        a.ref_field(+) = 'NAME_ID' AND
+                                        node_id        = v.node_id
+                                )
+                                                 = '审计部' AND
+                                v.instance_param =
+                                (SELECT
+                                    MAX(survey_header_id)
+                                FROM
+                                    pur_vendor_survey_headers l
+                                WHERE
+                                    l.require_company_id  = fcpv.owner_company_id AND
+                                    l.supplier_company_id = fcpv.coop_company_id AND
+                                    l.status              = '40_APPROVED'
+                                )
+                                AND rownum = 1
+                            )
+                        ) audit_opinion,
+                        (SELECT
+                            DECODE(
+                            (SELECT
+                                NVL(a.is_comment_access_control, 0) FROM wfl_workflow_node a WHERE node_id = v.node_id
+                            ), 0, v.comment_text, 1,
+                            (SELECT
+                                DECODE(COUNT(*), 0, '', v.comment_text)
+                            FROM
+                                wfl_node_comment_access b
+                            WHERE
+                                b.node_id             = v.node_id AND
+                                b.can_access_node_id IN
+                                (SELECT node_id FROM wfl_approve_record a WHERE a.instance_id = v.instance_id
+                                UNION ALL
+                                SELECT
+                                    node_id
+                                FROM
+                                    wfl_instance_node_recipient
+                                WHERE
+                                    instance_id = v.instance_id
+                                )
+                            ), '') comment_text
+                        FROM
+                            wfl_approve_record_v v
+                        WHERE
+                            v.creation_date =
+                            (SELECT
+                                MAX(creation_date)
+                            FROM
+                                wfl_approve_record_v v
+                            WHERE
+                                (
+                                    no_display_flag IS NULL OR
+                                    no_display_flag  = 'N'
+                                )
+                                AND
+                                (SELECT
+                                        a.description_text
+                                    FROM
+                                        wfl_workflow_node t,
+                                        fnd_descriptions a
+                                    WHERE
+                                        t.name_id      = a.description_id(+) AND
+                                        a.language(+)  = 'ZHS' AND
+                                        a.ref_table(+) = 'WFL_WORKFLOW_NODE' AND
+                                        a.ref_field(+) = 'NAME_ID' AND
+                                        node_id        = v.node_id
+                                )
+                                                 = '税务管理部' AND
+                                v.instance_param =
+                                (SELECT
+                                    MAX(survey_header_id)
+                                FROM
+                                    pur_vendor_survey_headers l
+                                WHERE
+                                    l.require_company_id  = fcpv.owner_company_id AND
+                                    l.supplier_company_id = fcpv.coop_company_id AND
+                                    l.status              = '40_APPROVED'
+                                )
+                                AND rownum = 1
+                            )
+                        ) tax_opinion,
+                        (SELECT
+                            DECODE(
+                            (SELECT
+                                NVL(a.is_comment_access_control, 0) FROM wfl_workflow_node a WHERE node_id = v.node_id
+                            ), 0, v.comment_text, 1,
+                            (SELECT
+                                DECODE(COUNT(*), 0, '', v.comment_text)
+                            FROM
+                                wfl_node_comment_access b
+                            WHERE
+                                b.node_id             = v.node_id AND
+                                b.can_access_node_id IN
+                                (SELECT node_id FROM wfl_approve_record a WHERE a.instance_id = v.instance_id
+                                UNION ALL
+                                SELECT
+                                    node_id
+                                FROM
+                                    wfl_instance_node_recipient
+                                WHERE
+                                    instance_id = v.instance_id
+                                )
+                            ), '') comment_text
+                        FROM
+                            wfl_approve_record_v v
+                        WHERE
+                            v.creation_date =
+                            (SELECT
+                                MAX(creation_date)
+                            FROM
+                                wfl_approve_record_v v
+                            WHERE
+                                (
+                                    no_display_flag IS NULL OR
+                                    no_display_flag  = 'N'
+                                )
+                                AND
+                                (SELECT
+                                        a.description_text
+                                    FROM
+                                        wfl_workflow_node t,
+                                        fnd_descriptions a
+                                    WHERE
+                                        t.name_id      = a.description_id(+) AND
+                                        a.language(+)  = 'ZHS' AND
+                                        a.ref_table(+) = 'WFL_WORKFLOW_NODE' AND
+                                        a.ref_field(+) = 'NAME_ID' AND
+                                        node_id        = v.node_id
+                                )
+                                                 = '法务部' AND
+                                v.instance_param =
+                                (SELECT
+                                    MAX(survey_header_id)
+                                FROM
+                                    pur_vendor_survey_headers l
+                                WHERE
+                                    l.require_company_id  = fcpv.owner_company_id AND
+                                    l.supplier_company_id = fcpv.coop_company_id AND
+                                    l.status              = '40_APPROVED'
+                                )
+                                AND rownum = 1
+                            )
+                        ) justice_opinion,
+                        (SELECT
+                            DECODE(
+                            (SELECT
+                                NVL(a.is_comment_access_control, 0) FROM wfl_workflow_node a WHERE node_id = v.node_id
+                            ), 0, v.comment_text, 1,
+                            (SELECT
+                                DECODE(COUNT(*), 0, '', v.comment_text)
+                            FROM
+                                wfl_node_comment_access b
+                            WHERE
+                                b.node_id             = v.node_id AND
+                                b.can_access_node_id IN
+                                (SELECT node_id FROM wfl_approve_record a WHERE a.instance_id = v.instance_id
+                                UNION ALL
+                                SELECT
+                                    node_id
+                                FROM
+                                    wfl_instance_node_recipient
+                                WHERE
+                                    instance_id = v.instance_id
+                                )
+                            ), '') comment_text
+                        FROM
+                            wfl_approve_record_v v
+                        WHERE
+                            v.creation_date =
+                            (SELECT
+                                MAX(creation_date)
+                            FROM
+                                wfl_approve_record_v v
+                            WHERE
+                                (
+                                    no_display_flag IS NULL OR
+                                    no_display_flag  = 'N'
+                                )
+                                AND
+                                (SELECT
+                                        a.description_text
+                                    FROM
+                                        wfl_workflow_node t,
+                                        fnd_descriptions a
+                                    WHERE
+                                        t.name_id      = a.description_id(+) AND
+                                        a.language(+)  = 'ZHS' AND
+                                        a.ref_table(+) = 'WFL_WORKFLOW_NODE' AND
+                                        a.ref_field(+) = 'NAME_ID' AND
+                                        node_id        = v.node_id
+                                )
+                                                 = '财务部' AND
+                                v.instance_param =
+                                (SELECT
+                                    MAX(survey_header_id)
+                                FROM
+                                    pur_vendor_survey_headers l
+                                WHERE
+                                    l.require_company_id  = fcpv.owner_company_id AND
+                                    l.supplier_company_id = fcpv.coop_company_id AND
+                                    l.status              = '40_APPROVED'
+                                )
+                                AND rownum = 1
+                            )
+                        ) finance_opinion
+                    FROM
+                        fnd_companies fcv,
+                        fnd_coop_partner_vendors_vl fcpv
+                    WHERE
+                        fcv.company_id            = fcpv.coop_company_id AND
+                        fcpv.owner_business_group = ${/session/@business_group} AND
+                        fcpv.enabled_flag         = 'Y' AND
+                        fcv.enabled_flag          = 'Y' AND
+                        fcpv.vendor_flag          = 'Y' AND
+                        fcv.supply_flag           = 'Y' AND
+                        EXISTS
+                        (SELECT
+                            1
+                        FROM
+                            fnd_companies c
+                        WHERE
+                            c.business_group = fcpv.owner_business_group AND
+                            c.company_id     = fcpv.owner_company_id AND
+                            c.enabled_flag   = 'Y'
+                        )
+                    )vv #WHERE_CLAUSE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="vendor_code" queryExpression="vv.vendor_code like &apos;%&apos; || ${@vendor_code} || &apos;%&apos;"/>
+        <bm:query-field name="company_name" queryExpression=" vv.company_name like &apos;%&apos; || ${@company_name} || &apos;%&apos; "/>
+        <bm:query-field name="enterprise_nature_name" queryExpression=" vv.enterprise_nature_name = ${@enterprise_nature_name} "/>
+        <bm:query-field name="vendor_class_desc" queryExpression="(vv.vendor_class_desc like &apos;%&apos; || ${@vendor_class_desc} || &apos;%&apos; or ${@vendor_class_desc} is null)"/>
+        <bm:query-field name="vendor_class_code" queryExpression="(vv.vendor_class_code like &apos;%&apos; || ${@vendor_class_code} || &apos;%&apos; or ${@vendor_class_code} is null)"/>
+        <bm:query-field name="c_attribute1" queryExpression=" vv.c_attribute1 like &apos;%&apos; || ${@c_attribute1} || &apos;%&apos; "/>
+        <bm:query-field name="approved_date_to" queryExpression=" vv.approved_date &lt;= to_date(${@approved_date_to},&apos;yyyy-mm-dd hh24:mi:ss&apos;) "/>
+        <bm:query-field name="approved_date_from" queryExpression=" vv.approved_date &gt;= to_date(${@approved_date_from},&apos;yyyy-mm-dd hh24:mi:ss&apos;) "/>
+        <bm:query-field name="category_udf_id" queryExpression="exists (select 1 from pur_supply_ability_lns psal,pur_supply_ability_hds psah where psal.ability_hds_id = psah.ability_hds_id and psal.supply_flag = &apos;Y&apos; and psah.vendor_id = vv.coop_company_id and psal.category_udf_id in (SELECT mcud.category_udf_id FROM mtl_categories_user_defined mcud START WITH mcud.category_udf_id = ${@category_udf_id} CONNECT BY PRIOR mcud.category_udf_id = mcud.parent_category_udf_id))"/>
+    </bm:query-fields>
+</bm:model>

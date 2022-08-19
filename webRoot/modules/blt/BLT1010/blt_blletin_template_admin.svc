@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:service xmlns:s="aurora.plugin.script" xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="t1.bulletin_id = ${/parameter/@bulletin_id}" model="blt.BLT1010.blt_bulletin_list" rootPath="blt_detail"/>
+        <a:model-query fetchAll="true" model="blt.BLT1010.blt_login_template_admin" rootPath="blt_template_news"/>
+        <s:server-script><![CDATA[
+            // loadTemplate(String fn) 导入模板
+            // replaceAll(String oldStr, String newStr) 替换字符串
+            // exportTemplate(String fn) 导出成Screen文件
+            
+            importClass(Packages.loginTemplateControl.GenerateTemplateScreen);
+            
+            
+            var p = $ctx.parameter;
+            var record = $ctx.model.getChild("blt_detail").getChildren()[0];
+            var news = $ctx.model.getChild("blt_template_news").getChildren();
+            var templateUrl = [];
+            var data = {
+                customization: 'customization'
+            };
+            
+            //实例化处理的函数
+            var instance = new GenerateTemplateScreen($ctx); //aurora.plugin.script.scriptobject.CompositeMapObject
+            
+            modifyBgNewsScreen();
+            
+            modifyBgLoginScreen();
+            
+            //修改集团首页下的新闻列表screen页面
+            
+            function modifyBgNewsScreen() {
+                if (record.bulletin_category == 'HOMEPAGE_BULLETIN' || (record.bulletin_category == 'LOGINED_BULLETIN' && record.object_category == 'COOP')) {
+                    instance.loadTemplate(p.template_url);
+                    //替换内容，
+                    var html = '<li code="' + record.business_group_md5 + '">';
+                    html += '<div class="left num-show-field"><div class="num-field"></div></div>';
+                    html += '<div class="left bulletin-detial">';
+                    html += '<div class="news-title out-line-set" onclick="loginBgNewsDetail(' + record.bulletin_id + ')">' + record.bulletin_title + '</div>';
+                    html += '<div class="news-release-infor">';
+                    html += '<span class="left out-line-set left-align-f">' + record.created_by_desc + ' 发布于 ' + getValue(record.release_date_desc, '') + '</span>';
+                    html += '<span class="right out-line-set right-align-f">' + record.last_updated_by_desc + ' 最后修改于 ' + record.last_update_date_desc + '</span>';
+                    html += '</div></div>';
+                    html += '</li>';
+            
+                    //替换配置项
+                    instance.replace('/<a:newsReplace>*</a:newsReplace>/', '<a:newsReplace>replace</a:newsReplace>' + html);
+                    //保存到screen文件
+                    var name = (p.template_url).toString();
+                    instance.exportTemplate(name);
+                    return;
+                }
+            }
+            
+            //修改集团订制首页login下的公告
+            
+            function modifyBgLoginScreen() {
+                //获取各个bg下的配置login页面url
+                getBgTemplateUrl();
+                //循环配置login页面
+                for (var j = 0;j < templateUrl.length;j++) {
+                    var screen = templateUrl[j];
+                    var startL = screen.indexOf(data.customization);
+                    if (startL > 0) {
+                        var loginPath = screen.substr(startL);
+                    } else {
+                        break;
+                    }
+                    instance.loadTemplate(loginPath);
+                    var array = '{new@[';
+                    for (var i = 0;i < 　news.length;i++) {
+                        if (news[i].type == 'type1' || news[i].template_url == templateUrl[j]) {
+                            array += '['
+                            array += '\'' + news[i].type + '\',';
+                            array += '\'' + news[i].bulletin_title + '\',';
+                            array += '\'' + news[i].release_date + '\',';
+                            array += '\'' + news[i].href + '\',';
+                            array += '\'' + news[i].bulletin_list_type_desc + '\'';
+                            array += ']';
+                            if (i != news.length - 1) {
+                                array += ',';
+                            }
+                        }
+            
+                    }
+                    array += ']@new}';
+                    println(loginPath);
+                    instance.replace('/{new@*@new}/', array);
+                    //保存到screen文件
+                    name = (loginPath).toString();
+                    instance.exportTemplate(name);
+                }
+            
+            }
+            
+            function getBgTemplateUrl() {
+                for (var i = 0;i < news.length;i++) {
+                    if (judegeRepeatUrl(news[i].template_url)) {
+                        templateUrl.push(news[i].template_url);
+                    }
+                }
+            }
+            
+            function judegeRepeatUrl(template_url) {
+                if (typeof(template_url) != 'undefined' && template_url != '') {
+                    for (var i = 0;i < templateUrl.length;i++) {
+                        if (templateUrl[i] == template_url) {
+                            return false;
+                        }
+                    }
+                    return true;
+                } else {
+                    return false;
+                }
+            }
+            
+            function getValue(value, nullValue) {
+                if (typeof(value) == 'undefined') {
+                    return nullValue;
+                }
+                return value;
+            }
+        ]]></s:server-script>
+    </a:init-procedure>
+    <a:service-output output="/parameter"/>
+</a:service>

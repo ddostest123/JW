@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: zc  
+    $Date: 2019-01-08 22:00
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:service xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <p:echo/>
+        <a:model-query fetchAll="true" model="ves.ves_sub_query_all" rootPath="sub_score"/>
+        <a:model-query fetchAll="true" model="ves.ves_detail_query_all" rootPath="detail_score"/>
+        <s:server-script import="lib.js"><![CDATA[
+            function judge(score_from, score_to, score) {
+                if (score_from || score_to) {
+                    if (score_from && score_to) {
+                        if (score_from <= score && score_to >= score) {
+                            return true;
+                        } else {
+                            return false;
+                        }
+                    } else if (score_from) {
+                        log(score_from < score);
+                        return score_from < score;
+                    } else if (score_to) {
+                        log(score_to > score);
+                        return score_to > score;
+                    }
+                } else {
+                    return true;
+                }
+            }
+            
+            var array = $ctx.get('/model/sub_score').getChildren();
+            var array1 = $ctx.get('/model/detail_score').getChildren();
+            var record = new CompositeMap('record');
+            var name_map = {};
+            var j = 0;
+            var array1_flg = true;
+            var comments = '';
+            var temp_sum_criterion_code = '';
+            for (var i = 0;i < array.length;i++) {
+                array1_flg = true;
+                if (temp_sum_criterion_code) {
+                    if (temp_sum_criterion_code != array[i].sum_criterion_code) {
+                        if (temp_sum_criterion_code == 'KWKPIQA') {
+                            name_map['quality'] = comments;
+                        } else if (temp_sum_criterion_code == 'KWKPILT') {
+                            name_map['delivery_date'] = comments;
+                        } else {
+                            if (name_map['comprehensive_item']) {
+                                name_map['comprehensive_item'] += comments;
+                            } else {
+                                name_map['comprehensive_item'] = comments;
+                            }
+                        }
+                        comments = '';
+                    }
+                }
+                temp_sum_criterion_code = array[i].sum_criterion_code;
+            
+                if (array[i].sub_score || array[i].sub_score == 0) {
+                    name_map[array[i].sub_line_id + '_'] = array[i].sub_score;
+                    if (name_map[array[i].sum_criterion_code]) {
+                        name_map[array[i].sum_criterion_code] += array[i].sub_score;
+                    } else {
+                        name_map[array[i].sum_criterion_code] = array[i].sub_score;
+                    }
+                }
+            
+                
+                    log('all' + array[i]['comments'] + ' score_from:' + array[i].score_from + ' score_to:' + array[i].score_to + ' score:' + array[i].sub_score);
+                    if (array[i]['comments']){
+                        var columns = array[i]['comments'].split(';');
+                    }else{
+                        var columns = [''];
+                    }
+                    log(columns.length);
+                    var m = 0;
+                                   
+                    while (array1_flg) {
+                        log('j=' + j);
+                        if (j == array1.length) {
+                            array1_flg = false;
+                            break;
+                        };
+                        
+                         if (columns.length == 0 || m == columns.length || !judge(array[i].score_from, array[i].score_to, array[i].sub_score)) {
+                            log('array1[j] = ' + array1[j].toXML());
+                            log('array[j] = ' + array[i].toXML());
+                            while (j < array1.length && array1[j].sub_line_id == array[i].sub_line_id) {
+                                j++;
+                            }
+                            array1_flg = false;
+                            break;
+                        }  
+                        if (array1[j].sub_line_id == array[i].sub_line_id) 
+                         {
+                            log('columns' + columns);
+                            if (array1[j].scoring_method == 'AUTO'){
+                            var str = columns[m].replace('{1}', array1[j]['num1']);
+                            str = str.replace('{2}', array1[j]['num2']);
+                            columns[m] = str;
+                            if (columns[m]) {
+                                comments += columns[m] + ',';
+                            }
+                            log('scoring_method_kevin = '+ array1[j].scoring_method +'  sub_line_id =  ' + array[i].sub_line_id +'array1[i][num1] == '+ array1[i]['num1'] +' array1[i][num2] == '+ array1[i]['num2'] + columns[m]);
+                            m++;
+                            }
+                            log('scoring_method_11 = '+ array1[j].scoring_method +'  sub_line_id =  ' + array[i].sub_line_id +'array1[i][num1] == '+ array1[i]['num1'] +' array1[i][num2] == '+ array1[i]['num2'] );
+                            log('detail_line_id = '+ array1[j].detail_line_id );
+                            j++;
+                        } else {
+                            array1_flg = false;
+                            break;
+                        }
+                    }  
+            }
+            
+            
+            record = addAllProperty(record, name_map);
+            $ctx.model.addChild(record.getData());
+            log($ctx.toXML());
+        ]]></s:server-script>
+    </a:init-procedure>
+    <a:service-output output="/model"/>
+</a:service>

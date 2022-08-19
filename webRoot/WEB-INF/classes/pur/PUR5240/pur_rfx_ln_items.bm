@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: IsaacF  
+    $Date: 2013-6-27 上午9:38:00  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*,
+                    (
+                        CASE
+                            WHEN
+                                (
+                                    NVL(v.valid_fb_total_price_total,0) > 0
+                                )
+                                AND
+                                v.suggested_operation_value = 'BACK'
+                            THEN ''
+                            ELSE v.suggested_operation_value
+                        END) AS suggested_operation
+                FROM
+                    (SELECT
+                        rownum*10 line_number,
+                        rh.round,
+                        rh.version,
+                        li.CURRENT_ROUND,
+                        li.CURRENT_VERSION,
+                        li.rfx_line_item_id,
+                        li.rfx_header_id,
+                        (SELECT
+                            COUNT(1)
+                        FROM
+                            pur_rfx_feedback_lines l,
+                            pur_rfx_feedback_headers h,
+                            pur_rfx_ln_items rl
+                        WHERE
+                            h.feedback_header_id    = l.feedback_header_id AND
+                            l.rfx_line_item_id      = rl.rfx_line_item_id AND
+                            rl.cancel_flag          = 'N' AND
+                            rl.rfx_finished_flag    = 'N' AND
+                            l.cancel_flag           = 'N' AND
+                            h.rfx_round             =rl.current_round AND
+                            h.rfx_version           =rl.current_version AND
+                            l.valid_fb_retail_price > 0 and 
+                            rl.rfx_line_item_id = li.rfx_line_item_id
+                        ) AS vendor_price_count,
+                        li.inv_organization_id,
+                        (SELECT
+                            io.description
+                        FROM
+                            inv_organizations_vl io
+                        WHERE
+                            io.inv_organization_id = li.inv_organization_id
+                        ) inv_organization_desc,
+                        li.item_category_id,
+                        (SELECT
+                            ic.category_name
+                        FROM
+                            mtl_categories_user_defined_vl ic
+                        WHERE
+                            ic.category_udf_id = li.item_category_id
+                        ) item_category_desc,
+                        li.item_id,
+                        NVL(li.item_code,'-') AS item_code,
+                        (SELECT
+                            NVL(price_batch_quantity,1)
+                        FROM
+                            mtl_system_items
+                        WHERE
+                            item_id = li.item_id
+                        ) AS price_batch_quantity,
+                        li.item_desc,
+                        li.item_note,
+                        li.item_parameter_config,
+                        li.uom_code,
+                        (SELECT
+                            fv.uom_desc
+                        FROM
+                            fnd_uom_codes_vl fv
+                        WHERE
+                            fv.uom_code       = li.uom_code AND
+                            fv.business_group = rh.owner_business_group
+                        ) uom_desc,
+                        li.quantity,
+                        TO_CHAR(need_by_date, 'yyyy-mm-dd') need_by_date,
+                        li.suggested_operation suggested_operation_value,
+                        (SELECT
+                            SUM(NVL(l.valid_fb_retail_price,0) * NVL(l.allotted_quantity,0))
+                        FROM
+                            pur_rfx_feedback_headers h,
+                            pur_rfx_feedback_lines l
+                        WHERE
+                            h.rfx_header_id      = rh.rfx_header_id AND
+                            h.feedback_header_id = l.feedback_header_id AND
+                            l.cancel_flag        = 'N' AND
+                            h.rfx_round          = li.current_round AND
+                            h.rfx_version        = li.current_version AND
+                            l.rfx_line_item_id   = li.rfx_line_item_id
+                        ) AS valid_fb_total_price_total,
+                        li.suggested_feedback_line_id,
+                        li.cancel_flag,
+                        li.data_source,
+                        li.source_from,
+                        li.comments,
+                        li.pur_req_num,
+                        li.feedback_range,
+                        li.line_num,
+                        li.flex_appl_relevance_id,
+                        li.work_num,
+                        li.bom_num,
+                        li.sm_comment,
+                        li.specification,
+                        li.req_number,
+                        li.req_line_num,
+                        li.cost_price,
+                        (NVL(li.cost_total_price, (
+                        (SELECT
+                            SUM(fl.allotted_quantity)
+                        FROM
+                            pur_rfx_feedback_lines fl
+                        WHERE
+                            fl.rfx_line_item_id = li.rfx_line_item_id
+                        ) * li.cost_price))) AS cost_total_price,
+                        (SELECT
+                            COUNT(*)
+                        FROM
+                            fnd_atm_attachment_multi am
+                        WHERE
+                            am.table_name     = 'PUR_RFX_LN_ITEMS' AND
+                            am.table_pk_value = TO_CHAR(li.rfx_line_item_id) AND
+                            rownum            = 1
+                        ) AS atm_counts,
+                        li.kw_customer
+                    FROM
+                        pur_rfx_ln_items li,
+                        pur_rfx_headers rh
+                    WHERE
+                        li.rfx_header_id     = ${/parameter/@rfx_header_id} AND
+                        li.rfx_header_id     = rh.rfx_header_id AND
+                        li.cancel_flag       = 'N' AND
+                        li.rfx_finished_flag = 'N'
+                    ORDER BY
+                        li.line_num
+                    ) v
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+              BEGIN
+                pur_rfx_pkg.save_suggested_operation(p_rfx_line_item_id=>${@rfx_line_item_id},
+                					 p_suggested_fb_line_id => ${@suggested_feedback_line_id},
+                                     p_suggested_operation =>${@suggested_operation},
+                                     p_cost_price    	=>${@cost_price},
+                                     p_cost_total_price    	=>${@cost_total_price},
+                                     p_user_id            =>${/session/@user_id});
+                
+              END;
+		      ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

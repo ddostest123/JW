@@ -1,0 +1,378 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: IsaacF  
+    $Date: 2013-6-27 上午9:38:00  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    rownum*10 line_number,
+                    li.rfx_line_item_id,
+                    li.rfx_header_id,
+                    li.inv_organization_id,
+                    li.trans_cost,
+                    (SELECT
+                        io.description
+                    FROM
+                        inv_organizations_vl io
+                    WHERE
+                        io.inv_organization_id = li.inv_organization_id
+                    ) inv_organization_desc,
+                    (SELECT
+                        io.es_inv_org_id
+                    FROM
+                        inv_organizations_vl io
+                    WHERE
+                        io.inv_organization_id = li.inv_organization_id
+                    ) es_inv_org_id,
+                    li.pur_ln_type,
+                    NVL(li.item_category_id,
+                    (SELECT
+                        cci.category_udf_id
+                    FROM
+                        mtl_category_classify_items cci
+                    WHERE
+                        cci.item_id         = li.item_id AND
+                        cci.category_udf_id =
+                        (SELECT
+                            MIN(cci.category_udf_id)
+                        FROM
+                            mtl_category_classify_items cci
+                        WHERE
+                            cci.item_id = li.item_id
+                        )
+                    )) item_category_id,
+                    NVL(
+                    (SELECT
+                        ic.category_name
+                    FROM
+                        mtl_categories_user_defined_vl ic
+                    WHERE
+                        ic.category_udf_id = li.item_category_id
+                    ),
+                    (SELECT
+                        udv.category_name
+                    FROM
+                        mtl_category_classify_items cci,
+                        mtl_categories_user_defined_vl udv
+                    WHERE
+                        cci.category_udf_id = udv.category_udf_id AND
+                        cci.item_id         = li.item_id AND
+                        cci.category_udf_id =
+                        (SELECT
+                            MIN(cci.category_udf_id)
+                        FROM
+                            mtl_category_classify_items cci
+                        WHERE
+                            cci.item_id = li.item_id
+                        )
+                    )) AS item_category_desc,
+                    (SELECT
+                        ic.quote_tmpl_flag
+                    FROM
+                        mtl_categories_user_defined ic
+                    WHERE
+                        ic.category_udf_id = li.item_category_id
+                    ) quote_tmpl_flag,
+                    li.item_id,
+                    li.item_code,
+                    li.item_desc,
+                    li.item_note,
+                    li.item_parameter_config,
+                    li.uom_code,
+                    (SELECT
+                        fv.uom_desc
+                    FROM
+                        fnd_uom_codes_vl fv
+                    WHERE
+                        fv.uom_code       = li.uom_code AND
+                        fv.business_group = h.owner_business_group
+                    ) uom_desc,
+                    li.quantity,
+                    TO_CHAR(li.need_by_date, 'yyyy-mm-dd') need_by_date,
+                    li.suggested_operation,
+                    li.cancel_flag,
+                    li.data_source,
+                    li.comments,
+                    li.line_num,
+                    li.limit_price,
+                    li.cost_price,
+                    (NVL(li.cost_total_price, (li.cost_price * li.quantity))) AS cost_total_price,
+                    li.tax_included_flag,
+                    li.tax_type_id,
+                    li.tax_type_code,
+                    li.tax_type_rate,
+                    --li.round_flag,
+                    li.pur_req_num,
+                    li.feedback_range,
+                    h.round,
+                    h.version,
+                    li.flex_appl_relevance_id,
+                    li.line_num,
+                    li.req_header_id,
+                    li.req_number,
+                    li.req_line_id,
+                    li.req_line_num,
+                    li.current_round,
+                    li.current_version,
+                    li.bom_num,
+                    li.work_num,
+                    li.samples_requested,
+                    (SELECT
+                        COUNT(*)
+                    FROM
+                        fnd_atm_attachment_multi am
+                    WHERE
+                        am.table_name     = 'PUR_RFX_LN_ITEMS' AND
+                        am.table_pk_value = TO_CHAR(li.rfx_line_item_id)
+                    ) AS atm_counts,
+                    li.ladder_inquiry_flag,
+                    li.return_reasons,
+                    DECODE(
+                    (SELECT
+                        cbi.bg_config_item_value FROM fnd_config_center_bg_item cbi WHERE cbi.config_classify_code='RFX' AND
+                        cbi.config_item_code                                                                      ='RFX_15' AND
+                        cbi.business_group                                                                        =${/session/@business_group}
+                    ),'Y',
+                    (SELECT
+                        ppup.agreement_price
+                    FROM
+                        pur_protocol_unit_price ppup
+                    WHERE
+                        ppup.item_id       =li.item_id AND
+                        ppup.business_group=${/session/@business_group}
+                    ),'N','','' ) limit_price_bak,
+                    li.kw_customer,         --客户
+                    li.ladder_inquiry_code, --阶梯报价类型
+                    (SELECT
+                        scv.code_value_name
+                    FROM
+                        sys_codes sc,
+                        sys_code_values_vl scv
+                    WHERE
+                        sc.code          = 'PUR_RFX_LADDER_INQUIRY_TYPE_CODE' AND
+                        sc.code_id       = scv.code_id AND
+                        scv.code_value   = li.ladder_inquiry_code AND
+                        sc.enabled_flag  = 'Y' AND
+                        scv.enabled_flag = 'Y'
+                    ) ladder_inquiry_desc,
+                    li.pur_uom_desc,
+                    attr.test_type --测试架类型
+                    ,
+                    attr.test_point_two_five --探针0.25mm
+                    ,
+      			    attr.test_point_zero_nine --探针0.09mm
+      			    ,
+                    attr.test_point_two --探针0.2mm
+                    ,
+                    attr.test_point_fifteen --探针0.15mm
+                    ,
+                    attr.test_point_one --探针0.1mm
+                    ,
+                    attr.test_needle_double_zero --00针
+                    ,
+                    attr.test_needle_zero_pound --0#针
+                    ,
+                    attr.test_needle_one_pound --1#针
+                    ,
+                    attr.test_needle_two_pound --2#针
+                    ,
+                    attr.test_cylinder --气缸
+                    ,
+                    attr.test_float --点数
+                    ,
+                    attr.test_pcs --pcs数
+                    ,attr.test_point_twelve --探针0.12mm
+                    ,attr.mini_pound --最小探针
+                    ,attr.test_shelf_length --测试架长
+                    ,attr.test_shelf_width --测试架宽 
+                    ,attr.horn_plate_pcs --牛角板PCS数
+                    ,attr.counter_pcs --计数器PCS数
+                    ,attr.test_ccd --CCD对位
+                    ,li.line_num
+                FROM
+                    pur_rfx_ln_items li,
+                    pur_rfx_ln_items_atrib attr,
+                    pur_rfx_headers h #WHERE_CLAUSE# AND
+                    li.rfx_finished_flag     = 'N' AND
+                    li.cancel_flag           = 'N' AND
+                    NVL(li.round_flag,'Y')   ='Y' AND
+                    h.rfx_header_id          = li.rfx_header_id AND
+                    attr.rfx_line_item_id(+) = li.rfx_line_item_id
+                ORDER BY
+                    li.line_num
+            ]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter name="rfx_header_id" inputPath="@rfx_header_id"/>
+            </bm:parameters>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:parameters>
+                <bm:parameter name="rfx_line_item_id" dataType="java.lang.Long" input="false" output="true" outputPath="@rfx_line_item_id"/>
+            </bm:parameters>
+            <bm:update-sql><![CDATA[
+              declare 
+            	v_rfx_line_item_id number;
+              BEGIN
+                pur_rfx_pkg.create_pur_rfx_ln_items
+                (
+                  x_rfx_line_item_id=>v_rfx_line_item_id,
+                  p_rfx_header_id=>${/parameter/@rfx_header_id},
+                  p_inv_organization_id=>${@inv_organization_id},
+                  p_pur_ln_type=>${@pur_ln_type},
+                  p_item_category_id=>${@item_category_id},
+                  p_item_id=>${@item_id},
+                  p_item_code=>${@item_code},
+                  p_item_desc=>${@item_desc},
+                  p_item_note=>${@item_note},
+                  p_item_parameter_config=>${@item_parameter_config},
+                  p_uom_code=>${@uom_code},
+                  p_quantity=>${@quantity},
+                  p_need_by_date=>to_date(${@need_by_date},'yyyy-mm-dd hh24:mi:ss'),
+                  p_feedback_range=>${@feedback_range},
+                  p_pur_req_num=>${@pur_req_num},
+                  p_data_source=>${@data_source},
+                  p_source_from=>${@source_from},
+                  p_source_from_id=>${@source_from_id},
+                  p_source_from_num=>${@source_from_num},
+                  p_comments=>${@comments},
+                  p_proposed_vendor_id=>${@proposed_vendor_id},
+                  p_proposed_vendor_code=>${@proposed_vendor_code},
+                  p_proposed_vendor_desc=>${@proposed_vendor_desc},
+                  p_proposed_price=>${@proposed_price},
+                  p_proposed_net_price=>${@proposed_net_price},
+                  p_proposed_net_amount=>${@proposed_net_amount},
+                  p_proposed_tax_amount=>${@proposed_tax_amount},
+                  p_proposed_total_amount=>${@proposed_total_amount},
+                  p_proposed_functional_amount=>${@proposed_functional_amount},
+                  p_proposed_entered_amount=>${@proposed_entered_amount},
+                  p_auto_create_distribute =>${@auto_create_distribute},
+                  p_line_num=>${@line_num},
+                  p_limit_price=>${@limit_price},
+                  p_cost_price=>${@cost_price},
+                  p_tax_included_flag=>${@tax_included_flag},
+                  p_tax_type_id=>${@tax_type_id},
+                  p_tax_type_code=>${@tax_type_code},
+                  p_tax_type_rate=>${@tax_type_rate},
+                  p_round_flag=>${@round_flag},
+                  p_samples_requested=>${@samples_requested},
+                  p_work_num=>${@work_num},
+                  p_bom_num=>${@bom_num},
+                  p_user_id=>${/session/@user_id},
+                  p_trans_cost => ${@trans_cost},
+                  p_ladder_inquiry_flag	=> ${@ladder_inquiry_flag},
+                  p_kw_customer		=> ${@kw_customer},
+                  p_purchase_amount	=> ${@purchase_amount},
+                  p_pur_uom_desc	=> ${@pur_uom_desc},
+                  p_ladder_inquiry_code => ${@ladder_inquiry_code},
+                  p_test_type => ${@test_type},
+                  p_test_point_two => ${@test_point_two},
+                  p_test_point_two_five => ${@test_point_two_five},
+                  p_test_point_zero_nine => ${@test_point_zero_nine},
+                  p_test_point_fifteen => ${@test_point_fifteen},
+                  p_test_point_one => ${@test_point_one},
+                  p_test_needle_double_zero => ${@test_needle_double_zero},
+                  p_test_needle_zero_pound => ${@test_needle_zero_pound},
+                  p_test_needle_one_pound => ${@test_needle_one_pound},
+                  p_test_needle_two_pound => ${@test_needle_two_pound},
+                  p_test_cylinder => ${@test_cylinder},
+                  p_test_float => ${@test_float},
+                  p_test_pcs => ${@test_pcs},
+                  p_mini_pound => ${@mini_pound},
+                  p_test_shelf_length => ${@test_shelf_length},
+                  p_test_shelf_width => ${@test_shelf_width},
+                  p_horn_plate_pcs => ${@horn_plate_pcs},
+                  p_counter_pcs => ${@counter_pcs},
+                  p_test_ccd => ${@test_ccd}
+                  );
+                ${@rfx_line_item_id} := v_rfx_line_item_id;
+              END;
+		      ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+                DECLARE
+                    v_rfx_line_item_id NUMBER;
+                BEGIN
+                    pur_rfx_pkg.modify_pur_rfx_ln_items ( 
+                                p_rfx_line_item_id=>${@rfx_line_item_id}, 
+                                p_inv_organization_id=>${@inv_organization_id}, 
+                                p_pur_ln_type=>${@pur_ln_type}, 
+                                p_item_category_id=>${@item_category_id}, 
+                                p_item_id=>${@item_id}, 
+                                p_item_code=>${@item_code}, 
+                                p_item_desc=>${@item_desc}, 
+                                p_item_note=>${@item_note}, 
+                                p_item_parameter_config=>${@item_parameter_config}, 
+                                p_uom_code=>${@uom_code}, 
+                                p_quantity=>${@quantity}, 
+                                p_need_by_date=>to_date(${@need_by_date},'yyyy-mm-dd hh24:mi:ss'),
+                                p_feedback_range=>${@feedback_range}, 
+                                p_pur_req_num=>${@pur_req_num}, 
+                                p_comments=>${@comments}, 
+                                p_auto_create_distribute =>${@auto_create_distribute}, 
+                                p_line_num=>${@line_num}, 
+                                p_limit_price=>${@limit_price}, 
+                                p_cost_price=>${@cost_price}, 
+                                p_tax_included_flag=>${@tax_included_flag}, 
+                                p_tax_type_id=>${@tax_type_id}, 
+                                p_tax_type_code=>${@tax_type_code}, 
+                                p_tax_type_rate=>${@tax_type_rate}, 
+                                p_round_flag=>${@round_flag}, 
+                                p_samples_requested=>${@samples_requested}, 
+                                p_work_num=>${@work_num}, 
+                                p_bom_num=>${@bom_num}, 
+                                p_user_id=>${/session/@user_id}, 
+                                p_trans_cost => ${@trans_cost}, 
+                                p_ladder_inquiry_flag => ${@ladder_inquiry_flag}, 
+                                p_kw_customer => ${@kw_customer}, 
+                                p_purchase_amount => ${@purchase_amount}, 
+                                p_pur_uom_desc => ${@pur_uom_desc}, 
+                                p_ladder_inquiry_code => ${@ladder_inquiry_code}, 
+                                p_test_type =>${@test_type}, 
+                                p_test_point_two =>${@test_point_two}, 
+                                p_test_point_two_five => ${@test_point_two_five},
+                  				p_test_point_zero_nine => ${@test_point_zero_nine},
+                                p_test_point_fifteen =>${@test_point_fifteen}, 
+                                p_test_point_one =>${@test_point_one}, 
+                                p_test_needle_double_zero =>${@test_needle_double_zero}, 
+                                p_test_needle_zero_pound =>${@test_needle_zero_pound}, 
+                                p_test_needle_one_pound =>${@test_needle_one_pound}, 
+                                p_test_needle_two_pound =>${@test_needle_two_pound}, 
+                                p_test_cylinder =>${@test_cylinder}, 
+                                p_test_float =>${@test_float}, 
+                                p_test_pcs =>${@test_pcs},
+			                    p_mini_pound => ${@mini_pound},
+			                    p_test_shelf_length => ${@test_shelf_length},
+			                    p_test_shelf_width => ${@test_shelf_width},
+			                    p_horn_plate_pcs => ${@horn_plate_pcs},
+			                    p_counter_pcs => ${@counter_pcs},
+			                    p_test_ccd => ${@test_ccd} );
+                    v_rfx_line_item_id := ${@rfx_line_item_id};
+                END;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+              BEGIN
+                pur_rfx_pkg.delete_pur_rfx_ln_items
+                (
+                  p_rfx_line_item_id=>${@rfx_line_item_id},
+                  p_user_id=>${/session/@user_id}
+                ); 
+              END;
+		      ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="rfx_line_item_ids" queryExpression="rfx_line_item_id in (${:@rfx_line_item_ids})"/>
+        <bm:query-field name="rfx_header_id" queryExpression="li.rfx_header_id = ${@rfx_header_id}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="1=1"/>
+    </bm:data-filters>
+</bm:model>

@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: zhenwei.yin  
+    $Date: 2017-05-19 下午4:27:53  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="true">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        t1.pur_header_id,
+                        t1.company_id,
+                        t1.company_name,
+                        t1.owner_business_group business_group,
+                        t1.owner_business_group,
+                        t1.owner_company_id,
+                        t1.coop_business_group,
+                        t1.coop_company_id,
+                        t1.segment1 order_number,
+                        NVL(
+                        (SELECT 
+                            'Y'
+                        FROM
+                            dual
+                        WHERE
+                            EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                pur_purchase_order_types ppo
+                            WHERE
+                                ppo.order_type_code   = t1.type_lookup_code AND
+                                ppo.return_order_flag = 'Y'
+                            )
+                        ), 'N') AS return_order_flag,
+                        NVL(
+                        (SELECT
+                            'Y'
+                        FROM
+                            dual
+                        WHERE
+                            EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                pur_purchase_order_types ppo
+                            WHERE
+                                ppo.order_type_code  = t1.type_lookup_code AND
+                                ppo.outsourcing_flag = 'Y'
+                            )
+                        ), 'N') AS outsourcing_flag,
+                        t1.agent_id,
+                        t1.agent_code,
+                        t1.agent_name,
+                        t1.vendor_id,
+                        (SELECT
+                            ebp.partner_id
+                        FROM
+                            erpfnd_business_partners ebp
+                        WHERE
+                            ebp.srm_vender_id = t1.vendor_id
+                        ) AS vender_id,
+                        (SELECT
+                            a.partner_code
+                            || '-'
+                            || a.partner_name
+                        FROM
+                            erpfnd_business_partners a
+                        WHERE
+                            a.srm_vender_id = t1.vendor_id
+                        ) AS vender_name,
+                        (SELECT
+                            NVL(SUM(pll.amount),0)
+                        FROM
+                            pur_lines_all pll
+                        WHERE
+                            pll.pur_header_id = t1.pur_header_id
+                        ) total_amount,
+                        t1.revision_num,
+                        TO_CHAR(t1.erp_creation_date,'yyyy-mm-dd') creation_date_desc,
+                        TRUNC(t1.erp_creation_date) creation_date,
+                        (SELECT
+                            plla.warehouse_id
+                        FROM
+                            pur_line_locations_all plla
+                        WHERE
+                            plla.pur_header_id = t1.pur_header_id AND
+                            rownum             = 1
+                        ) warehouse_id,
+                        t1.comments description,
+                        t1.approved_date,
+                        t1.currency_code,
+                        t1.srm_status status,
+                        (SELECT
+                            scv.code_value_name
+                        FROM
+                            sys_code_values_vl scv,
+                            sys_codes_vl sc
+                        WHERE
+                            sc.code_id     = scv.code_id AND
+                            scv.code_value = t1.srm_status AND
+                            sc.code        = 'SRM_STATUS'
+                        ) status_name,
+                        NVL(
+                        (SELECT
+                            'Y'
+                        FROM
+                            dual
+                        WHERE
+                            EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                pur_lines_all pla,
+                                pur_line_locations_all pll
+                            WHERE
+                                t1.pur_header_id = pla.pur_header_id AND
+                                pll.pur_line_id  = pla.pur_line_id AND
+                                (
+                                    pla.quantity          > pll.deliver_quantity AND
+                                    pll.deliver_quantity IS NOT NULL
+                                )
+                            ) OR
+                            t1.closed_date IS NOT NULL
+                        ), 'N') AS filter_flag,
+                        NVL(
+                        (SELECT
+                            'Y'
+                        FROM
+                            dual
+                        WHERE
+                            EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                pur_lines_all pla,
+                                pur_line_locations_all pll
+                            WHERE
+                                t1.pur_header_id = pla.pur_header_id AND
+                                pll.pur_line_id  = pla.pur_line_id AND
+                                (
+                                    pla.quantity <= pll.deliver_quantity
+                                )
+                            )
+                        ), 'N') AS read_only,
+                        (SELECT erpfnd_precision_pkg.get_price_precision(t1.company_id) FROM dual
+                        ) AS value,
+                        (SELECT erpfnd_precision_pkg.get_amount_precision(t1.company_id) FROM dual
+                        ) AS value1,
+                        (SELECT erpfnd_precision_pkg.get_quantity_precision(t1.company_id) FROM dual
+                        ) AS value2,
+                        type_lookup_code order_type_code,
+                        DECODE(t1.closed_date, NULL, 'N', 'Y') AS closed_flag,
+                        type_lookup_desc
+                    FROM
+                        pur_headers_all t1
+                    ) tt #WHERE_CLAUSE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter name="business_group" enforceOperations="query" expression="tt.business_group=${/session/@business_group} "/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field name="pur_header_id" queryExpression="tt.pur_header_id=${@pur_header_id}"/>
+        <bm:query-field name="company_id" queryExpression="tt.company_id=${@company_id}"/>
+        <bm:query-field name="order_date_from" queryExpression="(tt.creation_date &gt;= to_date(${@order_date_from},&apos;YYYY-MM-DD&apos;))"/>
+        <bm:query-field name="order_date_to" queryExpression="(tt.creation_date &lt;= to_date(${@order_date_to},&apos;YYYY-MM-DD&apos;))"/>
+        <!-- <bm:query-field field="order_date" queryOperator="="/>-->
+        <bm:query-field name="buyer_employee_id" queryExpression="tt.agent_id = ${@buyer_employee_id}"/>
+        <bm:query-field name="status" queryExpression=" tt.status =  ${@status}"/>
+        <bm:query-field name="closed_flag" queryExpression="tt.closed_flag = ${@closed_flag}"/>
+        <bm:query-field name="return_order_flag" queryExpression="tt.return_order_flag = ${@return_order_flag}"/>
+        <bm:query-field name="outsourcing_flag" queryExpression="tt.outsourcing_flag = ${@outsourcing_flag}"/>
+        <bm:query-field name="order_number" queryExpression="tt.order_number like ${@order_number}||&apos;%&apos;"/>
+        <bm:query-field name="vender_id" queryExpression="tt.vender_id = ${@vender_id}"/>
+        <bm:query-field name="currency_code" queryExpression="tt.currency_code = ${@currency_code}"/>
+        <!-- <bm:query-field name="enter_state" queryExpression="(tt.status in (&apos;Verified&apos;,&apos;Error&apos;,&apos;Rejected&apos;) and ${@enter_state}=&apos;Y&apos;)"/> -->
+    </bm:query-fields>
+</bm:model>

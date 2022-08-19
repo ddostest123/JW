@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+				select count(*) title_count,
+				       COUNT(CASE
+				               WHEN ((t.ship_to_organization_code = '1000' or
+				                    t.ship_to_organization_code = '1100' or
+				                    t.ship_to_organization_code = '1500' or
+				                    t.ship_to_organization_code = '1520' or
+				                    t.ship_to_organization_code = '1600' or
+				                    t.ship_to_organization_code = '1800') and
+				                    t.quantity_received >= t.quantity * 0.9) or
+				                    t.quantity_received >= t.quantity THEN
+				                1
+				               ELSE
+				                NULL
+				             END) timely_count,
+				       COUNT(CASE
+				               WHEN ((t.ship_to_organization_code = '1000' or
+				                    t.ship_to_organization_code = '1100' or
+				                    t.ship_to_organization_code = '1500' or
+				                    t.ship_to_organization_code = '1520' or
+				                    t.ship_to_organization_code = '1600' or
+				                    t.ship_to_organization_code = '1800') and
+				                    t.quantity_received >= t.quantity * 0.9) or
+				                    t.quantity_received >= t.quantity THEN
+				                NULL
+				               ELSE
+				                1
+				             END) delay_count,
+				       ROUND((COUNT(CASE
+				                      WHEN ((t.ship_to_organization_code = '1000' or
+				                           t.ship_to_organization_code = '1100' or
+				                           t.ship_to_organization_code = '1500' or
+				                           t.ship_to_organization_code = '1520' or
+				                           t.ship_to_organization_code = '1600' or
+				                           t.ship_to_organization_code = '1800') and
+				                           t.quantity_received >= t.quantity * 0.9) or
+				                           t.quantity_received >= t.quantity THEN
+				                       1
+				                      ELSE
+				                       NULL
+				                    END) / nullif(count(*), 0)) * 100,
+				             2) || '%' timely_count_rate
+				  from (SELECT pha.pur_header_id,
+				               pla.pur_line_id,
+				               pla.quantity,
+				               plla.need_by_date,
+				               to_char(plla.need_by_date,
+				                       'yyyy-mm-dd') need_by_date1,
+				               pha.vendor_code,
+				               plla.ship_to_organization_code,
+				               plla.quantity_received quantity_received1,
+				               nvl(ll.quantity_receiveds,
+				                   0) quantity_received,
+				               to_char(round((nvl((CASE
+				                                    WHEN ll.quantity_receiveds > pla.quantity THEN
+				                                     pla.quantity
+				                                    ELSE
+				                                     ll.quantity_receiveds
+				                                  END),
+				                                  0) / nullif(pla.quantity,
+				                                               0)) * 100,
+				                             2),
+				                       'fm9999999990.00') || '%' quantity_received_rate
+				          FROM pur_headers_all pha,
+				               pur_lines_all pla,
+				               pur_line_locations_all plla,
+				               (SELECT abs(nvl(sum1.s1,
+				                               0) - nvl(sum2.s2,
+				                                        0)) quantity_receiveds,
+				                       sum1.from_po_header_id,
+				                       sum1.from_po_line_id
+				                  FROM (SELECT nvl(SUM(prtl.trx_quantity),
+				                                   0) s1,
+				                               prtl.from_po_header_id,
+				                               prtl.from_po_line_id
+				                          FROM pur_rcv_trx_lines      prtl,
+				                               pur_headers_all        pha,
+				                               pur_lines_all          pla,
+				                               pur_line_locations_all plla
+				                         WHERE prtl.trx_date <= plla.need_by_date
+				                               AND prtl.from_po_header_id = pha.pur_header_id
+				                               AND prtl.from_po_line_id = pla.pur_line_id
+				                               AND prtl.erp_rcv_trx_type = '101'
+				                               AND pha.pur_header_id = pla.pur_header_id
+				                               AND pla.pur_line_id = plla.pur_line_id
+				                               AND pla.is_returned_flag = 'N'
+				                         GROUP BY prtl.from_po_header_id,
+				                                  prtl.from_po_line_id) sum1,
+				                       (SELECT nvl(SUM(prtl.trx_quantity),
+				                                   0) s2,
+				                               prtl.from_po_header_id,
+				                               prtl.from_po_line_id
+				                          FROM pur_rcv_trx_lines      prtl,
+				                               pur_headers_all        pha,
+				                               pur_lines_all          pla,
+				                               pur_line_locations_all plla
+				                         WHERE prtl.trx_date <= plla.need_by_date
+				                               AND prtl.from_po_header_id = pha.pur_header_id
+				                               AND prtl.from_po_line_id = pla.pur_line_id
+				                               AND prtl.erp_rcv_trx_type = '102'
+				                               AND pha.pur_header_id = pla.pur_header_id
+				                               AND pla.pur_line_id = plla.pur_line_id
+				                               AND pla.is_returned_flag = 'N'
+				                         GROUP BY prtl.from_po_header_id,
+				                                  prtl.from_po_line_id) sum2
+				                 WHERE sum1.from_po_header_id = sum2.from_po_header_id(+)
+				                       AND sum1.from_po_line_id = sum2.from_po_line_id(+)) ll
+				         WHERE pha.pur_header_id = pla.pur_header_id
+				               AND pla.pur_line_id = plla.pur_line_id
+				               AND ll.from_po_header_id(+) = plla.pur_header_id
+				               AND ll.from_po_line_id(+) = plla.pur_line_id
+				               AND pla.cancel_flag != 'Y'
+				               AND pha.cancel_flag != 'Y'
+				               AND pha.srm_status != 'CANCELLED'
+				               AND pla.is_returned_flag = 'N'
+				           ) t #WHERE_CLAUSE#
+]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="need_by_date_from" queryExpression="t.need_by_date &gt;= to_date(${@need_by_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="need_by_date_to" queryExpression="t.need_by_date &lt;= to_date(${@need_by_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="vendor_code" queryexpression="t.vendor_code like ${@vendor_code}"/>
+        <bm:query-field name="ship_to_organization_code" queryexpression="t.ship_to_organization_code like ${@ship_to_organization_code}"/>
+    </bm:query-fields>
+</bm:model>

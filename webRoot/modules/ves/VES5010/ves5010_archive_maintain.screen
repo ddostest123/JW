@@ -1,0 +1,756 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: 7211
+    $Date: 2015-1-05 下午13:46:29  
+    $Revision: 1.0  
+    $Purpose: 考评档案
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;VES_ARC_DETAIL_LINE_STATUS&apos;" fetchAll="true" model="public.fnd_flex_value_v_lov" rootPath="ves5010_arc_detail_line_status_data"/>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;VES_ARC_TOTAL_LINE_STATUS&apos;" fetchAll="true" model="public.fnd_flex_value_v_lov" rootPath="ves5010_arc_total_line_status_data"/>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;VES_ARCHIVE_SUGGESTION&apos;" fetchAll="true" model="public.fnd_flex_value_v_lov" rootPath="ves5010_archive_suggestion_data"/>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;VES_ARCHIVE_RISK_LEVEL&apos;" fetchAll="true" model="public.fnd_flex_value_v_lov" rootPath="ves5010_archive_risk_level_data"/>
+        <a:model-query model="qms.QMS5050.get_current_employee_name" rootPath="get_current_username"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="ves5010_archive_check_link" model="ves.VES5010.ves_check_archive_evaled" modelaction="query"/>
+        <a:link id="ves5010_item_category_classify_link" url="${/request/@context_path}/modules/ves/VES5010/ves5010_category_classify_items.screen"/>
+        <a:link id="ves5010_archive_release_link" url="${/request/@context_path}/modules/ves/VES5010/ves5010_archive_release.screen"/>
+        <a:link id="ves5010_archive_operation_records_link" url="${/request/@context_path}/modules/ves/ves_archive_operation_records.screen"/>
+        <a:link id="ves5010_archive_create_save_link" model="ves.VES5010.ves_archive_headers" modelaction="insert"/>
+        <a:link id="ves5010_archive_update_save_link" model="ves.VES5010.ves_archive_headers" modelaction="update"/>
+        <a:link id="ves5010_archive_disable_link" model="ves.VES5010.ves_archive_headers" modelaction="delete"/>
+        <a:link id="ves5010_archive_detail_line_compute_link" model="ves.VES5010.ves_archive_headers" modelaction="execute"/>
+        <a:link id="ves5010_archive_release_computation_link" model="ves.VES5010.ves_archive_release_computation" modelaction="execute"/>
+        <a:link id="ves5010_archive_summary_detail_link" model="ves.VES5010.ves_archive_summary_detail" modelaction="execute"/>
+        <a:link id="ves5010_archive_save_detail_line_link" model="ves.VES5010.ves_archive_detail_lines" modelaction="batch_update"/>
+        <!-- <a:link id="ves5010_archive_header_release_link" model="ves.VES5010.ves_archive_header_release" modelaction="execute"/> -->
+        <script><![CDATA[
+            function init() {
+                var archive_header_id = '${/parameter/@archive_header_id}' || 0;
+                if (archive_header_id) {
+                    ves5010_archive_maintain_query(archive_header_id);
+                } else {
+                    $('ves5010_archive_header_maintain_ds').create();
+                }
+            }
+            
+            //考评日期校检
+            function ves5010_eval_date_validator(record, name, value) {
+                if (name == "eval_start_date" || name == "eval_end_date") {
+                    var start_date = record.get("eval_start_date");
+                    var end_date = record.get("eval_end_date");
+                    if (typeof(end_date) != 'undefined' && !Ext.isEmpty(end_date) && typeof(start_date) != 'undefined' && !Ext.isEmpty(start_date)) {
+                        if (start_date > end_date) {
+                            return '${l:XC_VE_PROFILES.DATE_OF_EVALUATION_CANNOT_GREATER_THAN_EVALUATION}';
+                        }
+                    }
+                    return true;
+                }
+            }
+            
+            
+            //保存
+            function ves5010_archive_maintain_save() {
+                var ds = $('ves5010_archive_header_maintain_ds');
+                if (ds.validate()) {
+            
+                    var record = ds.getCurrentRecord();
+                    var url, is_evaled;
+            
+                    //设置考评年度和季度
+                     // var eval_quarter = record.get('eval_quarter');
+                    // record.set('eval_year', eval_quarter.split('-')[0]);
+                    // record.set('eval_season', eval_quarter.split('-')[1]);
+            
+                    if (record.isNew) {
+                        url = $('ves5010_archive_create_save_link').getUrl();
+                    } else {
+                        url = $('ves5010_archive_update_save_link').getUrl();
+                    }
+            
+                    //判断当前模板，季度是否已经存在考评记录
+                    Aurora.Masker.mask($('ves5010_archive_create_win').wrap, '${l:MASCLOUD.SUBMITTING}');
+                    Aurora.request({
+                        url: $('ves5010_archive_check_link').getUrl(),
+                        para: record.data,
+                        success: function(res) {
+                            if (res.result.record) {
+                                is_evaled = res.result.record.is_evaled || '';
+                            }
+                            if (is_evaled == 'Y' && !record.get('archive_header_id')) {
+                                //更新
+                                Aurora.showConfirm('${l:PROMPT}', '${l:XC_VE_PROFILES.ALREADY_SAME_QUARTER}', function() {
+                                    Aurora.request({
+                                        url: url,
+                                        para: record.data,
+                                        success: function(res) {
+                                            var archive_header_id = res.result.archive_header_id ? res.result.archive_header_id : '${/parameter/@archive_header_id}';
+                                            Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SAVE_SUCCESS}', function() {
+                                                ves5010_archive_maintain_query(archive_header_id);
+                                                Aurora.Masker.unmask($('ves5010_archive_create_win').wrap);
+                                            });
+                                        },
+                                        error: function() {
+                                            Aurora.Masker.unmask($('ves5010_archive_create_win').wrap);
+                                        },
+                                        failure: function() {
+                                            Aurora.Masker.unmask($('ves5010_archive_create_win').wrap);
+                                        },
+                                        scope: this
+                                    });
+                                }, function() {
+                                    Aurora.Masker.unmask($('ves5010_archive_create_win').wrap);
+                                    return;
+                                }, 300, 120);
+                            } else {
+                                Aurora.request({
+                                    url: url,
+                                    para: record.data,
+                                    success: function(res) {
+                                        var archive_header_id = res.result.archive_header_id ? res.result.archive_header_id : '${/parameter/@archive_header_id}';
+                                        Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SAVE_SUCCESS}', function() {
+                                            ves5010_archive_maintain_query(archive_header_id);
+                                            Aurora.Masker.unmask($('ves5010_archive_create_win').wrap);
+                                        });
+                                    },
+                                    error: function() {
+                                        Aurora.Masker.unmask($('ves5010_archive_create_win').wrap);
+                                    },
+                                    failure: function() {
+                                        Aurora.Masker.unmask($('ves5010_archive_create_win').wrap);
+                                    },
+                                    scope: this
+                                });
+                            }
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask($('ves5010_archive_create_win').wrap);
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask($('ves5010_archive_create_win').wrap);
+                        },
+                        scope: this
+                    });
+            
+                }
+            }
+            
+            //查询所有考评信息
+            function ves5010_archive_maintain_query(archive_header_id) {
+                $('ves5010_archive_header_maintain_ds').setQueryParameter('archive_header_id', archive_header_id);
+                $('ves5010_archive_header_maintain_ds').query();
+            
+                //考评明细行查询
+                $('ves5010_archive_detail_line_maintain_ds').setQueryParameter('archive_header_id', archive_header_id);
+                $('ves5010_archive_detail_line_maintain_ds').query();
+            
+                //考评汇总行查询
+                $('ves5010_archive_total_line_maintain_ds').setQueryParameter('archive_header_id', archive_header_id);
+                $('ves5010_archive_total_line_maintain_ds').query();
+            
+                //参评供应商查询
+                $('ves5010_archive_assign_vendors_maintain_ds').setQueryParameter('archive_header_id', archive_header_id);
+                $('ves5010_archive_assign_vendors_maintain_ds').query();
+            }
+            
+            //提交计算
+            function ves5010_archive_maintain_compute() {
+                var record = $('ves5010_archive_header_maintain_ds').getCurrentRecord(),
+                    archive_header_id = record.get('archive_header_id') || 0;
+                if (archive_header_id) {
+                    if (record.get('archive_status') != '10_NEW') {
+                        Aurora.showMessage('${l:PROMPT}', '${l:XC_VE_PROFILES.ONLY_NEW_STATE_EVALUATION_ALLOW_SUBMISSION}', function() {}, 300, 120);
+                        return;
+                    }
+                    Aurora.showConfirm('${l:PROMPT}', '${l:XC_VE_PROFILES.SURE_TO_SUBMIT}', function() {
+                        Aurora.Masker.mask($('ves5010_archive_create_win').wrap, '${l:MASCLOUD.SUBMITTING}');
+                        Aurora.request({
+                            url: $('ves5010_archive_detail_line_compute_link').getUrl(),
+                            para: record.data,
+                            success: function() {
+                                //Modify by Hunter 2658 at 2018-02-27 T2047,考评档案开始计算，改为后台执行方式
+                                Aurora.showMessage('${l:PROMPT}', '${l:VES5010_ARCHIVE.COMPUTE_JOB_SUBMIT_SUCCESS}', function() {
+                                    Aurora.Masker.unmask($('ves5010_archive_create_win').wrap);
+                                    ves5010_archive_maintain_return(); 
+                                });
+                            },
+                            error: function() {
+                                Aurora.Masker.unmask($('ves5010_archive_create_win').wrap);
+                            },
+                            failure: function() {
+                                Aurora.Masker.unmask($('ves5010_archive_create_win').wrap);
+                            },
+                            scope: this
+                        });
+                    }, function() {}, 300, 100);
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '${l:SE_AP_CONFIRM_HEADER.DATA_IS_NOT_SAVED}');
+                    return;
+                }
+            }
+            
+            //下发评分
+            function ves5010_archive_maintain_release_compute() {
+                var record = $('ves5010_archive_header_maintain_ds').getCurrentRecord(),
+                    archive_header_id = record.get('archive_header_id') || 0;
+                if (archive_header_id) {
+                    if (record.get('archive_status') != '30_COMPUTE_SUCCESS') {
+                        Aurora.showMessage('${l:PROMPT}', '${l:XC_VE_PROFILES.ONLY_EVALUATION_ALLOW_RELEASE_OF_SCORE}', function() {}, 300, 120);
+                        return;
+                    }
+                    Aurora.showConfirm('${l:PROMPT}', '${l:XC_VE_PROFILES.SURE_HAVE_MADE_RATING}', function() {
+                        Aurora.Masker.mask($('ves5010_archive_create_win').wrap, '${l:MASCLOUD.SUBMITTING}');
+                        Aurora.request({
+                            url: $('ves5010_archive_release_computation_link').getUrl(),
+                            para: record.data,
+                            success: function() {
+                                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                    Aurora.Masker.unmask($('ves5010_archive_create_win').wrap);
+                                    ves5010_archive_maintain_return();
+                                });
+                            },
+                            error: function() {
+                                Aurora.Masker.unmask($('ves5010_archive_create_win').wrap);
+                            },
+                            failure: function() {
+                                Aurora.Masker.unmask($('ves5010_archive_create_win').wrap);
+                            },
+                            scope: this
+                        });
+                    }, function() {}, 300, 100);
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PUR5720.SAVE_DATA_FIRST}');
+                    return;
+                }
+            }
+            
+            //汇总统计
+            function ves5010_archive_maintain_summary() {
+                var record = $('ves5010_archive_header_maintain_ds').getCurrentRecord(),
+                    archive_header_id = record.get('archive_header_id') || 0,
+                    detail_line_records = $('ves5010_archive_detail_line_maintain_ds').getAll();
+                if (archive_header_id) {
+                    //只有评分中的考评档案允许汇总统计
+                    if (record.get('archive_status') != '50_EVALUATING') {
+                        Aurora.showMessage('${l:PROMPT}', '${l:XC_VE_PROFILES.ONLY_RATINGS_IN_EVALUATION_ALLOW_STATISTICS}', function() {}, 300, 120);
+                        return;
+                    }
+                    //只有所有考评明细都维护评分了才可以进行汇总统计
+                    for (var i = 0;i < detail_line_records.length;i++) {
+                        if (detail_line_records[i].get('detail_line_status') == '10_NEW') {
+                            Aurora.showMessage('${l:PROMPT}', '${l:XC_VE_PROFILES.THERE_IS_NO_SCORE_SUBMITTED_BY_SCORE}', function() {}, 300, 120);
+                            return;
+                        }
+                    }
+            
+                    Aurora.showConfirm('${l:PROMPT}', '${l:XC_VE_PROFILES.DO_YOU_CONFIRM_SUMMARY_STATISTICS}', function() {
+                        Aurora.Masker.mask($('ves5010_archive_create_win').wrap, '${l:MASCLOUD.SUBMITTING}');
+                        Aurora.request({
+                            url: $('ves5010_archive_summary_detail_link').getUrl(),
+                            para: record.data,
+                            success: function() {
+                                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                    $('ves5010_archive_header_maintain_ds').setQueryParameter('archive_header_id', archive_header_id);
+                                    $('ves5010_archive_header_maintain_ds').query();
+                                    $('ves5010_archive_total_line_maintain_ds').setQueryParameter('archive_header_id', archive_header_id);
+                                    $('ves5010_archive_total_line_maintain_ds').query();
+                                    Aurora.Masker.unmask($('ves5010_archive_create_win').wrap);
+                                });
+                            },
+                            error: function() {
+                                Aurora.Masker.unmask($('ves5010_archive_create_win').wrap);
+                            },
+                            failure: function() {
+                                Aurora.Masker.unmask($('ves5010_archive_create_win').wrap);
+                            },
+                            scope: this
+                        });
+                    }, function() {}, 300, 100);
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '${l:XC_VE_PROFILES.DATA_NO_YET_SAVED}');
+                    return;
+                }
+            }
+            
+            //发布
+            function ves5010_archive_maintain_release() {
+                var records=$('ves5010_archive_detail_line_maintain_ds').getAll();
+                 var record = $('ves5010_archive_header_maintain_ds').getCurrentRecord(),
+                    archive_header_id = record.get('archive_header_id') || 0;
+                if (archive_header_id) {
+                    if (record.get('archive_status') != '60_EVALUATE_FINISH') {
+                        Aurora.showMessage('${l:PROMPT}', '${l:XC_VE_PROFILES.ONLY_THE_SUMMARY_OF_ASSESSMENT_ALLOW_RELEASE}', function() {}, 300, 120);
+                        return;
+                    }
+                    }
+                     var paras = [];
+	                 for( var n=0;n<records.length;n++){
+	                    records[n].set('_status', 'update');
+	        	        paras.push(records[n].data);
+	        	        }
+	        	        Aurora.request({
+		        	        url:$('ves5010_archive_save_detail_line_link').getUrl(),
+		        	        para:paras,
+		        	        success:function(){
+	        	                new Aurora.Window({
+        	        id:'ves5010_archive_release_win',
+        	        title:'考评档案发布',
+        	        url:$('ves5010_archive_release_link').getUrl()+'?archive_header_id='+archive_header_id,
+        	        fullScreen:true
+        	    });
+		        	        },
+		        	        failure:function(){
+		        	        	Aurora.Masker.unmask(Ext.getBody()); 	    
+		        	        },
+		        	        error:function(){
+		        	        	Aurora.Masker.unmask(Ext.getBody()); 	    
+		        	        },
+		        	        scope:this
+		        	    });
+/*                 new Aurora.Window({
+        	        id:'ves5010_archive_release_win',
+        	        title:'考评档案发布',
+        	        url:$('ves5010_archive_release_link').getUrl()+'?archive_header_id='+archive_header_id,
+        	        fullScreen:true
+        	    }); */
+               /* 发布评分 要求部分发放 
+                  var record = $('ves5010_archive_header_maintain_ds').getCurrentRecord(),
+                    archive_header_id = record.get('archive_header_id') || 0;
+                if (archive_header_id) {
+                    if (record.get('archive_status') != '60_EVALUATE_FINISH') {
+                        Aurora.showMessage('${l:PROMPT}', '${l:XC_VE_PROFILES.ONLY_THE_SUMMARY_OF_ASSESSMENT_ALLOW_RELEASE}', function() {}, 300, 120);
+                        return;
+                    }
+                    Aurora.showConfirm('${l:PROMPT}', '${l:XC_VE_PROFILES.ARE_YOU_SURE_TO_PUBLISH}', function() {
+                        Aurora.Masker.mask($('ves5010_archive_create_win').wrap, '${l:MASCLOUD.SUBMITTING}');
+                        Aurora.request({
+                            url: $('ves5010_archive_header_release_link').getUrl(),
+                            para: record.data,
+                            success: function() {
+                                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                    Aurora.Masker.unmask($('ves5010_archive_create_win').wrap);
+                                    ves5010_archive_maintain_return();
+                                });
+                            },
+                            error: function() {
+                                Aurora.Masker.unmask($('ves5010_archive_create_win').wrap);
+                            },
+                            failure: function() {
+                                Aurora.Masker.unmask($('ves5010_archive_create_win').wrap);
+                            },
+                            scope: this
+                        });
+                    }, function() {}, 300, 100);
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '${l:XC_VE_PROFILES.DATA_NO_YET_SAVED}');
+                    return;
+                } */
+            }
+            
+            //作废
+            function ves5010_archive_maintain_disable() {
+                var record = $('ves5010_archive_header_maintain_ds').getCurrentRecord(),
+                    archive_header_id = record.get('archive_header_id') || 0;
+                if (archive_header_id) {
+                    Aurora.showConfirm('${l:PROMPT}', '${l:XC_VE_PROFILES.ARE_YOU_SURE_VOID}', function() {
+                        Aurora.Masker.mask($('ves5010_archive_create_win').wrap, '${l:MASCLOUD.SUBMITTING}');
+                        Aurora.request({
+                            url: $('ves5010_archive_disable_link').getUrl(),
+                            para: record.data,
+                            success: function() {
+                                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                    Aurora.Masker.unmask($('ves5010_archive_create_win').wrap);
+                                    ves5010_archive_maintain_return();
+                                });
+                            },
+                            error: function() {
+                                Aurora.Masker.unmask($('ves5010_archive_create_win').wrap);
+                            },
+                            failure: function() {
+                                Aurora.Masker.unmask($('ves5010_archive_create_win').wrap);
+                            },
+                            scope: this
+                        });
+                    }, function() {}, 300, 100);
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '${l:XC_VE_PROFILES.DATA_NO_YET_SAVED}');
+                    return;
+                }
+            }
+            
+            //操作记录
+            function ves5010_archive_maintain_operation_records() {
+                new Aurora.Window({
+                    id: 'ves5010_archive_operation_record_win',
+                    title: '${l:PROMPT.OPERATION_RECORD}',
+                    url: $('ves5010_archive_operation_records_link').getUrl() + '?archive_id=${/parameter/@archive_header_id}',
+                    width: 600,
+                    height: 550
+                });
+            }
+            
+            //返回
+            function ves5010_archive_maintain_return() {
+                $('ves5010_archive_create_win').close();
+            }
+            
+            //数据集更改事件处理
+            function ves5010_archive_header_maintain_ds_update_handler(dataSet, record, name, value, oldvalue) {
+                /*
+                 if(name == 'template_id'){
+                 //查询考评分明细和参评供应商
+                 $('ves5010_archive_detail_line_maintain_ds').setQueryParameter('template_id',value);
+                 $('ves5010_archive_detail_line_maintain_ds').query();
+                 }   */
+                 if(name == 'eval_quarter_desc'){
+                     if(record.get('eval_quarter_desc')=='月度'){
+                         record.set('eval_start_date', '${/model/get_current_username/record/@m_start}');
+                         record.set('eval_end_date', '${/model/get_current_username/record/@m_end}');
+                     }else if(record.get('eval_quarter_desc')=='季度'){
+                         record.set('eval_start_date', '${/model/get_current_username/record/@q_start_new}');
+                         record.set('eval_end_date', '${/model/get_current_username/record/@q_end_new}');
+                     }else if(record.get('eval_quarter_desc')=='年度'){
+                         record.set('eval_start_date', '${/model/get_current_username/record/@y_start}');
+                         record.set('eval_end_date', '${/model/get_current_username/record/@y_end}');
+                     }
+                     
+                 }
+                 if(name == 'eval_start_date'){
+                     var eval_start_date= record.get('eval_start_date');
+                     var time = new Date(eval_start_date);
+                     if(record.get('eval_quarter_desc')=='月度'){
+                        var nowYear = time.getFullYear();
+						var nowMonth = time.getMonth() + 1;
+						record.set('eval_end_date',getMonthEndDate(nowYear,nowMonth));
+                     }else if(record.get('eval_quarter_desc')=='季度'){
+                        var nowYear = time.getFullYear();
+                        var month=time.getMonth();
+						var nowMonth = time.getMonth() + 1 > 10 ? time.getMonth() + 1 : '0' + (time.getMonth() + 3);
+						if (month==10){
+						    nowYear=nowYear+1;
+						    nowMonth='01';
+						}else if (month==11){
+						    nowYear=nowYear+1;
+						    nowMonth='02';
+						}else if (month==12){
+						    nowYear=nowYear+1;
+						    nowMonth='03';
+						}
+						record.set('eval_end_date',getMonthEndDate(nowYear,nowMonth));
+                     }else if(record.get('eval_quarter_desc')=='年度'){
+                        var nowYear2 = time.getFullYear();
+						record.set('eval_end_date',nowYear2+'-12'+'-31');
+                     }
+                 }
+            }
+            
+           
+			//格式化日期：yyyy-MM-dd 
+			function formatDate(date) { 
+			var myyear = date.getFullYear(); 
+			var mymonth = date.getMonth()+1; 
+			var myweekday = date.getDate(); 
+			 
+			return (myyear+"-"+mymonth + "-" + myweekday); 
+			} 
+			 
+				 
+			//获得本月的结束日期 
+			function getMonthEndDate(nowYear,nowMonth){ 
+				var monthEndDate = new Date(nowYear, nowMonth, getMonthDays(nowYear,nowMonth)); 
+				return formatDate(monthEndDate); 
+			}
+			
+			//获得某月的天数 
+			function getMonthDays(nowYear,myMonth){ 
+				var monthStartDate = new Date(nowYear, myMonth, 1); 
+				var monthEndDate = new Date(nowYear, myMonth, 1); 
+				var days = (monthEndDate - monthStartDate)/(1000 * 60 * 60 * 24); 
+				return days; 
+			} 
+            //头信息加载处理
+            function ves5010_archive_header_maintain_ds_load_handler(dataSet) {
+                var record = dataSet.getCurrentRecord();
+                //非新建状态的考评档案只能更新考评描述，开放系统计算值，考评说明
+                if (record.get('archive_header_id')) {
+                    record.getField('eval_quarter').setReadOnly(true);
+                    record.getField('template_desc').setReadOnly(true);
+                    if (record.get('archive_status') != '10_NEW') {
+                        //record.getField('eval_quarter').setReadOnly(true);
+                        //record.getField('template_desc').setReadOnly(true);
+                        record.getField('eval_start_date').setReadOnly(true);
+                        record.getField('eval_end_date').setReadOnly(true);
+            			record.getField('eval_quarter_desc').setReadOnly(true);
+            			
+                        record.getField('archive_desc').setReadOnly(true);
+                        record.getField('eval_desc').setReadOnly(true);
+                        record.getField('inv_organization_desc').setReadOnly(true);
+                    }
+                }
+                //状态为评分中的，档案描述不能修改
+                if (record.get('archive_status') == '50_EVALUATING') {
+                    record.getField('archive_desc').setReadOnly(true);
+                }
+            
+            }
+            
+            
+            //采购品类渲染
+            function ves5010_archive_assign_vendors_grid_renderer(value, record, name) {
+                if (record.get('assign_id')) {
+                    return '<a href="javascript:ves5010_assign_category_maintain(' + record.get('item_category_id') + ');">' + value + '</a>';
+                } else {
+                    return;
+                }
+            }
+            
+            //采购品类窗口
+            function ves5010_assign_category_maintain(item_category_id) {
+                new Aurora.Window({
+                    id: 'ves5010_item_category_classify_win',
+                    title: '${l:XC_VE_PROFILES.PURCHASED_CATEGORY_DETAILS}',
+                    url: $('ves5010_item_category_classify_link').getUrl() + '?item_category_id=' + item_category_id,
+                    width: 540,
+                    height: 480
+                });
+            }
+            
+            //明细航查询
+            function ves5010_archive_maintain_detail_line_query() {
+                var record = $('ves5010_archive_header_maintain_ds').getCurrentRecord(),
+                    archive_header_id = record.get('archive_header_id') || 0;
+                if (archive_header_id) {
+                    $('ves5010_archive_detail_line_maintain_ds').setQueryParameter('archive_header_id', archive_header_id);
+                    $('ves5010_archive_detail_line_maintain_ds').query();
+                    $('ves5010_archive_total_line_maintain_ds').setQueryParameter('archive_header_id', archive_header_id);
+                    $('ves5010_archive_total_line_maintain_ds').query();
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '${l:XC_VE_PROFILES.DATA_NO_YET_SAVED}');
+                    return;
+                }
+            }
+            
+            //风险等级渲染
+            function ves5010_risk_level_display_renderer(value, record, name) {
+                if (record.get('risk_level') == 'HIGH') {
+                    return '<div style="background-color:red;color:black;">' + value + '</div>';
+                } else if (record.get('risk_level') == 'MIDDLE') {
+                    return '<div style="background-color:yellow;color:black;">' + value + '</div>';
+                } else if (record.get('risk_level') == 'LOW') {
+                    return '<div style="background-color:green;color:black;">' + value + '</div>';
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="ves5010_arc_detail_line_status_ds">
+                <a:datas dataSource="ves5010_arc_detail_line_status_data"/>
+            </a:dataSet>
+            <a:dataSet id="ves5010_arc_total_line_status_ds">
+                <a:datas dataSource="ves5010_arc_total_line_status_data"/>
+            </a:dataSet>
+            <a:dataSet id="ves5010_archive_suggestion_ds">
+                <a:datas dataSource="ves5010_archive_suggestion_data"/>
+            </a:dataSet>
+            <a:dataSet id="ves5010_archive_risk_level_ds">
+                <a:datas dataSource="ves5010_archive_risk_level_data"/>
+            </a:dataSet>
+            <a:dataSet id="ves5010_scoring_method_ds" lookupCode="XC_VE_SCORING_METHOD"/>
+            <a:dataSet id="ves5010_archive_header_maintain_ds" model="ves.VES5010.ves_archive_headers">
+                <a:fields>
+                    <a:field name="archive_status_display" displayField="flex_desc" options="ves5010_archive_status_ds" returnField="archive_status" valueField="flex_value"/>
+                    <a:field name="eval_start_date" validator="ves5010_eval_date_validator"/>
+                    <a:field name="eval_end_date" validator="ves5010_eval_date_validator"/>
+                    <a:field name="sys_value_open_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="eval_start_date" required="true"/>
+                    <a:field name="eval_end_date" readOnly="true"/>
+                    <a:field name="archive_desc" required="true"/>
+                    <a:field name="evaluation_cycle"/>
+                    <a:field name="eval_quarter_desc" displayField="code_value_name" options="ves5010_eval_quarter_ds" required="true" returnField="evaluation_cycle" valueField="code_value"/>
+                    <a:field name="template_desc" lovHeight="530" lovService="ves.ves_templates_lov" lovWidth="530" required="true" title="模板选择">
+                        <a:mapping>
+                            <a:map from="template_id" to="template_id"/>
+                            <a:map from="template_desc" to="template_desc"/>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="evaluation_rule_desc" to="evaluation_rule_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="inv_organization_desc" autoComplete="true" autoCompleteField="organization_code_name" lovHeight="530" lovService="public.fnd_business_unit_lov" lovWidth="660" title="业务实体(OU)">
+                        <a:mapping>
+                            <a:map from="business_unit_id" to="inv_organization_id"/>
+                            <a:map from="display_code" to="inv_organization_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="rating_group" readOnly="true"/>
+                    <a:field name="create_name" defaultValue="${/model/get_current_username/record/@description}" readOnly="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="ves5010_archive_header_maintain_ds_update_handler"/>
+                    <a:event name="load" handler="ves5010_archive_header_maintain_ds_load_handler"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="ves5010_archive_detail_line_query_ds">
+                <a:fields>
+                    <a:field name="vendor_desc" autoComplete="true" autoCompleteField="vendor_code_desc" lovHeight="530" lovService="ves.pur_vendors_lov" lovWidth="530" title="PUR_PURCHASE_ORDER.VENDOR_SELECT">
+                        <a:mapping>
+                            <a:map from="vendor_id" to="vendor_id"/>
+                            <a:map from="vendor_code" to="vendor_code"/>
+                            <a:map from="vendor_name" to="vendor_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="item_category_desc" autoComplete="true" autoCompleteField="category_code_desc" lovHeight="530" lovService="ves.mtl_item_categories_lov" lovWidth="530" title="PUBLIC.SELECT_PURCHASE_CATEGORY">
+                        <a:mapping>
+                            <a:map from="category_id" to="item_category_id"/>
+                            <a:map from="category_code" to="item_category_code"/>
+                            <a:map from="category_name" to="item_category_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="detail_criterion_name" lovHeight="530" lovService="ves.ves_all_detail_criteria_lov" lovWidth="530" title="XC_VE_PROFILES.EVALUATION_DETAILS_SELECT">
+                        <a:mapping>
+                            <a:map from="detail_id" to="detail_id"/>
+                            <a:map from="detail_name" to="detail_criterion_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="detail_line_status_display" displayField="flex_desc" options="ves5010_arc_detail_line_status_ds" returnField="detail_line_status" valueField="flex_value"/>
+                    <a:field name="scoring_method_display" displayField="code_value_name" options="ves5010_scoring_method_ds" returnField="scoring_method" valueField="code_value"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="ves5010_archive_detail_line_maintain_ds" autoCount="true" autoPageSize="true" model="ves.VES5010.ves_archive_detail_lines" queryDataSet="ves5010_archive_detail_line_query_ds">
+                <a:fields><![CDATA[
+                ]]></a:fields>
+            </a:dataSet>
+            <a:dataSet id="ves5010_archive_total_line_maintain_ds" autoCount="true" autoPageSize="true" model="ves.VES5010.ves_archive_total_lines" queryDataSet="ves5010_archive_detail_line_query_ds">
+                <a:fields>
+                    <a:field name="total_line_status_display" displayField="flex_desc" options="ves5010_arc_total_line_status_ds" returnField="total_line_status" valueField="flex_value"/>
+                    <a:field name="suggestion_display" displayField="flex_desc" options="ves5010_archive_suggestion_ds" returnField="suggestion" valueField="flex_value"/>
+                    <a:field name="risk_level_display" displayField="flex_desc" options="ves5010_archive_risk_level_ds" returnField="risk_level" valueField="flex_value"/>
+                </a:fields>
+            </a:dataSet>
+            <!-- <a:dataSet id="sgves5010_archive_assign_categories_maintain_ds" model="cux.SUGON.SGVES.SGVES5010.sgves_arc_assign_cates"/> -->
+            <a:dataSet id="ves5010_archive_assign_vendors_maintain_ds" autoCount="true" autoPageSize="true" model="ves.VES5010.ves_arc_assign_vendors"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="ves5010_archive_maintain_detail_line_query" text="PROMPT.QUERY" width="100"/>
+                <a:toolbarButton click="ves5010_archive_maintain_save" text="PROMPT.SAVE" width="100"/>
+                <a:toolbarButton click="ves5010_archive_maintain_compute" text="XCVE.SUBMIT_CALCULATE" width="100"/>
+                <a:toolbarButton click="ves5010_archive_maintain_release_compute" text="XC_VE_PROFILES.RELEASE_SCORE" width="120"/>
+                <a:toolbarButton click="ves5010_archive_maintain_summary" text="XC_VE_PROFILES.SUMMARY_STATISTICS" width="100"/>
+                <a:toolbarButton click="ves5010_archive_maintain_release" text="PROMPT.RELEASE" width="100"/>
+                <a:toolbarButton click="ves5010_archive_maintain_disable" text="HAP_REMOVE" width="100"/>
+                <a:toolbarButton click="ves5010_archive_maintain_operation_records" text="PROMPT.OPERATION_RECORD" width="100"/>
+                <a:toolbarButton click="ves5010_archive_maintain_return" text="PROMPT.RETURN" width="100"/>
+            </a:screenTopToolbar>
+            <a:fieldSet column="1" title="XC_VE_PROFILES.RAPID_POSITIONING">
+                <a:hBox labelWidth="100">
+                    <a:lov name="vendor_desc" bindTarget="ves5010_archive_detail_line_query_ds" prompt="PROMPT.VENDOR" width="150"/>
+                    <a:lov name="item_category_desc" bindTarget="ves5010_archive_detail_line_query_ds" prompt="PROMPT.ITEM_CATEGORY" width="150"/>
+                    <a:lov name="detail_criterion_name" bindTarget="ves5010_archive_detail_line_query_ds" prompt="MODULES/XCVE/XCVE1030/XC_VE_TEMPLATE_CD_ASGN.SCREEN.TITLE" width="150"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:comboBox name="detail_line_status_display" bindTarget="ves5010_archive_detail_line_query_ds" prompt="PROMPT.STATUS" width="150"/>
+                    <a:comboBox name="scoring_method_display" bindTarget="ves5010_archive_detail_line_query_ds" prompt="XC_VE_CRITERIA_DETAIL.SCORING_METHOD" width="150"/>
+                    <a:textField name="scored_by_display" bindTarget="ves5010_archive_detail_line_query_ds" prompt="PERSON_IN_CHARGE" width="150"/>
+                </a:hBox>
+            </a:fieldSet>
+            <a:accordionPanel id="bid5040_createAccordion_dim" height="220" showIcon="true" singleMode="false" width="900">
+                <a:accordions>
+                    <a:accordion prompt="PROMPT.BASIC_INFOMATION" selected="true">
+                        <a:hBox labelWidth="100">
+                            <a:textField name="archive_code" bindTarget="ves5010_archive_header_maintain_ds" readOnly="true" width="150"/>
+                            <a:textField name="archive_desc" bindTarget="ves5010_archive_header_maintain_ds" width="150"/>
+                            <a:textField name="archive_status_display" bindTarget="ves5010_archive_header_maintain_ds" prompt="PROMPT.STATUS" readOnly="true" width="150"/>
+                        </a:hBox>
+                        <a:hBox labelWidth="100">
+                            <a:comboBox name="eval_quarter_desc" bindTarget="ves5010_archive_header_maintain_ds" prompt="CREATE_ARCHIVE_HEADER.EVAL_QUARTER" width="150"/>
+                            <a:lov name="template_desc" bindTarget="ves5010_archive_header_maintain_ds" prompt="考评模板" width="150"/>
+                            <!-- <a:textField name="rating_group" bindTarget="ves5010_archive_header_maintain_ds" prompt="评级分组" width="150"/> -->
+                        </a:hBox>
+                        <a:hBox labelWidth="100">
+                            <a:datePicker name="eval_start_date" bindTarget="ves5010_archive_header_maintain_ds" renderer="Aurora.formatDate" width="150"/>
+                            <a:datePicker name="eval_end_date" bindTarget="ves5010_archive_header_maintain_ds" renderer="Aurora.formatDate" width="150"/>
+                            <!-- <a:checkBox name="sys_value_open_flag" bindTarget="ves5010_archive_header_maintain_ds" prompt="XC_VE_PROFILES.OPEN_THE_SYSTEM_TO_CALCULATE_VALUES"/> -->
+                        </a:hBox>
+                        <a:hBox labelWidth="100">
+                            <!-- <a:lov name="inv_organization_desc" bindTarget="ves5010_archive_header_maintain_ds" prompt="事业部" width="150"/> -->
+                            <a:dateTimePicker name="creation_date" bindTarget="ves5010_archive_header_maintain_ds" readOnly="true" renderer="Aurora.formatDateTime" width="150"/>
+                            <a:textField name="create_name" bindTarget="ves5010_archive_header_maintain_ds" prompt="建档人" width="150"/>
+                        </a:hBox>
+                        <!-- <a:hBox labelWidth="100">
+                            <a:textField name="evaluation_rule_desc" bindTarget="ves5010_archive_header_maintain_ds" prompt="XC_VE_TEMPLATE.EVALUATION_REGULATION_DESCRIPTION" readOnly="true" width="667"/>
+                        </a:hBox> -->
+                        <a:hBox labelWidth="100">
+                            <a:textArea name="eval_desc" bindTarget="ves5010_archive_header_maintain_ds" width="667"/>
+                        </a:hBox>
+                    </a:accordion>
+                </a:accordions>
+            </a:accordionPanel>
+            <a:tabPanel marginHeight="280" marginWidth="80">
+                <a:tabs>
+                    <a:tab prompt="考评分明细" width="120">
+                        <a:grid id="ves5010_archive_detail_lines_grid" bindTarget="ves5010_archive_detail_line_maintain_ds" marginHeight="286" marginWidth="100" navBar="true" width="950">
+                            <a:columns>
+                                <a:column name="detail_line_status_display" align="center" prompt="PROMPT.STATUS" sortable="true" width="60"/>
+                                <a:column name="scoring_method_display" align="center" prompt="XC_VE_CRITERIA_DETAIL.SCORING_METHOD" sortable="true" width="60"/>
+                                <a:column name="vendor_code" align="center" sortable="true" width="80"/>
+                                <a:column name="vendor_desc" width="160"/>
+                                <!-- <a:column name="business_department" align="center" prompt="事业部" sortable="true"/>
+                                <a:column name="item_category_desc"/> -->
+                                <a:column name="rating_classify_code"/>
+                                <a:column name="detail_criterion_name"/>
+                                <a:column name="detail_note_desc"/>
+                                <a:column name="period" align="center" prompt="期间"/>
+                                <a:column name="detail_score" align="right" renderer="Aurora.formatMoney" sortable="true" width="60"/>
+                                <a:column name="problem_description" editor="problem_description_tf" prompt="问题描述" width="80"/>
+                                <a:column name="scored_by_display" prompt="PERSON_IN_CHARGE" width="80"/>
+                                <a:column name="score_from" align="right" sortable="true" width="60"/>
+                                <a:column name="score_to" align="right" sortable="true" width="60"/>
+                                <a:column name="comments" prompt="PROMPT.COMMENTS"/>
+                                <a:column name="proportion_of_money" align="right" prompt="事业部采购金额占集团总采购金额比例"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:textField id="problem_description_tf"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab prompt="考评分汇总" width="120">
+                        <a:grid id="ves5010_archive_total_lines_grid" bindTarget="ves5010_archive_total_line_maintain_ds" marginHeight="286" marginWidth="100" navBar="true" width="950">
+                            <a:columns>
+                                <a:column name="line_num" align="center" prompt="行号" width="40"/>
+                                <a:column name="total_line_status_display" align="center" prompt="PROMPT.STATUS" width="60"/>
+                                <a:column name="suggestion_display" align="center" prompt="XC_VE_PROFILES.RECOMMENDATION_STRATEGY" width="60"/>
+                                <a:column name="risk_level_display" align="center" prompt="XC_VE_PROFILES.RISK_LEVEL" renderer="ves5010_risk_level_display_renderer" width="60"/>
+                                <a:column name="vendor_code" align="center" sortable="true" width="80"/>
+                                <a:column name="vendor_desc" width="160"/>
+                                <a:column name="rating_classify_code" align="center" prompt="评级分组" width="160"/>
+                                <a:column name="current_inv_amount" align="right" width="100"/>
+                                <a:column name="item_category_desc"/>
+                                <a:column name="score" align="right" renderer="Aurora.formatMoney" sortable="true" width="60"/>
+                                <a:column name="score_level" align="center" width="60"/>
+                                <a:column name="feedback_desc"/>
+                                <a:column name="ranking" align="right" sortable="true" width="60"/>
+                                <a:column name="root_cause_analysis" prompt="根本原因分析" width="80"/>
+                                <a:column name="improvement_countermeasures" prompt="改善对策" width="100"/>
+                                <a:column name="improvement_countermeasure_confirmation" prompt="改善对策确认" width="100"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab prompt="XCVE.PROFILE_VENDOR" width="120">
+                        <a:grid id="ves5010_archive_assign_vendors_grid" bindTarget="ves5010_archive_assign_vendors_maintain_ds" marginHeight="286" marginWidth="100" navBar="true" width="950">
+                            <a:columns>
+                                <a:column name="vendor_code" align="center" sortable="true" width="80"/>
+                                <a:column name="vendor_desc" width="160"/>
+                                <a:column name="vendor_type"/>
+                                <!-- <a:column name="item_category_desc" renderer="ves5010_archive_assign_vendors_grid_renderer"/> -->
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+        <script><![CDATA[
+        	init();
+        ]]></script>
+    </a:view>
+</a:screen>

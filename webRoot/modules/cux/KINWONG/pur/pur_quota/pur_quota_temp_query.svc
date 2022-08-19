@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:service xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <a:model-query model="cux.KINWONG.pur.pur_quota.pur_quota_query" rootPath="pur_quota_property"/>
+        <s:server-script><![CDATA[
+            var logger = $logger('server-script');
+            
+            function log(msg) {
+                logger.info(msg);
+            }
+            var array = $ctx.get('/model/pur_quota_property').getChildren();
+            var colunm_name = '';
+            var text = ['', ''];
+            var key_map = {};
+            for (var i = 0;i < array.length;i++) {
+                if (array.length > 1) {
+                    if (i == array.length - 1 || array[i].colunmn_name != array[i + 1].colunmn_name) {
+                        key_map[array[i].colunmn_name] = 1;
+                        colunm_name += ',' + array[i].colunmn_name;
+                    }
+                } else {
+                    colunm_name += ',' + array[i].colunmn_name;
+                }
+                if (array[i].segment1 || array[i].segment2) {
+                    if (i == 0 || array[i].colunmn_name != array[i - 1].colunmn_name) {
+                        text[0] += ' ,(CASE ';
+                        text[1] += ' ,(CASE ';
+                    }
+                    if (!array[i].segment1) {
+                        text[0] += ' WHEN ' + array[i].colunmn_name + '<' + array[i].segment2 + ' THEN ' + "'<" + array[i].segment2 + "'";
+                        text[1] += ' WHEN ' + array[i].colunmn_name + '<' + array[i].segment2 + ' THEN ' + "'<" + array[i].segment2 + "'";
+                    } else if (!array[i].segment2) {
+                        text[0] += ' WHEN ' + array[i].colunmn_name + '>' + array[i].segment1 + ' THEN ' + "'>" + array[i].segment1 + "'";
+                        text[1] += ' WHEN ' + array[i].colunmn_name + '>' + array[i].segment1 + ' THEN ' + "'>" + array[i].segment1 + "'";
+                    } else {
+                        text[0] += ' WHEN ' + array[i].colunmn_name + '>=' + array[i].segment1 + ' AND ' + array[i].colunmn_name + '<=' + array[i].segment2 + ' THEN ' + "'" + array[i].segment1 + '<=x<=' + array[i].segment2 + "'";
+                        text[1] += ' WHEN ' + array[i].colunmn_name + '>=' + array[i].segment1 + ' AND ' + array[i].colunmn_name + '<=' + array[i].segment2 + ' THEN ' + "'" + array[i].segment1 + '<=x<=' + array[i].segment2 + "'";
+                    }
+                    if (i == array.length - 1 || array[i].colunmn_name != array[i + 1].colunmn_name) {
+                        text[0] += ' END) AS ' + array[i].colunmn_name;
+                        text[1] += ' END)';
+                    }
+                }
+            
+            }
+            log(colunm_name);
+            $ctx.parameter.colunmn_name = colunm_name;
+            $ctx.parameter.text = text[0];
+            $ctx.parameter.text1 = text[1];
+        ]]></s:server-script>
+        <a:model-query fetchAll="true" model="cux.KINWONG.pur.pur_quota.pur_quota_temp_query" rootPath="pur_quota_all"/>
+        <s:server-script><![CDATA[
+            var array1 = $ctx.get('/model/pur_quota_all').getChildren();
+            var last_value = '';
+            var value = '';
+            var record = new CompositeMap('record');
+            for (var i = 0;i < array1.length;i++) {
+                value = array1[i].business_unit_name + array1[i].category_code_3;
+                for (key in key_map) {
+                    value += array1[i][key.toLowerCase()];
+                }
+                log('value = '+value);
+                log('last_value = '+ last_value);
+                if (last_value == '') {
+                    last_value = value;
+                } else if (last_value != value) {
+                    last_value = value;
+                    $ctx.model.addChild(record.getData());
+                    var record = new CompositeMap('record');
+                }
+                record['quota_id'] = array1[i].quota_id;
+                record['status_desc'] = array1[i].status_desc;
+                record['status'] = array1[i].status; 
+                record['n_Attribute1'] = last_value.replace(array1[i].business_unit_name+ array1[i].category_code_3,"");
+                record['business_unit_id'] = array1[i].business_unit_id;
+                record['business_unit_name'] = array1[i].business_unit_name;
+                record['rating_code'] = array1[i].rating_code;
+                record['category_code_3'] = array1[i].category_code_3;
+                record['price'] = toThousands(Math.round(array1[i].allprice));
+                record['create_date_num'] = array1[i].create_date_num ;
+                if (record['quota_id_arr']===undefined){
+                    record['quota_id_arr']= array1[i].quota_id;
+                }else
+                {
+                   record['quota_id_arr']=record['quota_id_arr'] +','+ array1[i].quota_id; 
+                 }
+                for (key in key_map) {
+                    record[key] = array1[i][key.toLowerCase()];
+                }
+                record[array1[i].vendor_id + '_score'] = array1[i].score;
+                if (array1[i].quota_num) {
+                    record[array1[i].vendor_id + '_quota'] = array1[i].quota_num;
+                }
+                if (array1[i].actual_quota_num) {
+                    record[array1[i].vendor_id + '_actualquota'] = array1[i].actual_quota_num;
+                }
+                record[array1[i].vendor_id + '_price'] = toThousands(Math.round(array1[i].price));
+                record[array1[i].vendor_id + '_quotaid'] = array1[i].quota_id;
+            }
+            $ctx.model.addChild(record.getData());
+            
+            function toThousands(num) {
+               // console.log('hello3:' + num);
+                //  alert('num:'+num);
+                //|| Aurora.isEmpty(num)
+                if ((num + "").trim() == "" ) {
+            
+                    return "";
+            
+                }
+                return (num || 0).toString().replace(/(\d)(?=(?:\d{3})+$)/g, '$1,');
+            }
+        ]]></s:server-script>
+        <p:echo/>
+    </a:init-procedure>
+</a:service>

@@ -1,0 +1,260 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="v.asn_line_id=${/parameter/@asn_line_id}" model="cux.BIZ.BIZ_INV5001.inv_asn_header_line_query" rootPath="asn_line"/>
+    </a:init-procedure>
+    <a:view package="aurora.ui.std" template="default">
+        <a:link id="biz_inv5001_batch_add_link" url="${/request/@context_path}/modules/cux/BIZ/BIZ_INV5001/inv_asn_batch_add.screen"/>
+        <script><![CDATA[
+            function biz_inv5001_barcode_query() {
+                var record = $('biz_inv5001_line_ds').getCurrentRecord();
+                var line_num_from = record.get('line_num_from');
+                var line_num_to = record.get('line_num_to');
+                var ds = $('biz_inv5001_barcode_ds');
+                if (!Ext.isEmpty(line_num_from) || !Ext.isEmpty(line_num_to)) {
+                    ds.setQueryParameter('line_num_from', line_num_from);
+                    ds.setQueryParameter('line_num_to', line_num_to);
+                }else{
+                    ds.setQueryParameter('line_num_from','');
+                	ds.setQueryParameter('line_num_to','');
+                }
+                ds.query();
+            }
+        
+            //关闭窗口
+            function biz_inv5001_detail_close() {
+                $('biz_inv5001_asn_update').close();
+            }
+            
+            function biz_inv5001_barcode_add(dataSet, record, index) {
+                records = dataSet.getAll();
+                var line_num = 0;
+                if (records.length > 1) {
+                    for (var t = 0;t < records.length;t++) {
+                        if (line_num < records[t].get('line_num')) {
+                            line_num = records[t].get('line_num');
+                        }
+                    }
+                }
+                record.set('line_num', line_num + 1);
+            }
+            
+            function biz_inv5001_detail_submit() {
+                var line_ds = $('biz_inv5001_line_ds');
+                if (!line_ds.validate()) {
+                    return;
+                }
+            
+                var line_record = line_ds.getAt(0);
+                if (line_record.dirty) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:BIZ_INV5001.PLEASE_SAVE_DATA}');
+                    return;
+                }
+            
+                var barcode_records = $('biz_inv5001_barcode_ds').getAll();
+                for (var i = 0;i < barcode_records.length;i++) {
+                    if (barcode_records[i].dirty) {
+                        Aurora.showMessage('${l:PROMPT}', '${l:BIZ_INV5001.PLEASE_SAVE_DATA}');
+                        return;
+                    }
+                }
+            
+                Aurora.showConfirm('${l:PROMPT}', '${l:INV5010.SURE_TO SUBMIT}', function() {
+                    Aurora.Masker.mask($('biz_inv5001_asn_update').wrap, '${l:LOADING}');
+                    Aurora.request({
+                        url: '${/request/@context_path}/autocrud/cux.BIZ.BIZ_INV5001.inv_asn_header_line_query/execute',
+                        para: {
+                            asn_header_id: '${/parameter/@asn_header_id}',
+                            asn_line_id: '${/parameter/@asn_line_id}'
+                        },
+                        success: function() {
+                            Aurora.Masker.unmask($('biz_inv5001_asn_update').wrap);
+                            Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SUBMIT_SUCCESS}', function() {
+                                new Aurora.Window({
+                                    id: 'biz_inv5001_asn_detail',
+                                    title: '${l:BIZ_INV5001.VIEW}',
+                                    url: $('biz_inv5001_barcode_detail_readonly_link').getUrl() + '?asn_line_id=' + '${/parameter/@asn_line_id}' + '&asn_header_id=' + '${/parameter/@asn_header_id}',
+                                    fullScreen: true
+                                });
+                                biz_inv5001_detail_close();
+                            });
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask($('biz_inv5001_asn_update').wrap);
+                            return;
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask($('biz_inv5001_asn_update').wrap);
+                            return;
+                        }
+                    });
+                });
+            }
+            
+            function biz_inv5001_detail_save() {
+                if (!$('biz_inv5001_line_ds').validate()) {
+                    return;
+                }
+                if (!$('biz_inv5001_barcode_ds').validate()) {
+                    return;
+                }
+                $('biz_inv5001_line_ds').submit();
+                Aurora.Masker.mask($('biz_inv5001_asn_update').wrap, '${l:LOADING}');
+            }
+            
+            function biz_inv5001_barcode_update(ds, record, name, value, oldValue) {
+                if (name == 'packet_quantity') {
+                    var line_record = $('biz_inv5001_line_ds').getAt(0);
+                    var uom_weight = line_record.get('uom_weight');
+                    var temp =0;
+                    if (!Aurora.isEmpty(value) && !Aurora.isEmpty(uom_weight)) {
+                        temp = (value * uom_weight).toFixed(8);
+                        record.set('packet_weight', temp);
+                    }
+                }
+            }
+            
+            function biz_inv5001_line_ds_ss(ds) {
+                Aurora.Masker.unmask($('biz_inv5001_asn_update').wrap);
+            }
+            
+            function biz_inv5001_line_ds_sf(ds) {
+                Aurora.Masker.unmask($('biz_inv5001_asn_update').wrap);
+            
+            }
+            
+            function biz_inv5001_batch_add(){
+                new Aurora.Window({
+                    id: 'biz_inv5001_inv_asn_batch_add_win',
+                    title: '${l:BIZ_INV5001.BARCODE_BATCH_ADD}',
+                    url: $('biz_inv5001_batch_add_link').getUrl(),
+                    width:800,
+                    height:250
+                });
+            }
+            
+            function biz_inv5001_line_update(ds, record, name, value, oldValue) {
+                if(name == 'uom_weight' && value != oldValue){
+                    var records = $('biz_inv5001_barcode_ds').getAll();
+                    var temp =0;
+                    for(var i=0;i<records.length;i++){
+                        //if(records[i].isNew){
+                        	temp = (value * records[i].get('packet_quantity')).toFixed(8);
+                            records[i].set('packet_weight',temp);
+                        //}
+                    }
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="biz_inv5001_line_ds" model="cux.BIZ.BIZ_INV5001.inv_asn_header_line_query" submitUrl="${/request/@context_path}/modules/cux/BIZ/BIZ_INV5001/inv_asn_outside_barcode_save.svc">
+                <a:datas dataSource="/model/asn_line"/>
+                <a:fields>
+                    <a:field name="outside_box_quantity" required="true"/>
+                    <a:field name="uom_weight"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="biz_inv5001_line_update"/>
+                    <a:event name="submitsuccess" handler="biz_inv5001_line_ds_ss"/>
+                    <a:event name="submitfailed" handler="biz_inv5001_line_ds_sf"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="biz_inv5001_barcode_ds" autoCount="true" autoQuery="true" bindName="biz_inv5001_barcode" bindTarget="biz_inv5001_line_ds" fetchAll="true" model="cux.BIZ.BIZ_INV5001.inv_asn_outside_barcode" queryUrl="${/request/@context_path}/autocrud/cux.BIZ.BIZ_INV5001.inv_asn_outside_barcode/query?asn_line_id=${/parameter/@asn_line_id}" selectable="true">
+                <a:fields>
+                    <a:field name="packet_quantity" required="true"/>
+                    <a:field name="uom_desc" autoComplete="true" autoCompleteField="uom_desc" defaultValue="${/model/asn_line/record/@uom_desc}" lovGridHeight="300" lovHeight="450" lovService="public.fnd_uom_codes_lov?business_group=${/model/asn_line/record/@coop_business_group}" lovWidth="550" title="MTL_SYSTEM_VENDOR_ITEMS.PRIMARY_UOM">
+                        <a:mapping>
+                            <a:map from="uom_code" to="uom_code"/>
+                            <a:map from="uom_desc" to="uom_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="uom_code" defaultValue="${/model/asn_line/record/@uom_code}"/>
+                    <a:field name="box_weight" defaultValue="${/model/asn_line/record/@box_weight}" required="true"/>
+                    <a:field name="packet_weight" defaultValue="${/model/asn_line/record/@packet_weight}" required="true"/>
+                    <a:field name="environmental_batch" defaultValue="${/model/asn_line/record/@environmental_batch}"/>
+                    <a:field name="production_batch" defaultValue="${/model/asn_line/record/@production_batch}"/>
+                    <a:field name="asn_header_id" defaultValue="${/model/asn_line/record/@asn_header_id}" required="true"/>
+                    <a:field name="asn_line_id" defaultValue="${/model/asn_line/record/@asn_line_id}" required="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="biz_inv5001_barcode_add"/>
+                    <a:event name="update" handler="biz_inv5001_barcode_update"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:screenTitle/>
+                <a:gridButton bind="biz_inv5001_barcode_grid" className="item-rbtn-blue button-add" type="add" width="100"/>
+                <a:toolbarButton bind="biz_inv5001_barcode_grid" click="biz_inv5001_batch_add" text="BIZ_INV5001.BATCH_ADD" width="100"/>
+                <a:gridButton bind="biz_inv5001_barcode_grid" className="item-rbtn-blue button-delete" type="delete" width="100"/>
+                <a:toolbarButton bind="biz_inv5001_barcode_grid" click="biz_inv5001_detail_save" text="HAP_SAVE" width="100"/>
+                <a:toolbarButton click="biz_inv5001_detail_submit" text="HAP_SUBMIT" width="100"/>
+                <a:toolbarButton click="biz_inv5001_detail_close" text="HAP_BACK" width="100"/>
+            </a:screenTopToolbar>
+            <a:form style="margin-top:5px;width:100%" title="INV5010.ASN_LINE_INFO">
+                <a:hBox labelWidth="120">
+                    <a:textField name="asn_detail_number" bindTarget="biz_inv5001_line_ds" prompt="INV_ASN_LINES.ASN_DETAIL_NUMBER" readOnly="true"/>
+                    <a:textField name="asn_number" bindTarget="biz_inv5001_line_ds" prompt="INV_ASN_HEADERS.ASN_NUMBER" readOnly="true"/>
+                    <a:textField name="po_num" bindTarget="biz_inv5001_line_ds" prompt="INV_ASN_LINES.SEGMENT1" readOnly="true"/>
+                    <a:textField name="vendor_site_name" bindTarget="biz_inv5001_line_ds" prompt="INV_ASN_HEADERS.SHIPMENT_LOCATION" readOnly="true"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:textField name="company_name" bindTarget="biz_inv5001_line_ds" prompt="FND_COMPANIES.CLIENT_NAME" readOnly="true"/>
+                    <a:textField name="ship_to_organization_name" bindTarget="biz_inv5001_line_ds" prompt="INV_ASN_HEADERS.SHIP_TO_ORGANIZATION_ID" readOnly="true"/>
+                    <a:textField name="location_name" bindTarget="biz_inv5001_line_ds" prompt="INV_ASN_HEADERS.LOCATION_ID" readOnly="true"/>
+                    <a:textField name="ean_code" bindTarget="biz_inv5001_line_ds" prompt="PUR_LINES_ALL.EAN_CODE" readOnly="true"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:textField name="need_by_date" bindTarget="biz_inv5001_line_ds" prompt="BIZ_INV5001.NEED_BY_DATE" readOnly="true" renderer="Aurora.formatDate"/>
+                    <a:textField name="promised_date" bindTarget="biz_inv5001_line_ds" prompt="BIZ_INV5001.PROMISED_DATE" readOnly="true" renderer="Aurora.formatDate"/>
+                    <a:textField name="expected_date_fmt" bindTarget="biz_inv5001_line_ds" prompt="INV_ASN_HEADERS.EXPECTED_DATE" readOnly="true" renderer="Aurora.formatDate"/>
+                    <a:textField name="creation_date_fmt" bindTarget="biz_inv5001_line_ds" prompt="BIZ_INV5001.CREATION_DATE_FMT" readOnly="true" renderer="Aurora.formatDate"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:hBox labelWidth="120">
+                        <a:textField name="require_item_code" bindTarget="biz_inv5001_line_ds" prompt="MTL_SYSTEM_ITEMS.CLIENT_ITEM_CODE" readOnly="true"/>
+                        <a:textField name="require_item_name" bindTarget="biz_inv5001_line_ds" prompt="MTL_SYSTEM_ITEMS.CLIENT_ITEM_NAME" readOnly="true"/>
+                        <a:textField name="supply_item_code" bindTarget="biz_inv5001_line_ds" prompt="MTL_SYSTEM_ITEMS.MY_ITEM_CODE" readOnly="true"/>
+                        <a:textField name="supply_item_name" bindTarget="biz_inv5001_line_ds" prompt="MTL_SYSTEM_ITEMS.MY_ITEM_DESC" readOnly="true"/>
+                    </a:hBox>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:textField name="ship_date" bindTarget="biz_inv5001_line_ds" prompt="INV_ASN_HEADERS.SHIP_DATE" readOnly="true" renderer="Aurora.formatDate"/>
+                    <a:numberField name="ship_quantity" bindTarget="biz_inv5001_line_ds" prompt="INV_ASN_LINES.SHIP_QUANTITY" readOnly="true"/>
+                    <a:textField name="comments" bindTarget="biz_inv5001_line_ds" prompt="INV_ASN_LINES.LINE_DESC" readOnly="true" width="430"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:numberField name="outside_box_quantity" allowDecimals="false" allowNegative="false" bindTarget="biz_inv5001_line_ds" prompt="INV_ASN_LINES.OUTSIDE_BOX_QUANTITY" renderer="Aurora.formatNumber"/>
+                    <a:numberField name="uom_weight" allowDecimals="true" allowNegative="false" bindTarget="biz_inv5001_line_ds" decimalPrecision="8" prompt="BIZ_INV5001.UOM_WEIGHT_KG" renderer="Aurora.formatNumber"/>
+                </a:hBox>
+                <a:hBox labelWidth="120">
+                    <a:textField name="line_num_from" bindTarget="biz_inv5001_line_ds" prompt="BIZ_INV5001.LINE_NUM_FROM"/>
+                    <a:textField name="line_num_to" bindTarget="biz_inv5001_line_ds" prompt="BIZ_INV5001.LINE_NUM_TO"/>
+                    <a:button click="biz_inv5001_barcode_query" text="HAP_QUERY"/>
+                </a:hBox>
+            </a:form>
+            <a:grid id="biz_inv5001_barcode_grid" bindTarget="biz_inv5001_barcode_ds" height="250" marginWidth="40" navBar="true" width="1209">
+                <a:columns>
+                    <a:column name="line_num" align="center" prompt="INV_ASN_OUTSIDE_BARCODE.LINE_NUM" width="100"/>
+                    <a:column name="packet_quantity" align="right" editor="biz_inv_5001_barcode_number" prompt="INV_ASN_LINES.PACKET_QUANTITY" renderer="Aurora.formatNumber" width="100"/>
+                    <a:column name="uom_desc" align="center" editor="biz_inv_5001_barcode_lov" prompt="INV_ASN_OUTSIDE_BARCODE.UOM_DESC" width="100"/>
+                    <a:column name="production_batch" align="left" editor="biz_inv_5001_tf" prompt="INV_ASN_LINES_TEMP.PRODUCTION_BATCH" width="100"/>
+                    <a:column name="environmental_batch" align="left" editor="biz_inv_5001_tf" prompt="INV_ASN_LINES_TEMP.ENVIRONMENTAL_BATCH" width="100"/>
+                    <a:column name="packet_weight" align="right" editor="biz_inv_5001_barcode_number" prompt="INV_ASN_LINES_TEMP.PACKET_WEIGHT_KG" width="100"/>
+                    <a:column name="box_weight" align="right" editor="biz_inv_5001_barcode_number" prompt="INV_ASN_LINES_TEMP.BOX_WEIGHT_KG" width="100"/>
+                    <a:column name="country_of_origin" editor="biz_inv_5001_tf" prompt="INV_ASN_OUTSIDE_BARCODE.COUNTRY_OF_ORIGIN" width="100"/>
+                    <a:column name="final_order_number" editor="biz_inv_5001_tf" prompt="INV_ASN_OUTSIDE_BARCODE.FINAL_ORDER_NUMBER" width="100"/>
+                    <a:column name="final_item_code" editor="biz_inv_5001_tf" prompt="INV_ASN_OUTSIDE_BARCODE.FINAL_ITEM_CODE" width="100"/>
+                    <a:column name="item_version" editor="biz_inv_5001_tf" prompt="INV_ASN_OUTSIDE_BARCODE.ITEM_VERSION" width="100"/>
+                </a:columns>
+                <a:editors>
+                    <a:numberField id="biz_inv_5001_barcode_number" allowDecimals="true" allowNegative="false" decimalPrecision="8"/>
+                    <a:textField id="biz_inv_5001_tf"/>
+                    <a:lov id="biz_inv_5001_barcode_lov"/>
+                    <a:comboBox id="biz_inv_5001_cb"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

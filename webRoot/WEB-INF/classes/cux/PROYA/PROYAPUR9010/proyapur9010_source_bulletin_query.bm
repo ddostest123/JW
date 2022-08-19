@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author:	Jehu 15294			
+    $Date:		2018年4月18日 10:12:27
+    $Revision:	1.0  
+    $Purpose:	寻源公告发布查询
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*
+                FROM
+                    (SELECT
+                        h.source_header_id,
+                        h.source_number,
+                        h.source_title,
+                        h.status,
+                        (SELECT
+                            t.flex_desc
+                        FROM
+                            fnd_flex_values_v t
+                        WHERE
+                            t.value_set_enabled_flag = 'Y' AND
+                            t.values_enabled_flag    = 'Y' AND
+                            t.flex_value_set_code    = 'PROYA_SOURCE_BLT_HEAD_STATUS' AND
+                            t.flex_value             = h.status
+                        ) AS status_desc,
+                        h.item_category_id,
+                        (
+                        (SELECT
+                            COUNT(1)
+                        FROM
+                            proya_pur_source_blt_lns l
+                        WHERE
+                            l.source_header_id = h.source_header_id AND
+                            l.feedback_status IN ('PARTICIPATED','ABANDONED')
+                        )
+                        ||'/'
+                        ||
+                        (SELECT
+                            COUNT(1)
+                        FROM
+                            proya_pur_source_blt_lns l
+                        WHERE
+                            l.source_header_id = h.source_header_id
+                        )) AS feedback_situation,
+                        h.release_date,
+                        NVL(TO_CHAR(h.release_date,'yyyy-mm-dd'),'-') AS release_date_desc,
+                        h.end_date,
+                        TO_CHAR(h.end_date,'yyyy-mm-dd') AS end_date_desc,
+                        h.notify_to,
+                        (LENGTH(h.notify_to) - LENGTH(REPLACE(h.notify_to, ',', '')) + 1) AS notify_count,
+                        h.source_content,
+                        h.business_group,
+                        h.creation_date,
+                        TO_CHAR(h.creation_date,'yyyy-mm-dd') AS create_date_desc,
+                        h.created_by,
+                        h.last_update_date,
+                        h.last_updated_by
+                    FROM
+                        proya_pur_source_blt_hds h
+                    WHERE
+                        h.business_group = ${/session/@business_group}
+                    ) v #WHERE_CLAUSE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <!-- <bm:query-field name="status_desc" queryExpression="v.status_desc = ${@status_desc}"/> -->
+        <bm:query-field name="status" queryExpression="v.status = ${@status}"/>
+        <bm:query-field name="source_number" queryExpression="v.source_number like &apos;%&apos;||trim(${@source_number})||&apos;%&apos;"/>
+        <bm:query-field name="source_title" queryExpression="v.source_title like &apos;%&apos;||trim(${@source_title})||&apos;%&apos;"/>
+        <bm:query-field name="release_date_from" queryExpression="trunc(v.release_date) &gt;= to_date(${@release_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="release_date_to" queryExpression="trunc(v.release_date) &lt;= to_date(${@release_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="end_date_from" queryExpression="trunc(v.end_date) &gt;= to_date(${@end_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="end_date_to" queryExpression="trunc(v.end_date) &lt;= to_date(${@end_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="create_date_from" queryExpression="trunc(v.creation_date) &gt;= to_date(${@create_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="create_date_to" queryExpression="trunc(v.creation_date) &lt;= to_date(${@create_date_to},&apos;yyyy-mm-dd&apos;)"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="${/session/@user_id} IN (SELECT regexp_substr(v.notify_to,&apos;[^,]+&apos;,1,rownum) FROM dual CONNECT BY rownum &lt;= v.notify_count) or ${/session/@user_id} = v.created_by"/>
+    </bm:data-filters>
+</bm:model>

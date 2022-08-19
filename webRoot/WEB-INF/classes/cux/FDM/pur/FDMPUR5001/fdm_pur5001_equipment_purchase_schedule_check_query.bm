@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        h.pur_header_id,
+                        l.pur_line_id,
+                        h.terms_id,
+                        (SELECT
+                            COUNT(*)
+                        FROM
+                            cux_fdm_equipment_schedule fes,
+                            csh_payment_terms_detail td
+                        WHERE
+                            fes.term_detail_id = td.term_detail_id AND
+                            td.payment_term_id = h.terms_id AND
+                            fes.pur_header_id  = h.pur_header_id AND
+                            fes.pur_line_id    = l.pur_line_id AND
+                            fes.finish_flag    = 'Y'
+                        )
+                        || ' / '
+                        ||
+                        (SELECT
+                            COUNT(*)
+                        FROM
+                            csh_payment_terms_detail td
+                        WHERE
+                            td.payment_term_id = h.terms_id
+                        ) AS finish_progress,
+                        cux_fdm_pur_pkg.get_equipment_schedule_status(p_pur_header_id => h.pur_header_id, p_pur_line_id => l.pur_line_id) AS status,
+                        DECODE(cux_fdm_pur_pkg.get_equipment_schedule_status(p_pur_header_id => h.pur_header_id, p_pur_line_id => l.pur_line_id), 'RELEASED', '已发布', 'CHECKING', '验收中', 'FINISHED', '已完成') AS status_display,
+                        h.display_po_number AS po_number,
+                        l.line_num AS po_line_num,
+                        (SELECT
+                            ch.document_desc
+                        FROM
+                            con_contract_headers_new ch,
+                            con_contract_lines_new cl
+                        WHERE
+                            cl.contract_header_id = ch.contract_header_id AND
+                            cl.source_ref_id      = p.demand_pool_id AND
+                            ch.status            IN('FINISHED','APPROVED')
+                        ) AS contract_number,
+                        (SELECT
+                            RFX_HEADER_ID
+                        FROM
+                            pur_rfx_headers pt
+                        WHERE
+                            pt.rfx_number =p.sourcing_doc_number
+                        )AS rfx_header_id,
+                        ( TO_CHAR(NVL(h.erp_creation_date, h.creation_date), 'yyyy-mm-dd') )AS creation_date_desc,
+                        (SELECT
+                            ch.contract_header_id
+                        FROM
+                            con_contract_headers_new ch,
+                            con_contract_lines_new cl
+                        WHERE
+                            cl.contract_header_id = ch.contract_header_id AND
+                            cl.source_ref_id      = p.demand_pool_id AND
+                            ch.status            IN('FINISHED','APPROVED')
+                        )AS contract_header_id,
+                        (SELECT su.description FROM sys_user su WHERE su.user_id = h.created_by
+                        ) AS creater_name,
+                        p.ES_REQ_NUMBER es_req_number,
+                        p.SOURCING_DOC_NUMBER sourcing_doc_number,
+                        l.quantity,
+                        h.vendor_code,
+                        h.vendor_name,
+                        l.item_code,
+                        l.item_description,
+                        TO_CHAR(ll.promised_date, 'yyyy-mm-dd') AS promised_date,
+                        h.company_name,
+                        ll.ship_to_organization_id,
+                        (SELECT
+                            iov.description
+                        FROM
+                            inv_organizations_vl iov
+                        WHERE
+                            iov.inv_organization_id = ll.ship_to_organization_id
+                        ) ship_to_organization_name,
+                        ll.warehouse_id,
+                        (SELECT
+                            iwv.description
+                        FROM
+                            inv_warehouses_vl iwv
+                        WHERE
+                            iwv.warehouse_id = ll.warehouse_id
+                        ) warehouse_name,
+                        NULL AS require_department,
+                        NULL AS project_name,
+                        (SELECT
+                            TO_CHAR(MIN(TRUNC(rtl.trx_date)), 'yyyy-mm-dd')
+                        FROM
+                            pur_rcv_trx_lines rtl
+                        WHERE
+                            rtl.from_po_header_id = h.pur_header_id AND
+                            rtl.from_po_line_id   = l.pur_line_id AND
+                            rtl.erp_rcv_trx_type  = '101'
+                        ) AS deliver_date,
+                        (SELECT
+                            to_date(TO_CHAR((TRUNC(SYSDATE)), 'yyyy-mm-dd'), 'yyyy-mm-dd') - to_date(TO_CHAR(MIN(TRUNC(rtl.trx_date)), 'yyyy-mm-dd'), 'yyyy-mm-dd')
+                        FROM
+                            pur_rcv_trx_lines rtl
+                        WHERE
+                            rtl.from_po_header_id = h.pur_header_id AND
+                            rtl.from_po_line_id   = l.pur_line_id AND
+                            rtl.erp_rcv_trx_type  = '101'
+                        ) AS past_days,
+                        (SELECT
+                            u.unit_code
+                        FROM
+                            pur_lines_subjects s,
+                            hrm_units u
+                        WHERE
+                            s.unit_id     = u.unit_id AND
+                            s.pur_line_id = l.pur_line_id AND
+                            rownum        = 1
+                        ) AS cost_center
+                    FROM
+                        pur_headers_all h,
+                        pur_lines_all l,
+                        pur_line_locations_all ll,
+                        pur_purchase_info_record_po prp,
+                        pur_demand_pool p
+                    WHERE
+                        h.pur_header_id    = l.pur_header_id AND
+                        l.pur_line_id      = ll.pur_line_id AND
+                        ll.cancel_flag     = 'N' AND
+                        h.response_status  = 'SUCCESSED' AND
+                        h.type_lookup_code = 'Z03' AND
+                        h.srm_status      IN ('RELEASED', 'CONFIRMED') AND
+                        prp.req_line_id    = p.req_line_id AND
+                        prp.pur_line_id    = l.pur_line_id
+                    ORDER BY
+                        h.display_po_number DESC,
+                        l.line_num ASC
+                    ) v #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="po_number" queryExpression="v.po_number like ${@po_number}"/>
+        <bm:query-field name="contract_number" queryExpression="v.contract_number like ${@contract_number}"/>
+        <bm:query-field name="vendor_code" queryExpression="v.vendor_code like ${@vendor_code}"/>
+        <bm:query-field name="vendor_name" queryExpression="v.vendor_name like &apos;%&apos;||${@vendor_name}||&apos;%&apos;"/>
+        <bm:query-field name="es_req_number" queryExpression="v.es_req_number like &apos;%&apos;||${@es_req_number}||&apos;%&apos;"/>
+        <bm:query-field name="sourcing_doc_number" queryExpression="v.sourcing_doc_number like &apos;%&apos;||${@sourcing_doc_number}||&apos;%&apos;"/>
+        <bm:query-field name="creater_name" queryExpression="v.creater_name like &apos;%&apos;||${@creater_name}||&apos;%&apos;"/>
+        <bm:query-field name="creation_date_from" queryExpression="to_date(v.creation_date_desc,&apos;yyyy-mm-dd&apos;) &gt;= to_date(${@creation_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="creation_date_to" queryExpression="to_date(v.creation_date_desc,&apos;yyyy-mm-dd&apos;) &lt;= to_date(${@creation_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="need_by_date_from" queryExpression="to_date(v.need_by_date_desc,&apos;yyyy-mm-dd&apos;) &gt;= to_date(${@need_by_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="need_by_date_to" queryExpression="to_date(v.need_by_date_desc,&apos;yyyy-mm-dd&apos;) &lt;= to_date(${@need_by_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="deliver_date_from" queryExpression="to_date(v.deliver_date,&apos;yyyy-mm-dd&apos;) &gt;= to_date(${@deliver_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="deliver_date_to" queryExpression="to_date(v.deliver_date,&apos;yyyy-mm-dd&apos;) &lt;= to_date(${@deliver_date_to},&apos;yyyy-mm-dd&apos;)"/>
+    </bm:query-fields>
+</bm:model>

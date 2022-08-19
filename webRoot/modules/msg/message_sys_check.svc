@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: weijia.zhou 
+    $Date: 2017-12-26 上午10:03:41  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:service xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <a:model-query model="msg.msg1000.msg_sys_url" rootPath="msg_sys_url"/>
+        <s:server-script import="AuroraHttpPostRequest.js"><![CDATA[
+            var record = $ctx.model.getChild('msg_sys_url').getChildren();
+            var sys_url;
+            var request_url;
+            var source_system;
+            var source_system_name;
+            var status;
+            var message;
+            var mail_body;
+            var req = {};
+            var request_time;
+            
+            var not_send_no;
+            var send_no;
+            var send_error_no;
+            var response_time;
+            var msg_cneter_url;
+            var msg_source_system_token;
+            var msg_source_system_app_flag;
+          var request_para ={
+              'unusual_send_time':0.5,
+              'check_send_time':1
+          };
+           //判断异常的时间参数，默认为半天 0.5
+           //检查已发和未发消息的时间参数，默认为1
+            try{
+                if(!record){
+                     raise_app_error('来源系统配置信息取值错误!');
+                }
+             $bm("msg.msg1000.msg_source_system_check").insert(req);
+            } catch(e){
+                 status = 'ERROR';
+                 message = String('执行创建批次错误！');
+                 log(message);
+            }
+            //轮巡检查
+            var batch_time = $ctx.parameter.msg_source_system_check_batch_id;
+            
+            //println('333__' + batch_time);
+            for (i = 0;i < record.length;i++) {
+                sys_url = record[i].source_system_url;
+                source_system = record[i].source_system_code;
+                source_system_name = record[i].source_system_name;
+                request_time = record[i].request_time;
+                request_url = String(sys_url + 'message_response.svc');
+                 println('request_para----' + JSON.stringify(request_para));
+                request({
+                    url: request_url,
+                    para: request_para,
+                    success: function(args) {
+                        var response = args.result;
+                        println('response----' + JSON.stringify(response));
+                        status = 'SUCCESS'
+                        if (response.not_send_no <5 && response.send_error_no<5) {
+                            message = String('环境:' + source_system_name + ' 请求正常！消息发送正常！');
+                        } else if (response.not_send_no<5 && response.send_error_no >5) {
+                            message = String('环境:' + source_system_name + ' 请求正常！消息发送出问题啦！');
+                        } else if (response.not_send_no >5  && response.send_error_no <5) {
+                            message = String('环境:' + source_system_name + ' 请求出问题啦！消息发送未知！');
+                        } else if (response.not_send_no >5 && response.send_error_no >5) {
+                            message = String('环境:' + source_system_name + ' 请求出问题啦！消息发送也出问题啦！');
+                        }
+                        not_send_no = response.not_send_no;
+                        send_no = response.send_no;
+                        send_error_no = response.send_error_no;
+                        response_time = response.response_time;
+                        msg_cneter_url = response.msg_cneter_url;
+                        msg_source_system_token = response.msg_source_system_token;
+                        msg_source_system_app_flag = response.msg_source_system_app_flag;
+                        unusual_send_flag=response.unusual_send_flag;
+                    },
+                    failure: function(args) {
+                        //println(JSON.stringify(args));
+                        status = 'FAIL';
+                        message = String('请求环境：' + source_system_name+ request_url + '错误！');
+                        not_send_no = null;
+                        send_no = null;
+                        send_error_no = null;
+                        response_time = null;
+                        msg_cneter_url = null;
+                        msg_source_system_token = null;
+                        msg_source_system_app_flag = null;
+                    }
+                });
+                
+                var rec = {
+                    'source_system_code': source_system,
+                    'not_send_no': not_send_no,
+                    'send_no': send_no,
+                    'send_error_no': send_error_no,
+                    'response_time': response_time,
+                    'msg_cneter_url': msg_cneter_url,
+                    'msg_source_system_token': msg_source_system_token,
+                    'msg_source_system_app_flag': msg_source_system_app_flag,
+                    'check_status': status,
+                    'check_message': message,
+                    'system_check_batch_time': batch_time,
+                    'unusual_send_flag': unusual_send_flag,
+                    'request_time': request_time
+                };
+                $bm("msg.msg1000.msg_sys_url").insert(rec);
+            }
+            $bm("msg.msg1000.msg_source_system_check").execute($ctx.parameter);
+            
+            function log(msg) {
+                logger.info(msg)
+            }
+        ]]></s:server-script>
+        <p:echo/>
+    </a:init-procedure>
+</a:service>

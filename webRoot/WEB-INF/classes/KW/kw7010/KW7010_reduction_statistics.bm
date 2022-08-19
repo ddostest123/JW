@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: jayce
+    $Date: 2017年1月6日 上午12:48:11
+    $Revision: 1.0
+    $Purpose: 
+-->
+<bm:model xmlns:f="aurora.database.features" xmlns:bm="http://www.aurora-framework.org/schema/bm" alias="t1" baseTable="SYS_MAIL_SERVER">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*
+                FROM
+                    (SELECT
+                        *
+                    FROM
+                        (SELECT
+                            (SELECT
+                                pv.display_vendor_code
+                            FROM
+                                pur_vendors_vl pv
+                            WHERE
+                                pv.coop_company_id = fc.company_id
+                            ) display_vendor_code,
+                            fc.company_full_name,
+                            fc.kw_main_category,
+                            fc.company_id,
+                            '是' AS hfs,
+                            (SELECT
+                                r.description
+                            FROM
+                                fnd_region_code_vl r
+                            WHERE
+                                r.region_id = fc.registered_province_id
+                            )
+                            || ' '
+                            ||
+                            (SELECT
+                                r.description
+                            FROM
+                                fnd_region_code_vl r
+                            WHERE
+                                r.region_id = fc.registered_city_id
+                            ) registered_desc,
+                            (SELECT
+                                scv.code_value_name
+                            FROM
+                                sys_code_values_v scv
+                            WHERE
+                                fc.supplier_categroy = scv.code_value AND
+                                scv.code             = 'FND_COM_SUP_INFOS.SUPPLIER_CATEGORY'
+                            ) supplier_categroy_name,
+                            fc.business_represent_name,
+                            fc.business_represent_phone,
+                            (SELECT
+                                pp.potential_code
+                            FROM
+                                pur_potential_vendor_vl pp
+                            WHERE
+                                pp.cooper_company_id = fc.company_id AND
+                                pp.last_update_date  =
+                                (SELECT
+                                    MAX(pvv.last_update_date)
+                                FROM
+                                    pur_potential_vendor_vl pvv
+                                WHERE
+                                    pvv.cooper_company_id = pp.cooper_company_id
+                                GROUP BY
+                                    pvv.cooper_company_id
+                                )
+                            ) potential_code,
+                            TO_CHAR(fc.creation_date, 'yyyy-mm-dd') creation_fc_date,
+                            TO_CHAR(fc.last_update_date, 'yyyy-mm-dd') last_update_date,
+                            (SELECT
+                                v.flex_desc
+                            FROM
+                                pur_supply_ability_lns_vl psv,
+                                mtl_categories_user_defined_vl mtv,
+                                pur_supply_ability_hds psh,
+                                fnd_flex_values_v v
+                            WHERE
+                                psv.category_udf_id   = mtv.category_udf_id AND
+                                psh.ability_hds_id    = psv.ability_hds_id AND
+                                fc.company_id         = psh.vendor_id AND
+                                v.flex_value_set_code = 'VENDOR_CATAGORY' AND
+                                v.flex_value          = mtv.vendor_catagory AND
+                                rownum                = 1
+                            ) AS vendor_catagory_desc,
+                            (SELECT
+                                DECODE(pp.ou_jxpcb, 'OU_JXPCB', 'JXPCB/')
+                                || DECODE(pp.ou_lcfpc, 'OU_LCFPC', 'LCFPC/')
+                                || DECODE(pp.ou_lcmccl, 'OU_LCMCCL', 'LCMCCL/')
+                                || DECODE(pp.ou_lcmpcb, 'OU_LCMPCB', 'LCMPCB/')
+                                || DECODE(pp.ou_lcpcb, 'OU_LCPCB', 'LCPCB/')
+                                || DECODE(pp.ou_lcsmt, 'OU_LCSMT', 'LCSMT/')
+                                || DECODE(pp.ou_szfpc, 'OU_SZFPC', 'SZFPC/')
+                                || DECODE(pp.ou_szpcb, 'OU_SZPCB', 'SZPCB/')
+                                || DECODE(pp.ou_zhfpc, 'OU_ZHFPC', 'ZHFPC/') tes1
+                            FROM
+                                pur_potential_vendor_vl pp
+                            WHERE
+                                pp.cooper_company_id = fc.company_id AND
+                                pp.last_update_date  =
+                                (SELECT
+                                    MAX(pvv.last_update_date)
+                                FROM
+                                    pur_potential_vendor_vl pvv
+                                WHERE
+                                    pvv.cooper_company_id = pp.cooper_company_id
+                                GROUP BY
+                                    pvv.cooper_company_id
+                                )
+                            ) tes1,
+                            (SELECT
+                                v.flex_desc
+                            FROM
+                                fnd_flex_values_vl v,
+                                fnd_flex_value_sets s
+                            WHERE
+                                v.flex_value_set_id   = s.flex_value_set_id AND
+                                s.flex_value_set_code = 'EXAMINE_TYPE' AND
+                                v.flex_value          = kfs.examine_type
+                            ) examine_type,
+                            kfs.review_conclusion,
+                            TO_CHAR(kfs.creation_date, 'yyyy-mm-dd hh:mm:ss') creation_date,
+                            kfs.vendor_code,
+                            kfs.application_id
+                        FROM
+                            fnd_companies_vl fc,
+                            kw_fnd_scene_audit_header kfs
+                        WHERE
+                            EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                fnd_coop_partner_vendors_vl cp
+                            WHERE
+                                fc.company_id           = cp.coop_company_id AND
+                                cp.owner_business_group = ${/session/@business_group} AND
+                                cp.enabled_flag         = 'Y' AND
+                                fc.supply_flag          = 'Y' AND
+                                cp.vendor_flag          = 'Y'
+                            ) AND
+                            EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                pur_vendor_life_cycle l
+                            WHERE
+                                l.owner_business_group = ${/session/@business_group} AND
+                                l.coop_company_id      = fc.company_id AND
+                                l.current_flag         = 'Y' AND
+                                l.stage_code          IN ('POTENTIAL', 'QUALIFIED')
+                            ) AND
+                            fc.company_code  = kfs.vendor_code AND
+                            kfs.examine_type = 'ANNUAL_REVIEW'
+                        ) v
+                    WHERE
+                        v.application_id =
+                        (SELECT
+                            MAX(kf.application_id)
+                        FROM
+                            kw_fnd_scene_audit_header kf
+                        WHERE
+                            kf.vendor_code  = v.vendor_code AND
+                            kf.examine_type = 'ANNUAL_REVIEW'
+                        GROUP BY
+                            kf.vendor_code
+                        )
+                    ) v #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="company_full_name" queryExpression="v.company_full_name like &apos;%&apos;|| ${@company_full_name} ||&apos;%&apos;"/>
+    </bm:query-fields>
+</bm:model>

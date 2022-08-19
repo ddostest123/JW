@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: weiqinglong
+    $Date: 2015-3-17 下午1:08:25  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:query-fields>
+        <bm:query-field name="questionary_code" queryExpression="t.questionary_code like &apos;%&apos;||${@questionary_code}||&apos;%&apos;"/>
+        <bm:query-field name="vendor_code" queryExpression="vendor_id=${@vendor_id}"/>
+        <bm:query-field name="questionary_id" queryExpression="t.questionary_id=${@questionary_id}"/>
+    </bm:query-fields>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    pvs.survey_header_id,
+                    pvs.survey_number,
+                    pvs.require_business_group,
+                    pvs.require_company_id,
+                    pvs.approve_comments,
+                    (SELECT
+                        fc.company_code
+                    FROM
+                        fnd_companies_vl fc
+                    WHERE
+                        fc.company_id = pvs.require_company_id
+                    ) company_code,
+                    (SELECT
+                        fc.company_full_name
+                    FROM
+                        fnd_companies_vl fc
+                    WHERE
+                        fc.company_id = pvs.require_company_id
+                    ) company_name,
+                    pvs.supplier_business_group,
+                    pvs.supplier_company_id,
+                    fcv.company_code vendor_code,
+                    pvs.c_attribute1 vendor_short_name,
+                    fcv.company_full_name vendor_name,
+                    fcs.supplier_categroy,
+                    (SELECT
+                        v.code_value_name
+                    FROM
+                        sys_code_values_v v
+                    WHERE
+                        v.code       = 'FND_COM_SUP_INFOS.SUPPLIER_CATEGORY' AND
+                        v.code_value = fcs.supplier_categroy
+                    ) supplier_categroy_desc,
+                    (SELECT
+                        v.code_value_name
+                    FROM
+                        sys_code_values_v v
+                    WHERE
+                        v.code       = 'FND_COM_SUP_INFOS.ENTERPRISE_NATURE' AND
+                        v.code_value = fcs.enterprise_nature
+                    ) enterprise_nature_desc,
+                    (SELECT
+                        v.code_value_name
+                    FROM
+                        sys_code_values_v v
+                    WHERE
+                        v.code       = 'FND_COM_SUP_INFOS.DF_RELATION' AND
+                        v.code_value = fcs.domestic_foreign_relation
+                    ) domestic_foreign_relation_desc,
+                    pvs.survey_type_code,
+                    (SELECT
+                        fv.flex_desc
+                    FROM
+                        fnd_flex_values_vl fv,
+                        fnd_flex_value_sets_vl fs
+                    WHERE
+                        fv.flex_value_set_id   = fs.flex_value_set_id AND
+                        fs.flex_value_set_code = 'FND_VENDOR_SURVEY_TYPE' AND
+                        fv.flex_value          = pvs.survey_type_code
+                    ) survey_type_desc,
+                    pvs.status,
+                    (SELECT
+                        fv.flex_desc
+                    FROM
+                        fnd_flex_values_vl fv,
+                        fnd_flex_value_sets_vl fs
+                    WHERE
+                        fv.flex_value_set_id   = fs.flex_value_set_id AND
+                        fs.flex_value_set_code = 'PUR_VENDOR_SURVEY_STATUS' AND
+                        fv.flex_value          = pvs.status
+                    ) status_desc,
+                    pvs.tmpl_hds_id,
+                    (SELECT
+                        pt.template_name
+                    FROM
+                        pur_survey_atm_tmpl_hds_vl pt
+                    WHERE
+                        pt.tmpl_hds_id = pvs.tmpl_hds_id
+                    ) template_name,
+                    pvs.survey_description,
+                    pvs.survey_comment,
+                    pvs.created_by,
+                    (SELECT
+                        su.description
+                    FROM
+                        sys_user su
+                    WHERE
+                        su.user_id = pvs.created_by
+                    ) created_by_desc,
+                    TO_CHAR(pvs.creation_date, 'yyyy-mm-dd') creation_date,
+                    pvs.account_period,
+                    DECODE(pvs.survey_type_code,'30_EQUIPMENT','按照合同执行',
+                    (SELECT
+                        v.flex_desc
+                    FROM
+                        fnd_flex_values_v v
+                    WHERE
+                        v.flex_value_set_code = 'KW_ACCOUNT_PERIOD' AND
+                        v.flex_value          = pvs.account_period
+                    )) account_period_desc,
+                    '支票' payment_method_desc
+                FROM
+                    pur_vendor_survey_headers pvs,
+                    fnd_companies_vl fcv,
+                    fnd_com_sup_infos fcs
+                    /* fnd_cooperative_partners  fcp */
+                WHERE
+                    pvs.survey_header_id        = ${/parameter/@survey_header_id} AND
+                    pvs.status                 IN ('20_RELEASED', '50_REJECTED')
+                    /* and pvs.require_company_id = fcp.owner_company_id */
+                    AND
+                    pvs.supplier_company_id = fcv.company_id AND
+                    fcv.company_id          = fcs.company_id(+)
+                    /* and fcp.owner_business_group = pvs.require_business_group
+                    and fcp.coop_company_id = fcv.company_id
+                    and fcv.company_id = fcp.coop_company_id
+                    and fcp.vendor_flag = 'Y' */
+                    
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:parameters>
+                <bm:parameter name="survey_header_id" input="false" output="true"/>
+            </bm:parameters>
+            <bm:update-sql><![CDATA[
+        		begin
+        			pur_vendor_survey_pkg.insert_survey_headers(x_survey_header_id        => ${@survey_header_id},
+																p_require_business_group  => ${@require_business_group},
+																p_require_company_id      => ${@require_company_id},
+																p_supplier_business_group => ${@supplier_business_group},
+																p_supplier_company_id     => ${@supplier_company_id},
+																p_survey_type_code        => ${@survey_type_code},
+																p_status                  => ${@status},
+																p_tmpl_hds_id             => ${@tmpl_hds_id},
+																p_survey_description      => ${@survey_description},
+																p_release_flag            => ${@release_flag},
+																p_release_date            => ${@release_date},
+																p_release_by              => ${@release_by},
+																p_submit_flag             => ${@submit_flag},
+																p_submit_by               => ${@submit_by},
+																p_submit_date             => ${@submit_date},
+																p_approve_flag            => ${@approve_flag},
+																p_approve_date            => ${@approve_date},
+																p_approve_by              => ${@approve_by},
+																p_c_attribute1            => ${@c_attribute1},
+																p_c_attribute2            => ${@c_attribute2},
+																p_c_attribute3            => ${@c_attribute3},
+																p_c_attribute4            => ${@c_attribute4},
+																p_c_attribute5            => ${@c_attribute5},
+																p_c_attribute6            => ${@c_attribute6},
+																p_c_attribute7            => ${@c_attribute7},
+																p_c_attribute8            => ${@c_attribute8},
+																p_c_attribute9            => ${@c_attribute9},
+																p_c_attribute10           => ${@c_attribute10},
+																p_c_attribute11           => ${@c_attribute11},
+																p_c_attribute12           => ${@c_attribute12},
+																p_c_attribute13           => ${@c_attribute13},
+																p_c_attribute14           => ${@c_attribute14},
+																p_c_attribute15           => ${@c_attribute15},
+																p_c_attribute16           => ${@c_attribute16},
+																p_c_attribute17           => ${@c_attribute17},
+																p_c_attribute18           => ${@c_attribute18},
+																p_c_attribute19           => ${@c_attribute19},
+																p_c_attribute20           => ${@c_attribute20},
+																p_c_attribute21           => ${@c_attribute21},
+																p_c_attribute22           => ${@c_attribute22},
+																p_c_attribute23           => ${@c_attribute23},
+																p_c_attribute24           => ${@c_attribute24},
+																p_c_attribute25           => ${@c_attribute25},
+																p_c_attribute26           => ${@c_attribute26},
+																p_c_attribute27           => ${@c_attribute27},
+																p_c_attribute28           => ${@c_attribute28},
+																p_c_attribute29           => ${@c_attribute29},
+																p_c_attribute30           => ${@c_attribute30},
+                               									p_user_id                 => ${/session/@user_id});
+        		end;
+        	]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+        		begin
+        			pur_vendor_survey_pkg.update_survey_headers(p_survey_header_id        => ${@survey_header_id},
+																p_require_business_group  => ${@require_business_group},
+																p_require_company_id      => ${@require_company_id},
+																p_supplier_business_group => ${@supplier_business_group},
+																p_supplier_company_id     => ${@supplier_company_id},
+																p_survey_type_code        => ${@survey_type_code},
+																p_tmpl_hds_id             => ${@tmpl_hds_id},
+																p_survey_description      => ${@survey_description},
+																p_release_flag            => ${@release_flag},
+																p_release_date            => ${@release_date},
+																p_release_by              => ${@release_by},
+																p_submit_flag             => ${@submit_flag},
+																p_submit_by               => ${@submit_by},
+																p_submit_date             => ${@submit_date},
+																p_approve_flag            => ${@approve_flag},
+																p_approve_date            => ${@approve_date},
+																p_approve_by              => ${@approve_by},
+																p_c_attribute1            => ${@c_attribute1},
+																p_c_attribute2            => ${@c_attribute2},
+																p_c_attribute3            => ${@c_attribute3},
+																p_c_attribute4            => ${@c_attribute4},
+																p_c_attribute5            => ${@c_attribute5},
+																p_c_attribute6            => ${@c_attribute6},
+																p_c_attribute7            => ${@c_attribute7},
+																p_c_attribute8            => ${@c_attribute8},
+																p_c_attribute9            => ${@c_attribute9},
+																p_c_attribute10           => ${@c_attribute10},
+																p_c_attribute11           => ${@c_attribute11},
+																p_c_attribute12           => ${@c_attribute12},
+																p_c_attribute13           => ${@c_attribute13},
+																p_c_attribute14           => ${@c_attribute14},
+																p_c_attribute15           => ${@c_attribute15},
+																p_c_attribute16           => ${@c_attribute16},
+																p_c_attribute17           => ${@c_attribute17},
+																p_c_attribute18           => ${@c_attribute18},
+																p_c_attribute19           => ${@c_attribute19},
+																p_c_attribute20           => ${@c_attribute20},
+																p_c_attribute21           => ${@c_attribute21},
+																p_c_attribute22           => ${@c_attribute22},
+																p_c_attribute23           => ${@c_attribute23},
+																p_c_attribute24           => ${@c_attribute24},
+																p_c_attribute25           => ${@c_attribute25},
+																p_c_attribute26           => ${@c_attribute26},
+																p_c_attribute27           => ${@c_attribute27},
+																p_c_attribute28           => ${@c_attribute28},
+																p_c_attribute29           => ${@c_attribute29},
+																p_c_attribute30           => ${@c_attribute30},
+                               									p_user_id                 => ${/session/@user_id});
+        		end;
+        	]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+        		begin
+        			pur_vendor_survey_pkg.submit_survey(p_survey_header_id => ${@survey_header_id}, 
+							                    	    p_user_id          => ${/session/@user_id});
+        		end;
+        	]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

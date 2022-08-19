@@ -1,0 +1,277 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao  
+    $Date: 2014-10-10 下午04:38:31  
+    $Revision: 1.0  
+    $Purpose: 送货单创建，送货单临时行数据查询BM
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="asn_line_num asc">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    l.asn_line_id,
+                    l.asn_line_num,
+                    l.item_id AS require_item_id,
+                    (SELECT
+                        ph.c_attribute1
+                    FROM
+                        pur_headers_all ph
+                    WHERE
+                        ph.display_po_number = l.segment1
+                    ) trade_type,
+                    (SELECT
+                        m.category_name
+                    FROM
+                        mtl_categories_user_defined_vl m
+                    WHERE
+                        m.category_level   = 2 START
+                    WITH m.category_udf_id =
+                        (SELECT
+                            mi.category_udf_id
+                        FROM
+                            mtl_category_classify_items mi,
+                            mtl_system_items_vl mv
+                        WHERE
+                            mi.item_id                              = mv.item_id AND
+                            mv.display_item_code                    = l.item_code AND
+                            mv.srm_enabled_flag                     = 'Y'
+                        ) CONNECT BY PRIOR m.parent_category_udf_id = m.category_udf_id
+                    ) category_name,
+                    l.item_code AS require_item_code,
+                    l.item_name AS require_item_name,
+                    (SELECT
+                        imv.partner_item_id
+                    FROM
+                        mtl_item_mapping_vendor_v imv
+                    WHERE
+                        imv.item_id               = l.item_id AND
+                        imv.partner_business_group=${/session/@business_group}
+                    ) AS supply_item_id,
+                    (SELECT
+                        imv.partner_item_code
+                    FROM
+                        mtl_item_mapping_vendor_v imv
+                    WHERE
+                        imv.item_id               = l.item_id AND
+                        imv.partner_business_group=${/session/@business_group}
+                    ) AS supply_item_code,
+                    (SELECT
+                        imv.partner_item_name
+                    FROM
+                        mtl_item_mapping_vendor_v imv
+                    WHERE
+                        imv.item_id               = l.item_id AND
+                        imv.partner_business_group=${/session/@business_group}
+                    ) AS supply_item_name,
+                    l.segment1,
+                    l.line_num,
+                    l.shipment_num,
+                    NVL(
+                    (SELECT
+                        ph.display_release_num
+                    FROM
+                        pur_headers_all ph
+                    WHERE
+                        ph.pur_header_id = lla.pur_header_id
+                    ), l.release_num) release_num,
+                    l.quantity,
+                    l.unit_meas_lookup_code,
+                    NVL(
+                    (SELECT
+                        ucv.uom_code
+                        || '/'
+                        || ucv.uom_desc
+                    FROM
+                        fnd_uom_codes_vl ucv
+                    WHERE
+                        ucv.uom_code       = l.unit_meas_lookup_code AND
+                        ucv.business_group = h.coop_business_group
+                    ), l.unit_meas_lookup_code) AS uom_name,
+                    l.unit_price,
+                    NVL(pla.deliver_over / 100, 0) AS deliver_over,
+                    NVL(pla.c_attribute3, 'N') AS unlimited_flag,
+                    --  DECODE(fnd_config_cnt_get_pkg.get_bg_item_value_asn_08(p_business_group => h.coop_business_group), 'Y', (lla.quantity - (public_tools_pkg.get_sum_shipped_quantity(p_pur_line_location_id => lla.pur_line_location_id))), (public_tools_pkg.get_enable_shipped_quantity(p_pur_line_location_id => lla.pur_line_location_id))) AS quantity_enable_shipped,
+                     pdl.quantity - public_tools_pkg.get_sum_shipped_quantity(p_pur_line_location_id => lla.pur_line_location_id) quantity_enable_shipped,
+                    -- ( NVL(pdl.need_del_quantity,pla.quantity) -
+                    -- (SELECT
+                    -- NVL(SUM(DECODE(rcv_trx_type, 'RETURN_DIRECT', prtl.trx_quantity * -1, prtl.trx_quantity)),0) trx_amount
+                    -- FROM
+                    -- pur_rcv_trx_lines prtl,
+                    -- pur_rcv_trx_headers prth,
+                    -- inv_asn_headers ih,
+                    -- inv_asn_lines il
+                    -- WHERE
+                    -- prtl.rcv_trx_header_id        = prth.rcv_trx_header_id AND
+                    -- prth.processed_flag           = 'Y' AND
+                    -- prtl.from_po_line_id          = pdl.source_po_line_id AND
+                    -- prtl.rcv_trx_type            IN ('RECEIVE_STANDARD','RETURN_DIRECT') AND
+                    -- ih.asn_number                 = prtl.from_asn_display_number AND
+                    -- ih.asn_header_id              = il.asn_header_id AND
+                    -- il.asn_line_num               = prtl.from_asn_line_num AND
+                    -- prtl.from_po_line_location_id = il.line_location_id AND
+                    -- il.del_plan_line_id           = pdl.line_id
+                    -- ) ) quantity_enable_shipped,
+                    DECODE(fnd_config_cnt_get_pkg.get_bg_item_value_asn_08(p_business_group => h.coop_business_group), 'Y', (lla.quantity - (public_tools_pkg.get_sum_shipped_quantity(p_pur_line_location_id => lla.pur_line_location_id))), (public_tools_pkg.get_enable_shipped_quantity(p_pur_line_location_id => lla.pur_line_location_id))) AS default_shipped_quantity,
+                    l.ship_quantity,
+                    TO_CHAR(l.need_by_date, 'yyyy-mm-dd') AS need_by_date,
+                    TO_CHAR(l.promised_date, 'yyyy-mm-dd') AS promised_date,
+                    l.lots_num,
+                    TO_CHAR(l.lots_validity_date, 'yyyy-mm-dd') lots_validity_date,
+                    l.invoice_num,
+                    l.serial_num,
+                    l.box_amount,
+                    l.mantissa_quantity,
+                    TO_CHAR(l.production_date,'yyyy-mm-dd') production_date,
+                    l.quality_guarantee_date,
+                    l.revision_num,
+                    l.comments,
+                    (SELECT
+                        NVL(iio.serial_required_flag, 'N')
+                    FROM
+                        mtl_item_inv_organization iio
+                    WHERE
+                        iio.item_id                   = l.item_id AND
+                        iio.inventory_organization_id = lla.ship_to_organization_id
+                    ) AS serial_required_flag,
+                    (SELECT
+                        NVL(iio.lot_required_flag, 'N')
+                    FROM
+                        mtl_item_inv_organization iio
+                    WHERE
+                        iio.item_id                   = l.item_id AND
+                        iio.inventory_organization_id = lla.ship_to_organization_id
+                    ) AS lot_required_flag,
+                    l.vendor_id,
+                    l.asn_header_id,
+                    l.session_id,
+                    l.copy_flag,
+                    l.is_immed_shipped_flag,
+                    DECODE(l.is_immed_shipped_flag, 'Y', '是') AS is_immed_shipped_flag_display,
+                    TO_CHAR(l.request_arrival_date, 'yyyy-mm-dd') AS request_arrival_date,
+                    l.actual_receiver_code,
+                    l.actual_receiver_name,
+                    l.contacts_info,
+                    l.ship_to_location_address,
+                    l.packet_quantity,
+                    l.production_batch,
+                    l.environmental_batch,
+                    l.packet_weight,
+                    l.box_weight,
+                    (SELECT
+                        pla.ean_code
+                    FROM
+                        pur_lines_all pla
+                    WHERE
+                        pla.pur_line_id=lla.pur_line_id
+                    ) AS ean_code,
+                    (SELECT
+                        pla.line_desc
+                    FROM
+                        pur_lines_all pla
+                    WHERE
+                        pla.pur_line_id=lla.pur_line_id
+                    ) line_desc,
+                    l.box_amount,
+                    (SELECT msi.item_specs FROM mtl_system_items msi WHERE msi.item_id=l.item_id
+                    ) AS item_specs,
+                    (SELECT msi.item_model FROM mtl_system_items msi WHERE msi.item_id=l.item_id
+                    ) AS item_model,
+                    l.del_plan_line_id,
+                    l.del_plan_number,
+                    l.del_plan_line_num,
+                    l.need_del_quantity,
+                    TO_CHAR(l.need_arrive_date, 'yyyy-mm-dd') need_arrive_date,
+                    l.send_address,
+                    l.ship_to_organization_name,
+                    l.package_min_amount,
+                    l.delivery_lead_days,
+                    h.asn_number，
+                    l.isrosh
+                FROM
+                    pur_line_locations_all lla,
+                    inv_asn_lines_temp l,
+                    inv_asn_headers_temp h,
+                    pur_lines_all pla,
+                    pur_del_plan_lines pdl
+                WHERE
+                    lla.pur_line_location_id = l.pur_line_location_id AND
+                    l.asn_header_id          = h.asn_header_id AND
+                    pla.pur_line_id          = lla.pur_line_id AND
+                    l.session_id             = ${/session/@session_id} AND
+                    l.asn_header_id          = ${/parameter/@asn_header_id} AND
+                    l.del_plan_line_id       = pdl.line_id(+)
+                ORDER BY
+                    l.asn_line_num
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:query-sql><![CDATA[
+                BEGIN
+                	inv_asn_basic_pkg.modify_inv_asn_lines_temp(p_asn_line_id 			=> ${@asn_line_id},
+			                  								 	p_ship_quantity      	=> ${@ship_quantity},
+			                               					 	p_comments          	=> ${@comments},
+			                               					 	p_lots_num           	=> ${@lots_num},
+			                               					 	p_lots_validity_date	=> to_date(${@lots_validity_date},'yyyy-mm-dd'),
+			                               					 	p_invoice_num        	=> ${@invoice_num},
+			                               					 	p_serial_num         	=> ${@serial_num},
+			                               					 	p_copy_flag		  		=> ${@copy_flag},
+			                               					 	p_asn_line_num		  	=> ${@asn_line_num},
+			                               					 	p_request_arrival_date	=> to_date(${@request_arrival_date},'yyyy-mm-dd'),
+			                               					 	p_contacts_info			=> ${@contacts_info},
+			                               					 	p_packet_quantity		=> ${@packet_quantity},
+			                               					 	p_production_batch		=> ${@production_batch},
+			                               					 	p_environmental_batch	=> ${@environmental_batch},
+			                               					 	p_packet_weight			=> ${@packet_weight},
+			                               					 	p_box_weight			=> ${@box_weight},
+			                               					 	p_quality_guarantee_date =>${@quality_guarantee_date}, 
+   																p_production_date       =>to_date(${@production_date},'yyyy-mm-dd'),
+   																p_mantissa_quantity     =>${@mantissa_quantity}, 
+   															    p_box_amount            =>${@box_amount},
+   															    p_isrosh                =>${@isrosh},
+							                                 	p_user_id 				=> ${/session/@user_id});
+                END;
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:query-sql><![CDATA[
+                BEGIN
+                	inv_asn_basic_pkg.delete_inv_asn_line_temp(p_asn_line_id	=> ${@asn_line_id},
+				                                  	   		   p_user_id  		=> ${/session/@user_id});
+                END;
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:parameters>
+                <bm:parameter name="last_flag" dataType="java.lang.String" input="false" output="true" outputPath="@last_flag"/>
+            </bm:parameters>
+            <bm:query-sql><![CDATA[
+                BEGIN
+                  inv_asn_pkg.submit_inv_asn_headers(p_asn_header_id 	=> ${@asn_header_id},
+                  									 p_asn_type_code	=> ${@asn_type_code},
+				                                     p_business_group	=> ${/session/@business_group},
+				                                     p_session_id 		=> ${/session/@session_id},
+				                                     p_user_id 			=> ${/session/@user_id},
+				                                     x_last_flag 		=> ${@last_flag});
+                END;
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:parameters>
+                <bm:parameter name="last_flag" dataType="java.lang.String" input="false" output="true" outputPath="@last_flag"/>
+               <!--  <bm:parameter name="flag" dataType="java.lang.String" input="false" output="true" outputPath="@flag"/> -->
+            </bm:parameters>
+            <bm:query-sql><![CDATA[
+                BEGIN
+                  inv_asn_pkg.create_inv_asn_headers(p_asn_header_id 	=> ${@asn_header_id},
+                  									 p_asn_type_code	=> ${@asn_type_code},
+				                                     p_business_group	=> ${/session/@business_group},
+				                                     p_session_id 		=> ${/session/@session_id},
+				                                     p_user_id 			=> ${/session/@user_id},
+				                                     x_last_flag 		=> ${@last_flag}
+				                                     );
+                END;
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

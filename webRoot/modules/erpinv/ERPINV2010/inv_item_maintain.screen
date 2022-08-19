@@ -1,0 +1,648 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="business_group =${/session/@business_group} and basic_type = &apos;ITEM&apos;" model="erpinv.ERPINV2010.inv_item_get_manual_flag" rootPath="erpinv_2010_manual_flag"/>
+        <!-- <a:model-query model="db.erpfnd_precision_pkg.get_amount_precision" rootPath="erpinv_2010_price_percision"/>
+        <a:model-query model="db.erpfnd_precision_pkg.get_price_precision" rootPath="erpinv_2010_amount_percision"/> -->
+        <a:model-query defaultWhereClause="t.item_id=${/parameter/@item_id}" model="erpinv.ERPINV2010.inv_item_basic" rootPath="erpinv_2010_basic_result"/>
+        <a:model-query model="erppublic.get_default_information" rootPath="erpinv_2010_default_inf"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="erpinv_items_upload_image_link" url="${/request/@context_path}/modules/erpinv/ERPINV2010/uploadImage.screen"/>
+        <a:link id="erpinv_items_show_bigImage_link" url="${/request/@context_path}/modules/erpinv/ERPINV2010/show_bigImage.screen"/>
+        <script><![CDATA[
+            var erpinv_2010_record_flag;
+            var erpinv_2010_item_id = '${/parameter/@item_id}';
+            
+            function erpinv_2010_maintain_save_basic() {
+                var ds = $('erpinv_2010_item_basic_result_ds');
+                if ('${/model/erpinv_2010_manual_flag/record/@manual_flag}' == 'N') {
+                    var record = ds.getAt(0);
+                    var item_code = record.get('item_code');
+                    var company_id = record.get('company_id');
+                    if (item_code == '${l:ERPINV.MESSAGE14}') {
+                        record.set('item_code', null);
+                    }
+                }
+                ds.submit();
+            }
+            /*basic数据提交事件*/
+            function erpinv2010_basic_submitfailed(){
+                Aurora.Masker.unmask($('erpinv_item_maintain_window').wrap);
+            }
+            
+            function erpinv2010_basic_submit(){
+				Aurora.Masker.mask($('erpinv_item_maintain_window').wrap,'${l:ERPFND.SUBMITTING}');
+            }
+            
+            function erpinv2010_submitsuccess(ds, res) {
+                Aurora.Masker.unmask($('erpinv_item_maintain_window').wrap);
+                var message = '${l:ERPINV.MESSAGE15}';
+                Aurora.SideBar.enable = true;
+                Aurora.SideBar.show({
+                    msg: message,
+                    duration: 2000
+                });
+                $('erpinv_2010_maitain_panel').setEnabled(3);
+                if (!Aurora.isEmpty(res.result.record)) {
+                    $('erpinv_2010_result_main_ds').query();
+                    if (!Aurora.isEmpty(res.result.record.enabled_flag) && res.result.record.enabled_flag == 'Y') {
+                        $('erpinv_2010_maitain_panel').setEnabled(1);
+                        $('erpinv_2010_maitain_panel').setEnabled(2);
+                    } else {
+                        $('erpinv_2010_maitain_panel').setDisabled(1);
+                        $('erpinv_2010_maitain_panel').setDisabled(2);
+                    }
+                    if (erpinv_2010_record_flag == 'Y') {
+                        erpinv_2010_record_flag = 'N';
+                        erpinv_2010_item_id = res.result.record.item_id;
+                        var basic_ds = $('erpinv_2010_item_basic_result_ds');
+                        var r = basic_ds.getAt(0);
+                        r.getField('item_code').setReadOnly(true);
+                        var item_code = r.get('item_code');
+                        var item_name = r.get('item_name');
+                        var item_specs = r.get('item_specs');
+                        var total_description = item_code + '-' + item_name;
+                        if (item_specs) {
+                            total_description = item_code + '-' + item_name + '-' + item_specs;
+                        }
+                        r.set('total_description', total_description);
+                        r.getField('primary_uom_desc').setReadOnly(true);
+                        r.getField('item_type_desc').setReadOnly(true);
+                    }
+                }
+                if (erpinv_2010_item_id == -1 ){
+                	erpinv_2010_item_id = ds.getCurrentRecord().get('item_id');
+                }
+            }
+            /*采购DS数据submit事件*/
+            function erpinv_2010_item_purchase_submitsuccess(){
+               Aurora.Masker.unmask($('erpinv_item_maintain_window').wrap);
+            }
+            
+            function erpinv_2010_item_purchase_submit(){
+                Aurora.Masker.mask($('erpinv_item_maintain_window').wrap,'${l:ERPFND.SUBMITTING}');
+            }
+            /*销售DS数据submit事件*/
+            function erpinv_2010_item_sales_submitsuccess(){
+                 Aurora.Masker.unmask($('erpinv_item_maintain_window').wrap);
+            }
+            
+            function erpinv_2010_item_sales_submit(){
+                Aurora.Masker.mask($('erpinv_item_maintain_window').wrap,'${l:ERPFND.SUBMITTING}');
+            }
+            function erpinv_2010_formatMoney(value, record, name) {　　
+                return Aurora.formatNumber(value, '${/model/erpinv_2010_basic_result/record/@value}');
+            }
+            
+            function erpinv_2010_item_purchase_add(ds, record) {
+                var result_record = $('erpinv_2010_item_basic_result_ds').getAt(0);
+                var record_line = $('erpinv_2010_item_purchase_result_ds').getAt(0);
+                var company_id;
+                company_id=result_record.get('company_id');
+                var primary_uom_desc = result_record.get('primary_uom_desc');
+                var primary_uom = result_record.get('primary_uom');
+                record.set('company_id',company_id);
+                record.set('item_id', erpinv_2010_item_id);
+                record.set('trade_uom_desc', primary_uom_desc);
+                record.set('trade_uom', primary_uom);
+                record_line.getField('partner_code').setLovPara('company_id', result_record.getObject().company_id);
+                
+            }
+            
+            function erpinv_2010_item_purchase_update(ds, record, name, value, oldvalue) {
+                
+                    if (name == 'partner_id') {
+                        var tax_rate = record.get('tax_rate');
+                        var default_tax_rate = "${/model/erpinv_2010_default_inf/record/@tax_rate}";
+                        if (Aurora.isEmpty(tax_rate)) {
+                            record.set('tax_rate', default_tax_rate);
+                        }
+                    }
+                  
+            }
+            
+            function erpinv_2010_item_sales_add(ds, record) {
+                var result_record = $('erpinv_2010_item_basic_result_ds').getAt(0);
+                var record_line = $('erpinv_2010_item_sales_result_ds').getCurrentRecord();
+                var company_id;
+                company_id=result_record.get('company_id');
+                var primary_uom_desc = result_record.get('primary_uom_desc');
+                var primary_uom = result_record.get('primary_uom');
+                record.set('company_id',company_id);
+                record.set('item_id', erpinv_2010_item_id);
+                record.set('trade_uom_desc', primary_uom_desc);
+                record.set('trade_uom', primary_uom);
+                record_line.getField('partner_code').setLovPara('company_id', result_record.getObject().company_id);
+            }
+            
+            function erpinv_2010_purchase_result_add() {
+                $('erpinv_2010_item_purchase_result_grid').showEditorByRecord($('erpinv_2010_item_purchase_result_ds').create());
+            }
+            
+            function erpinv_2010_purchase_result_delete() {
+                var records = $('erpinv_2010_item_purchase_result_ds').getSelected();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:ERPHAP_PROMPT}', '${l:ERPINV.MESSAGE16}');
+                } else {
+                    $('erpinv_2010_item_purchase_result_grid').remove();
+                }
+            }
+            
+            function erpinv_2010_purchase_result_submit() {
+                $('erpinv_2010_item_purchase_result_ds').submit();
+            }
+            
+            function erpinv_2010_sales_result_add() {
+                $('erpinv_2010_item_sales_result_grid').showEditorByRecord($('erpinv_2010_item_sales_result_ds').create());
+            }
+            
+            function erpinv_2010_sales_result_delete() {
+                var records = $('erpinv_2010_item_sales_result_ds').getSelected();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:ERPHAP_PROMPT}', '${l:ERPINV.MESSAGE16}');
+                } else {
+                    $('erpinv_2010_item_sales_result_grid').remove();
+                }
+            }
+            
+            function erpinv_2010_sales_result_submit() {
+                $('erpinv_2010_item_sales_result_ds').submit();
+            }
+            
+            /* function inv2010_currency_code_update(ds,record,name,value,oldvalue){
+             if(name=="inventory_flag"){
+             record.getField('item_type_desc').setLovPara('inv_mng_flag',value);
+             }
+             } */
+            
+            function erpinv2010_item_code_validator(record, name, value) {
+                var item_code = record.get('item_code');
+                var regex = /^[\dA-Z\-]+$/;
+                if ('${/model/erpinv_2010_manual_flag/record/@manual_flag}' == 'Y') {
+                    if (!regex.test(item_code)) {
+                        return '${l:ERPINV.MESSAGE7}';
+                    }
+                }
+                return true;
+            }
+            
+            function erpinv2010_bar_code_validator(record, name, value) {
+                var reg = /^[u4E00-u9FA5]+$/;
+                if (!reg.test(value)) {
+                    return '${l:ERPINV.MESSAGE17}';
+                }
+                return true;
+            }
+            
+            function erpinv2010_upload_image() {
+                var pk_value = erpinv_2010_item_id;
+                //var pk_value = '${/parameter/@item_id}';
+                var url= $('erpinv_items_upload_image_link').getUrl()+'?item_id='+pk_value+'&table_name=ERPINV2010_UPLOAD_IMAGE'; 
+                new Aurora.Window({
+                    id:'erpinv_items_upload_image_window', 
+                    url:url, 
+                    title:'${l:ERPINV.MESSAGE13}' , 
+                    height:350,
+                    width:450
+                }).on('close',erpinv2010_upload_image_window_close);
+                
+            }
+            
+            function erpinv2010_upload_image_window_close(){
+                var ds = $('erpinv_2010_upload_image_ds');
+                ds.setQueryParameter('table_pk_value', inv_2010_item_id);
+                ds.setQueryParameter('table_name', 'ERPINV2010_UPLOAD_IMAGE');
+                ds.query();
+            }
+            
+            function erpinv2010_upload_image_query() {
+                var records = $('erpinv_2010_upload_image_ds').getAll();
+                var src_value = new Array();
+                var src = new Array();
+                var i=0;
+                var innterHtml ='';
+                for(i=0;i<records.length;i++){
+                    src_value[i] = records[i].get('attachment_id');
+                    src[i] = '${/request/@context_path}/modules/erpinv/ERPINV2010/atm_download.svc?attachment_id='+src_value[i]+'&table_name=ERPINV2010_UPLOAD_IMAGE&table_pk_value='+erpinv_2010_item_id;
+                    innterHtml = innterHtml + '<img id="erpinv2010_items_img_'+i+'" onclick="show_bigImage(this.id,this.src)" src="'+src[i]+'" width="200" height="180"/>&nbsp;&nbsp;&nbsp;';
+                
+                    if (i==0){
+                        if (Ext.get("erpinv2010_image_div_id").dom.innerHTML != ''){
+                            continue;
+                        }
+                        Ext.get("erpinv2010_image_div_id").dom.innerHTML = '<img src="'+src[0]+'" width="250" height="250"/>';    
+                    }
+                }
+              	
+              	if (i==0){
+                    Ext.get("erpinv2010_image_div_id").dom.innerHTML = '';    
+                }
+                Ext.get("erpinv2010_image10_div_id").dom.innerHTML = innterHtml;
+                
+            }
+            
+            function show_bigImage(imgId,imgSrc){
+                var url= $('erpinv_items_show_bigImage_link').getUrl()+'?image_id='+imgId+'&image_src='+encodeURIComponent(imgSrc); 
+                new Aurora.Window({
+                    id:'erpinv_items_show_bigImage_window', 
+                    url:url, 
+                    title:'${l:ERPINV.MESSAGE18}' , 
+                    height:450,
+                    width:650
+                });
+            }
+            
+            function pmtGridcellclick(grid,row,name,record){
+                var metadata = record.getMeta();
+                var company_id = record.get('company_id');
+                var f1 = metadata.getField('partner_code');
+                    if(!record.get('company_id')||record.get('company_id')==''){
+                        f1.setLovService('');
+                    }else{
+                    	f1.setLovService('erpinv.ERPINV2010.inv_item_venders');
+                    	f1.setLovPara('enabled_flag','Y');                  	                	
+                    	f1.setLovPara('vender_flag','Y');                  	                	
+                    	f1.setLovPara('item_property','PUR');                  	                	
+                    	f1.setLovPara('company_id',record.get('company_id'));                  	
+                    }
+                if (name == 'currency_code') {
+                	$('erpinv_2010_currency_code_ds').setQueryParameter('company_id', company_id);
+                    $('erpinv_2010_currency_code_ds').query();
+                }else if (name == 'trade_uom_desc'){
+                    $('erpinv2010_uom_ds').setQueryParameter('company_id', company_id);
+                    $('erpinv2010_uom_ds').query();
+                }
+            } 
+            
+            function erpinv2010_head_update(dataSet, record, name, value, oldValue) {
+                if (name == 'company_id') {
+                    record.set('item_type_desc', '');
+                    record.set('default_inv_warehouse', '');
+                    record.set('primary_uom_desc', '');
+                    record.set('trade_uom_desc', '');
+                    $('erpinv2010_uom_ds').setQueryParameter('company_id', value);
+                    $('erpinv2010_uom_ds').query();
+                    var metadata = record.getMeta();
+                    var f1 = metadata.getField('item_type_desc');
+                    var f2 = metadata.getField('default_inv_warehouse');         
+                    if (!record.get('company_id') || record.get('company_id') == '') {
+                        f1.setLovService('');
+                        f2.setLovService('');
+                    } else {
+                        f1.setLovService('erpinv.ERPINV1010.inv_material_types');         
+                        f1.setLovPara('company_id', record.get('company_id')||'');
+                        f2.setLovService('erpinv.ERPINV2010.inv_item_default_warehouse');
+                        f2.setLovPara('company_id', record.get('company_id')||'');
+                    }
+                }
+            }
+            
+            function pmtGridcellclick1(grid,row,name,record){
+                var metadata = record.getMeta();
+                var company_id = record.get('company_id');
+                //var f1 = metadata.getField('partner_code');
+                var f2 = metadata.getField('partner_code');
+                    if(!record.get('company_id')||record.get('company_id')==''){
+                        f2.setLovService('');
+                    }else{                  	
+                    	f2.setLovService('erpinv.ERPINV2010.inv_item_customers');
+                    	f2.setLovPara('enabled_flag','Y');
+                    	f2.setLovPara('company_id',record.get('company_id'));
+                    }
+                if (name == 'currency_code') {
+                	$('erpinv_2010_currency_code_ds').setQueryParameter('company_id', company_id);
+                    $('erpinv_2010_currency_code_ds').query();
+                }else if (name == 'trade_uom_desc'){
+                    $('erpinv2010_uom_ds').setQueryParameter('company_id', company_id);
+                    $('erpinv2010_uom_ds').query();
+                }
+            } 
+      
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="erpinv2010_uom_ds" fetchAll="true" loadData="true" model="erpinv.public.inv_uom_codes_lov"/>
+            <a:dataSet id="erpinv_2010_currency_code_ds" autoQuery="true" fetchAll="true" model="erpinv.ERPINV2010.sys_currency"/>
+            <a:dataSet id="erpinv_2010_item_basic_result_ds" autoCreate="true" model="erpinv.ERPINV2010.inv_item_basic">
+                <a:datas dataSource="/model/erpinv_2010_basic_result"/>
+                <a:fields>
+                    <a:field name="company_id"/>
+                    <a:field name="company_name" autoComplete="true" autoCompleteSize="1" lovGridHeight="300" lovHeight="430" lovService="erppublic.fnd_company_list" lovWidth="500" required="true" title="SRM.QUERY">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_full_name" to="company_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="inventory_flag" checkedValue="Y" defaultValue="N" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="item_type_desc" autoComplete="true" autoCompleteField="code_name" autoCompleteSize="1" lovGridHeight="300" lovHeight="430" lovWidth="500" required="true" title="HAP_QUERY">
+                        <a:mapping>
+                            <a:map from="code_name" to="item_type_desc"/>
+                            <a:map from="item_type_id" to="item_type_id"/>
+                            <a:map from="inv_mng_flag" to="inventory_flag"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="item_code" typeCase="upper" validator="erpinv2010_item_code_validator"/>
+                    <a:field name="item_name" required="true"/>
+                    <a:field name="item_specs"/>
+                    <a:field name="primary_uom_desc" displayField="uom_description" options="erpinv2010_uom_ds" required="true" returnField="primary_uom" valueField="uom_code"/>
+                    <a:field name="trade_uom_desc" displayField="uom_description" options="erpinv2010_uom_ds" required="true" returnField="trade_uom" valueField="uom_code"/>
+                    <a:field name="bar_code" validator="erpinv2010_bar_code_validator"/>
+                    <a:field name="default_inv_warehouse" autoComplete="true" autoCompleteField="warehouse_desc" autoCompleteSize="1" lovGridHeight="300" lovHeight="430" lovWidth="500" title="HAP_QUERY">
+                        <a:mapping>
+                            <a:map from="warehouse_desc" to="default_inv_warehouse"/>
+                            <a:map from="warehouse_id" to="default_inv_warehouse_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="enabled_flag" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="erpinv2010_head_update"/>
+                    <a:event name="submit" handler="erpinv2010_basic_submit"/>
+                    <a:event name="submitfailed" handler="erpinv2010_basic_submitfailed"/>
+                    <a:event name="ajaxfailed" handler="erpinv2010_basic_submitfailed"/>
+                    <a:event name="submitsuccess" handler="erpinv2010_submitsuccess"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="erpinv_2010_item_purchase_result_ds" autoPageSize="true" autoQuery="true" model="erpinv.ERPINV2010.inv_item_purchase" queryUrl="${/request/@context_path}/autocrud/erpinv.ERPINV2010.inv_item_purchase/query?item_id=${/parameter/@item_id}" selectable="true">
+                <a:fields>
+                    <a:field name="item_id"/>
+                    <a:field name="company_id"/>
+                    <a:field name="partner_item_code" typeCase="upper"/>
+                    <a:field name="currency_code" defaultValue="${/model/erpinv_2010_default_inf/record/@functional_currency_code}" displayField="currency_code" options="erpinv_2010_currency_code_ds" returnField="currency_code" valueField="currency_code"/>
+                    <a:field name="partner_code" autoComplete="true" autoCompleteField="code_name" autoCompleteSize="1" lovGridHeight="300" lovHeight="430" lovService="erpinv.ERPINV2010.inv_item_venders" lovWidth="500" prompt="ERPINV2010.ITEM_VENDER_CODE" required="true" title="HAP_QUERY">
+                        <a:mapping>
+                            <a:map from="tax_rate" to="tax_rate"/>
+                            <a:map from="partner_code" to="partner_code"/>
+                            <a:map from="partner_name" to="partner_name"/>
+                            <a:map from="partner_id" to="partner_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="partner_id"/>
+                    <a:field name="partner_name" prompt="ERPINV2010.ITEM_VENDER_NAME" readOnly="true"/>
+                    <a:field name="tax_rate"/>
+                    <a:field name="tax_code_id"/>
+                    <a:field name="tax_code_desc" autoComplete="true" autoCompleteField="tax_type_code" autoCompleteSize="1" lovGridHeight="320" lovHeight="450" lovService="public.fnd_tax_type_code_lov?business_group=${/session/@business_group}" lovWidth="500" required="true" title="税率查询">
+                        <a:mapping>
+                            <a:map from="tax_type_id" to="tax_code_id"/>
+                            <a:map from="description" to="tax_code_desc"/>
+                            <a:map from="tax_type_rate" to="tax_rate"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="tax_include_flag" checkedValue="Y" defaultValue="${/model/erpinv_2010_default_inf/record/@tax_included_flag}" uncheckedValue="N"/>
+                    <a:field name="trade_uom_desc" displayField="uom_description" options="erpinv2010_uom_ds" required="true" returnField="trade_uom" valueField="uom_code"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="erpinv_2010_item_purchase_update"/>
+                    <a:event name="add" handler="erpinv_2010_item_purchase_add"/>
+                    <a:event name="submit" handler="erpinv_2010_item_purchase_submit"/>
+                    <a:event name="submitfailed" handler="erpinv_2010_item_purchase_submitsuccess"/>
+                    <a:event name="ajaxfailed" handler="erpinv_2010_item_purchase_submitsuccess"/>
+                    <a:event name="submitsuccess" handler="erpinv_2010_item_purchase_submitsuccess"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="erpinv_2010_item_sales_result_ds" autoPageSize="true" autoQuery="true" model="erpinv.ERPINV2010.inv_item_sales" queryUrl="${/request/@context_path}/autocrud/erpinv.ERPINV2010.inv_item_sales/query?item_id=${/parameter/@item_id}" selectable="true" submitUrl="${/request/@context_path}/modules/erpinv/ERPINV2010/inv_item_sales_save.svc">
+                <a:fields>
+                    <a:field name="company_id"/>
+                    <a:field name="partner_item_code" typeCase="upper"/>
+                    <a:field name="trade_uom_desc" displayField="uom_description" options="erpinv2010_uom_ds" returnField="trade_uom" valueField="uom_code"/>
+                    <a:field name="currency_code" defaultValue="${/model/erpinv_2010_default_inf/record/@functional_currency_code}" displayField="currency_code" options="erpinv_2010_currency_code_ds" returnField="currency_code" valueField="currency_code"/>
+                    <a:field name="partner_code" autoComplete="true" autoCompleteField="code_name" autoCompleteSize="1" lovGridHeight="300" lovHeight="430" lovService="erpinv.ERPINV2010.inv_item_customers" lovWidth="500" prompt="ERPINV2010.ITEM_CUSTOMER_CODE" required="true" title="HAP_QUERY">
+                        <a:mapping>
+                            <a:map from="partner_id" to="partner_id"/>
+                            <a:map from="partner_code" to="partner_code"/>
+                            <a:map from="partner_name" to="partner_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="partner_name" prompt="ERPINV2010.ITEM_CUSTOMER_NAME" readOnly="true"/>
+                    <a:field name="tax_rate"/>
+                    <a:field name="tax_code_id"/>
+                    <a:field name="tax_code_desc" autoComplete="true" autoCompleteField="tax_type_code" autoCompleteSize="1" lovGridHeight="320" lovHeight="450" lovService="public.fnd_tax_type_code_lov?business_group=${/session/@business_group}" lovWidth="500" required="true" title="税率查询">
+                        <a:mapping>
+                            <a:map from="tax_type_id" to="tax_code_id"/>
+                            <a:map from="description" to="tax_code_desc"/>
+                            <a:map from="tax_type_rate" to="tax_rate"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="tax_include_flag" checkedValue="Y" defaultValue="${/model/erpinv_2010_default_inf/record/@tax_included_flag}" uncheckedValue="N"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="add" handler="erpinv_2010_item_sales_add"/>
+                    <a:event name="submit" handler="erpinv_2010_item_sales_submit"/>
+                    <a:event name="submitfailed" handler="erpinv_2010_item_sales_submitsuccess"/>
+                    <a:event name="ajaxfailed" handler="erpinv_2010_item_sales_submitsuccess"/>
+                    <a:event name="submitsuccess" handler="erpinv_2010_item_sales_submitsuccess"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="erpinv_2010_upload_image_ds" autoPageSize="true" autoQuery="true" model="erpfnd.fnd_atm_attachment_multi" queryUrl="${/request/@context_path}/autocrud/erpfnd.fnd_atm_attachment_multi/query?table_pk_value=${/parameter/@item_id}&amp;table_name=ERP">
+                <a:fields>
+                    <a:field name="attachment_id"/>
+                    <a:field name="table_name"/>
+                    <a:field name="table_pk_value"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="erpinv2010_upload_image_query"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:popupScreen>
+            <a:tabPanel id="erpinv_2010_maitain_panel" marginHeight="55" marginWidth="50">
+                <a:tabs>
+                    <a:tab id="erpinv_2010_tab1" prompt="ERPINV2010.BASIC_INFORMATION" selected="true" width="100">
+                        <a:screenTopToolbar>
+                            <a:toolbarButton id="erpinv_2010_maintain_save_basic_btn" className="item-rbtn-blue button-save" click="erpinv_2010_maintain_save_basic" style="margin-left:20px;" text="PROMPT.SAVE" width="100"/>
+                        </a:screenTopToolbar>
+                        <a:hBox>
+                            <a:vBox>
+                                <a:hBox labelWidth="90">
+                                    <a:lov name="company_name" bindTarget="erpinv_2010_item_basic_result_ds" prompt="公司" width="100"/>
+                                </a:hBox>
+                                <a:hBox labelWidth="90">
+                                    <a:lov name="item_type_desc" bindTarget="erpinv_2010_item_basic_result_ds" prompt="ERPINV_1010_EXPAND_ITEM_TYPES_DESC" width="272"/>
+                                    <a:checkBox name="inventory_flag" bindTarget="erpinv_2010_item_basic_result_ds" prompt="ERPINV_ITEMS_BASICS.INVENTORY_FLAG"/>
+                                </a:hBox>
+                                <a:hBox labelWidth="90">
+                                    <a:textField name="item_code" id="erpinv2010_item_code_id" bindTarget="erpinv_2010_item_basic_result_ds" maxLength="15" prompt="ERPINV_ITEMS_BASICS.ITEM_CODE" width="383"/>
+                                </a:hBox>
+                                <a:hBox labelWidth="90">
+                                    <a:textField name="item_name" bindTarget="erpinv_2010_item_basic_result_ds" maxLength="1000" prompt="ERPINV_ITEMS_BASICS.ITEM_NAME" width="383"/>
+                                </a:hBox>
+                                <a:hBox labelWidth="90">
+                                    <a:textField name="item_specs" bindTarget="erpinv_2010_item_basic_result_ds" prompt="ERPINV_ITEMS_BASICS.ITEM_SPECS" width="383"/>
+                                </a:hBox>
+                                <a:hBox labelWidth="90">
+                                    <a:textField name="bar_code" bindTarget="erpinv_2010_item_basic_result_ds" prompt="ERPINV_ITEMS_BASICS.BAR_CODE" width="383"/>
+                                </a:hBox>
+                                <a:hBox labelWidth="90">
+                                    <a:comboBox name="primary_uom_desc" bindTarget="erpinv_2010_item_basic_result_ds" prompt="ERPINV_ITEMS_BASICS.PRIMARY_UOM" width="142"/>
+                                    <a:comboBox name="trade_uom_desc" bindTarget="erpinv_2010_item_basic_result_ds" prompt="ERPINV_ITEMS_BASICS.TRADE_UOM" width="143"/>
+                                </a:hBox>
+                                <a:hBox labelWidth="90">
+                                    <a:lov name="default_inv_warehouse" bindTarget="erpinv_2010_item_basic_result_ds" prompt="ERPINV_ITEMS_BASICS.DEFAULT_INV_WAREHOUSE_ID" width="383"/>
+                                </a:hBox>
+                                <a:hBox labelWidth="90">
+                                    <a:checkBox name="enabled_flag" bindTarget="erpinv_2010_item_basic_result_ds" prompt="ERPINV_ITEMS_BASICS.ENABLED_FLAG"/>
+                                </a:hBox>
+                            </a:vBox>
+                            <div id="erpinv2010_image_div_id"/>
+                        </a:hBox>
+                    </a:tab>
+                    <a:tab id="erpinv_2010_tab2" prompt="ERPINV2010.ITEM_VENDER_INF" width="100">
+                        <a:screenTopToolbar>
+                            <a:gridButton id="erpinv_2010_item_purchase_add_btn" bind="erpinv_2010_item_purchase_result_grid" text="PROMPT.ADD" type="add" width="100"/>
+                            <a:gridButton id="erpinv_2010_item_purchase_save_btn" bind="erpinv_2010_item_purchase_result_grid" text="PROMPT.SAVE" type="save" width="100"/>
+                            <a:gridButton id="erpinv_2010_item_purchase_delete_btn" bind="erpinv_2010_item_purchase_result_grid" text="HAP_DELETE" type="delete" width="100"/>
+                        </a:screenTopToolbar>
+                        <a:hBox labelWidth="40" style="margin-top:10px;">
+                            <a:textField name="total_description" bindTarget="erpinv_2010_item_basic_result_ds" prompt="ERPINV.TOTAL_DESCRIPTION" readOnly="true" width="400"/>
+                        </a:hBox>
+                        <a:grid id="erpinv_2010_item_purchase_result_grid" bindTarget="erpinv_2010_item_purchase_result_ds" height="310" marginHeight="175" marginWidth="54" navbar="true" style="margin-top:10px;" submask="false" width="840">
+                            <a:columns>
+                                <a:column name="partner_code" editor="erpinv_2010_vender_code_lov" width="100"/>
+                                <a:column name="partner_name" width="120"/>
+                                <a:column name="partner_item_code" editor="erpinv_2010_text_Field" prompt="ERPFND_BUSINESS_PARTNER_ITEMS.PARTNER_ITEM_CODE_VENDER" width="110"/>
+                                <a:column name="partner_item_name" editor="erpinv_2010_text_Field" prompt="ERPFND_BUSINESS_PARTNER_ITEMS.PARTNER_ITEM_NAME_VENDER" width="110"/>
+                                <a:column name="trade_uom_desc" editor="erpinv_2010_currency_code_cmb" prompt="ERPINV_ITEMS_BASICS.TRADE_UOM" width="80"/>
+                                <a:column name="currency_code" editor="erpinv_2010_currency_code_cmb" prompt="ERPORD_SALES_ORDER_HEADERS.CURRENCY_CODE" width="80"/>
+                                <a:column name="tax_include_flag" editor="erpinv_2010_tax_flag_ckb1" prompt="ERPFND_BUSINESS_PARTNER_ITEMS.TAX_INCLUDE_FLAG" width="40"/>
+                                <a:column name="tax_code_desc" align="right" editor="erpinv_2010_vender_code_lov" prompt="ERPFND_BUSINESS_PARTNER_ITEMS.TAX_RATE" width="70"/>
+                                <a:column name="price" align="right" editor="erpinv_2010_num_field" prompt="ERPFND_BUSINESS_PARTNER_ITEMS.PRICE" width="70"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:lov id="erpinv_2010_lov_com2"/>
+                                <a:textField id="erpinv_2010_text_Field"/>
+                                <a:lov id="erpinv_2010_vender_code_lov"/>
+                                <a:comboBox id="erpinv_2010_currency_code_cmb"/>
+                                <a:numberField id="erpinv_2010_num_field" allowDecimals="true" allowFormat="true" allowNegative="false" decimalPrecision="8"/>
+                                <a:numberField id="erpinv_2010_num_field_i1" allowDecimals="true" allowFormat="true" allowNegative="false" decimalPrecision="8"/>
+                                <a:checkBox id="erpinv_2010_tax_flag_ckb1"/>
+                            </a:editors>
+                            <a:events>
+                                <a:event name="cellclick" handler="pmtGridcellclick"/>
+                            </a:events>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab id="erpinv_2010_tab3" prompt="ERPINV2010.ITEM_SALES_INF" width="100">
+                        <a:screenTopToolbar>
+                            <a:gridButton id="erpinv_2010_item_sales_add_btn" bind="erpinv_2010_item_sales_result_grid" text="PROMPT.ADD" type="add" width="100"/>
+                            <a:gridButton id="erpinv_2010_item_sales_save_btn" bind="erpinv_2010_item_sales_result_grid" text="PROMPT.SAVE" type="save" width="100"/>
+                            <a:gridButton id="erpinv_2010_item_sales_delete_btn" bind="erpinv_2010_item_sales_result_grid" text="HAP_DELETE" type="delete" width="100"/>
+                        </a:screenTopToolbar>
+                        <a:hBox labelWidth="40" style="margin-top:10px;">
+                            <a:textField name="total_description" bindTarget="erpinv_2010_item_basic_result_ds" prompt="ERPINV.TOTAL_DESCRIPTION" readOnly="true" width="400"/>
+                        </a:hBox>
+                        <a:grid id="erpinv_2010_item_sales_result_grid" bindtarget="erpinv_2010_item_sales_result_ds" height="310" marginHeight="175" marginWidth="54" navbar="true" style="margin-top:10px;" submask="false" width="840">
+                            <a:columns>
+                                <a:column name="partner_code" editor="erpinv_2010_customer_code_lov" width="100"/>
+                                <a:column name="partner_name" width="120"/>
+                                <a:column name="partner_item_code" editor="erpinv_2010_text_Field1" prompt="ERPFND_BUSINESS_PARTNER_ITEMS.PARTNER_ITEM_CODE_CUSTOMER" width="110"/>
+                                <a:column name="partner_item_name" editor="erpinv_2010_text_Field1" prompt="ERPFND_BUSINESS_PARTNER_ITEMS.PARTNER_ITEM_NAME_CUSTOMER" width="110"/>
+                                <a:column name="trade_uom_desc" editor="erpinv_2010_currency_code_cmb1" prompt="ERPINV_ITEMS_BASICS.TRADE_UOM" width="60"/>
+                                <a:column name="currency_code" editor="erpinv_2010_currency_code_cmb1" prompt="ERPORD_SALES_ORDER_HEADERS.CURRENCY_CODE" width="80"/>
+                                <a:column name="tax_include_flag" align="center" editor="erpinv_2010_tax_flag_ckb1" prompt="ERPFND_BUSINESS_PARTNER_ITEMS.TAX_INCLUDE_FLAG" width="40"/>
+                                <a:column name="tax_code_desc" align="right" editor="erpinv_2010_customer_code_lov" prompt="ERPFND_BUSINESS_PARTNER_ITEMS.TAX_RATE" width="80"/>
+                                <a:column name="price" align="right" editor="erpinv_2010_num_field1" prompt="ERPFND_BUSINESS_PARTNER_ITEMS.SALSE_PRICE" width="80"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:lov id="erpinv_2010_lov_com3"/>
+                                <a:textField id="erpinv_2010_text_Field1"/>
+                                <a:lov id="erpinv_2010_customer_code_lov"/>
+                                <a:comboBox id="erpinv_2010_currency_code_cmb1"/>
+                                <a:numberField id="erpinv_2010_num_field_i2" allowDecimals="true" allowFormat="true" allowNegative="false" decimalPrecision="8"/>
+                                <a:numberField id="erpinv_2010_num_field1" allowDecimals="true" allowFormat="true" allowNegative="false" decimalPrecision="8"/>
+                            </a:editors>
+                            <a:events>
+                                <a:event name="cellclick1" handler="pmtGridcellclick1"/>
+                            </a:events>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab id="erpinv_2010_tab4" prompt="ERPINV.MESSAGE19" width="100">
+                        <a:vBox style="margin-top:10px">
+                            <a:hBox style="margin-top:10px">
+                                <label style="margin-left:18px;margin-top:20px;"><![CDATA[${l:ERPINV.MESSAGE40}]]></label>
+                                <a:button click="erpinv2010_upload_image" height="16" text="ERPINV.MESSAGE13" width="72"/>
+                            </a:hBox>
+                            <label style="margin-left:20px;"><![CDATA[${l:ERPINV.MESSAGE38}<br>]]></label>
+                            <label style="margin-left:55px;"><![CDATA[${l:ERPINV.MESSAGE39}]]></label>
+                            <a:hBox style="margin-top:10px">
+                                <div id="erpinv2010_image10_div_id" style="width:1200px;height:400px;"/>
+                            </a:hBox>
+                        </a:vBox>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:popupScreen>
+        <script><![CDATA[
+			
+            function erpinv_2010_maintain_init() {
+                var ds = $('erpinv_2010_item_basic_result_ds');
+                var system_mode = '${/model/erpinv_2010_default_inf/record/@system_mode}';
+                var purchase_result_ds = $('erpinv_2010_item_purchase_result_ds');
+                var sales_result_ds = $('erpinv_2010_item_sales_result_ds');
+                var r = ds.getAt(0);
+                //var record = r.getMeta();
+                var record = r.getMeta();
+                var company_id = r.get('company_id');
+                var f1 = record.getField('default_inv_warehouse');
+                // var customer_type_id = '${/parameter/@customer_type_id}';
+                if (!r.get('company_id') || r.get('company_id') == '') {
+                    f1.setLovService('');
+                } else {
+                    f1.setLovService('erpinv.ERPINV2010.inv_item_default_warehouse');
+                    f1.setLovPara('enabled_flag', 'Y');
+                    f1.setLovPara('company_id', r.get('company_id') || '');
+                    // f1.setLovPara('customer_type_id', customer_type_id);
+                }
+                    $('erpinv2010_uom_ds').setQueryParameter('company_id', company_id);
+                    $('erpinv2010_uom_ds').query();
+                
+ 
+                if ('${/model/erpinv_2010_manual_flag/record/@manual_flag}' == 'Y') {
+                    //手工方式：设置必输
+                    //$('inv2010_item_code_id').emptyText = '';
+                    record.getField('item_code').setRequired(true);
+                } else {
+                    //自动方式：生成物品编码并赋值
+                    //....
+                    record.getField('item_code').setReadOnly(true);
+                }
+                var inventory_flag = r.get('inventory_flag'); /* r.getField('item_type_code').setLovPara('inv_mng_flag',inventory_flag); */
+                var item_id = '${/parameter/@item_id}';
+                
+                /* if(system_mode<3){
+                    Ext.get('erpinv_2010_tab2').hide();
+                    Ext.get('erpinv_2010_tab3').hide();
+                } */
+                if (item_id != -1) {
+                    erpinv_2010_record_flag = 'N';
+                    r.getField('item_code').setReadOnly(true);
+                    record.getField('primary_uom_desc').setReadOnly(true);
+                    record.getField('item_type_desc').setReadOnly(true);
+                    var enabled_flag = r.get('enabled_flag');
+                    if (enabled_flag == 'N') {
+                        $('erpinv_2010_maitain_panel').setDisabled(1);
+                        $('erpinv_2010_maitain_panel').setDisabled(2);
+                    }
+                    var item_code = r.get('item_code');
+                    var item_name = r.get('item_name');
+                    var item_specs = r.get('item_specs');
+                    var total_description = item_code + '-' + item_name;
+                    if (item_specs) {
+                        total_description = item_code + '-' + item_name + '-' + item_specs;
+                    }
+                    r.set('total_description', total_description);
+                } else {
+                    if ('${/model/erpinv_2010_manual_flag/record/@manual_flag}' == 'N') {
+                    	     r.set('item_code','${l:ERPINV.MESSAGE14}');
+                     }
+                    erpinv_2010_record_flag = 'Y';
+                    $('erpinv_2010_maitain_panel').setDisabled(1);
+                    $('erpinv_2010_maitain_panel').setDisabled(2);
+                    $('erpinv_2010_maitain_panel').setDisabled(3);
+                }
+                var das = $('erpinv_2010_upload_image_ds');
+                das.query(); 
+            }
+            erpinv_2010_maintain_init();
+        ]]></script>
+    </a:view>
+</a:screen>

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:service xmlns:t="aurora.application.action" xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <p:echo/>
+        <a:batch-apply sourcepath="/parameter/lines">
+            <a:model-update model="acp.ACP5230.acp_bill_lines"/>
+        </a:batch-apply>
+        <a:model-execute model="acp.ACP5230.acp_bill_headers"/>
+        <p:echo/>
+        <s:server-script import="acp_bill_status_export.js"><![CDATA[
+            importPackage(Packages.com.hand.jw_webservice);
+            var logger = $logger('server-script');
+            
+            function log(msg) {
+                logger.info(msg);
+            }
+            //正式环境
+            //var url = 'http://192.168.0.9:9090/webservices/SOAProvider/plsql/cux_srm_pvt';
+            var url = 'http://prod.szkw.com:8010/webservices/SOAProvider/plsql/cux_srm_pvt';
+            var status;
+            var message;
+            var request_data;
+            try {
+                log($ctx.parameter.header_id);
+                request_data = getRequestData($ctx.parameter.header_id);
+                request_data = request_data.replace(/<\!\[CDATA\[|\]\]>/g, '');
+                log(request_data)
+                var is = Packages.com.hand.jw_webservice.HttpUtils.urlPost(url, request_data, 'text/xml;charset=utf8', "POST", "UTF-8", null, null);
+                //获取输出文本
+                var ret = Packages.com.hand.jw_webservice.IOUtilsEx.newString(is, "UTF-8");
+                log(ret)
+                var map = new CompositeMap(Packages.uncertain.composite.CompositeLoader.createInstanceForOCM().loadFromString(ret, "utf-8"));
+                status = map.getChild('Body').getChild('OutputParameters').getChild('X_STATUS').getText();
+                message = map.getChild('Body').getChild('OutputParameters').getChild('X_MESSAGE').getText();
+            
+                $ctx.put('/soapResponse/@status', status);
+                $ctx.put('/soapResponse/@message', message);
+            
+            } catch (e) {
+                log(e)
+            }
+        ]]></s:server-script>
+        <p:echo/>
+        <t:test field="/soapResponse/@status" message="${/soapResponse/@message}" operator="!=" value="S"/>
+    </a:init-procedure>
+    <a:service-output output="/parameter"/>
+</a:service>

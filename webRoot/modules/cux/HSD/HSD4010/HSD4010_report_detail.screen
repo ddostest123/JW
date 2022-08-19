@@ -1,0 +1,367 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: 7211
+    $Date: 2015-1-05 下午13:46:29  
+    $Revision: 1.0  
+    $Purpose: 现场审核创建
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query model="qms.QMS5050.get_current_employee_name" rootPath="qms5050_current_user"/>
+        <a:model-query defaultWhereClause="flex_value_set_code = &apos;HSD_LINE_STATUS&apos;" fetchAll="true" model="qms.QMS5050.fnd_flex_value_sets_query" rootPath="hsd3010_line_status_data"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="hsd3010_submit_link" model="cux.HSD.HSD3010.HSD_report_examine_query" modelaction="delete"/>
+        <a:link id="hsd3010_reject_link" model="cux.HSD.HSD3010.HSD_report_examine_query" modelaction="execute"/>
+        <a:link id="hsd3010_save_line_link" url="${/request/@context_path}/modules/cux/HSD/HSD3010/HSD3010_report_save.svc"/>
+        <script><![CDATA[
+            function init() {
+                var header_id = '${/parameter/@header_id}';
+                var user_name = '${/model/qms5050_current_user/record/@description}';
+                //检验批创建8D参数
+                if (header_id) {
+                    // $('hsd1010_maintain_ds').setQueryParameter('header_id', header_id);
+                    // $('hsd1010_maintain_ds').query();
+                } else {
+                    var record = $('hsd1010_maintain_ds').create();
+                    var date = new Date();
+                    //var record = $('hsd1010_maintain_ds').getCurrentRecord();
+                    record.set('creation_date', Aurora.formatDate(date));
+                    record.set('user_name', user_name);
+            
+                    //设置重要度和紧急程度
+                    record.set('status_display', '新建');
+                }
+            
+            }
+            
+            function hsd1010_maintain_return() {
+                $('hsd1010_create_win').close();
+            }
+            
+            //保存
+            
+            
+            function hsd1010_save() {
+                var header_ds = $('hsd1010_maintain_ds');
+                var line_ds = $('hsd1010_lines_result_ds');
+                if (header_ds.validate() && line_ds.validate()) {
+                    //头行金额校检
+                    var record = header_ds.getCurrentRecord();
+                    var records = line_ds.getAll();
+                    var para = record.data;
+            
+            
+                    para['lines_ds'] = line_ds.getJsonData(false);
+                    var url;
+            
+            
+                    if (record.get('header_id')) {
+                        url = $('hsd1010_update_save_link').getUrl();
+                        //更新
+                    } else {
+                        //新建
+                        url = $('hsd_save_link').getUrl();
+            
+                    }
+                    Aurora.Masker.mask($('hsd1010_create_win').wrap, '${l:QMS5050.BEING_SUBMITTED}');
+                    Aurora.request({
+                        url: url,
+                        para: para,
+                        success: function(res) {
+                            var header_id = res.result.header_id ? res.result.header_id : '${/parameter/@header_id}';
+                            Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SAVE_SUCCESS}', function() {
+                                header_ds.setQueryParameter('header_id', header_id);
+                                header_ds.query();
+                                line_ds.setQueryParameter('header_id', header_id);
+                                line_ds.query();
+                                Aurora.Masker.unmask($('hsd1010_create_win').wrap);
+                            });
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask($('hsd1010_create_win').wrap);
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask($('hsd1010_create_win').wrap);
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            function hsd3010_confirm() {
+                var record = $('hsd1010_maintain_ds').getCurrentRecord();
+                var line_record = $('hsd1010_lines_result_ds').getAll();
+                var para = [];
+                for (var i = 0;i < line_record.length;i++) {
+                    if (line_record[i].get('line_status') != 'CONFIRM') {
+                        Aurora.showMessage('${l:PROMPT}', '必须全部确认才能审批通过！');
+                        return;
+                    }
+                }
+            
+                Aurora.showConfirm('${l:PROMPT}', '确认该检测报告审批通过？', function() {
+                    var header_ds = $('hsd1010_maintain_ds');
+                    var line_ds = $('hsd1010_lines_result_ds');
+                    if (header_ds.validate() && line_ds.validate()) {
+                        //头行金额校检
+                        var record = header_ds.getCurrentRecord();
+                        var records = line_ds.getAll();
+                        var para = record.data;
+            
+            
+                        para['lines_ds'] = line_ds.getJsonData(false);
+                        var url = $('hsd3010_save_line_link').getUrl();
+            
+                        Aurora.Masker.mask($('hsd1010_create_win').wrap, '${l:QMS5050.BEING_SUBMITTED}');
+                        Aurora.request({
+                            url: url,
+                            para: para,
+                            success: function(res) {
+                                var header_id = res.result.header_id ? res.result.header_id : '${/parameter/@header_id}';
+                                Aurora.request({
+                                    url: $('hsd3010_submit_link').getUrl(),
+                                    para: res.result,
+                                    success: function() {
+                                        Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                            Aurora.Masker.unmask($('hsd1010_create_win').wrap);
+                                            hsd1010_maintain_return();
+                                        });
+                                    },
+                                    error: function() {
+                                        Aurora.Masker.unmask($('hsd1010_create_win').wrap);
+                                    },
+                                    failure: function() {
+                                        Aurora.Masker.unmask($('hsd1010_create_win').wrap);
+                                    },
+                                    scope: this
+                                });
+                                Aurora.Masker.unmask($('hsd1010_create_win').wrap);
+                            },
+                            error: function() {
+                                Aurora.Masker.unmask($('hsd1010_create_win').wrap);
+                            },
+                            failure: function() {
+                                Aurora.Masker.unmask($('hsd1010_create_win').wrap);
+                            },
+                            scope: this
+                        });
+                    }
+                });
+            }
+            
+            function hsd3010_reject() {
+                var line_ds = $('hsd1010_lines_result_ds');
+                if (line_ds.validate()) {
+                    var record = $('hsd1010_maintain_ds').getCurrentRecord();
+                    var line_record = $('hsd1010_lines_result_ds').getAll();
+                    var para = [];
+            
+                    Aurora.showConfirm('${l:PROMPT}', '确认该检测报告审批拒绝？', function() {
+                        var header_ds = $('hsd1010_maintain_ds');
+                        var line_ds = $('hsd1010_lines_result_ds');
+                        if (header_ds.validate() && line_ds.validate()) {
+                            //头行金额校检
+                            var record = header_ds.getCurrentRecord();
+                            var records = line_ds.getAll();
+                            var para = record.data;
+            
+            
+                            para['lines_ds'] = line_ds.getJsonData(false);
+                            var url = $('hsd3010_save_line_link').getUrl();
+            
+                            Aurora.Masker.mask($('hsd1010_create_win').wrap, '${l:QMS5050.BEING_SUBMITTED}');
+                            Aurora.request({
+                                url: url,
+                                para: para,
+                                success: function(res) {
+                                    var header_id = res.result.header_id ? res.result.header_id : '${/parameter/@header_id}';
+                                    Aurora.request({
+                                        url: $('hsd3010_reject_link').getUrl(),
+                                        para: res.result,
+                                        success: function() {
+                                            Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                                Aurora.Masker.unmask($('hsd1010_create_win').wrap);
+                                                hsd1010_maintain_return();
+                                            });
+                                        },
+                                        error: function() {
+                                            Aurora.Masker.unmask($('hsd1010_create_win').wrap);
+                                        },
+                                        failure: function() {
+                                            Aurora.Masker.unmask($('hsd1010_create_win').wrap);
+                                        },
+                                        scope: this
+                                    });
+                                    Aurora.Masker.unmask($('hsd1010_create_win').wrap);
+                                },
+                                error: function() {
+                                    Aurora.Masker.unmask($('hsd1010_create_win').wrap);
+                                },
+                                failure: function() {
+                                    Aurora.Masker.unmask($('hsd1010_create_win').wrap);
+                                },
+                                scope: this
+                            });
+                        }
+                    });
+                }
+            }
+            
+            function hsd1010_submitsuccess_fun() {
+                $('hsd1010_maintain_ds').query();
+            }
+            
+            
+            function kw3010_vendor_survey_manufacturer_rendererFun(value, record, name) {
+                var header_id = record.get('header_id');
+                if (name == 'scene_audit_report') {
+                    return '<a style="color:blue" href="javascript:kw3010_scene_audit_report_uploadFun(' + header_id + ')">附件查看</a>';
+                }
+            }
+            
+            function kw3010_scene_audit_report_uploadFun(id) {
+                var url = "${/request/@context_path}/uploadFileView.screen?table_name=JX_GRADE_NOTICE_ATM&header_id=" + id;
+                new Aurora.Window({
+                    url: url,
+                    title: '附件查看',
+                    id: 'qms8010_entrustment_edit_atm_window',
+                    width: 850,
+                    height: 500
+                });
+            } //附件上传
+            
+            function hsd1010_update_fun(ds, record, name, value) {
+                if (name == 'exceed_standard_flag') {
+                    if (record.get('exceed_standard_flag') == 'Y') {
+                        record.getField('exceed_standard_result').setRequired(true);
+                    } else if (record.get('exceed_standard_flag') == 'N' || record.get('exceed_standard_flag') == undefined) {
+                        record.getField('exceed_standard_result').setRequired(false);
+                    }
+                }
+            }
+            
+            function hsd2010_upload_render(value, record, name) {
+                var line_id = record.get('line_id');
+                var atm_counts = record.get('atm_counts');
+                var header_record = $('hsd1010_maintain_ds').getCurrentRecord();
+            
+                if (name == "vendor_attachment") {
+                    return '<a href="javascript:qms8010_upload_file_readonly(' + line_id + ')">附件查看</a>';
+                }
+            
+                if (name == "atm_flag") {
+                    if (atm_counts > 0) {
+                        return '<div style="margin-top:3px;margin-left:auto;margin-right:auto;vertical-align:middle;height:20px;line-height:20px;"><img src="${/request/@context_path}/images/paperclip.png"/></div>';
+                    } else {
+                        return '';
+                    }
+                }
+            }
+            
+            function qms8010_upload_file(id) {
+                var url = "${/request/@context_path}/uploadFile.screen?table_name=HSD_REPORT_LINE&header_id=" + id;
+                new Aurora.Window({
+                    url: url,
+                    title: '${l:ATM.UPLOAD_ATTACHMENT}',
+                    id: 'qms8010_entrustment_edit_atm_window',
+                    width: 850,
+                    height: 500
+                }).on('beforeclose', function() {
+                    $('hsd1010_lines_result_ds').query();
+                });
+            } //附件上传
+            
+            function qms8010_upload_file_readonly(id) {
+                var url = "${/request/@context_path}/uploadFileView.screen?table_name=HSD_REPORT_LINE&header_id=" + id;
+                new Aurora.Window({
+                    url: url,
+                    title: '附件查看',
+                    id: 'qms8010_entrustment_edit_atm_window',
+                    width: 850,
+                    height: 500
+                }).on('beforeclose', function() {
+                    $('hsd1010_lines_result_ds').query();
+                });
+            } //附件查看
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="hsd3010_line_status_ds">
+                <a:datas dataSource="hsd3010_line_status_data"/>
+            </a:dataSet>
+            <a:dataSet id="hsd1010_maintain_ds" autoQuery="true" model="cux.HSD.HSD2010.hsd2010_create_header" queryUrl="${/request/@context_path}/autocrud/cux.HSD.HSD2010.hsd2010_create_header/query?header_id=${/parameter/@header_id}">
+                <a:fields>
+                    <a:field name="vendor_name" lovHeight="530" lovService="qms.QMS5050.fnd_coop_companies_lov" lovWidth="530" readOnly="true" title="QMS_8D.VENDER_SEARCH">
+                        <a:mapping>
+                            <a:map from="coop_partner_id" to="coop_partner_id"/>
+                            <a:map from="coop_company_id" to="vendor_id"/>
+                            <a:map from="coop_company_code" to="vendor_code"/>
+                            <a:map from="coop_company_desc" to="vendor_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="status_display" displayField="flex_desc" options="hsd1010_status_ds" returnField="status" valueField="flex_value"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="hsd1010_lines_result_ds" autoQuery="true" model="cux.HSD.HSD3010.hsd3010_line_update" queryUrl="${/request/@context_path}/autocrud/cux.HSD.HSD3010.hsd3010_line_update/query?header_id=${/parameter/@header_id}">
+                <a:fields>
+                    <a:field name="item_name" autoComplete="true" autoCompleteField="item_desc" lovAutoQuery="false" lovHeight="530" lovService="qms.QMS5050.inv_system_items_vl_lov?enabled_flag=Y" lovWidth="530" required="true" title="QMS_8D.ITEM_QUERY">
+                        <a:mapping>
+                            <a:map from="item_id" to="item_id"/>
+                            <a:map from="item_code" to="item_code"/>
+                            <a:map from="item_desc" to="item_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="must_input" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="exceed_standard_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                    <a:field name="line_status_display" displayField="flex_desc" options="hsd3010_line_status_ds" required="true" returnField="line_status" valueField="flex_value"/>
+                    <a:field name="user_name"/>
+                </a:fields>
+                <a:events>
+                    <!-- <a:event name="submitsuccess" handler="hsd1010_submitsuccess_fun"/> -->
+                    <a:event name="update" handler="hsd1010_update_fun"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <!--             <a:screenTopToolbar> 
+                <a:toolbarButton id="confirm" click="hsd3010_confirm" text="审核通过" width="100"/>
+                <a:toolbarButton id="reject" click="hsd3010_reject" text="审核拒绝" width="100"/>
+                <a:toolbarButton click="hsd1010_maintain_return" text="HAP_BACK" width="100"/>
+            </a:screenTopToolbar> -->
+            <a:fieldSet column="1" title="基本信息">
+                <a:hBox labelWidth="100">
+                    <a:textField name="application_number" bindTarget="hsd1010_maintain_ds" prompt="申请单号" readOnly="true" width="150"/>
+                    <a:lov name="vendor_name" bindTarget="hsd1010_maintain_ds" prompt="供应商" width="150"/>
+                    <a:textField name="status_display" bindTarget="hsd1010_maintain_ds" prompt="状态" readOnly="true" width="150"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textField name="user_name" bindTarget="hsd1010_maintain_ds" prompt="创建人" readOnly="true" width="150"/>
+                    <a:textField name="creation_date" bindTarget="hsd1010_maintain_ds" prompt="创建日期" readOnly="true" width="150"/>
+                </a:hBox>
+            </a:fieldSet>
+            <a:tabPanel height="360" marginWidth="130">
+                <a:tabs>
+                    <a:tab prompt="检测结果" width="100">
+                        <a:grid id="hsd1010_lines_grid" bindTarget="hsd1010_lines_result_ds" height="320" marginWidth="150" navBar="true" showRowNumber="true">
+                            <a:columns>
+                                <a:column name="item_name" prompt="物料名称" width="110"/>
+                                <a:column name="must_input" prompt="是否必输" width="50"/>
+                                <a:column name="limit_detection" prompt="检测极限值" width="50"/>
+                                <a:column name="detection_result" prompt="检测结果" width="130"/>
+                                <a:column name="unit" prompt="单位" width="50"/>
+                                <a:column name="exceed_standard_flag" prompt="是否超标" width="50"/>
+                                <a:column name="exceed_standard_result" prompt="超标原因" width="130"/>
+                                <a:column name="vendor_attachment" align="center" prompt="附件上传" renderer="hsd2010_upload_render" width="80"/>
+                                <a:column name="atm_flag" align="center" renderer="hsd2010_upload_render" width="20"/>
+                                <a:column name="line_status_display" align="center" prompt="状态" width="80"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+        <script><![CDATA[
+        	init(); 
+        ]]></script>
+    </a:view>
+</a:screen>

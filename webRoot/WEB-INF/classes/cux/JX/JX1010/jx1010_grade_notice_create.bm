@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="false">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    t.*
+                FROM
+                    (SELECT
+                        a.header_id,
+                        a.application_number,
+                        a.status,
+                        (SELECT
+                            v.flex_desc
+                        FROM
+                            fnd_flex_values_vl v,
+                            fnd_flex_value_sets s
+                        WHERE
+                            v.flex_value_set_id   = s.flex_value_set_id AND
+                            s.enabled_flag        = 'Y' AND
+                            s.flex_value_set_code = 'RATING_GROUPING_STATUS' AND
+                            v.flex_value          = a.status
+                        ) status_display,
+                        a.vendor_id,
+                        (SELECT
+                            f.company_code
+                        FROM
+                            fnd_companies_vl f
+                        WHERE
+                            f.company_id = a.vendor_id
+                        ) vendor_code,
+                        (SELECT
+                            f.company_full_name
+                        FROM
+                            fnd_companies_vl f
+                        WHERE
+                            f.company_id = a.vendor_id
+                        ) vendor_name,
+                        a.evaluation_quarter,
+                        (SELECT
+                            v.flex_desc
+                        FROM
+                            fnd_flex_values_vl v,
+                            fnd_flex_value_sets s
+                        WHERE
+                            v.flex_value_set_id   = s.flex_value_set_id AND
+                            s.enabled_flag        = 'Y' AND
+                            s.flex_value_set_code = 'RATING_GROUP' AND
+                            v.flex_value          = a.grade_group
+                        ) grade_group,
+                        a.grade_group grade_group_code,
+                        a.quality,
+                        a.delivery_date,
+                        a.comprehensive_item,
+                        a.creation_date,
+                        a.created_by,
+                        (SELECT t.description FROM sys_user t WHERE t.user_id = a.created_by
+                        ) user_name,
+                        a.grade_year,
+                        a.cause_analysis,
+                        a.improvement_measures,
+                        (SELECT
+                            h.comment_text
+                        FROM
+                            (SELECT
+                                v.comment_text
+                            FROM
+                                wfl_approve_record_v v
+                            WHERE
+                                a.header_id    = v.instance_param 
+                            ORDER BY
+                                v.creation_date DESC
+                            ) h
+                        WHERE
+                            rownum = 1
+                        ) AS comments
+                    FROM
+                        jx_grade_notice_header a
+                    WHERE
+                        a.header_id = ${/parameter/@header_id}
+                    ) t #WHERE_CLAUSE#
+                ORDER BY
+                    t.creation_date DESC
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:parameters>
+                <bm:parameter name="header_id" input="false" output="true" outputPath="@header_id"/>
+            </bm:parameters>
+            <bm:update-sql><![CDATA[
+	    		begin
+	    			jx_grade_notice_pkg.create_grade_notice(x_header_id           => ${@header_id},
+							                                p_vendor_id           => ${@vendor_id},
+							                                p_evaluation_quarter  => ${@evaluation_quarter},
+							                                p_grade_group         => ${@grade_group_code},
+							                                p_quality             => ${@quality},
+							                                p_delivery_date       => ${@delivery_date},
+							                                p_comprehensive_item  => ${@comprehensive_item},
+							                                p_user_id             => ${/session/@user_id},
+							                                p_grade_year          => ${@grade_year}); 
+				end;
+	    	]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+	    		begin
+				    jx_grade_notice_pkg.modify_grade_notice(p_header_id           => ${@header_id},
+							                                p_vendor_id           => ${@vendor_id},
+							                                p_evaluation_quarter  => ${@evaluation_quarter},
+							                                p_grade_group         => ${@grade_group_code},
+							                                p_quality             => ${@quality},
+							                                p_delivery_date       => ${@delivery_date},
+							                                p_comprehensive_item  => ${@comprehensive_item},
+							                                p_user_id             => ${/session/@user_id},
+							                                p_grade_year          => ${@grade_year}); 
+				end;
+	    	]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+	    		begin
+				    jx_grade_notice_pkg.delete_grade_notice(p_header_id                => ${@header_id},
+				                       						p_user_id                  => ${/session/@user_id});
+				end;
+	    	]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+	    		begin
+				    jx_grade_notice_pkg.release_grade_notice(p_header_id               => ${@header_id},
+				                        					 p_user_id                 => ${/session/@user_id});
+				end;
+	    	]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="vendor_name" queryExpression="t.vendor_name = ${@vendor_name}"/>
+        <bm:query-field name="application_number" queryExpression="t.application_number like &apos;%&apos;||trim(${@application_number})||&apos;%&apos; "/>
+        <!-- <bm:query-field name="status_display" queryExpression="trunc(t.date_from) &gt;= to_date(${@visit_date}, &apos;yyyy-mm-dd&apos;)"/> -->
+        <bm:query-field name="status_display" queryExpression="t.status_display = ${@status_display}"/>
+        <bm:query-field name="evaluation_quarter" queryExpression="t.evaluation_quarter = ${@evaluation_quarter}"/>
+        <bm:query-field name="header_id" queryExpression="t.header_id = ${@header_id}"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter name="filter" expression="t.created_by = ${/session/@user_id}"/>
+        <!--<bm:data-filter name="status" expression="t.status in (&apos;10_NEW&apos;,&apos;20_RELEASED&apos;)"/> -->
+    </bm:data-filters>
+</bm:model>

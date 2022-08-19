@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 根据parameter中的id查出sql语句  返回的字段名假设就叫sql,下面会用到 -->
+<a:service xmlns:s="aurora.plugin.script" xmlns:msg="aurora.application.features.msg" xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+    <a:init-procedure>
+        <s:server-script><![CDATA[
+            // loadTemplate(String fn) 导入模板
+            // replaceAll(String oldStr, String newStr) 替换字符串
+            // exportTemplate(String fn) 导出成Screen文件
+            
+            //importClass(Packages.security.encrytp.MD5);
+            importClass(Packages.loginTemplateControl.GenerateTemplateScreen);
+            var p = $ctx.parameter;
+            var para = {
+                template_id: p.template_id,
+                template_code: p.template_code
+            };
+            
+            //模板配置查询
+            var items_config_model = new ModelService('fnd.FND1015.fnd_bg_template_item_config');
+            items_config_model.fetchDescriptor = {
+                fetchAll: true
+            };
+            items_config_model.option = {
+                rootPath: 'template_config_model'
+            };
+            var items_config_res = items_config_model.queryAsMap(para).getChildren();
+            
+            //实例化处理的函数
+            var instance = new GenerateTemplateScreen($ctx); //aurora.plugin.script.scriptobject.CompositeMapObject
+            instance.loadTemplate(p.template_url);
+            
+            //替换配置项
+            var l = items_config_res.length;
+            var item, name, i, url, target, vesion;
+            for (i = 0;i < l;i++) {
+                item = items_config_res[i];
+                name = "{@" + item.item_code + "@}";
+                instance.replaceAll(name, item.show_content);
+            
+                url = "{@" + item.item_code + "_url" + "@}";
+                target = "{@" + item.item_code + "_target" + "@}";
+            
+                vesion = "{@" + item.item_code + "_vesion" + "@}";
+                instance.replaceAll(vesion, item.config_vesion);
+                
+            
+                if (item.config_url != null && item.config_url != '' && item.config_url != 'undefine') {
+                    if (item.config_url.substr(0, 7) != 'http://' && item.config_url.substr(0, 8) != 'https://') {
+                        instance.replaceAll(url, "http://" + item.config_url);
+                    } else {
+                        instance.replaceAll(url, item.config_url);
+                    }
+                    instance.replaceAll(target, "_blank");
+                } else {
+                    instance.replaceAll(url, "#");
+                    instance.replaceAll(target, "_self");
+                }
+                instance.replaceAll("@vesion@", Math.random());
+            }
+            
+            //替换政策表达式测试
+            
+            //模板配置查询
+            var news_model = new ModelService('blt.BLT1010.blt_login_template');
+            news_model.fetchDescriptor = {
+                fetchAll: true
+            };
+            news_model.option = {
+                rootPath: 'news_model'
+            };
+            var news_res = news_model.queryAsMap().getChildren();
+            l = news_res.length;
+            var data, news = "";
+            //type, title, date, href
+            if (l > 0) {
+                data = news_res[0];
+                news = "[['" + data.type + "','" + data.bulletin_title + "','" + data.release_date + "','" + data.href + "']";
+                for (i = 1;i < l;i++) {
+                    data = news_res[i];
+                    news += ",['" + data.type + "','" + data.bulletin_title + "','" + data.release_date + "','" + data.href + "']";
+                }
+                news += "]";
+                instance.replace("/{new@*@new}/", "{new@" + news + "@new}");
+            }
+            
+            //嵌入bg
+            //var bgKey = MD5.generateKey(p.business_group);
+            var bm1 = $bm('fnd.FND1015.business_group_md5', {
+                rootPath: 'business_group_md5'
+            });
+            var param;
+            param = {
+                business_group: p.business_group
+            };
+            
+            bm1.query(param);
+            var business_group_records = $ctx.get('/model/business_group_md5/record');
+            var bgKey = business_group_records.business_group_md5;
+            instance.replaceAll("{@bgkey@}", bgKey);
+            
+            //保存到screen文件
+            name = ("customization/" + bgKey + "/login.screen").toString();
+            if (instance.exportTemplate(name)) {
+                p.isReload = "1";
+            } else {
+                p.isReload = "2";
+                //页面注册
+                $bm('fnd.FND1015.fnd_regest_screen').execute({
+                    screen_name: name
+                });
+            };
+            
+            p.screen_name = name;
+            p.web_site = (p.href + name).toString()
+            para.web_site = p.name;
+            para.business_group = p.business_group;
+            $bm('fnd.FND1015.fnd_bg_template_config').execute(para);
+            
+            
+            //重载缓存message=SystemResourceConfig_reload&topic=dml_event
+            p.message = "SystemResourceConfig_reload";
+            p.topic = "dml_event";
+        ]]></s:server-script>
+        <p:echo/>
+        <a:batch-apply>
+            <p:switch test="/parameter/@isReload">
+                <p:case value="2">
+                    <msg:message-creator message="SystemResourceConfig_reload" topic="dml_event"/>
+                </p:case>
+            </p:switch>
+        </a:batch-apply>
+    </a:init-procedure>
+    <a:service-output output="/parameter"/>
+</a:service>

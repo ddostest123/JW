@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: KG  
+    $Date: 
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure/>
+    <a:view>
+        <a:link id="con5150_contract_context_url" url="${/request/@context_path}/modules/pur/CON3110/contract_context_detail.screen"/>
+        <a:link id="con5150_contract_view_url" url="${/request/@context_path}/modules/pur/CON5150/con_contract_trial_detail.screen"/>
+        <a:link id="con5150_contract_trial_action_url" url="${/request/@context_path}/autocrud/pur.CON5150.con_contract_trial/execute"/>
+        <!-- <a:link id="con5150_contract_trial_X3_approve_url" url="${/request/@context_path}/autocrud/pur.CON5150.con_contract_trial/update"/> -->
+        <a:link id="con5150_contract_trial_X3_approve_url" url="${/request/@context_path}/modules/pur/CON5150/con_contract_trial_approval.svc"/>
+        <a:link id="con5130_operation_record_link" url="${/request/@context_path}/modules/pur/public/con_operation_record.screen"/>
+        <script><![CDATA[
+            function con5150_contract_view_fn(id) {
+                var url;
+                var title;
+            
+                url = $('con5150_contract_view_url').getUrl() + '?contract_header_id=' + id + '&winid=con5130_contract_edit_win';
+                title = '${l:PUR_CON5150.CONTRACT_DETAILS_VIEW}';
+            
+                new Aurora.Window({
+                    url: url,
+                    id: 'con5130_contract_edit_win',
+                    title: title,
+                    fullScreen: true
+                }).on('close', function() {
+                    $('con5150_contract_repeat_ds').query();
+                });
+            }
+            
+            function con5150_contract_number_render(value, record, name) {
+                return '<a href="javascript:con5150_contract_view_fn(' + record.get('contract_header_id') + ');">' + value + '</a>';
+            }
+            
+            function con5150_contract_confirm_fn() {
+            
+            
+                var record = $('con5150_contract_repeat_ds').getSelected();
+                if (!record.length) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PUR_CON5150.PLEASE_SELECT_A_RECORD_FIRST}', function() {
+                        return;
+                    });
+                } else {
+                    //判断总金额是否大于200000， 不大于的可以直接通过，大于的X3审批
+                    var v_prompt_text = '${l:PUR_CON5150.SURE}';
+                    var v_amount = record[0].get('amount') * record[0].get('exchange_rate');
+                    var v_company_code = record[0].get('company_code');
+                    var v_status = 'APPROVED'; //审批通过
+               
+                    Aurora.showConfirm('${l:PROMPT}', v_prompt_text, function() {
+                        Aurora.Masker.mask(Ext.get('con5150_contract_trial_area'), '${l:PUR_CON5150.IN_HANDLE_PLEASE_WAIT}');
+                        Aurora.request({
+                            url: $('con5150_contract_trial_X3_approve_url').getUrl(),
+                            para: {
+                                'contract_header_id': record[0].get('contract_header_id')
+                            },
+                            success: function(args) {
+                                    Aurora.Masker.unmask(Ext.get('con5150_contract_trial_area'));
+                                    $('con5150_contract_repeat_ds').query();
+                            },
+                            error: function() {
+                                Aurora.Masker.unmask(Ext.get('con5150_contract_trial_area'));
+                            },
+                            scope: this,
+                            sync: true
+                        });
+            
+                    });
+                }
+            
+            }
+            
+            function con5150_contract_return_fn() {
+            
+                var record = $('con5150_contract_repeat_ds').getSelected();
+                if (!record.length) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PUR_CON5150.PLEASE_SELECT_A_RECORD_FIRST}', function() {
+                        return;
+                    });
+                } else {
+            
+                    Aurora.showConfirm('${l:PROMPT}', '${l:PUR_CON5150.ARE_YOU_SURE_TO_RETURN}', function() {
+                        Aurora.request({
+                            url: $('con5150_contract_trial_action_url').getUrl(),
+                            para: {
+                                'status': 'SUBMITTED',
+                                'contract_header_id': record[0].get('contract_header_id')
+                            },
+                            success: function(args) {
+                                $('con5150_contract_repeat_ds').query();
+                            },
+                            scope: this
+                        });
+                    });
+                }
+            }
+            
+            function con5150_contract_context_fn() {
+                var record = $('con5150_contract_repeat_ds').getSelected();
+                if (!record.length) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PUR_CON5150.PLEASE_SELECT_A_RECORD_FIRST}', function() {
+                        return;
+                    });
+                } else {
+                    Aurora.request({
+                        //请求合同格式
+                        url: '${/request/@context_path}/autocrud/pur.CON_PRINT.contract_print_format/query',
+                        para: {
+                            //公司代码和合同类型确定合同格式
+                            // 'company_id': record[0].get('company_id'),
+                            'contract_type_id': record[0].get('contract_type_id')
+                        },
+                        success: function(args) {
+                            var format_record = args.result.record;
+                            var url;
+                            var winid = 'con3110_contract_context_win';
+                            //判断合同格式是否存在并且是否启用
+                           if(format_record.company_id == record[0].get('company_id') && format_record.enabled_flag == 'Y'){
+                            
+                            // if (format_record.con_format_id != null && format_record.enabled_flag == 'Y') {
+                                url = '${/request/@context_path}/'+format_record.file_name+'?contract_header_id=' + record[0].get('contract_header_id') + '&winid='+winid;
+                            } else {
+                                //默认格式
+                                url = '${/request/@context_path}/'+format_record.con_format_default+'?contract_header_id=' + record[0].get('contract_header_id') + '&winid='+winid;
+                            }
+                            new Aurora.Window({
+                                url: url,
+                                id: winid,
+                                fullScreen: true
+                            });
+                        }
+                    });
+                }
+            }
+            
+            function operationRecord(value, record, name) {
+                var contract_header_id = record.get('contract_header_id');
+                return '<a href="javascript:open_operationRecord(' + contract_header_id + ')">${l:ACP_BILL.OPERATION_RECORD}</a>';
+            }
+            
+            function open_operationRecord(contract_header_id) {
+                new Aurora.Window({
+                    id: 'con_operation_record_win',
+                    url: $('con5130_operation_record_link').getUrl() + '?operation_table_id=' + contract_header_id + '&operation_table=con_contract_headers_new',
+                    title: '${l:PROMPT.OPERATION_RECORD}',
+                    height: 450,
+                    width: 600
+                });
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="con5150_contract_status_repeat_list_ds" loadData="true" model="pur.CON5110.con_contract_status_list"/>
+            <a:dataSet id="con5150_contract_query_repeat_ds">
+                <a:fields>
+                    <a:field name="vendor_id"/>
+                    <a:field name="vendor_desc"/>
+                    <a:field name="vendor_code" lovHeight="520" lovService="pur.CON5110.pur_vendors_list_lov" lovWidth="600" title="PUR_CON5110.SELECT_VENDOR">
+                        <a:mapping>
+                            <a:map from="display_vendor_code" to="vendor_code"/>
+                            <a:map from="short_name" to="vendor_desc"/>
+                            <a:map from="vendor_id" to="vendor_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="pur_organization_id"/>
+                    <a:field name="pur_organization_name" lovGridHeight="350" lovHeight="500" lovService="public.pur_organization_lov" lovWidth="500" title="PUR_ORGANIZATIONS.PUR_ORGANIZATION">
+                        <a:mapping>
+                            <a:map from="pur_organization_name" to="pur_organization_name"/>
+                            <a:map from="pur_organization_id" to="pur_organization_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="company_id"/>
+                    <a:field name="company_desc" autoComplete="true" autoCompleteField="company_code" lovGridHeight="350" lovHeight="500" lovService="public.fnd_companies_lov" lovWidth="500" title="PUR_REQUISITION_HDS.COMPANY_ID">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_short_name" to="company_desc"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="contract_type_desc" lovHeight="500" lovService="pur.CON5110.con_get_contract_type_list_lov" lovWidth="600" title="CON_CONTRACT_HEADERS.CONTRACT_TYPE_NAME">
+                        <a:mapping>
+                            <a:map from="type_desc" to="contract_type_desc"/>
+                            <a:map from="con_type_id" to="contract_type_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="status"/>
+                    <a:field name="status_desc" displayField="status_desc" options="con5150_contract_status_repeat_list_ds" returnField="status" valueField="status"/>
+                    <a:field name="pur_buyer_id"/>
+                    <a:field name="pur_buyer_desc" autoComplete="true" autoCompleteField="buyer_code" lovHeight="510" lovService="pur.CON5110.con_get_pur_buyer_list_lov" lovWidth="600" title="PUR_PURCHASE_INFO_RECORDS.PUR_ORGANIZATION_NAME">
+                        <a:mapping>
+                            <a:map from="buyer_code" to="buyer_code"/>
+                            <a:map from="buyer_name" to="pur_buyer_desc"/>
+                            <a:map from="buyer_id" to="pur_buyer_id"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="con5150_contract_repeat_ds" autoCount="true" autoQuery="true" model="pur.CON5150.con_contract_trial" queryDataSet="con5150_contract_query_repeat_ds" queryUrl="${/request/@context_path}/autocrud/pur.CON5150.con_contract_trial/query?status=APPROVALING&amp;repeat_flag=Y" selectable="true" selectionModel="radio"/>
+        </a:dataSets>
+        <a:screenBody>
+            <div id="con5150_contract_trial_area">
+                <a:screenTopToolbar>
+                    <a:toolbarButton click="con5150_contract_context_fn" text="CON_CONTRACT_HEADERS.GENERTE_CONTRACT_TEXT" width="100"/>
+                    <a:toolbarButton click="con5150_contract_confirm_fn" text="PROMPT.CONFIRM" width="100"/>
+                    <a:toolbarButton click="con5150_contract_return_fn" text="PUR.RETURN" width="100"/>
+                </a:screenTopToolbar>
+                <a:queryForm bindTarget="con5150_contract_query_repeat_ds" marginWidth="75" resultTarget="con5150_contract_repeat_ds">
+                    <a:formToolBar>
+                        <a:box column="3" labelWidth="110">
+                            <a:textField name="contract_number" bindTarget="con5150_contract_query_repeat_ds" prompt="PUR_RCV_TRX_LINES.SERIAL_NUM"/>
+                            <a:lov name="company_desc" bindTarget="con5150_contract_query_repeat_ds" prompt="PUR_REQUISITION_HDS.COMPANY_ID"/>
+                            <a:textField name="document_desc" bindTarget="con5150_contract_query_repeat_ds" prompt="CON_CONTRACT_HEADERS.CONTRACT_NUMBER"/>
+                        </a:box>
+                    </a:formToolBar>
+                    <a:formBody>
+                        <a:box column="3" labelWidth="110">
+                            <a:lov name="vendor_code" bindTarget="con5150_contract_query_repeat_ds" prompt="PUR_VENDORS.VENDER_CODE"/>
+                            <a:textField name="vendor_desc" bindTarget="con5150_contract_query_repeat_ds" prompt="PUR_VENDORS.VENDOR_NAME"/>
+                            <a:lov name="pur_organization_name" bindTarget="con5150_contract_query_repeat_ds" prompt="PUR_ORGANIZATIONS.PUR_ORGANIZATION"/>
+                            <a:datePicker name="document_date_from" bindTarget="con5150_contract_query_repeat_ds" prompt="PUR5710.CREATION_DATE_FROM"/>
+                            <a:datePicker name="document_date_to" bindTarget="con5150_contract_query_repeat_ds" prompt="PUR5710.CREATION_DATE_TO"/>
+                            <a:lov name="contract_type_desc" bindTarget="con5150_contract_query_repeat_ds" prompt="CON_CONTRACT_HEADERS.CONTRACT_TYPE_NAME"/>
+                            <a:lov name="pur_buyer_desc" bindTarget="con5150_contract_query_repeat_ds" prompt="PUR_PURCHASE_INFO_RECORDS.PUR_ORGANIZATION_NAME"/>
+                        </a:box>
+                    </a:formBody>
+                </a:queryForm>
+                <a:grid bindTarget="con5150_contract_repeat_ds" height="410" marginWidth="75" navBar="true">
+                    <a:columns>
+                        <a:column name="contract_number" prompt="PUR_RCV_TRX_LINES.SERIAL_NUM" renderer="con5150_contract_number_render" width="70"/>
+                        <a:column name="document_desc" prompt="CON_CONTRACT_HEADERS.CONTRACT_NUMBER" width="90"/>
+                        <a:column name="version_number" prompt="PUR_REQ_HEADERS.VERSION" width="30"/>
+                        <a:column name="vendor_code" prompt="PUR_VENDORS.VENDER_CODE" width="70"/>
+                        <a:column name="vendor_desc" prompt="PUR_VENDORS.VENDOR_NAME" width="90"/>
+                        <a:column name="status_desc" prompt="CON_CONTRACT_HEADERS.STATUS" width="60"/>
+                        <a:column name="amount" prompt="CON_CONTRACT_HEADERS.SUM_AMOUNT" width="60"/>
+                        <a:column name="currency_code" prompt="CON_CONTRACT_HEADERS.CURRENCY_CODE" width="60"/>
+                        <a:column name="document_date" prompt="CON_CONTRACT_HEADERS.CREATION_DATE" width="80"/>
+                        <a:column name="start_date" prompt="PUR_HEADERS_ALL.START_DATE_ACTIVE" width="80"/>
+                        <a:column name="end_date" prompt="PUR_HEADERS_ALL.END_DATE_ACTIVE" width="80"/>
+                        <a:column name="contract_type_desc" prompt="CON_CONTRACT_HEADERS.CONTRACT_TYPE_NAME" width="60"/>
+                        <a:column name="pur_buyer_desc" prompt="PUR_PURCHASE_INFO_RECORDS.PUR_ORGANIZATION_NAME" width="90"/>
+                        <a:column name="pur_organization_name" prompt="PUR_ORGANIZATIONS.PUR_ORGANIZATION" width="70"/>
+                        <a:column name="company_code" prompt="PUR_VENDORS.COMPANY_CODE" width="70"/>
+                        <a:column name="" prompt="CON_CONTRACT_HEADERS.HISTORIES" renderer="operationRecord" width="70"/>
+                    </a:columns>
+                </a:grid>
+            </div>
+        </a:screenBody>
+    </a:view>
+</a:screen>

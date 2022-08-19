@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="es_req_number,lpad(line_num,10,&apos;0&apos;)  ">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        v.*,
+                        (SELECT
+                            scv.code_value_name
+                        FROM
+                            sys_code_values_v scv
+                        WHERE
+                            scv.code       = 'NHL_PUR_REQ_GROUP_STATUS' AND
+                            scv.code_value = status
+                        ) status_desc,
+                        NVL(
+                        (SELECT
+                            'Y'
+                        FROM
+                            dual
+                        WHERE
+                            (
+                                trx_quantity  = 0 OR
+                                trx_quantity IS NULL
+                            )
+                            AND
+                            TRUNC(need_by_date - 5) <= TRUNC(SYSDATE)
+                        ), 'N') warning_flag,
+                        DECODE(NVL(
+                        (SELECT
+                            'Y'
+                        FROM
+                            dual
+                        WHERE
+                            (
+                                trx_quantity  = 0 OR
+                                trx_quantity IS NULL
+                            )
+                            AND
+                            TRUNC(need_by_date - 5) <= TRUNC(SYSDATE)
+                        ), 'N'), 'Y', '是', '否') warning_desc
+                    FROM
+                        (SELECT
+                            NVL(prh.es_req_number,prh.req_number) es_req_number,
+                            prh.header_comments,
+                            prl.line_num,
+                            prl.item_id,
+                            (SELECT m.es_item_code FROM mtl_system_items_es m WHERE m.item_id=prl.item_id
+                            ) item_code,
+                            prl.item_description item_name,
+                            prl.quantity,
+                            prl.unit_meas_lookup_code,
+                            prl.need_by_date,
+                            TO_CHAR(prl.need_by_date, 'YYYY-MM-DD') need_by_date_desc,
+                            nhl_pur_req_data_pkg.get_req_status ( p_pur_header_id => pha.pur_header_id, p_line_location_id => plla.pur_line_location_id, p_po_status => pha.srm_status, p_pool_req_status => pdp.req_status, p_quantity_received => plla.quantity_received, p_po_quantity => plla.quantity ) status,
+                            prh.erp_creation_date req_creation_date,
+                            TO_CHAR(prh.erp_creation_date, 'yyyy-mm-dd') AS req_creation_date_desc,
+                            prh.approved_date req_approved_date,
+                            TO_CHAR(prh.approved_date, 'yyyy-mm-dd') AS req_approved_date_desc,
+                            pha.display_po_number po_number,
+                            pla.line_num po_line_number,
+                            pha.agent_id,
+                            pha.agent_name,
+                            pha.inv_organization_id,
+                            pha.inv_organization_name,
+                            pha.srm_status,
+                            (SELECT
+                                v.code_value_name
+                            FROM
+                                sys_code_values_v v
+                            WHERE
+                                v.code       = 'SRM_STATUS' AND
+                                v.code_value = pha.srm_status
+                            ) AS srm_name_desc,
+                            pha.erp_status,
+                            (SELECT
+                                v.code_value_name
+                            FROM
+                                sys_code_values_v v
+                            WHERE
+                                v.code       = 'PUR_HEADER_ERP_STATUS' AND
+                                v.code_value = pha.erp_status
+                            ) AS erp_status_desc,
+                            (SELECT
+                                NVL(SUM(prtl.trx_quantity), 0)
+                            FROM
+                                pur_rcv_trx_lines prtl
+                            WHERE
+                                prtl.from_po_line_location_id = plla.pur_line_location_id AND
+                                prtl.erp_rcv_trx_type         = 'RECEIVE'
+                            ) trx_quantity,
+                            plla.quantity_received,
+                            plla.quantity_accepted,
+                            (NVL(plla.deliver_quantity, 0)) deliver_quantity,
+                            plla.quantity_billed,
+                            NVL(pha.erp_creation_date, pha.creation_date) po_creation_date,
+                            TO_CHAR(NVL(pha.erp_creation_date, pha.creation_date), 'yyyy-mm-dd') AS po_creation_date_desc,
+                            pha.release_date po_release_date,
+                            TO_CHAR(pha.release_date, 'yyyy-mm-dd') AS po_release_date_desc,
+                            prfh.rfx_number,
+                            prfh.title rfx_title,
+                            prfh.rfx_type_id,
+                            (SELECT
+                                a.rfx_type_desc
+                            FROM
+                                pur_bg_rfx_types_vl a
+                            WHERE
+                                a.rfx_type_id = prfh.rfx_type_id
+                            ) rfx_type_desc,
+                            pdp.assigned_to,
+                            (SELECT su.description FROM sys_user su WHERE su.user_id = pdp.assigned_to
+                            ) assigned_to_name,
+                            prfh.issued_by,
+                            (SELECT su.description FROM sys_user su WHERE su.user_id = prfh.issued_by
+                            ) issued_by_name,
+                            prfh.creation_date rfx_creation_date,
+                            TO_CHAR(prfh.creation_date, 'yyyy-mm-dd') AS rfx_creation_date_desc,
+                            prfh.issued_date rfx_issued_date,
+                            TO_CHAR(prfh.issued_date, 'yyyy-mm-dd') AS rfx_issued_date_desc
+                        FROM
+                            pur_req_headers prh,
+                            pur_req_lines prl,
+                            pur_headers_all pha,
+                            pur_lines_all pla,
+                            pur_line_locations_all plla,
+                            pur_line_locations_all_es pllae,
+                            pur_demand_pool pdp,
+                            pur_rfx_headers prfh
+                        WHERE
+                            prh.req_header_id          = prl.req_header_id AND
+                            prl.erp_line_location_id       = pllae.es_po_line_location_id(+) AND
+                            prh.business_group         = pllae.business_group(+) AND
+                            pllae.pur_line_location_id = plla.pur_line_location_id(+) AND
+                            plla.pur_line_id           = pla.pur_line_id(+) AND
+                            plla.pur_header_id         = pha.pur_header_id(+) AND
+                            prh.req_header_id          = pdp.req_header_id(+) AND
+                            prl.req_line_id            = pdp.req_line_id(+) AND
+                            pdp.sourcing_doc_number    = prfh.rfx_number(+) AND
+                            prh.business_group         = ${/session/@business_group}
+                        ) v
+                    ) #WHERE_CLAUSE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="es_req_number" queryExpression="es_req_number like &apos;%&apos;||trim(${@es_req_number})||&apos;%&apos;"/>
+        <bm:query-field name="line_num" queryExpression="line_num = ${@line_num}"/>
+        <bm:query-field name="item_id" queryExpression="item_id = ${@item_id}"/>
+        <bm:query-field name="status" queryExpression="status = ${@status}"/>
+        <bm:query-field name="need_by_date_from" queryExpression="need_by_date &gt;= to_date(${@need_by_date_from},&apos;YYYY-MM-DD&apos;)"/>
+        <bm:query-field name="need_by_date_to" queryExpression="need_by_date &lt;= to_date(${@need_by_date_to},&apos;YYYY-MM-DD&apos;)+1"/>
+        <bm:query-field name="po_number" queryExpression="po_number like &apos;%&apos;||trim(${@po_number})||&apos;%&apos;"/>
+        <bm:query-field name="po_line_number" queryExpression="po_line_number = ${@po_line_number}"/>
+        <bm:query-field name="rfx_number" queryExpression="rfx_number like &apos;%&apos;||trim(${@rfx_number})||&apos;%&apos;"/>
+        <bm:query-field name="rfx_title" queryExpression="rfx_title like &apos;%&apos;||trim(${@rfx_title})||&apos;%&apos;"/>
+        <bm:query-field name="rfx_type_id" queryExpression="rfx_type_id = ${@rfx_type_id}"/>
+        <bm:query-field name="agent_id" queryExpression="agent_id = ${@agent_id}"/>
+        <bm:query-field name="issued_by" queryExpression="issued_by = ${@issued_by}"/>
+        <bm:query-field name="inv_organization_id" queryExpression="inv_organization_id = ${@inv_organization_id}"/>
+        <bm:query-field name="req_creation_date_from" queryExpression="req_creation_date &gt;= to_date(${@req_creation_date_from},&apos;YYYY-MM-DD&apos;)"/>
+        <bm:query-field name="req_creation_date_to" queryExpression="req_creation_date &lt;= to_date(${@req_creation_date_to},&apos;YYYY-MM-DD&apos;)+1"/>
+        <bm:query-field name="req_approved_date_from" queryExpression="req_approved_date &gt;= to_date(${@req_approved_date_from},&apos;YYYY-MM-DD&apos;)"/>
+        <bm:query-field name="req_approved_date_to" queryExpression="req_approved_date &lt;= to_date(${@req_approved_date_to},&apos;YYYY-MM-DD&apos;)+1"/>
+        <bm:query-field name="po_creation_date_from" queryExpression="po_creation_date &gt;= to_date(${@po_creation_date_from},&apos;YYYY-MM-DD&apos;)"/>
+        <bm:query-field name="po_creation_date_to" queryExpression="po_creation_date &lt;= to_date(${@po_creation_date_to},&apos;YYYY-MM-DD&apos;)+1"/>
+        <bm:query-field name="po_release_date_from" queryExpression="po_release_date &gt;= to_date(${@po_release_date_from},&apos;YYYY-MM-DD&apos;)"/>
+        <bm:query-field name="po_release_date_to" queryExpression="po_release_date &lt;= to_date(${@po_release_date_to},&apos;YYYY-MM-DD&apos;)+1"/>
+        <bm:query-field name="rfx_creation_date_from" queryExpression="rfx_creation_date &gt;= to_date(${@rfx_creation_date_from},&apos;YYYY-MM-DD&apos;)"/>
+        <bm:query-field name="rfx_creation_date_to" queryExpression="rfx_creation_date &lt;= to_date(${@rfx_creation_date_to},&apos;YYYY-MM-DD&apos;)+1"/>
+        <bm:query-field name="rfx_issued_date_from" queryExpression="rfx_issued_date &gt;= to_date(${@rfx_issued_date_from},&apos;YYYY-MM-DD&apos;)"/>
+        <bm:query-field name="rfx_issued_date_to" queryExpression="rfx_issued_date &lt;= to_date(${@rfx_issued_date_to},&apos;YYYY-MM-DD&apos;)+1"/>
+        <bm:query-field name="warning_flag" queryExpression="warning_flag = ${@warning_flag}"/>
+        <bm:query-field name="header_comments" queryExpression="header_comments like &apos;%&apos;||trim(${@header_comments})||&apos;%&apos;"/>
+    </bm:query-fields>
+</bm:model>

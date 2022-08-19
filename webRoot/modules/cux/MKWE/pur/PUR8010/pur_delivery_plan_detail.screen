@@ -1,0 +1,539 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: 9505 $  
+    $Date: 2017-06-28 下午03:45:27 $  
+    $Revision: 1.0 $ 
+    $Purpose: 送货计划明细页面$
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure><![CDATA[
+    ]]></a:init-procedure>
+    <a:view>
+        <a:link id="pur8010_delivery_plan_update_url" url="delivery_plan_update.svc"/>
+        <a:link id="pur8010_delivery_plan_line_delete_link" model="cux.MKWE.pur.PUR8010.pur_delivery_lines" modelaction="delete"/>
+        <style type="text/css"><![CDATA[
+			.status-red {
+			    background-color: #f6504d;
+			}
+			}
+        ]]></style>
+        <script><![CDATA[
+            var g_index = 0;
+            
+            function pur8010_delivery_ln_temp_grid_rd(value, record, name) {
+                if (name == 'oper') {
+                    
+                     /*  if (record.get('trx_amount') > 0 && record.get('item_code').substr(0,3) != '308' ) {
+                        return '';
+                    }  */ 
+                    
+                    
+                   /*  if (record.get('trx_amount') > 0) {
+                        return '';
+                    } */
+                    console.log(g_index);
+                    if (record.get('is_split_line') == 'N') {
+                        return '<a href="javascript:order_split(' + record.get('line_id') + ')">' + '拆分' + '</a>';
+                    } else {
+                        if (Aurora.isEmpty(record.get('line_id'))) {
+                            var index = record.get('_index');
+                            if (record.get('source_po_line_loc_new_num') == record.get('max_location_num')) {
+                                return '<a href="javascript:delete_order_split(' + index + ')">' + '清除' + '</a>';
+                            } else {
+                                return '';
+                            }
+                        } else if(!record.get('confirmed_flag')&&record.get('line_id')){
+                            var line_id = record.get('line_id');
+                            return '<a href="javascript:delete_order_split_line(' + line_id + ')">' + '删除' + '</a>';
+                        } else {
+                            // return '<a href="javascript:delete_order_rec(' + record.get('line_id') + ')">' + '删除' + '</a>';
+                            return '';
+                        }
+                    }
+                }
+                if (name == 'need_arrive_date' || name == 'supplier_reply_date') {
+                    if (record.get('need_arrive_date') != record.get('supplier_reply_date')) {
+                        return '<div class="status-text status-red">' + Aurora.formatDate(value) + '</div>';
+            
+                    }
+                    return value;
+                }
+                if(name == 'confirmed_flag'){
+                    if(value =='Y'){
+                        return '是';
+                    }else{
+                        return '否';
+                    }
+                }
+            
+            }
+            
+            
+            function pur8010_delivery_detail_update(ds, record, name, value) {
+                if(name =='po_need_date'){
+                    record.set('need_arrive_date', Aurora.formatDate(value));
+                }
+                if(name=='need_arrive_date'){
+                    if(record.data['item_code'].substring(0,3) == '308'){
+                        record.set('supplier_reply_date',Aurora.formatDate(value));
+                    }
+                }
+            }
+            function pur8010_delivery_detail_load(ds) {
+                var records = ds.getAll();
+                if (records.length > 0) {
+                    for (var i = 0;i < records.length;i++) {
+                        if (records[i].get('trx_amount') > 0) {
+                            records[i].getField('supplier_reply_date').setReadOnly(true);
+                         //   records[i].getField('need_del_quantity').setReadOnly(true);
+                        }
+                        
+                    /* if (records[i].get('need_arrive_date') == '待通知' ) {
+                        //alert( records[i].get('need_arrive_date') );
+                        //records[i].getField('supplier_reply_date').setRequired(false);                           
+                        records[i].getField('need_arrive_date').setReadOnly(true);
+                     //   records[i].getField('need_del_quantity').setReadOnly(true);
+                     
+                    } */                         
+                        
+                    }
+                    g_index += records[0].get('max_del_line_num');
+                }
+            
+            }
+            
+            
+            function order_split(id) {
+                var cur_record = $('pur8010_delivery_ln_ds').find('line_id', id);
+                var newdata = {};
+                for (var name in cur_record.data) {
+                    newdata[name] = cur_record.data[name];
+                }
+                if (cur_record.get('source_po_line_loc_new_num') == 1 && cur_record.get('trx_amount') > cur_record.get('need_del_quantity')) {
+                    cur_record.set('need_del_quantity',cur_record.get('trx_amount'));
+                    Aurora.showMessage('${l:PROMPT}', '此行的“要求送货数量”小于'+cur_record.get('trx_amount')+'(行已交数量),现已改正.');
+                }
+                var new_record = new Aurora.Record(newdata);
+                new_record.data['line_id'] = '';
+                new_record.data['is_split_line'] = 'Y';
+                new_record.data['need_del_quantity'] = '';
+                new_record.data['del_plan_line_num'] = ++g_index;
+                //对各个行进行拆分发运行最大值更新
+                var records = $('pur8010_delivery_ln_ds').getAll();
+                for (var i = 0;i < records.length;i++) {
+                    if (records[i].get('line_num') == cur_record.get('line_num') && records[i].get('line_id') != cur_record.get('line_id')) {
+                        records[i].set('max_location_num', cur_record.get('max_location_num') + 1);
+                    }
+                }
+                cur_record.set('max_location_num', cur_record.get('max_location_num') + 1);
+                new_record.data['source_po_line_loc_new_num'] = cur_record.get('max_location_num');
+                new_record.data['max_location_num'] = cur_record.get('max_location_num');
+                var old_index =$('pur8010_delivery_ln_ds').indexOf(cur_record);
+                debugger;
+                var rec = $('pur8010_delivery_ln_ds').create(new_record.data,old_index+1);
+                rec.set('_index', g_index);
+            
+            }
+            
+            function delete_order_rec(i) {
+                var record = $('pur8010_delivery_ln_ds').find('line_id', i);
+                $('pur8010_delivery_ln_ds').remove(record);
+            }
+            
+            function delete_order_split(i) {
+                var record = $('pur8010_delivery_ln_ds').find('_index', i);
+                $('pur8010_delivery_ln_ds').remove(record);
+                var records = $('pur8010_delivery_ln_ds').getAll();
+                for (var j = 0;j < records.length;j++) {
+                    if (records[j].get('line_num') == record.get('line_num')) {
+                        records[j].set('max_location_num', record.get('max_location_num') - 1);
+                    }
+                }
+            
+            }
+            function delete_order_split_line(id) {
+                Aurora.Masker.mask($('pur8010_delivery_plan_detail_wdn').wrap, '${l:LOADING}');
+                Aurora.request({
+                    url: $('pur8010_delivery_plan_line_delete_link').getUrl(),
+                    para: {'line_id': id},
+                    success: function(res) {
+                        Aurora.Masker.unmask($('pur8010_delivery_plan_detail_wdn').wrap);
+                        Aurora.showInfoMessage("${l:PROMPT}", "删除成功！");
+                        $('pur8010_delivery_ln_ds').query();
+                    },
+                    failure: function(res) {
+                        Aurora.Masker.unmask($('pur8010_delivery_plan_detail_wdn').wrap);
+                    },
+                    error: function(res) {
+                        Aurora.Masker.unmask($('pur8010_delivery_plan_detail_wdn').wrap);
+                    },
+                    scope: this
+                });
+            
+            }
+            
+            //校验要求送货数量之和不大于可拆数量，返回true
+            
+            
+            function validate_need_delivery_sum() {
+                var records = $('pur8010_delivery_ln_ds').getAll();
+                var message = '';
+                for (var i = 0;i < records.length;i++) {
+                    if (records[i].get('can_split_quantity') < records[i].get('need_del_quantity')) {
+                        message = message + '送货计划行号：' + records[i].get('del_plan_line_num') + '对应的要求送货数量不能大于可拆数量;\t\n';
+                    }
+                }
+            
+                message = message.substring(0, message.length - 1);
+                return message;
+            
+            }
+            
+            //保存
+            
+            function pur8010_delivery_plan_save() {
+                
+                var online_vender_flg = $('pur8010_delivery_hd_ds').getAll(0)[0].get('online_vender_flg');
+                var line_records = $('pur8010_delivery_ln_ds').getAll();
+                var header_record = $('pur8010_delivery_hd_ds').getAt(0);
+                datas = [];
+                for (var j = 0;j < line_records.length;j++) {
+                    var record = line_records[j];
+                    if(record.modified){
+                        if(record.modified.need_del_quantity==""||record.modified.need_del_quantity||record.modified.po_need_date||record.modified.need_arrive_date||record.modified.item_control_comment||record.modified.received_inv_org){
+	                        
+	                        if(record.data['del_plan_status'] != 'CONFIRMED' && record.data['del_plan_status'] != 'NEW' && record.data['online_vender_flg'] == 'Y'){
+		                     if(record.data['need_arrive_date'] =='待通知'){
+		                        record.data['need_arrive_date'] = '';
+		                        record.data['mrp_locked_flag'] = 'N';
+		                    }else{
+		                        record.data['mrp_locked_flag'] = 'Y';
+		                    }
+		                    }else{
+		                        if(record.data['need_arrive_date'] =='待通知'){
+		                        record.data['need_arrive_date'] = '';
+		                    }
+		                    
+		                    if(record.data['mrp_locked_flag'] =='是'){
+		                        record.data['mrp_locked_flag'] = 'Y';
+		                        
+		                    }else if(record.data['mrp_locked_flag'] =='否')
+		                    {record.data['mrp_locked_flag'] = 'N';}
+		                        
+		                    }
+		                   // alert(record.data['mrp_locked_flag']);
+		                    if (!record.isNew && !record.dirty) {
+		                       if(record.data['item_code'].substring(0,3) == '308'){
+		                           record.data['_status'] = 'update';
+		                       }else{
+		                        continue;
+		                       }
+		                    }
+		                      
+		                     /*  if(record.data['need_arrive_date'] =='待通知'){
+		                        record.data['need_arrive_date'] = '';
+		                        record.data['mrp_locked_flag'] = 'N';
+		                    }   */
+		                    
+		                    if (record.dirty) {
+		                        record.data['_status'] = 'update';
+		                    }
+		                    if(record.data['need_del_quantity'] <record.data['trx_amount'] && record.data['source_po_line_loc_new_num']== 1){
+		                            var message = record.data['line_num']+"."+record.data['source_po_line_location_num']+"行已交数量不允许拆分, 此行的“要求送货数量”不能小于"+record.data['trx_amount']+"(行已交数量),现已更改.";
+		                            Aurora.showErrorMessage("${l:PROMPT}",message );
+		                            record.set('need_del_quantity',record.data['trx_amount']);
+		                            // record.data['need_del_quantity']=record.data['trx_amount'];
+		                            return;
+		                        }
+		                    if (record.isNew) {
+		                        record.data['_status'] = 'insert';
+		                        record.data['source_header_id'] = '';
+		                        record.data['source_line_id'] = '';
+		            
+		                    }
+		                    record.data['delivery_header_id'] = '${/parameter/@delivery_header_id}';
+		                    var count = 0;
+		                    var line_location_num;
+		                    for (var i = 0;i < line_records.length;i++) {
+		                        if(line_records[i].get('line_num')==line_records[j].get('line_num') && line_records[i].get('source_po_line_location_num')==line_records[j].get('source_po_line_location_num')&&
+		                        line_records[i].get('source_po_line_loc_new_num')==line_records[j].get('source_po_line_loc_new_num')){
+		                            count++;
+		                        }
+		                        if(count >1 ){
+		                            var message = '订单'+line_records[i].get('line_num')+'行存在重复的订单行号-发运行号-拆分发运行号，现已退出页面，请重新尝试！';
+			                         Aurora.showErrorMessage("${l:PROMPT}", message);
+			                         pur8010_return_win();
+			                        return;
+			                    }
+		                    }
+		                    datas.push(record.data);
+	                    }
+                    }
+                    
+                }
+                
+                /* if (!$('pur8010_delivery_ln_ds').validate()) {
+                    return;
+                } */
+                
+                Aurora.Masker.mask($('pur8010_delivery_plan_detail_wdn').wrap, '${l:LOADING}');
+                Aurora.request({
+                    url: $('pur8010_delivery_plan_update_url').getUrl(),
+                    para: datas,
+                    success: function(res) {
+                        Aurora.Masker.unmask($('pur8010_delivery_plan_detail_wdn').wrap);
+                        Aurora.showInfoMessage("${l:PROMPT}", "保存成功！");
+                        $('pur8010_delivery_ln_ds').query();
+                    },
+                    failure: function(res) {
+                        Aurora.Masker.unmask($('pur8010_delivery_plan_detail_wdn').wrap);
+                    },
+                    error: function(res) {
+                        Aurora.Masker.unmask($('pur8010_delivery_plan_detail_wdn').wrap);
+                    },
+                    scope: this
+                });
+            }
+            function pur8010_delivery_plan_detail_return(){
+                var action = 'return';
+                pur8010_delivery_plan_detail_submit(action);
+            } 
+            //提交
+            
+            function pur8010_delivery_plan_detail_submit(action) {
+               // pur8010_delivery_plan_save();
+                var header_record = $('pur8010_delivery_hd_ds').getAt(0);
+                var line_records = $('pur8010_delivery_ln_ds').getAll();
+                if (!$('pur8010_delivery_ln_ds').validate()) {
+                    return;
+                }
+            	var tough_check_flag ='';
+            	if(header_record.get('del_plan_status')!= 'WAIT_FINAL_CONFIRMED'){
+	                for (var i = 0;i < line_records.length;i++) {
+	                    var record = line_records[i];
+	                    var dateString1=line_records[i].get('supplier_reply_date');//供货方回复日期
+	                    var dateString2=line_records[i].get('need_arrive_date');//要求到货日期 
+	                    var differdays=0;  //相差天数
+	                    if (record.isNew || record.dirty) {
+	                        Aurora.showInfoMessage("${l:PROMPT}", "${l:SAVE_FIRST}！");
+	                        return;
+	                    }
+	                    if (line_records[i].get('remain_split_quantity') != 0) {
+	                        Aurora.showInfoMessage("${l:PROMPT}", "第【" + line_records[i].get('line_num') + "】行，剩余可拆数量不为0!");
+	                        return;
+	                    }
+	                    if (line_records[i].get('trx_amount') > 0 && line_records[i].get('need_del_quantity') < line_records[i].get('trx_amount')&& line_records[i].get('is_split_line') =='N') {
+	                        Aurora.showInfoMessage("${l:PROMPT}", "第【" + line_records[i].get('line_num') + "】行，要求到货数量不能小于已交数量!");
+	                        return;
+	                    }
+	                    
+	                    if(line_records[i].get('need_del_quantity') == 0) {
+	                      Aurora.showMessage('${l:PROMPT}', "第【" + record.get('line_num') + "】行，要求送货数量不能为0!");
+	                      return;
+	                    }
+	                    
+	                    var startDate = Date.parse(dateString2);//要求到货日期
+	                    var endDate = Date.parse(Aurora.formatDate(dateString1)); //供货方回复日期
+	                    differdays = (endDate - startDate) / (1 * 24 * 60 * 60 * 1000);  
+	                    if(tough_check_flag =='PASS'||tough_check_flag ==''){
+	                        if (differdays <-2 || differdays>0){
+		                       // Aurora.showErrorMessage("${l:操作失败}", "回复的交期不符合景旺物控的“要求到货日期”，景旺要求是“供方回复日期”需小于“要求到货日期”0～2天内，因此满足不了，请确认交期是否能在景旺要求内，不能的话，请点击“保存”后点击“拒绝”按钮，流程会到景旺采购员确认");
+		                      if(action&&action=='return'){
+		                          tough_check_flag ='REJECT';
+		                      }else{
+		                          if(header_record.get('del_plan_status')!= 'CONFIRMED'){
+				                       Aurora.showErrorMessage("${l:操作失败}", "回复的交期不符合景旺物控的“承诺日期”，景旺要求是“供方回复日期”需小于“承诺日期”0～2天内，因此满足不了，请点击“退回”按钮将单退回至采购！");
+				                       return;
+		                          }
+		                      }
+		                    }else{
+	                          tough_check_flag ='PASS';
+		                    }
+	                    }                 
+	                }
+            	}else{
+            	    for (var i = 0;i < line_records.length;i++) {
+	                    var record = line_records[i];
+	                   	if(record.get('pur_check_date')!=record.get('need_arrive_date')){
+	                   	    
+	                   	    var msg = '采购已协调采购时间，请将'+record.get('line_num')+'.'+record.get('source_po_line_location_num')+'.'+record.get('source_po_line_loc_new_num')+'行的承诺日期改为协调后的时间再提交！'
+	                   	    Aurora.showErrorMessage("${l:操作失败}", msg);
+	                    	return;
+	                   	}
+            	    }
+            	}
+                var message = '是否确认提交？';
+                if(header_record.get('del_plan_status')!= 'CONFIRMED'){
+                   if(tough_check_flag == 'REJECT'){
+	            	    // message = '回复的交期不符合景旺物控的“承诺日期”，景旺要求是“供方回复日期”需小于“承诺日期”0～2天内，因此满足不了，点击“确认”该单将会退回至采购，如需修改则点击“取消”。';
+	            	    message = '是否确认退回？';  
+	            	}
+	            	if(tough_check_flag == 'PASS'&&action&&action=='return'){
+	            	    Aurora.showErrorMessage("${l:退回失败}", "回复的交期已符合景旺物控的“承诺日期”，景旺要求是“供方回复日期”需小于“承诺日期”0～2天内！");
+	                    return;
+	            	} 
+                }
+            	
+                var datas = [];
+                var data = {};
+                data.action = 'PUR';
+                //订单状态为待确认(已发布)不能提交送货计划
+                for (var j = 0;j < line_records.length;j++) {
+                    var record = line_records[j];
+                    if (record.get('po_status') == 'RELEASED') {
+                        Aurora.showInfoMessage("${l:PROMPT}", "存在订单行:" + record.get('line_num') +"-发运行："+record.get('source_po_line_location_num')+ "对应的订单待确认，不能提交送货计划！");
+                        return;
+                    }
+                }
+            
+            
+                data.delivery_header_id = header_record.get('header_id');
+                data.header_id = header_record.get('header_id');
+                data.del_plan_status = header_record.get('del_plan_status');
+                data._status = 'submit';
+                datas.push(data);
+                var okCan = Aurora.showConfirm('${l:PROMPT}', message, function() {
+                Aurora.Masker.mask($('pur8010_delivery_plan_detail_wdn').wrap, '${l:LOADING}');
+                Aurora.request({
+                    url: /*'${/request/@context_path}/autocrud/cux.MKWE.pur.PUR8010.pur_delivery_header/execute'*/
+                    $('pur8010_delivery_plan_submit_url').getUrl(),
+                    para: datas,
+                    success: function(args) {
+                        Aurora.Masker.unmask($('pur8010_delivery_plan_detail_wdn').wrap);
+                        Aurora.showInfoMessage("${l:PROMPT}", "提交成功！");
+                        $('pur8010_delivery_plan_detail_wdn').close();
+                    },
+                    failure: function(args) {
+                        Aurora.Masker.unmask($('pur8010_delivery_plan_detail_wdn').wrap);
+                    },
+                    error: function(args) {
+                        Aurora.Masker.unmask($('pur8010_delivery_plan_detail_wdn').wrap);
+                    },
+                    scope: this
+                });
+                }, function() {
+                    //点击取消，执行这里
+                    okCan.close();
+                }, 250, 100);
+            }
+            
+            
+            function pur8010_return_win() {
+                $('pur8010_delivery_plan_detail_wdn').close();
+            }
+            function pur8010_delivery_plan_query(){
+                var header_record = $('pur8010_delivery_hd_ds').getCurrentRecord();
+                var line_num_query = header_record.get('line_num_query');
+                var source_po_line_location_num_query = header_record.get('source_po_line_location_num_query');
+                $('pur8010_delivery_ln_ds').setQueryParameter('line_num',line_num_query);
+                $('pur8010_delivery_ln_ds').setQueryParameter('source_po_line_location_num',source_po_line_location_num_query);
+                $('pur8010_delivery_ln_ds').query();
+            }
+            function pur8010_delivery_hd_ds_load(ds){
+                var record = ds.getCurrentRecord();
+                if(record.get('del_plan_status')=='WAIT_FINAL_CONFIRMED'){
+                    $('pur8010_delivery_ln_grid').hideColumn('oper');
+                    $('pur8010_delivery_plan_detail_return_id').disable();
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="pur8010_delivery_hd_ds" autoCount="true" autoQuery="true" model="cux.MKWE.pur.PUR8010.pur_delivery_header" queryUrl="${/request/@context_path}/autocrud/cux.MKWE.pur.PUR8010.pur_delivery_header/query?header_id=${/parameter/@delivery_header_id}">
+                <a:fields>
+                    <a:field name="online_vender_flg"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="pur8010_delivery_hd_ds_load"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="pur8010_delivery_ln_ds" autoCount="true" autoQuery="true" fetchAll="true" model="cux.MKWE.pur.PUR8010.pur_delivery_lines" queryUrl="${/request/@context_path}/autocrud/cux.MKWE.pur.PUR8010.pur_delivery_lines/query?header_id=${/parameter/@delivery_header_id}">
+                <a:fields>
+                    <a:field name="need_del_quantity" required="true" requiredMessage="要求送货数量不能为空"/>
+                    <a:field name="need_arrive_date" required="true" requiredMessage="要求到货日期不能为空"/>
+                    <a:field name="received_inv_org" autoComplete="true" autoCompleteField="received_inv_org" lovGridHeight="330" lovHeight="470" lovService="cux.MKWE.pur.PUR8010.inv_organizations_lov" lovWidth="530" title="发货组织">
+                        <a:mapping>
+                            <a:map from="inv_organization_name" to="received_inv_org"/>
+                            <a:map from="es_inv_org_id" to="organization_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="organization_id"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="load" handler="pur8010_delivery_detail_load"/>
+                    <a:event name="update" handler="pur8010_delivery_detail_update"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="pur8010_delivery_plan_save" text="HAP_SAVE" width="100"/>
+                <a:toolbarButton click="pur8010_delivery_plan_detail_submit" text="提交" width="100"/>
+                <a:toolbarButton id="pur8010_delivery_plan_detail_return_id" click="pur8010_delivery_plan_detail_return" text="退回" width="100"/>
+                <a:toolbarButton click="pur8010_return_win" text="HAP_BACK" width="100"/>
+                <a:toolbarButton click="pur8010_return_win" hidden="true" text="HAP_BACK" width="100"/>
+                <a:hBox>
+                    <a:textField name="line_num_query" bindTarget="pur8010_delivery_hd_ds" prompt="订单行号"/>
+                    <a:textField name="source_po_line_location_num_query" bindTarget="pur8010_delivery_hd_ds" prompt="发运行号"/>
+                    <a:toolbarButton click="pur8010_delivery_plan_query" text="查询" width="100"/>
+                </a:hBox>
+            </a:screenTopToolbar>
+            <a:fieldSet title="收货计划头信息">
+                <a:hBox labelWidth="100">
+                    <a:textField name="del_plan_number" bindTarget="pur8010_delivery_hd_ds" prompt="INV8010.DELIVERY_PLAN_NUMBER" readOnly="true"/>
+                    <a:textField name="vendor_name" bindTarget="pur8010_delivery_hd_ds" prompt="供应商" readOnly="true"/>
+                    <a:textField name="business_unit_name" bindTarget="pur8010_delivery_hd_ds" prompt="INV8010.BUSINESS_ENTITY" readOnly="true"/>
+                    <a:textField name="creation_date" bindTarget="pur8010_delivery_hd_ds" prompt="INV8010.CREATION_TIME" readOnly="true"/>
+                    <a:textField name="suplier_desc" bindTarget="pur8010_delivery_hd_ds" prompt="INV8010.APPLICANT" readOnly="true"/>
+                </a:hBox>
+                <!-- <a:hBox labelWidth="100">
+                    <a:textField name="user_name" bindTarget="pur8010_delivery_hd_ds" prompt="创建人" readOnly="true"/>
+                    
+                </a:hBox> -->
+            </a:fieldSet>
+            <a:grid id="pur8010_delivery_ln_grid" autoAppend="false" bindTarget="pur8010_delivery_ln_ds" marginHeight="210" marginWidth="50" navBar="true">
+                <a:columns>
+                    <!-- <a:column name="batch_split" align="center" prompt="批量拆行" renderer="pur8010_delivery_ln_temp_grid_rd"/> -->
+                    <a:column name="oper" align="center" lock="true" prompt="操作" renderer="pur8010_delivery_ln_temp_grid_rd" width="35"/>
+                    <a:column name="segment1" align="center" lock="true" prompt="采购订单号" width="50"/>
+                    <a:column name="line_num" align="center" lock="true" prompt="订单行号" width="30"/>
+                    <a:column name="source_po_line_location_num" align="center" lock="true" prompt="发运行号" width="30"/>
+                    <a:column name="source_po_line_loc_new_num" align="center" lock="true" prompt="拆分发运行号" width="40"/>
+                    <!-- <a:column name="del_plan_line_num" align="center" prompt="送货计划行号" width="60"/> -->
+                    <a:column name="item_code" align="center" lock="true" prompt="MTL_SYSTEM_ITEMS.ITEM_CODE" sortable="true" width="60"/>
+                    <a:column name="item_name" align="center" lock="true" prompt="MTL_SYSTEM_ITEMS.ITEM_DESC" width="60"/>
+                    <!-- <a:column name="item_specs" align="center" prompt="MTL_SYSTEM_ITEMS.ITEM_SPECS" width="60"/> -->
+                    <!-- <a:column name="item_model" align="center" prompt="MTL_SYSTEM_ITEMS.ITEM_MODEL" width="60"/> -->
+                    <a:column name="quantity" align="center" prompt="订单数量" width="40"/>
+                    <a:column name="location_quantity" align="center" prompt="发运行数量" width="40"/>
+                    <a:column name="unit_meas_lookup_code" align="center" prompt="单位" width="20"/>
+                    <a:column name="trx_amount" align="center" prompt="已交数量" width="40"/>
+                    <a:column name="un_trx_amount" align="center" prompt="未交数量" width="40"/>
+                    <a:column name="remain_split_quantity" align="center" prompt="剩余可拆单数量" width="40"/>
+                    <!-- <a:column name="po_need_date" align="center" prompt="订单需求日期" width="60"/> -->
+                    <a:column name="po_need_date" align="center" editor="delivery_ln_temp_dp" prompt="需求日期" renderer="Aurora.formatDate" width="50"/>
+                    <a:column name="need_del_quantity" align="center" editor="delivery_ln_temp_nf" prompt="要求送货数量" width="50"/>
+                    <a:column name="need_arrive_date" align="center" editor="delivery_ln_temp_dp" prompt="承诺日期" renderer="pur8010_delivery_ln_temp_grid_rd" width="50"/>
+                    <a:column name="supplier_reply_date" align="center" prompt="供应商回复日期" renderer="pur8010_delivery_ln_temp_grid_rd" width="50"/>
+                    <a:column name="pur_check_date" align="center" prompt="采购协调日期" renderer="Aurora.formatDate" width="60"/>
+                    <a:column name="pur_leadtime" align="center" prompt="根据LT核算交期" renderer="Aurora.formatDate" width="55"/>
+                    <!-- <a:column name="send_address" align="center" editor="delivery_ln_temp_tf" prompt="送货地址" width="60"/> -->
+                    <a:column name="supplier_comment" align="center" prompt="供应商备注" width="60"/>
+                    <a:column name="agent_comment" align="center" prompt="采购方备注" width="60"/>
+                    <a:column name="item_control_comment" align="center" editor="delivery_ln_temp_tf" prompt="物控备注" width="80"/>
+                    <a:column name="received_inv_org" align="center" editor="delivery_ln_temp_lov" prompt="收货组织" width="40"/>
+                    <a:column name="confirmed_flag" align="center" prompt="是否提交" renderer="pur8010_delivery_ln_temp_grid_rd" width="30"/>
+                    <a:column name="mrp_locked_flag" align="center" prompt="是否MRP已锁定" width="50"/>
+                    <!-- <a:column name="packing_standard" align="center" prompt="包装标准（包材）" width="80"/>
+                    <a:column name="job_number" align="center" prompt="工单号（包材）" width="80"/> -->
+                </a:columns>
+                <a:editors>
+                    <!-- 修改 “要求送货数量”栏位点击框中不显示小数点后面的数字 -->
+                    <a:numberField id="delivery_ln_temp_nf" allowDecimals="true"/>
+                    <a:datePicker id="delivery_ln_temp_dp"/>
+                    <a:textField id="delivery_ln_temp_tf"/>
+                    <a:lov id="delivery_ln_temp_lov"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

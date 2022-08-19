@@ -1,0 +1,261 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Wanq  
+    $Date: 2012-11-14 上午11:24:28  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:f="aurora.database.features" xmlns:bm="http://www.aurora-framework.org/schema/bm" alias="t1" baseTable="ERPORD_SALES_ORDER_LINES" needAccessControl="true">
+    <bm:query-fields>
+        <bm:query-field name="item_id" queryExpression="v.item_id = ${@item_id}"/>
+        <bm:query-field name="currency_code" queryExpression="v.currency_code = ${@currency_code}"/>
+        <bm:query-field name="customer_id" queryExpression="v.customer_id = ${@customer_id}"/>
+        <bm:query-field name="company_id" queryExpression="v.company_id=${@company_id}"/>
+    </bm:query-fields>
+    <bm:operations>
+        <bm:operation name="query">
+            <!-- 
+            <bm:query-sql><![CDATA[
+                SELECT
+                    (SELECT f.company_full_name FROM fnd_companies_vl f WHERE f.company_id = v.company_id) company_name,
+                    v.customer_id,
+                    p.partner_name customer_name,
+                    p.partner_code
+                    || '-'
+                    || p.partner_name customer_code_name,
+                    v.item_id,
+                    (SELECT ERPFND_PRECISION_PKG.get_amount_precision (v.company_id) FROM dual) as value1,
+                    (SELECT ERPFND_PRECISION_PKG.get_quantity_precision (v.company_id) FROM dual) as value2,
+                    (SELECT ERPFND_PRECISION_PKG.get_price_precision (v.company_id) FROM dual) as value3,
+                    b.item_name,
+                    b.item_code
+                    || '-'
+                    || b.item_name item_code_name,
+                    v.trade_quantity,
+                    NVL(v.delivery_trade_quantity,0) delivery_trade_quantity,
+                    NVL(v.post_delivery_trade_qty,0) post_delivery_trade_qty,
+                    v.trade_uom,
+                    (SELECT
+                        c.uom_description
+                    FROM
+                        erpinv_uom_codes c
+                    WHERE
+                        c.uom_code   = v.trade_uom AND
+                        c.company_id = v.company_id
+                    ) trade_uom_name,
+                    v.primary_quantity,
+                    v.primary_uom,
+                    (SELECT
+                        c.uom_description
+                    FROM
+                        erpinv_uom_codes c
+                    WHERE
+                        c.uom_code   = v.primary_uom AND
+                        c.company_id = v.company_id
+                    ) primary_uom_name,
+                    v.currency_code,
+                    v.amount,
+                    NVL(v.post_delivery_trade_cost,0) post_delivery_trade_cost,
+                    v.company_id ,
+                    DECODE(
+                    (SELECT
+                        COUNT(DISTINCT hh.salesmen_employee_id) FROM erpord_sales_order_headers hh,
+                        erpord_sales_order_lines ll WHERE hh.customer_id = v.customer_id AND
+                        ll.item_id                                    = v.item_id AND
+                        hh.sales_order_id                             = ll.sales_order_id AND
+                        hh.company_id                                 = v.company_id
+                    ), 1,
+                    (SELECT DISTINCT
+                        e.employee_name
+                    FROM
+                        erpord_sales_order_headers hh,
+                        erpord_sales_order_lines ll,
+                        erpfnd_employees e
+                    WHERE
+                        hh.customer_id    = v.customer_id AND
+                        ll.item_id        = v.item_id AND
+                        hh.sales_order_id = ll.sales_order_id AND
+                        e.employee_id     = hh.salesmen_employee_id AND
+                        e.company_id      = v.company_id AND
+                        hh.company_id     = v.company_id
+                    ), '') salesmen_employee_name
+                FROM
+                    erpfnd_business_partners p,
+                    erpinv_items_basics b,
+                    (SELECT
+                        h.customer_id,
+                        l.item_id,
+                        SUM(l.trade_quantity) trade_quantity,
+                        SUM(l.delivery_trade_quantity) delivery_trade_quantity,
+                        SUM(l.post_delivery_trade_qty) post_delivery_trade_qty,
+                        l.trade_uom,
+                        SUM(l.primary_quantity) primary_quantity,
+                        l.primary_uom,
+                        h.currency_code,
+                        SUM(l.amount) amount,
+                        SUM(NVL(
+                        (SELECT
+                            SUM(t.real_cost) post_delivery_trade_cost
+                        FROM
+                            erpinv_transactions t,
+                            erpinv_document_delivery_h iddh,
+                            erpinv_document_delivery_l iddl,
+                            erpord_delivery_lines odl
+                        WHERE
+                            t.item_id                    = iddl.item_id AND
+                            t.company_id                 = ${@company_id} AND
+                            odl.sales_order_line_id      = l.sales_order_line_id AND
+                            iddl.source_delivery_line_id = odl.delivery_line_id AND
+                            iddh.document_header_id      = iddl.document_header_id AND
+                            iddh.ord_delivery_flag       = 'Y' AND
+                            iddh.transaction_type       IN ('STO', 'COR', 'GS', 'GSR') AND
+                            iddh.company_id              = ${@company_id} AND
+                            t.transaction_id             = iddl.inv_transaction_id
+                        ), 0) * -1) post_delivery_trade_cost,
+                        h.company_id
+                    FROM
+                        erpord_sales_order_headers h,
+                        erpord_sales_order_lines l
+                    WHERE
+                        h.sales_order_id = l.sales_order_id AND
+                        h.company_id     = ${@company_id} AND
+                        h.order_date    >= to_date(NVL(${/parameter/@order_date_from},'1000-01-01'),'yyyy-mm-dd') AND
+                        h.order_date    <= to_date(NVL(${/parameter/@order_date_to},'9999-12-31'),'yyyy-mm-dd') AND
+                        (
+                            ${/parameter/@salesmen_employee_id} IS NULL OR
+                            (
+                                h.salesmen_employee_id = ${/parameter/@salesmen_employee_id}
+                            )
+                        )
+                    GROUP BY
+                        h.customer_id,
+                        l.item_id,
+                        l.trade_uom,
+                        l.primary_uom,
+                        h.currency_code,
+                        h.company_id
+                    ) v #WHERE_CLAUSE#
+                ORDER BY
+                    customer_code_name,
+                    item_code_name
+            ]]></bm:query-sql>
+             -->
+            <bm:query-sql><![CDATA[
+                 SELECT
+                     (SELECT
+                         f.company_full_name
+                     FROM
+                         fnd_companies_vl f
+                     WHERE
+                         f.company_id = v.company_id
+                     ) company_name,
+                     v.customer_id,
+                     p.partner_name customer_name,
+                     p.partner_code
+                     || '-'
+                     || p.partner_name customer_code_name,
+                     v.item_id,
+                     (SELECT ERPFND_PRECISION_PKG.get_amount_precision (v.company_id) FROM dual
+                     ) AS value1,
+                     (SELECT ERPFND_PRECISION_PKG.get_quantity_precision (v.company_id) FROM dual
+                     ) AS value2,
+                     (SELECT ERPFND_PRECISION_PKG.get_price_precision (v.company_id) FROM dual
+                     ) AS value3,
+                     b.item_name,
+                     b.item_code
+                     || '-'
+                     || b.item_name item_code_name,
+                     v.trade_quantity,
+                     NVL(v.delivery_trade_quantity,0) delivery_trade_quantity,
+                     NVL(v.post_delivery_trade_qty,0) post_delivery_trade_qty,
+                     v.trade_uom,
+                     (SELECT
+                         c.uom_description
+                     FROM
+                         erpinv_uom_codes c
+                     WHERE
+                         c.uom_code   = v.trade_uom AND
+                         c.company_id = v.company_id
+                     ) trade_uom_name,
+                     v.primary_quantity,
+                     v.primary_uom,
+                     (SELECT
+                         c.uom_description
+                     FROM
+                         erpinv_uom_codes c
+                     WHERE
+                         c.uom_code   = v.primary_uom AND
+                         c.company_id = v.company_id
+                     ) primary_uom_name,
+                     v.currency_code,
+                     v.amount,
+                     v.company_id ,
+                     DECODE(
+                     (SELECT
+                         COUNT(DISTINCT hh.salesmen_employee_id) FROM erpord_sales_order_headers hh,
+                         erpord_sales_order_lines ll WHERE hh.customer_id = v.customer_id AND
+                         ll.item_id                                       = v.item_id AND
+                         hh.sales_order_id                                = ll.sales_order_id AND
+                         hh.company_id                                    = v.company_id
+                     ), 1,
+                     (SELECT DISTINCT
+                         e.employee_name
+                     FROM
+                         erpord_sales_order_headers hh,
+                         erpord_sales_order_lines ll,
+                         erpfnd_employees e
+                     WHERE
+                         hh.customer_id    = v.customer_id AND
+                         ll.item_id        = v.item_id AND
+                         hh.sales_order_id = ll.sales_order_id AND
+                         e.employee_id     = hh.salesmen_employee_id AND
+                         e.company_id      = v.company_id AND
+                         hh.company_id     = v.company_id
+                     ), '') salesmen_employee_name
+                 FROM
+                     erpfnd_business_partners p,
+                     erpinv_items_basics b,
+                     (SELECT
+                         h.customer_id,
+                         l.item_id,
+                         SUM(l.trade_quantity) trade_quantity,
+                         SUM(l.delivery_trade_quantity) delivery_trade_quantity,
+                         SUM(l.post_delivery_trade_qty) post_delivery_trade_qty,
+                         l.trade_uom,
+                         SUM(l.primary_quantity) primary_quantity,
+                         l.primary_uom,
+                         h.currency_code,
+                         SUM(l.amount) amount,
+                         h.company_id
+                     FROM
+                         erpord_sales_order_headers h,
+                         erpord_sales_order_lines l
+                     WHERE
+                         h.sales_order_id = l.sales_order_id AND
+                         h.company_id     = ${@company_id} AND
+                         h.order_date    >= to_date(NVL(${/parameter/@order_date_from},'1000-01-01'),'yyyy-mm-dd') AND
+                         h.order_date    <= to_date(NVL(${/parameter/@order_date_to},'9999-12-31'),'yyyy-mm-dd') AND
+                         (
+                             ${/parameter/@salesmen_employee_id} IS NULL OR
+                             (
+                                 h.salesmen_employee_id = ${/parameter/@salesmen_employee_id}
+                             )
+                         )
+                     GROUP BY
+                         h.customer_id,
+                         l.item_id,
+                         l.trade_uom,
+                         l.primary_uom,
+                         h.currency_code,
+                         h.company_id
+                     ) v #WHERE_CLAUSE#
+                 ORDER BY
+                     customer_code_name,
+                     item_code_name
+             ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter enforceOperations="query" expression="v.customer_id = p.partner_id and v.item_id = b.item_id"/>
+    </bm:data-filters>
+</bm:model>

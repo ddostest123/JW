@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+   select *from (SELECT h.pur_header_id,
+       l.pur_line_id,
+       pll.pur_line_location_id,
+       h.display_po_number po_num,
+       h.display_release_num release_num,
+       l.line_num po_line_num,
+       pll.shipment_num,
+       l.item_id,
+       nvl(msi.display_item_code,
+           msi.item_code) item_code,
+       msi.item_name item_desc,
+       l.unit_meas_lookup_code uom,
+       pll.quantity,
+       pll.quantity - pll.quantity_billed AS bill_quantity,
+       h.currency_code,
+       fnd_document_control_pkg.get_reality_value(p_rule_code    => 'PRICE_SECRECY',
+                                             p_role_id         => ${/session/@role_id},
+                                             p_foundation_code => 'PUR_PO',
+                                             p_document_id     => h.pur_header_id,
+                                             p_control_area    => 'EXTERNAL',
+                                             p_business_group  => ${/session/@business_group},
+                                             p_value           =>   l.unit_price) unit_price,
+       fnd_document_control_pkg.get_reality_value(p_rule_code    => 'PRICE_SECRECY',
+                                             p_role_id         => ${/session/@role_id},
+                                             p_foundation_code => 'PUR_PO',
+                                             p_document_id     => h.pur_header_id,
+                                             p_control_area    => 'EXTERNAL',
+                                             p_business_group  => ${/session/@business_group},
+                                             p_value           =>  l.unit_price * (pll.quantity - pll.quantity_billed)) bill_amount,
+       h.terms_id,
+       h.rate_type,
+       h.rate_date,
+       h.rate
+  FROM mtl_system_items_vl    msi,
+       pur_line_locations_all pll,
+       pur_lines_all          l,
+       pur_headers_all        h
+ WHERE msi.item_id = l.item_id
+       AND pll.pur_line_id = l.pur_line_id
+       AND l.pur_header_id = h.pur_header_id
+       AND nvl(pll.quantity,
+               0) > nvl(pll.quantity_billed,
+                            0) + nvl(pll.srm_quanity_billed,
+                                                      0)
+       AND nvl(h.frozen_flag,
+               'N') = 'N'
+       AND nvl(h.cancel_flag,
+               'N') = 'N'
+       AND h.srm_status = 'CONFIRMED'
+       AND h.type_lookup_code = 'CONSIGNMENT_CONSUMPTION'
+       AND h.coop_business_group = ${/session/@business_group} ) v
+#WHERE_CLAUSE#]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter enforceOperations="query" expression="v.pur_header_id in (${:@pur_header_ids})"/>
+    </bm:data-filters>
+</bm:model>

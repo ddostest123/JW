@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lianghuihao $  
+    $Date: 2018年12月5日14:17:40 $  
+    $Revision: 1.0 $ 
+    $Purpose: 联合采购维护，入口页面 $
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:view>
+        <!-- <a:link id="pur5010_category_release_link" model="cux.KINWONG.pur.pur5710.pur5710_category_leadtime_query" modelaction="batch_update"/> -->
+        <a:link id="pur5010_category_release_link" url="${/request/@context_path}/modules/cux/KINWONG/pur/pur5710/pur5710_leadtime_category_save.svc"/>
+        <a:link id="pur5710_category_leadtime_record_link" url="${/request/@context_path}/modules/cux/KINWONG/pur/pur5720/pur5720_leadtime_record.screen"/>
+        <script><![CDATA[
+            function pur5710_category_leadtime_grid_render(value, record, name) {
+                if (name == 'operation') {
+                    var category_id = record.get('category_id');
+                    return '<a href="javascript:pur5710_category_leadtime_operation(' + category_id + ')">' + '操作记录' + '</a>';
+                }
+            }
+            
+            function pur5710_category_leadtime_operation(id) {
+                new Aurora.Window({
+                    id: 'pur5720_category_leadtime_record_win',
+                    title: '${l:PROMPT.OPERATION_RECORD}',
+                    url: $('pur5710_category_leadtime_record_link').getUrl() + '?line_id=' + id + '&table_name=' + 'PUR_LEADTIME_CATEGORY',
+                    width: 700,
+                    height: 410
+                });
+            }
+            
+            function pur5010_category_approve() {
+                pur5010_category_action('APPROVE');
+            }
+            
+            function pur5010_category_reject() {
+                pur5010_category_action('REJECT');
+            }
+            
+            function pur5010_category_action(action_code) {
+                //只有已更新状态的单据才能发布给供应商
+                var ds = $('pur5710_category_leadtime_maintain_ds');
+                var records = ds.getSelected();
+                if (records.length < 1) {
+                    Aurora.showMessage('${l:PROMPT}', '请选择需要审批的单据！');
+                    return false;
+                } else {
+                    for (var i = 0;i < records.length;i++) {
+                        var status = records[i].get('status');
+                        if (status != '40_UPDATED' && status != '30_SUBMITED') {
+                            Aurora.showMessage('${l:PROMPT}', '只有已提交或已更新状态的单据才能审批！');
+                            return false;
+                        }
+                    }
+                    Aurora.showConfirm('${l:PROMPT}', '是否确认审批？', function() {
+                        debugger;
+                        var datas = [];
+                        for (var i = 0;i < records.length;i++) {
+                            var data = {
+                                'category_id': records[i].get('category_id'),
+                                'action_code': action_code,
+                                '_status': 'update',
+                                'remark': records[i].get('remark')
+                            };
+                            datas.push(data);
+                        }
+                        Aurora.Masker.mask(Ext.getBody(), '${l:LOADING}');
+                        Aurora.request({
+                            url: $('pur5010_category_release_link').getUrl(),
+                            para: datas,
+                            success: function(res) {
+                                ds.query();
+                                Aurora.Masker.unmask(Ext.getBody());
+                            },
+                            failure: function(res) {
+                                Aurora.Masker.unmask(Ext.getBody());
+                            },
+                            error: function(res) {
+                                Aurora.Masker.unmask(Ext.getBody());
+                            },
+                            scope: this
+                        });
+                    });
+                }
+            }
+            
+            function pur5010_category_release() {
+                //只有新建状态的单据才能发布给供应商
+                var ds = $('pur5710_category_leadtime_maintain_ds');
+                var records = ds.getSelected();
+                if (records.length < 1) {
+                    Aurora.showMessage('${l:PROMPT}', '请选择需要发布的单据！');
+                    return false;
+                } else {
+                    for (var i = 0;i < records.length;i++) {
+                        var status = records[i].get('status');
+                        // if (status != '10_NEW' && status != '50_APPROVED') {
+                            // Aurora.showMessage('${l:PROMPT}', '只有新建和审批通过状态的单据才能发布！');
+                            // return false;
+                        // } 
+                        // 审批通过”不用再次进行发布 2020-02-05
+                         if (status != '10_NEW' ) {
+                             Aurora.showMessage('${l:PROMPT}', '只有新建状态的单据才能发布！');
+                             return false;
+                         }
+                    }
+                    Aurora.showConfirm('${l:PROMPT}', '是否确认发布？', function() {
+                        debugger;
+                        var datas = [];
+                        for (var i = 0;i < records.length;i++) {
+                            var status = records[i].get('status');                            
+                            var data = records[i].data;
+                            if (status == '10_NEW') {
+                                data._status = 'insert';
+                            } else {
+                                data._status = 'delete';
+                            }
+                            datas.push(data);
+                        }
+                        Aurora.Masker.mask(Ext.getBody(), '${l:LOADING}');
+                        Aurora.request({
+                            url: $('pur5010_category_release_link').getUrl(),
+                            para: datas,
+                            success: function(res) {
+                                ds.query();
+                                Aurora.Masker.unmask(Ext.getBody());
+                            },
+                            failure: function(res) {
+                                Aurora.Masker.unmask(Ext.getBody());
+                            },
+                            error: function(res) {
+                                Aurora.Masker.unmask(Ext.getBody());
+                            },
+                            scope: this
+                        });
+                    });
+                }
+            }
+            
+            function pur5710_category_leadtime_query() {
+                if (!$('pur5710_category_leadtime_maintain_query_ds').validate()) {
+                    return;
+                }
+                var record = $('pur5710_category_leadtime_maintain_query_ds').getCurrentRecord();
+                var vendor_codes = record.get('vendor_code');
+                $('pur5710_category_leadtime_maintain_ds').setQueryParameter('vendor_codes', vendor_codes);
+                $('pur5710_category_leadtime_maintain_ds').query();
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="pur5710_category_leadtime_status_ds" lookupCode="PUR_LEADTIME_STATUS"/>
+            <a:dataSet id="pur5710_category_leadtime_maintain_query_ds">
+                <a:fields>
+                    <a:field name="vendor_name" lovHeight="450" lovUrl="${/request/@context_path}/modules/cux/KINWONG/pur/pur5710/pur5710_leadtime_vendor_select.screen?type=1" lovWidth="1000" title="供应商选择"/>
+                    <a:field name="status_display" defaultValue="" displayField="code_value_name" options="pur5710_category_leadtime_status_ds" returnField="status" valueField="code_value"/>
+                    <a:field name="status"/>
+                    <a:field name="unit_code" autoComplete="true" autoCompleteField="business_unit_code_name" autoCompleteSize="2" lovHeight="480" lovService="public.fnd_business_unit_lov" lovWidth="510" title="FND_BUSINESS_UNITS.BUSINESS_UNIT_QUERY">
+                        <a:mapping>
+                            <a:map from="business_unit_id" to="business_unit_id"/>
+                            <a:map from="business_unit_code" to="business_unit_code"/>
+                            <a:map from="business_unit_name" to="unit_code"/>
+                            <a:map from="company_id" to="company_id"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="pur5710_category_leadtime_maintain_ds" autoCount="true" autoPageSize="true" autoQuery="false" model="cux.KINWONG.pur.pur5710.pur5710_category_leadtime_query_test" queryDataSet="pur5710_category_leadtime_maintain_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="header_id"/>
+                    <a:field name="remark" readOnly="false"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:box height="10" labelSeparator="" labelWidth="380" padding="0" style="color:red">
+                <a:label prompt="品类维护建议只维护02-半成品，其他类别“按物料”维护"/>
+            </a:box>
+            <!--上面 box add  by he 2019-12-18-->
+            <a:screenTopToolbar>
+                <a:toolbarButton click="pur5010_category_approve" text="审批通过" width="100"/>
+                <a:toolbarButton click="pur5010_category_reject" text="审批拒绝" width="100"/>
+                <a:toolbarButton click="pur5010_category_release" text="发布" width="100"/>
+                <a:gridButton bind="pur5710_category_leadtime_grid" type="excel"/>
+            </a:screenTopToolbar>
+            <a:fieldSet title="查询条件">
+                <a:hBox labelWidth="100">
+                    <a:textField name="category_code" bindTarget="pur5710_category_leadtime_maintain_query_ds" prompt="品类代码"/>
+                    <a:lov name="vendor_name" bindTarget="pur5710_category_leadtime_maintain_query_ds" prompt="供应商名称"/>
+                    <a:lov name="unit_code" bindTarget="pur5710_category_leadtime_maintain_query_ds" prompt="业务实体"/>
+                    <a:comboBox name="status_display" bindTarget="pur5710_category_leadtime_maintain_query_ds" prompt="ACP_BILL_HEADERS.STATUS"/>
+                    <a:toolbarButton click="pur5710_category_leadtime_query" style="margin-left:20px;" text="查询" width="50"/>
+                </a:hBox>
+            </a:fieldSet>
+            <a:grid id="pur5710_category_leadtime_grid" autoAppend="false" bindTarget="pur5710_category_leadtime_maintain_ds" marginHeight="280" marginWidth="50" navBar="true">
+                <a:columns>
+                    <a:column name="status_display" align="center" prompt="状态" width="80"/>
+                    <a:column name="unit_code" align="center" prompt="业务实体" width="100"/>
+                    <a:column name="category_code" align="center" prompt="品类编码" width="100"/>
+                    <!-- <a:column name="category_code" align="center" prompt="品类名称" width="150"/> -->
+                    <a:column name="vendor_name" align="center" prompt="供应商" width="100"/>
+                    <a:column name="purchase_leadtime" align="center" prompt="采购提前期(天)" width="60"/>
+                    <a:column name="operation" align="center" prompt="操作记录" renderer="pur5710_category_leadtime_grid_render" width="100"/>
+                    <a:column name="remark" align="center" editor="pur5710_category_leadtime_lf" prompt="备注" width="200"/>
+                </a:columns>
+                <a:editors>
+                    <a:textField id="pur5710_category_leadtime_lf"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

@@ -1,0 +1,254 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lianghuihao 
+    $Date: 2018年10月19日16:31:40
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:c="aurora.application.action" xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <a:model-query autoCount="true" fetchAll="true" model="cux.KINWONG.pur.pur1010.pur1010_equip_compare_evaluation_details" rootpath="pur_evaluation_details"/>
+        <s:server-script><![CDATA[
+            var logger = $logger('server-script');
+            
+            function log(msg) {
+                logger.info(msg);
+            }
+            log($ctx.toXML());
+            var array = $ctx.get('/model/pur_evaluation_details').getChildren();
+            var config = $config(); //取到config对象
+            var columns = CompositeUtil.findChild(config, 'grid', 'id', 'pur1010_compare_result_grid').getChild('columns');
+            
+            var fields = CompositeUtil.findChild(config, 'dataSet', 'id', 'pur1010_compare_result_ds').getChild('fields');
+            for (var i = 0;i < array.length;i++) {
+                if (i == 0 || array[i]['evaluation_items'] != array[i - 1]['evaluation_items']) {
+                    var column = new CompositeMap('column');
+                    column['prompt'] = array[i]['evaluation_items'];
+                    column['align'] = "center";
+                    column['resizable'] = "true";
+                    column['autoAdjust'] = "true";
+                    columns.addChild(column.getData());
+                }
+                var column = CompositeUtil.findChild(columns, 'column', 'prompt', array[i]['evaluation_items']);
+                var column_x = new CompositeMap('column');
+                column_x['name'] = 'details_' + array[i]['evaluation_details_id'];
+                column_x['prompt'] = array[i]['evaluation_details'];
+                column_x['align'] = "center";
+                column_x['width'] = "90";
+                column_x['resizable'] = "true";
+                column_x['autoAdjust'] = "true";
+                column.addChild(column_x.getData());
+            
+                // var column_require = CompositeUtil.findChild(column, 'column', 'prompt', array[i]['evaluation_details']);
+                // var column_r = new CompositeMap('column');
+                // column_r['name'] = 'details_' + array[i]['evaluation_details_id'];
+                // column_r['prompt'] = array[i]['evaluation_require'];
+                // column_r['align'] = "center";
+                // column_r['width'] = "90";
+                // column_r['resizable'] = "true";
+                // column_r['autoAdjust'] = "true";
+                // column_require.addChild(column_r.getData());
+            
+            
+            
+                var column_y = new CompositeMap('column');
+                column_y['name'] = 'score' + array[i]['evaluation_details_id'];
+                column_y['prompt'] = '分数';
+                column_y['align'] = "center";
+                column_y['width'] = "60";
+                column_y['resizable'] = "true";
+                column_y['autoAdjust'] = "true";
+                column.addChild(column_y.getData());
+            }
+            var column_z = new CompositeMap('column');
+            column_z['name'] = 'scores';
+            column_z['prompt'] = '总分';
+            column_z['align'] = "center";
+            column_z['width'] = "60";
+            column_z['resizable'] = "true";
+            column_z['autoAdjust'] = "true";
+            columns.addChild(column_z.getData());
+            
+            var column_r = new CompositeMap('column');
+            column_r['name'] = 'rank_id';
+            column_r['prompt'] = '排名';
+            column_r['align'] = "center";
+            column_r['width'] = "60";
+            column_r['resizable'] = "true";
+            column_r['autoAdjust'] = "true";
+            columns.addChild(column_r.getData());
+        ]]></s:server-script>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="pur1010_compare_score_save_link" model="cux.KINWONG.pur.pur1010.pur_equipment_survey_compare_query" modelaction="batch_update"/>
+        <script src="${/request/@context_path}/javascripts/xlsx.full.min.js"/>
+        <script><![CDATA[
+            function pur1010_compare_result_back() {
+                $('pur1050_equipment_survey_detail_win').close();
+            }
+            
+            function pur1010_compare_result_save() {
+            
+                //保存分数
+                var records = $('pur1010_compare_result_ds').getAll();
+                var datas = [];
+                for (var i = 0;i < records.length;i++) {
+                    for (var j in records[i].fields) {
+                        var evaluation_details_id = j.split('details_');
+                        if (evaluation_details_id[1]) {
+                            var temp_name = 'score' + evaluation_details_id[1];
+                            var score = records[i].get(temp_name);
+                            if (!score) {
+                                score = 0;
+                            }
+                            var data = {
+                                'score': score,
+                                'evaluation_details_id': evaluation_details_id[1],
+                                'survey_header_id': records[i].get('survey_header_id'),
+                                'equipment_name_id': '${/parameter/@equipment_name_id}',
+                                'version': '${/parameter/@version}',
+                                '_status': 'insert'
+                            };
+                            datas.push(data);
+                        }
+                    }
+                }
+                Aurora.Masker.mask(Ext.getBody(), '${l:LOADING}');
+                Aurora.request({
+                    url: $('pur1010_compare_score_save_link').getUrl(),
+                    para: datas,
+                    success: function(res) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        Aurora.showMessage('${l:PROMPT}', '保存成功', function() {
+                            $('pur1010_compare_result_ds').query();
+                        });
+                    },
+                    error: function(res) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    failure: function(res) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    scope: this
+                });
+            }
+            
+            function saveAs(obj, fileName) { //当然可以自定义简单的下载文件实现方式
+                var tmpa = document.createElement("a");
+                tmpa.download = fileName;
+                tmpa.href = URL.createObjectURL(obj); //绑定a标签
+                tmpa.click(); //模拟点击实现下载
+                setTimeout(function() { //延时释放
+                    URL.revokeObjectURL(obj); //用URL.revokeObjectURL()来释放这个object URL
+                }, 100);
+            }
+            
+            var wopts = {
+                bookType: 'xlsx',
+                bookSST: false,
+                type: 'binary'
+            };
+            
+            function export_excel(data, file_name, type) {
+                var wb = {
+                    SheetNames: ['Sheet1'],
+                    Sheets: {},
+                    Props: {}
+                };
+                wb.Sheets['Sheet1'] = XLSX.utils.json_to_sheet(data); //通过json_to_sheet转成单页(Sheet)数据
+                saveAs(new Blob([s2ab(XLSX.write(wb, wopts))], {
+                    type: "application/octet-stream"
+                }), file_name + '.' + (wopts.bookType == "biff2" ? "xls" : wopts.bookType));
+            }
+            
+            function s2ab(s) {
+                if (typeof ArrayBuffer !== 'undefined') {
+                    var buf = new ArrayBuffer(s.length);
+                    var view = new Uint8Array(buf);
+                    for (var i = 0;i != s.length;++i) view[i] = s.charCodeAt(i) & 0xFF;
+                    return buf;
+                } else {
+                    var buf = new Array(s.length);
+                    for (var i = 0;i != s.length;++i) buf[i] = s.charCodeAt(i) & 0xFF;
+                    return buf;
+                }
+            }
+            
+            function pur1010_compare_result_export() {
+                debugger;
+                var promts = $('pur_evaluation_details_ds').getAll();
+                var records = $('pur1010_compare_result_ds').getAll();
+            
+                var data = {
+                    'version': '版本号',
+                    'vendor_code': '供应商编码',
+                    'vendor_name': '供应商名称',
+                    'equipment_name': '设备名称'
+                };
+                var datas = [];
+                for (var name in data) {
+                    var temp_data = {};
+                    temp_data['name'] = name;
+                    temp_data['prompt'] = data[name];
+                    datas.push(temp_data);
+                }
+                for (var i = 0;i < promts.length;i++) {
+                    var temp_data = {};
+                    temp_data['name'] = 'details_' + promts[i].get('evaluation_details_id');
+                    temp_data['prompt'] = promts[i].get('evaluation_details');
+                    datas.push(temp_data);
+                    var score_data = {};
+                    score_data['name'] = 'score' + promts[i].get('evaluation_details_id');
+                    var nums = i + 1;
+                    score_data['prompt'] = '分数' + nums;
+                    datas.push(score_data);
+                }
+            
+                var data2 = {
+                    'scores': '总分',
+                    'rank_id': '排名'
+                };
+                for (var name in data2) {
+                    var temp_data = {};
+                    temp_data['name'] = name;
+                    temp_data['prompt'] = data2[name];
+                    datas.push(temp_data);
+                }
+                var para = [];
+                //组织数据
+                for (var i = 0;i < records.length;i++) {
+                    var detail_data = {};
+                    for (var j = 0;j < datas.length;j++) {
+                        detail_data[datas[j].prompt] = records[i].get(datas[j].name);
+                    }
+            
+                    para.push(detail_data);
+                }
+            
+                export_excel(para, '对比明细');
+            
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="pur_evaluation_details_ds">
+                <a:datas dataSource="pur_evaluation_details"/>
+            </a:dataSet>
+            <a:dataSet id="pur1010_compare_result_ds" autoCount="true" autoCreate="true" autoQuery="true" queryUrl="${/request/@context_path}/modules/cux/KINWONG/pur/pur1010/pur1010_compare_result_query.svc?survey_header_ids=${/parameter/@survey_header_ids}&amp;equipment_name_id=${/parameter/@equipment_name_id}&amp;version=${/parameter/@version}"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <!-- <a:toolbarButton click="pur1010_compare_result_save" text="保存" width="100"/> -->
+                <a:toolbarButton click="pur1010_compare_result_export" text="导出"/>
+                <a:toolbarButton click="pur1010_compare_result_back" text="返回" width="100"/>
+            </a:screenTopToolbar>
+            <a:grid id="pur1010_compare_result_grid" autoAppend="false" bindTarget="pur1010_compare_result_ds" marginHeight="250" marginWidth="45" navBar="true" width="1000">
+                <a:columns>
+                    <a:column name="version" align="center" lock="true" prompt="版本号" width="40"/>
+                    <a:column name="vendor_code" lock="true" prompt="供应商编码"/>
+                    <a:column name="vendor_name" lock="true" prompt="供应商名称"/>
+                    <a:column name="equipment_name" lock="true" prompt="设备类型"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

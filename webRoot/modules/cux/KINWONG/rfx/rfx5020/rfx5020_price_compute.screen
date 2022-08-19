@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" xmlns:c="aurora.application.action" trace="true">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="h.rfx_header_id=${/parameter/@rfx_header_id} and h.rfx_round=${/parameter/@rfx_round} and h.rfx_version=${/parameter/@rfx_version}" model="cux.KINWONG.rfx.rfx5020.rfx_vendor_all" rootPath="rfx_vendor_all"/>
+        <a:model-query defaultWhereClause="v.quotation_id=${/parameter/@quotation_id}" fetchAll="true" model="cux.KINWONG.rfx.rfx5020.rfx_item_property_all" rootPath="rfx_property_all"/>
+    </a:init-procedure>
+    <a:view>
+        <script src="${/request/@context_path}/javascripts/xlsx.full.min.js"/>
+        <script><![CDATA[
+            function query_handler() {
+                $('rfx5020_price_compute_ds').query();
+            }
+            
+            function saveAs(obj, fileName) { //当然可以自定义简单的下载文件实现方式
+                var tmpa = document.createElement("a");
+                tmpa.download = fileName;
+                tmpa.href = URL.createObjectURL(obj); //绑定a标签
+                tmpa.click(); //模拟点击实现下载
+                setTimeout(function() { //延时释放
+                    URL.revokeObjectURL(obj); //用URL.revokeObjectURL()来释放这个object URL
+                }, 100);
+            }
+            
+            var wopts = {
+                bookType: 'xlsx',
+                bookSST: false,
+                type: 'binary'
+            };
+            
+            function export_excel(data, file_name, type) {
+                var wb = {
+                    SheetNames: ['Sheet1'],
+                    Sheets: {},
+                    Props: {}
+                };
+                wb.Sheets['Sheet1'] = XLSX.utils.json_to_sheet(data); //通过json_to_sheet转成单页(Sheet)数据
+                saveAs(new Blob([s2ab(XLSX.write(wb, wopts))], {
+                    type: "application/octet-stream"
+                }), file_name + '.' + (wopts.bookType == "biff2" ? "xls" : wopts.bookType));
+            }
+            
+            function s2ab(s) {
+                if (typeof ArrayBuffer !== 'undefined') {
+                    var buf = new ArrayBuffer(s.length);
+                    var view = new Uint8Array(buf);
+                    for (var i = 0;i != s.length;++i) view[i] = s.charCodeAt(i) & 0xFF;
+                    return buf;
+                } else {
+                    var buf = new Array(s.length);
+                    for (var i = 0;i != s.length;++i) buf[i] = s.charCodeAt(i) & 0xFF;
+                    return buf;
+                }
+            }
+            
+            function rfx5020_price_compute_export() {
+                var vendor_records = $('rfx_vendor_all_ds').getAll();
+                var property_records = $('rfx_property_all_ds').getAll();
+                var records = $('rfx5020_price_compute_ds').getAll();
+                var data = {
+                    'item_code': '物料编码',
+                    'item_name': '物料描述',
+                    'quantity': '累计数量'
+                };
+                var datas = [];
+                for (var name in data) {
+                    var temp_data = {};
+                    temp_data['name'] = name;
+                    temp_data['prompt'] = data[name];
+                    datas.push(temp_data);
+                }
+                
+                //动态列导出
+                for (var i = 0;i < property_records.length;i++) {
+                    var temp_data = {};
+                    temp_data['name'] = property_records[i].get('property_id') + 'x';
+                    temp_data['prompt'] = property_records[i].get('property_name');
+                    datas.push(temp_data);
+                }
+                for (var i = 0;i < vendor_records.length;i++) {
+                    var temp_data = {};
+                    temp_data['name'] = 'pre_' + vendor_records[i].get('coop_company_id');
+                    temp_data['prompt'] = 'pre_' + vendor_records[i].get('conpany_desc');
+                    datas.push(temp_data);
+                }
+                for (var i = 0;i < vendor_records.length;i++) {
+                    datas.push(temp_data);
+                    var temp_data1 = {};
+                    temp_data1['name'] = vendor_records[i].get('coop_company_id');
+                    temp_data1['prompt'] = vendor_records[i].get('conpany_desc');
+                    datas.push(temp_data1);
+                }
+                for (var i = 0;i < vendor_records.length;i++) {
+                    var temp_data2 = {};
+                    temp_data2['name'] = 'after_' + vendor_records[i].get('coop_company_id');
+                    temp_data2['prompt'] = 'after_' + vendor_records[i].get('conpany_desc');
+                    datas.push(temp_data2);
+                }
+                
+                var para = [];
+                //组织数据
+                for (var i = 0; i < records.length; i++) { 
+                    var detail_data = {};
+	                for(var j=0;j< datas.length;j++){
+	                    detail_data[datas[j].prompt] = records[i].get(datas[j].name);
+	                }
+	                
+	                para.push(detail_data);
+	            } 
+            
+                export_excel(para, '价格测算');
+            
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="rfx_vendor_all_ds">
+                <a:datas dataSource="/model/rfx_vendor_all"/>
+            </a:dataSet>
+            <a:dataSet id="rfx_property_all_ds">
+                <a:datas dataSource="/model/rfx_property_all"/>
+            </a:dataSet>
+            <a:dataSet id="rfx5020_price_query_ds">
+                <a:fields>
+                    <a:field name="item_code"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="rfx5020_price_compute_ds" fetchAll="true" queryDataSet="rfx5020_price_query_ds" queryUrl="${/request/@context_path}/modules/cux/KINWONG/rfx/rfx5020/rfx5020_price_query.svc?quotation_id=${/parameter/@quotation_id}&amp;rfx_header_id=${/parameter/@rfx_header_id}&amp;round=${/parameter/@rfx_round}&amp;version=${/parameter/@rfx_version}&amp;currency_code=${/parameter/@currency_code}&amp;inv_organization_id=${/parameter/@inv_organization_id}"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="rfx5020_price_compute_export" text="HAP_EXPORT" width="100"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="rfx5020_price_query_ds" resultTarget="rfx5020_price_compute_ds" style="width:100%;">
+                <a:formToolBar>
+                    <a:textField name="item_code" bindTarget="rfx5020_price_query_ds" prompt="物料编码">
+                        <a:events>
+                            <a:event name="enterdown" handler="query_handler"/>
+                        </a:events>
+                    </a:textField>
+                </a:formToolBar>
+            </a:queryForm>
+            <a:grid id="rfx5020_price_compute_grid" bindTarget="rfx5020_price_compute_ds" height="500" navBar="true" width="1250">
+                <a:columns>
+                    <a:column name="item_code" align="left" prompt="物料编码" width="60"/>
+                    <a:column name="item_name" align="left" prompt="物料描述" width="100"/>
+                    <a:column forExport="false" prompt="物品属性">
+                        <a:placeHolder id="rfx_property_all_placeHolder"/>
+                    </a:column>
+                    <a:column name="quantity" align="center" prompt="累计数量" resizable="true"/>
+                    <a:column forExport="false" prompt="物料折扣前价格" resizable="true">
+                        <a:placeHolder id="rfx_vendo_pre_price_placeHolder"/>
+                    </a:column>
+                    <a:column forExport="false" prompt="累计折扣点" resizable="true">
+                        <a:placeHolder id="rfx_vendor_all_placeHolder"/>
+                    </a:column>
+                    <a:column forExport="false" prompt="物料折扣后价格" resizable="true">
+                        <a:placeHolder id="rfx_vendor_after_price_placeHolder"/>
+                    </a:column>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+    <a:view-config>
+        <c:batch-config source="/model/rfx_vendor_all" targetId="rfx_vendor_all_placeHolder">
+            <a:column name="${@coop_company_id}" align="right" prompt="${@conpany_desc}" resizable="true"/>
+        </c:batch-config>
+        <c:batch-config source="/model/rfx_vendor_all" targetId="rfx_vendo_pre_price_placeHolder">
+            <a:column name="pre_${@coop_company_id}" align="right" prompt="${@conpany_desc}" resizable="true"/>
+        </c:batch-config>
+        <c:batch-config source="/model/rfx_vendor_all" targetId="rfx_vendor_after_price_placeHolder">
+            <a:column name="after_${@coop_company_id}" align="right" prompt="${@conpany_desc}" resizable="true"/>
+        </c:batch-config>
+        <c:batch-config source="/model/rfx_property_all" targetId="rfx_property_all_placeHolder">
+            <a:column name="${@property_id}x" align="right" prompt="${@property_name}" resizable="true"/>
+        </c:batch-config>
+    </a:view-config>
+</a:screen>

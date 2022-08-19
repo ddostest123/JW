@@ -1,0 +1,388 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="pur.PRINT.pur_po_print_headers_jinko" rootPath="/model/po_print_headers"/>
+        <a:model-query fetchAll="true" model="pur.PRINT.pur_po_print_lines_jinko" rootPath="/model/po_print_lines"/>
+    </a:init-procedure>
+    <a:view package="aurora.ui.std" template="default">
+        <style><![CDATA[ 
+        	.STYLE_VENDOR {
+				font-family: "宋体";
+				font-weight: bold;
+				font-size: 16px;
+			}
+			.STYLE1 {
+				font-family: "宋体";
+				font-weight: bold;
+				font-size: 18px;
+			}
+			.STYLE2 {
+				font-family: "宋体";
+				font-weight: bold;
+				font-size: 12px;
+			}
+			.STYLE3 {
+				font-family: "宋体";
+				font-size: 12px;
+				line-height: 20px;
+				font-weight: bold;
+			}
+			.STYLE4 {
+				font-family: "宋体";
+				font-size: 10px;
+				font-weight: bold;
+				border:1px solid;
+			}
+			.STYLE5 {
+				font-family: "宋体";
+				font-size: 10px;
+				font-weight: bold;
+				border:1px solid;
+			}
+			.STYLE6 {
+				font-family: "宋体";
+				font-size: 10px;
+			}
+			.STYLE7 {
+				font-family: "宋体";
+				font-size: 9px;
+			}
+			.barcode-style{
+			    font-family: "宋体";
+				font-weight: bold;
+				font-size: 17px;
+				font-style: italic;
+			    border: 1px solid #000000;
+			    width: 60%;
+			    text-align: center; 
+			    vertical-align: middle;
+			    line-height: 100px;
+			}
+			/* div{
+			    width:47%;
+			} */
+			
+			.body{
+				background-color: #ffffff;
+			}
+		]]></style>
+        <script><![CDATA[
+            var record_num = 0;
+            var num = 0;
+            var record_per_page = 16;
+            var pages = '${/model/po_print_headers/record/@firstunion_pages}';
+            var total_records = '${/model/po_print_headers/record/@line_count}';
+            var amount_total  = '${/model/po_print_headers/record/@amount_total}';
+            var need_new_page = false;
+            var need_new_report = false;
+            var cur_page = 1;
+            var chinese_amount_total = '';
+            
+            function changeMoneyToChinese(money){
+			     var cnNums = new Array("零","壹","贰","叁","肆","伍","陆","柒","捌","玖"); //汉字的数字
+			    var cnIntRadice = new Array("","拾","佰","仟"); //基本单位
+			    var cnIntUnits = new Array("","万","亿","兆"); //对应整数部分扩展单位
+			    var cnDecUnits = new Array("角","分","毫","厘"); //对应小数部分单位
+			    var cnInteger = "整"; //整数金额时后面跟的字符
+			    var cnIntLast = "元"; //整型完以后的单位
+			    var maxNum = 999999999999999.99; //最大处理的数字
+			    
+			     var IntegerNum; //金额整数部分
+			    var DecimalNum; //金额小数部分
+			    var ChineseStr=""; //输出的中文金额字符串
+			    var parts; //分离金额后用的数组，预定义
+			    if( money == "" ){
+			         return "";
+			     }
+			     money = parseFloat(money);
+			     if( money >= maxNum ){
+			         $.alert('超出最大处理数字');
+			         return "";
+			     }
+			     if( money == 0 ){
+			         ChineseStr = cnNums[0]+cnIntLast+cnInteger;
+			         //document.getElementById("show").value=ChineseStr;
+			         return ChineseStr;
+			     }
+			     money = money.toString(); //转换为字符串
+			    if( money.indexOf(".") == -1 ){
+			         IntegerNum = money;
+			         DecimalNum = '';
+			     }else{
+			         parts = money.split(".");
+			         IntegerNum = parts[0];
+			         DecimalNum = parts[1].substr(0,4);
+			     }
+			     if( parseInt(IntegerNum,10) > 0 ){//获取整型部分转换
+			        zeroCount = 0;
+			         IntLen = IntegerNum.length;
+			         for( i=0;i<IntLen;i++ ){
+			             n = IntegerNum.substr(i,1);
+			             p = IntLen - i - 1;
+			             q = p / 4;
+			             m = p % 4;
+			             if( n == "0" ){
+			                 zeroCount++;
+			             }else{
+			                 if( zeroCount > 0 ){
+			                     ChineseStr += cnNums[0];
+			                 }
+			                 zeroCount = 0; //归零
+			                ChineseStr += cnNums[parseInt(n)]+cnIntRadice[m];
+			             }
+			             if( m==0 && zeroCount<4 ){
+			                 ChineseStr += cnIntUnits[q];
+			             }
+			         }
+			         ChineseStr += cnIntLast;
+			         //整型部分处理完毕
+			    }
+			     if( DecimalNum!= '' ){//小数部分
+			        decLen = DecimalNum.length;
+			         for( i=0; i<decLen; i++ ){
+			             n = DecimalNum.substr(i,1);
+			             if( n != '0' ){
+			                 ChineseStr += cnNums[Number(n)]+cnDecUnits[i];
+			             }
+			         }
+			     }
+			     if( ChineseStr == '' ){
+			         ChineseStr += cnNums[0]+cnIntLast+cnInteger;
+			     }else if( DecimalNum == '' ){
+			         ChineseStr += cnInteger;
+			     }
+			     if(ChineseStr=='零元整'){  
+			         return "";
+			     }
+			     return ChineseStr;
+			 }
+            	
+            
+            function printPageBreak() {
+                document.write('<div style="page-break-after: always;"></div>');
+            }
+            
+            function printLogoAndBarcode(){
+                var html = '<table width="100%" border="0" cellspacing="0" cellpadding="0">'+
+                			'<tr>'+
+                				'<td width="16%" class="STYLE6" rowspan="4"><div align="center"><img width="100%" src="${/request/@context_path}/images/po_print/jinko/logo.jpg"/></div></td>'+
+                				'<td width="" class="STYLE1"><div align="center">${/model/po_print_headers/record/@business_unit_name}</div></td>'+
+                			'</tr>'+
+                			'<tr>'+
+                				'<td width="" class="STYLE6"><div align="center">${/model/po_print_headers/record/@address}</div></td>'+
+                			'</tr>'+
+                			'<tr>'+
+                				'<td width="" class="STYLE1"><div align="center">采购订单</div></td>'+
+                				'<td width="" class="STYLE6"><div align="center">单号：</div></td>'+
+                				'<td width="" class="STYLE6"><div align="center">${/model/po_print_headers/record/@display_po_number}</div></td>'+
+                			'</tr>'+
+                		   '</table>';
+            	document.write(html);
+            }
+            
+            function printSupplyInfo(){
+                var html = '';
+				html =  '<table width="100%" style="border-collapse: collapse;" cellspacing="0" cellpadding="0">'+
+						'<tr height="22">'+
+            				'<td width="10%" class="STYLE3"><div align="center">供方信息</div></td>'+
+            				'<td width="20%" class="STYLE3"><div align="left"></div></td>'+
+            				'<td width="16%" class="STYLE3"><div align="center">需方信息</div></td>'+
+            				'<td width="32%" class="STYLE3"><div align="left"></div></td>'+
+            			'</tr>'+
+            			'<tr height="22">'+
+            				'<td width="10%" class="STYLE3"><div align="center">供应商：</div></td>'+
+            				'<td width="20%" class="STYLE3"><div align="left">${/model/po_print_headers/record/@vendor_name}</div></td>'+
+            				'<td width="16%" class="STYLE3"><div align="center">采购员：</div></td>'+
+            				'<td width="32%" class="STYLE3"><div align="left">${/model/po_print_headers/record/@pur_buyer_name}</div></td>'+
+            			'</tr>'+
+            			'<tr height="22">'+	
+            				'<td width="10%" class="STYLE3"><div align="center">地址：</div></td>'+
+            				'<td width="20%" class="STYLE3"><div align="left">${/model/po_print_headers/record/@vendor_site_name}</div></td>'+
+            				'<td width="16%" class="STYLE3"><div align="center">电话：</div></td>'+
+            				'<td width="32%" class="STYLE3"><div align="left">${/model/po_print_headers/record/@pur_buyer_phone}</div></td>'+
+            			'</tr>'+
+            			'<tr height="22">'+	
+            				'<td width="10%" class="STYLE3"><div align="center">联系人：</div></td>'+
+            				'<td width="20%" class="STYLE3"><div align="left">${/model/po_print_headers/record/@vendor_contact_name}</div></td>'+
+            				'<td width="16%" class="STYLE3"><div align="center">下单日期：</div></td>'+
+            				'<td width="32%" class="STYLE3"><div align="left">${/model/po_print_headers/record/@creation_date}</div></td>'+
+            			'</tr>'+
+            			'<tr height="22">'+	
+            				'<td width="10%" class="STYLE3"><div align="center">电话：</div></td>'+
+            				'<td width="20%" class="STYLE3"><div align="left">${/model/po_print_headers/record/@erp_vendor_tellphone}</div></td>'+
+            				'<td width="16%" class="STYLE3"><div align="center">付款条件：</div></td>'+
+            				'<td width="32%" class="STYLE3"><div align="left">${/model/po_print_headers/record/@payment_term_des}</div></td>'+
+            			'</tr>'+
+            			'<tr height="22">'+	
+            				'<td width="10%" class="STYLE3"><div align="center">币别：</div></td>'+
+            				'<td width="20%" class="STYLE3"><div align="left">${/model/po_print_headers/record/@currency_code}</div></td>'+
+            				'<td width="16%" class="STYLE3"><div align="center">合同号：</div></td>'+
+            				'<td width="32%" class="STYLE3"><div align="left">${/model/po_print_headers/record/@contract_num}</div></td>'+
+            			'</tr>'+
+            			'<tr height="22">'+	
+            				'<td width="10%" class="STYLE3"><div align="center">送货地址：</div></td>'+
+            				'<td width="60%" class="STYLE3"><div align="left">${/model/po_print_headers/record/@ship_to_location_address}</div></td>'+
+            			'</tr>'+
+            			'<tr height="22" id="comments">'+	
+            				'<td width="10%" class="STYLE3"><div align="center">总体要求：</div></td>'+
+            				'<td width="60%" class="STYLE3"><div align="left">${/model/po_print_headers/record/@comments}</div></td>'+
+            			'</tr>'+
+            			'<tr height="22">'+	
+            			'</tr>'+
+            		   '</table>';
+            	document.write(html);
+            	if('${/model/po_print_headers/record/@comments}'==''||'${/model/po_print_headers/record/@comments}'==null){
+            	    document.getElementById("comments").setAttribute("style","display:none");
+            	}
+            }
+            
+
+            function printItemDetail(){
+                var html = '<table width="100%" style="border-collapse: collapse;" width="100%" border="1" cellpadding="0" cellspacing="0" bordercolor="#000000">'+
+                			'<tr height="28">'+
+                				'<td width="3%" class="STYLE4"><div align="center">序号</div></td>'+
+                				'<td width="6%" class="STYLE4"><div align="center">物料编码</div></td>'+
+                				'<td width="10%" class="STYLE4"><div align="center">品名和规格</div></td>'+
+                				'<td width="5%" class="STYLE4"><div align="center">数量</div></td>'+
+                				'<td width="5%" class="STYLE4"><div align="center">单位</div></td>'+
+                				'<td width="5%" class="STYLE4"><div align="center">含税单价</div></td>'+
+                				'<td width="5%" class="STYLE4"><div align="center">税率</div></td>'+
+                				'<td width="5%" class="STYLE4"><div align="center">含税金额</div></td>'+
+                				'<td width="7%" class="STYLE4"><div align="center">交货日期</div></td>'+
+                			'</tr>';
+            	document.write(html);
+            }
+            
+            function printFooter(){	
+                var content ='<div width="100%">' +
+                		  '<p>备注：</p>' +
+						  '<p>1. 本订单未约定的，按原合同约定执行；本订单与原合同约定不一致的，按本订单执行。</p>' +
+						  '<p>2. 供应商送货需携带送货单及出厂合格证，送货单上注明物料编码（晶科编制），品名，规格，计量单位，数量及订单号；包装上注明品名，规格，计量单位，数量。' +
+						  '<p>3. 若因供应商交货延迟、品质不良或数量不准确等造成本公司利益受损（包括但不限于造成本公司生产或产品出现质量事故），本公司有权直接从供应商货款中扣除相应损失之金额，具体金额由本司评估。' +
+						  '<p>4. 凡属本公司检验不合格并已正式通知供应商退货之物料，供应商在一周内自费提回。否则本公司有权将此批货物自行处置且不支付此批货款。</p>' +
+						  '<p>5. 供应商收到本订单后请在两日内盖章回传本公司，逾期视为认同上述内容。</p>' +
+						  '<p>6. 供应商确认并承诺在业务交往中遵守原合同廉洁约定并执行。</p>' +
+						  '<p>7. 本订单如有其他未尽事宜，由双方协商处理，协商不成交由买方所在地人民法院管辖处理。</p>' +
+						  '<p>8. 本订单扫描件或传真件与原件具有同等效力。</p>' +
+                		  '</div>';
+                document.write(content);	
+                var html = '<table width="100%" border="1" cellspacing="0" cellpadding="0">'+
+                			
+                		'</table>';
+            	document.write(html);
+            }
+            
+            function printDateAndPage(){
+                var html = '<table width="100%"  border="0" cellspacing="0" cellpadding="0">'+
+	                			
+	                		'</table>';
+            	document.write(html);
+            }
+            
+            function newRecord() {
+                
+                var cur_record_per_page = 0;
+                if (cur_page == 1){
+                	cur_record_per_page = record_per_page - 3;	    
+                } else if (cur_page == pages){
+                	cur_record_per_page = record_per_page - 3;	    
+                }else{
+                	cur_record_per_page = record_per_page;	    
+                }
+                
+                if (record_num == cur_record_per_page && cur_page < pages) {
+                    need_new_page = true;
+                    record_num = 0;
+                }
+                
+                if (need_new_page) {
+                    document.write("</table>");
+                    printDateAndPage();
+	                printPageBreak();   
+                    
+                    cur_page++;
+	                printItemDetail();
+                    need_new_page = false;
+                }
+                record_num++;
+            }
+        ]]></script>
+        <body style="margin-left:1;">
+            <script><![CDATA[
+            	printLogoAndBarcode();
+            	printSupplyInfo();
+                printItemDetail();
+            ]]></script>
+            <a:repeater datamodel="/model/po_print_lines">
+                <script><![CDATA[
+                    newRecord();
+                     
+                ]]></script>
+                <tr height="28">
+                    <td class="STYLE5">
+                        <div align="center"><![CDATA[${@line_num}]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div align="center"><![CDATA[${@item_code}]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div style="width: 180px;height: 28px;line-height: 13px;word-wrap:break-word;word-break:break-all;"><![CDATA[${@item_description}]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div align="center"><![CDATA[${@quantity}]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div align="center"><![CDATA[${@unit_meas_lookup_code}]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div align="center"><![CDATA[${@unit_price}]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div align="center"><![CDATA[
+                            ${@tax_rate}
+                        ]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div align="center"><![CDATA[${@line_amount}]]></div>
+                    </td>
+                    <td class="STYLE5">
+                        <div align="center"><![CDATA[${@need_by_date}]]></div>
+                    </td>
+                </tr>
+                <tr height="28">
+                    <td class="STYLE5" colspan="9">
+                        <div align="left"><![CDATA[附加说明:${@line_desc}]]></div>
+                    </td>
+                </tr>
+            </a:repeater>
+            <!--  <tr>
+                <td colspan="9">
+                    <div align="left"><![CDATA[不含税金额:]]></div>
+                </td>
+            </tr> -->
+            <script><![CDATA[
+            	 chinese_amount_total = changeMoneyToChinese(amount_total);
+            	 var summary_html = '<tr>' +
+            	 					'<td colspan="2"><div align="left">不含税金额： </div></td>' +
+            	 					'<td colspan="7"><div align="left">${/model/po_print_lines/record/@sum_amount}</div></td>' +		          	 					
+            	 					'</tr>'+
+            	 					'<tr>' +
+            	 					'<td colspan="2"><div align="left">税额： </div></td>' +
+            	 					'<td colspan="7"><div align="left">${/model/po_print_lines/record/@tax_sum_amount}</div></td>' +		          	 					
+            	 					'</tr>'+
+            	 					'<tr>' +	
+            	 					'<td colspan="2"><div align="left">含税总金额： </div></td>' +
+            	 					'<td colspan="7"><div align="left">${/model/po_print_lines/record/@original_sum_amount}</div></td>' +		           	 					
+            	 					'</tr>';
+            	 document.write(summary_html);
+                 document.write("</table>");
+                // printPageBreak();
+				 printFooter();
+				 printDateAndPage();
+            ]]></script>
+            <script><![CDATA[
+				 printPageBreak();
+			]]></script>
+        </body>
+    </a:view>
+</a:screen>

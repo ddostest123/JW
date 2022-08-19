@@ -1,0 +1,254 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: huangyingfei
+    $Date: 2019-05-07 10:12:56  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:f="aurora.database.features" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT V.*
+      ,CASE
+         WHEN V.Po_Receive_Amount_Sum <> 0 THEN
+          (Round(V.Po_Receive_Amount / V.Po_Receive_Amount_Sum * 100
+                ,2)) || '%'
+         ELSE
+          ''
+       END AS Vendor_Po_Ratio
+      ,CASE
+         WHEN (V.Mtl_Qualification_Rate + V.Wip_Quality_Per +
+              V.Cust_Quality_Issue + V.After_Sale +
+              V.Env_Quality_Conformance) / V.Total_Score >= 0.9 THEN
+          'A'
+         WHEN (V.Mtl_Qualification_Rate + V.Wip_Quality_Per +
+              V.Cust_Quality_Issue + V.After_Sale +
+              V.Env_Quality_Conformance) / V.Total_Score >= 0.8
+              AND (V.Mtl_Qualification_Rate + V.Wip_Quality_Per +
+              V.Cust_Quality_Issue + V.After_Sale +
+              V.Env_Quality_Conformance) / V.Total_Score < 0.9 THEN
+          'B'
+         WHEN (V.Mtl_Qualification_Rate + V.Wip_Quality_Per +
+              V.Cust_Quality_Issue + V.After_Sale +
+              V.Env_Quality_Conformance) / V.Total_Score >= 0.7
+              AND (V.Mtl_Qualification_Rate + V.Wip_Quality_Per +
+              V.Cust_Quality_Issue + V.After_Sale +
+              V.Env_Quality_Conformance) / V.Total_Score < 0.8 THEN
+          'C'
+         WHEN (V.Mtl_Qualification_Rate + V.Wip_Quality_Per +
+              V.Cust_Quality_Issue + V.After_Sale +
+              V.Env_Quality_Conformance) / V.Total_Score < 0.7 THEN
+          'D'
+         ELSE
+          ''
+       END AS Quality_Level
+  FROM (SELECT T1.Vendor_Id
+              ,T1.Rating_Classify_Code Judge_Group
+              ,(SELECT D.Description_Text
+                  FROM Fnd_Flex_Values Fv
+                      ,Fnd_Descriptions d
+                      ,(SELECT Pfv.Flex_Value_Id
+                              ,Pfv.Flex_Value
+                              ,Pd.Description_Text Flex_Value_Desc
+                          FROM Fnd_Flex_Values  Pfv
+                              ,Fnd_Descriptions Pd
+                         WHERE Pfv.Description_Id = Pd.Description_Id
+                           AND Pd.Language = 'ZHS') p
+                 WHERE Fv.Description_Id = D.Description_Id
+                   AND P.Flex_Value_Id(+) = Fv.Parent_Flex_Value_Id
+                   AND Fv.Flex_Value_Set_Id = 919871
+                   AND D.Language = 'ZHS'
+                   AND Fv.Flex_Value = T1.Rating_Classify_Code) Vendor_Judge_Type
+              ,To_Char(Vah.Eval_Start_Date
+                      ,'yyyy-mm-dd') Judge_Date_From
+              ,To_Char(Vah.Eval_End_Date
+                      ,'yyyy-mm-dd') Judge_Date_To
+              ,(SELECT Nvl(Pvv.Short_Name
+                          ,Pvv.Full_Name)
+                  FROM Pur_Vendors_Vl Pvv
+                 WHERE Pvv.Vendor_Id = T1.Vendor_Id) AS Vendor_Name
+              ,(SELECT Pvv.Display_Vendor_Code
+                  FROM Pur_Vendors_Vl Pvv
+                 WHERE Pvv.Vendor_Id = T1.Vendor_Id) AS Vendor_Code
+              ,(SELECT Round(Sb.Sub_Score * Sb.Conversion_Rate *
+                             Sl.Conversion_Rate / 10000
+                            ,0) AS Sub_Score
+                  FROM Ves_Archive_Sum_Lines Sl
+                      ,Ves_Archive_Sub_Lines Sb
+                 WHERE Sl.Sum_Line_Id = Sb.Sum_Line_Id
+                   AND Sl.Total_Line_Id = T1.Total_Line_Id
+                  -- AND Sb.Sub_Criterion_Name = '来料批次合格率'
+                   and sb.sub_criterion_code = 'QA01'
+                   ) Mtl_Qualification_Rate
+              ,(SELECT Round(Sb.Sub_Score * Sb.Conversion_Rate *
+                             Sl.Conversion_Rate / 10000
+                            ,0) AS Sub_Score
+                  FROM Ves_Archive_Sum_Lines Sl
+                      ,Ves_Archive_Sub_Lines Sb
+                 WHERE Sl.Sum_Line_Id = Sb.Sum_Line_Id
+                   AND Sl.Total_Line_Id = T1.Total_Line_Id
+                  -- AND Sb.Sub_Criterion_Name = '制程品质表现'
+                   and sb.sub_criterion_code = 'QA02'
+                   ) Wip_Quality_Per
+              ,(SELECT Round(Sb.Sub_Score * Sb.Conversion_Rate *
+                             Sl.Conversion_Rate / 10000
+                            ,0) AS Sub_Score
+                  FROM Ves_Archive_Sum_Lines Sl
+                      ,Ves_Archive_Sub_Lines Sb
+                 WHERE Sl.Sum_Line_Id = Sb.Sum_Line_Id
+                   AND Sl.Total_Line_Id = T1.Total_Line_Id
+                  -- AND Sb.Sub_Criterion_Name = '客户端品质问题'
+                   and sb.sub_criterion_code = 'QA03'
+                   ) Cust_Quality_Issue
+              ,(SELECT Round(Sb.Sub_Score * Sb.Conversion_Rate *
+                             Sl.Conversion_Rate / 10000
+                            ,0) AS Sub_Score
+                  FROM Ves_Archive_Sum_Lines Sl
+                      ,Ves_Archive_Sub_Lines Sb
+                 WHERE Sl.Sum_Line_Id = Sb.Sum_Line_Id
+                   AND Sl.Total_Line_Id = T1.Total_Line_Id
+                   AND Sb.Sub_Criterion_Name = '售后服务、异常报告回复'
+                 --  AND sb.sub_criterion_code = 'QA05'
+                   ) After_Sale
+              ,(SELECT Round(Sb.Sub_Score * Sb.Conversion_Rate *
+                             Sl.Conversion_Rate / 10000
+                            ,0) AS Sub_Score
+                  FROM Ves_Archive_Sum_Lines Sl
+                      ,Ves_Archive_Sub_Lines Sb
+                 WHERE Sl.Sum_Line_Id = Sb.Sum_Line_Id
+                   AND Sl.Total_Line_Id = T1.Total_Line_Id
+                   AND Sb.Sub_Criterion_Code ='QA05' -- Sub_Criterion_Name = '环境管理物质符合性'
+                   ) Env_Quality_Conformance
+              ,(SELECT  -- Round(Sb.Sub_Score * Sb.Conversion_Rate * Sl.Conversion_Rate / 10000 ,0) 
+                   Sb.Sub_Score   AS Sub_Score
+                  FROM Ves_Archive_Sum_Lines Sl
+                      ,Ves_Archive_Sub_Lines Sb
+                 WHERE Sl.Sum_Line_Id = Sb.Sum_Line_Id
+                   AND Sl.Total_Line_Id = T1.Total_Line_Id
+                  -- AND Sb.Sub_Criterion_Name = '价格'
+                   AND Sb.Sub_Criterion_Code ='CO01' 
+                   ) Price_Factor
+              ,(SELECT Round(Sb.Sub_Score * Sb.Conversion_Rate *
+                             Sl.Conversion_Rate / 10000
+                            ,0) AS Sub_Score
+                  FROM Ves_Archive_Sum_Lines Sl
+                      ,Ves_Archive_Sub_Lines Sb
+                 WHERE Sl.Sum_Line_Id = Sb.Sum_Line_Id
+                   AND Sl.Total_Line_Id = T1.Total_Line_Id
+                --   AND Sb.Sub_Criterion_Name = '库存'
+                   AND Sb.Sub_Criterion_Code ='CO02' 
+                   ) Inv_Factor
+              ,(SELECT Round(Sb.Sub_Score * Sb.Conversion_Rate *
+                             Sl.Conversion_Rate / 10000
+                            ,0) AS Sub_Score
+                  FROM Ves_Archive_Sum_Lines Sl
+                      ,Ves_Archive_Sub_Lines Sb
+                 WHERE Sl.Sum_Line_Id = Sb.Sum_Line_Id
+                   AND Sl.Total_Line_Id = T1.Total_Line_Id
+                --   AND Sb.Sub_Criterion_Name = '账期与付款方式'
+                  AND Sb.Sub_Criterion_Code ='CO03' 
+                   ) Account_Period
+              ,(SELECT Round(Sb.Sub_Score * Sb.Conversion_Rate *
+                             Sl.Conversion_Rate / 10000
+                            ,0) AS Sub_Score
+                  FROM Ves_Archive_Sum_Lines Sl
+                      ,Ves_Archive_Sub_Lines Sb
+                 WHERE Sl.Sum_Line_Id = Sb.Sum_Line_Id
+                   AND Sl.Total_Line_Id = T1.Total_Line_Id
+               --  AND Sb.Sub_Criterion_Name = '准时交货率'
+                   AND Sb.Sub_Criterion_Code ='LT01' 
+                   ) Ifot_Factor
+              ,(SELECT Round(Sb.Sub_Score * Sb.Conversion_Rate *
+                             Sl.Conversion_Rate / 10000
+                            ,0) AS Sub_Score
+                  FROM Ves_Archive_Sum_Lines Sl
+                      ,Ves_Archive_Sub_Lines Sb
+                 WHERE Sl.Sum_Line_Id = Sb.Sum_Line_Id
+                   AND Sl.Total_Line_Id = T1.Total_Line_Id
+                 --  AND Sb.Sub_Criterion_Name = '交期水平'
+                  AND Sb.Sub_Criterion_Code ='LT02'
+                   ) Lead_Time_Factor
+              ,(SELECT SUM(Round(Sb.Sub_Score * Sb.Conversion_Rate *
+                                 Sl.Conversion_Rate / 10000
+                                ,0)) AS Sub_Score
+                  FROM Ves_Archive_Sum_Lines Sl
+                      ,Ves_Archive_Sub_Lines Sb
+                 WHERE Sl.Sum_Line_Id = Sb.Sum_Line_Id
+                   AND Sl.Total_Line_Id = T1.Total_Line_Id
+                      -- AND Sb.Sub_Criterion_Name IN
+                      --      ('采购部服务分'
+                      --   ,'品质部服务分'
+                      --    ,'财务部服务分')
+                   AND Sb.Sub_Criterion_Code = 'SV01' ) Service_po_Factor
+               ,(SELECT SUM(Round(Sb.Sub_Score * Sb.Conversion_Rate *
+                                 Sl.Conversion_Rate / 10000
+                                ,0)) AS Sub_Score
+                  FROM Ves_Archive_Sum_Lines Sl
+                      ,Ves_Archive_Sub_Lines Sb
+                 WHERE Sl.Sum_Line_Id = Sb.Sum_Line_Id
+                   AND Sl.Total_Line_Id = T1.Total_Line_Id
+                      -- AND Sb.Sub_Criterion_Name IN
+                      --      ('采购部服务分'
+                      --   ,'品质部服务分'
+                      --    ,'财务部服务分')
+                   AND Sb.Sub_Criterion_Code = 'SV03' ) Service_fin_Factor
+              ,(SELECT Round(Sb.Sub_Score * Sb.Conversion_Rate *
+                             Sl.Conversion_Rate / 10000
+                            ,0) AS Sub_Score
+                  FROM Ves_Archive_Sum_Lines Sl
+                      ,Ves_Archive_Sub_Lines Sb
+                 WHERE Sl.Sum_Line_Id = Sb.Sum_Line_Id
+                   AND Sl.Total_Line_Id = T1.Total_Line_Id
+                --   AND Sb.Sub_Criterion_Name IN ('技术创新能力')
+                   AND Sb.Sub_Criterion_Code = 'TI01'
+                   ) Tech_Factor
+              ,(SELECT Round(Sb.Sub_Score * Sb.Conversion_Rate *
+                             Sl.Conversion_Rate / 10000
+                            ,0) AS Sub_Score
+                  FROM Ves_Archive_Sum_Lines Sl
+                      ,Ves_Archive_Sub_Lines Sb
+                 WHERE Sl.Sum_Line_Id = Sb.Sum_Line_Id
+                   AND Sl.Total_Line_Id = T1.Total_Line_Id
+                  -- AND Sb.Sub_Criterion_Name IN ('关键品质事件考核')
+                   AND Sb.Sub_Criterion_Code ='QA08'
+                   ) Major_Event_Score
+              ,(SELECT SUM(Round(Sb.Sub_Score * Sb.Conversion_Rate *
+                                 Sl.Conversion_Rate / 10000
+                                ,0)) AS Sub_Score
+                  FROM Ves_Archive_Sum_Lines Sl
+                      ,Ves_Archive_Sub_Lines Sb
+                 WHERE Sl.Sum_Line_Id = Sb.Sum_Line_Id
+                   AND Sl.Total_Line_Id = T1.Total_Line_Id) Total_Score
+              ,(SELECT Vav.Current_Inv_Amount
+                  FROM Ves_Archive_Vendor_Lines Vav
+                 WHERE Vav.Total_Line_Id = T1.Total_Line_Id) Po_Receive_Amount
+              ,(SELECT SUM(Nvl(Vav.Current_Inv_Amount
+                              ,0))
+                  FROM Ves_Archive_Total_Lines  Vat
+                      ,Ves_Archive_Vendor_Lines Vav
+                 WHERE Vat.Archive_Id = Vah.Archive_Header_Id
+                   AND Vat.Rating_Classify_Code = T1.Rating_Classify_Code
+                   AND Vat.Total_Line_Id = Vav.Total_Line_Id) Po_Receive_Amount_Sum
+              ,Vah.Archive_Header_Id
+          FROM Ves_Archive_Total_Lines T1
+              ,Ves_Archive_Headers     Vah
+         WHERE 1 = 1
+           AND T1.Archive_Id = Vah.Archive_Header_Id
+           AND Vah.Archive_Status = '60_EVALUATE_FINISH'
+           AND T1.Rating_Classify_Code IS NOT NULL) v #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <!--         <bm:query-field name="vendor_desc" queryExpression="v.vendor_name like &apos;%&apos;|| ${@vendor_desc} ||&apos;%&apos;"/>
+        -->
+        <!--         <bm:query-field name="vendor_code" queryExpression="v.vendor_code like &apos;%&apos;|| ${@vendor_code} ||&apos;%&apos;"/>
+         -->
+        <bm:query-field name="archive_id" queryExpression="v.archive_header_id = ${@archive_id} "/>
+        <bm:query-field name="vendor_id" queryExpression="v.vendor_id = ${@vendor_id} "/>
+        <bm:query-field name="judge_date_from" queryExpression="to_date(v.judge_date_from,&apos;YYYY-MM-DD&apos;) &gt;= to_date(${@judge_date_from},&apos;YYYY-MM-DD&apos;) "/>
+        <bm:query-field name="judge_date_to" queryExpression="to_date(v.judge_date_to,&apos;YYYY-MM-DD&apos;) &lt; to_date(${@judge_date_to},&apos;YYYY-MM-DD&apos;)+1 "/>
+        <bm:query-field name="judge_group" queryExpression="v.judge_group like &apos;%&apos;|| ${@judge_group} ||&apos;%&apos;"/>
+    </bm:query-fields>
+</bm:model>

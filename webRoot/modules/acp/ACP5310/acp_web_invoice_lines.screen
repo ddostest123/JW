@@ -1,0 +1,319 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query autoCount="false" defaultWhereClause="invoice_header_id=${/parameter/@invoice_header_id}" fetchAll="true" model="acp.ACP5310.acp_web_invoice_headers" rootPath="acp5310_lines_record"/>
+        <a:model-query defaultWhereClause="cbi.config_classify_code = &apos;INVOICE&apos; AND cbi.config_item_code = &apos;INVOICE_01&apos;" fetchAll="true" model="public.get_fnd_config_center_bg_item_value" rootPath="bg_item_invoice_01"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="acp5310_line_approve_link" url="${/request/@context_path}/modules/acp/ACP5310/acp_web_invoice_line_approve.svc"/>
+        <a:link id="acp5310_line_return_link" url="${/request/@context_path}/modules/acp/ACP5310/acp_web_invoice_line_return.svc"/>
+        <a:link id="acp5310_deliver_user_choose_link" url="${/request/@context_path}/modules/acp/ACP5310/acp5310_deliver_user_choose.screen"/>
+        <a:link id="acp_web_invoice_lines_upload_link" url="${/request/@context_path}/modules/pur/PUR7270/attachment_file_view.screen"/>
+        <script><![CDATA[
+            // 审批
+            
+            function acp5310_lines_approve() {
+            
+                Aurora.showConfirm('${l:PROMPT}', '是否确认接受非寄销网上发票?', function() {
+                    var headers_ds = $('acp5310_header_ds');
+                    var header_record = headers_ds.getCurrentRecord();
+            
+                    var datas;
+                    datas = {
+                        invoice_header_id: ${/parameter/@invoice_header_id},
+                        approve_comments: header_record.get('approve_comments')
+                    };
+            
+                    Aurora.Masker.mask($('acp5310_web_invoice_line_window').wrap,'${l:LOADING}');
+                    Aurora.request({
+                        url: $('acp5310_line_approve_link').getUrl(),
+                        para: datas,
+                        success: function(res) {
+                            Aurora.Masker.unmask($('acp5310_web_invoice_line_window').wrap);
+                            acp5310_back();
+                            acp5310_query();
+                            $('acp5310_selected_list_ds').removeAll();
+                        },
+                        failure: function(res) {
+                            Aurora.Masker.unmask($('acp5310_web_invoice_line_window').wrap);
+            
+                        },
+                        error: function(res) {
+                            Aurora.Masker.unmask($('acp5310_web_invoice_line_window').wrap);
+                        },
+                        scope: this
+                    });
+            
+                });
+            }
+            
+            // 退回
+            
+            function acp5310_lines_return() {
+                Aurora.showConfirm('${l:PROMPT}', '${l:ACP_WEB_INVOICE.CONFIRM_RETURN}', function() {
+                    var headers_ds = $('acp5310_header_ds');
+                    var header_record = headers_ds.getCurrentRecord();
+                    var lines_ds = $('acp5310_line_ds');
+                    var lines_records = lines_ds.getAll();
+            
+                    var datas;
+                    datas = {
+                        invoice_header_id: ${/parameter/@invoice_header_id},
+                        approve_comments: header_record.get('approve_comments')
+                    };
+                    var data_lines = [];
+                    for(var i=0;i<lines_records.length;i++){
+                        if(lines_records[i].get('approve_return_flag') == 'Y'){
+                            data_lines.push(lines_records[i].data);
+                        }
+                    }
+                    datas['data_lines'] = data_lines; 
+                    Aurora.Masker.mask($('acp5310_web_invoice_line_window').wrap,'${l:LOADING}');
+                    Aurora.request({
+                        url: $('acp5310_line_return_link').getUrl(),
+                        para: datas,
+                        success: function(res) {
+                            Aurora.Masker.unmask($('acp5310_web_invoice_line_window').wrap);
+                            acp5310_back();
+                            acp5310_query();
+                            $('acp5310_selected_list_ds').removeAll();
+                        },
+                        failure: function(res) {
+                            Aurora.Masker.unmask($('acp5310_web_invoice_line_window').wrap);
+            
+                        },
+                        error: function(res) {
+                            Aurora.Masker.unmask($('acp5310_web_invoice_line_window').wrap);
+                        },
+                        scope: this
+                    });
+            
+                });
+            }
+            
+            function acp5310_operation_record() {
+            
+                new Aurora.Window({
+                    id: 'acp_operation_record_win',
+                    url: $('acp5310_header_operation_record_link').getUrl() + '?operation_table_id=' + ${/parameter/@invoice_header_id} + '&operation_table=ACP_WEB_INVOICE_HEADERS',
+                    title: '${l:ACP_BILL.OPERATION_RECORD}',
+                    height: 450,
+                    width: 600
+                });
+            
+            }
+            
+            function acp5310_back() {
+                $('acp5310_web_invoice_line_window').close();
+            }
+            
+            function acp5310_lineGridRenderer(value, record, name) {
+                if (name == 'price_difference_message') {
+                    if (record.get('price_difference_flag') == 'Y') {
+                        return '<div style="background:#FF0000;color:#FFFFFF;">' + value + '<div>';
+                    }else if(record.get('price_difference_flag') == 'N'){
+                        return '<div style="background:#00FF00;">' + value + '<div>';
+                    }
+                }
+            
+                if (name == 'unit_price' || name == 'contract_price' || name == 'invoice_price' || name == 'bill_amount' || name == 'tax_invoice_price' || name == 'tax_bill_amount') {
+                    if (value == '***') {
+                        return value;
+                    } else {
+                        return Aurora.formatNumber(value);
+                    }
+                }
+            }
+            
+            function acp5310_lineGridEditorFunction(record, name){
+                record.dirty = false;
+                if(name == 'comments'){
+                    if(record.get('approve_return_flag') == 'Y'){
+                        return 'acp5310_line_grid_textField';
+                    }else{
+                        record.set('comments',null);
+                        return '';
+                    }
+                }
+            }
+            
+            //转交导入人
+            function acp5310_deliver(){
+                var invoice_header_id = $('acp5310_header_ds').getCurrentRecord().get('invoice_header_id');
+                if(invoice_header_id){
+                    new Aurora.Window({
+                        id:'acp5310_deliver_user_choose_win',
+                        title:'${l:ACP5310.DELIVER_WEB_INVOICE}',
+                        url:$('acp5310_deliver_user_choose_link').getUrl(),
+                        width:500,
+                        height:500
+                    });
+                }
+            }
+            //附件查看
+            function acp_web_invoice_lines_uploadFun() {
+                var header_record = $('acp5310_line_ds').getCurrentRecord();
+                var invoice_header_id = header_record.get('invoice_header_id');
+                new Aurora.Window({
+                    id: 'acp_web_invoice_lines_upload_link_window',
+                    title: '${l:PROMPT.VIEW_ATTACHMENT}',
+                    url: $('acp_web_invoice_lines_upload_link').getUrl() + '?pkvalue=' + invoice_header_id + '&table_name=ACP_WEB_INVOICE_HEADER',
+                    width: 610,
+                    height: 500
+                });
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="acp5310_header_ds">
+                <a:datas dataSource="/model/acp5310_lines_record"/>
+                <a:fields>
+                    <a:field name="invoice_header_id"/>
+                    <a:field name="invoice_num" readOnly="true"/>
+                    <a:field name="company_name" readOnly="true"/>
+                    <a:field name="vendor_site_name" readOnly="true"/>
+                    <a:field name="currency_code" readOnly="true"/>
+                    <a:field name="tax_total_amount" readOnly="true"/>
+                    <a:field name="tax_amount" readOnly="true"/>
+                    <a:field name="invoice_amount"/>
+                    <a:field name="invoice_tax_amount"/>
+                    <a:field name="tax_invoice_num"/>
+                    <a:field name="invoice_status"/>
+                    <a:field name="data_source"/>
+                    <a:field name="vendor_comments"/>
+                    <a:field name="approve_comments"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="acp5310_line_query_ds">
+                <a:fields>
+                    <a:field name="invoice_header_id" defaultValue="${/parameter/@invoice_header_id}"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="acp5310_line_ds" autoCount="true" autoPageSize="true" autoQuery="true" fetchAll="false" model="acp.ACP5310.acp_web_invoice_lines" queryDataSet="acp5310_line_query_ds">
+                <a:fields>
+                    <a:field name="approve_return_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="acp5310_subject_ds" autoPageSize="true" autoQuery="true" model="acp.ACP5310.acp_bill_line_subject" queryUrl="${/request/@context_path}/autocrud/acp.ACP5310.acp_bill_line_subject/query?invoice_header_id=${/parameter/@invoice_header_id}" selectable="false">
+                <a:fields>
+                    <a:field name="tax_included_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="acp5310_lines_approve" text="接受" width="100"/>
+                <a:toolbarButton click="acp5310_lines_return" text="ACP_WEB_INVOICE.RETURN" width="100"/>
+                <a:toolbarButton click="acp5310_operation_record" text="ACP_BILL.OPERATION_RECORD" width="100"/>
+                <a:toolbarButton click="acp5310_back" text="ACP_BILL.BACK" width="100"/>
+                <!-- <a:toolbarButton click="acp5310_deliver" text="ACP5310.DELIVER_WEB_INVOICE" width="100"/> -->
+                <a:toolbarButton id="acp_web_invoice_lines_uploadFun_btn" click="acp_web_invoice_lines_uploadFun" text="ACP_ENCLOSURE.ORDER_LINES" width="100"/>
+            </a:screenTopToolbar>
+            <a:form marginWidth="80">
+                <a:hBox labelWidth="100">
+                    <a:label name="invoice_num" bindTarget="acp5310_header_ds" prompt="ACP_WEB_INVOICE.WEB_INVOICE_NUM" width="200"/>
+                    <a:label name="vendor_code" bindTarget="acp5310_header_ds" prompt="ACP_BILL_SOURCE.VENDOR_CODE" width="200"/>
+                    <a:label name="vendor_name" bindTarget="acp5310_header_ds" prompt="ACP_BILL_SOURCE.VENDOR_NAME" width="200"/>
+                    <a:label name="vendor_site_name" bindTarget="acp5310_header_ds" prompt="ACP_BILL_SOURCE.VENDOR_SITE_CODE_NAME" width="200"/>
+                </a:hBox>
+                <!-- <a:hBox labelWidth="100">
+                    <a:label name="company_name" bindTarget="acp5310_header_ds" prompt="客户" width="200"/>
+                    <a:label name="business_unit_name" bindTarget="acp5310_header_ds" prompt="ACP_WEB_INVOICE.BUSINESS_UNIT_ID" width="200"/>
+                    <a:label name="vendor_name" bindTarget="acp5310_header_ds" prompt="ACP_BILL_SOURCE.VENDOR_NAME" width="200"/>
+                    <a:label name="vendor_site_name" bindTarget="acp5310_header_ds" prompt="ACP_BILL_SOURCE.VENDOR_SITE_CODE_NAME" width="200"/>
+                </a:hBox> -->
+                <a:hBox labelWidth="100">
+                    <a:label name="tax_total_amount" bindTarget="acp5310_header_ds" prompt="含税金额合计" width="200"/>
+                    <a:label name="tax_amount" bindTarget="acp5310_header_ds" prompt="税额（系统）" width="200"/>
+                    <a:label name="total_nums" bindTarget="acp5310_header_ds" prompt="数量合计" width="200"/>
+                    <a:label name="currency_code" bindTarget="acp5310_header_ds" prompt="ACP_BILL_SOURCE.CURRENCY_CODE" width="200"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:numberField name="invoice_amount" allowDecimals="true" allowNegative="true" bindTarget="acp5310_header_ds" decimalPrecision="4" prompt="税务发票总额" readOnly="true" width="200"/>
+                    <a:numberField name="invoice_tax_amount" allowDecimals="true" allowNegative="true" bindTarget="acp5310_header_ds" decimalPrecision="4" prompt="税务发票税额" readOnly="true" width="200"/>
+                    <a:textField name="tax_invoice_num" bindTarget="acp5310_header_ds" prompt="ACP_WEB_INVOICE.TAX_INVOICE_NUM" readOnly="true" width="200"/>
+                    <a:label name="invoice_nums" bindTarget="acp5310_header_ds" prompt="发票号" width="200"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textField name="express_company" bindTarget="acp5310_header_ds" prompt="快递公司" readOnly="true" width="200"/>
+                    <a:textField name="express_order" bindTarget="acp5310_header_ds" prompt="快递单号" readOnly="true" width="200"/>
+                    <a:textField name="contacts" bindTarget="acp5310_header_ds" prompt="联系人" readOnly="true" width="200"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:label name="vendor_comments" bindTarget="acp5310_header_ds" prompt="ACP_WEB_INVOICE.VENDOR_COMMENTS" width="505"/>
+                    <a:textField name="approve_comments" bindTarget="acp5310_header_ds" prompt="ACP_WEB_INVOICE_HEADERS.APPROVE_COMMENTS" width="400"/>
+                </a:hBox>
+            </a:form>
+            <a:tabPanel marginHeight="280" marginWidth="80">
+                <a:tabs>
+                    <a:tab prompt="ACP_INVOICE.INVOICE_INFO" width="130">
+                        <a:grid id="acp5310_line_grid" bindTarget="acp5310_line_ds" marginHeight="325" marginWidth="100" navBar="true" style="margin-top:10px;">
+                            <a:toolBar>
+                                <a:button type="excel"/>
+                            </a:toolBar>
+                            <a:columns>
+                                <!-- <a:column name="approve_return_flag" align="left" editor="acp5310_line_grid_checkBox" prompt="ACP_WEB_INVOICE.RETURN" width="30"/>
+                                <a:column name="comments" align="left" editorFunction="acp5310_lineGridEditorFunction" prompt="ACP_WEB_INVOICE.COMMENTS" width="80"/> -->
+                                <a:column name="bill_number" align="center" prompt="ACP_BILL_HEADERS.BILL_NUMBER" sortable="true" width="70"/>
+                                <a:column name="organization_name" align="left" prompt="ACP_BILL_DETAILS.INV_ORGANIZATION_NAME" width="80"/>
+                                <a:column name="transaction_uom_code" align="center" prompt="事业部" width="50"/>
+                                <a:column name="bill_type" align="center" prompt="对账类型" width="50"/>
+                                <a:column name="segment1" align="center" prompt="PO编号" width="80"/>
+                                <a:column name="line_num" align="center" prompt="订单行号" width="40"/>
+                                <a:column name="pur_type" align="center" prompt="采购类别" width="40"/>
+                                <a:column name="term_name" align="center" prompt="付款条件" width="40"/>
+                                <a:column name="trade_method" align="center" prompt="贸易方式" width="40"/>
+                                <a:column name="receipt_date" align="center" prompt="接受日期" width="50"/>
+                                <a:column name="receipt_num" align="center" prompt="ACP_BILL_DETAILS.RECEIPT_NUM" width="50"/>
+                                <a:column name="receipt_line_num" align="center" prompt="ACP_BILL_DETAILS.RECEIPT_LINE_NUM" width="50"/>
+                                <a:column name="item_code" align="center" prompt="ACP_BILL_SOURCE.ITEM_CODE" width="80"/>
+                                <a:column name="item_name" align="left" prompt="ACP_BILL_SOURCE.ITEM_NAME" width="100"/>
+                                <!-- <a:column name="unit_price" align="left" prompt="不含税单价" width="80"/> -->
+                                <a:column name="tax_unit_price" align="left" prompt="含税单价" width="80"/>
+                                <!-- <a:column name="quantity" align="left" prompt="采购数量" width="80"/> -->
+                                <a:column name="billed_quantity" align="left" prompt="对账数量" width="80"/>
+                                <a:column name="tax_rate" align="left" prompt="税率" width="100"/>
+                                <!-- <a:column name="no_tax_amount" align="left" prompt="不含税金额（原币）" width="100"/> -->
+                                <a:column name="tax_amount" align="left" prompt="含税金额（本币）" width="100"/>
+                                <!-- <a:column name="invoice_num" align="center" prompt="发票号" width="80"/>
+                                <a:column name="invoice_date" align="center" prompt="发票日期" width="80"/>
+                                <a:column name="gl_date" align="center" prompt="GL日期" width="80"/>
+                                <a:column name="com_subject" align="center" prompt="科目组合" width="80"/>
+                                <a:column name="com_subject_desc" align="center" prompt="科目组合说明" width="80"/>
+                                <a:column name="remark" align="center" prompt="摘要" width="80"/> -->
+                            </a:columns>
+                            <a:editors>
+                                <a:checkBox id="acp5310_line_grid_checkBox"/>
+                                <a:textField id="acp5310_line_grid_textField"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                    <!-- <a:tab prompt="ACP_BILL.SUBJECT_NAME" width="100">
+                        <a:grid id="acp5310_subject_ds_grid" autoAppend="false" bindTarget="acp5310_subject_ds" marginHeight="325" marginWidth="100" navBar="true" style="margin-top:10px;">
+                            <a:columns>
+                                <a:column name="bill_number" align="center" prompt="ACP_BILL_HEADERS.BILL_NUMBER" width="80"/>
+                                <a:column name="line_num" align="center" prompt="ACP_BILL_SOURCE.LINE_NUM" width="40"/>
+                                <a:column name="subject_document_number" align="center" prompt="ACP_SUBJECT_DOCUMENTS.SUBJECT_DOCUMENT_NUMBER" width="100"/>
+                                <a:column name="subject_name" align="center" prompt="ACP_BILL.SUBJECT_NAME" width="70"/>
+                                <a:column name="debit_credit_name" align="center" prompt="ACP_BILL.DEBIT_CREDIT" width="70"/>
+                                <a:column name="voucher_money" align="right" prompt="ACP_BILL.VOUCHER_MONEY" renderer="Aurora.formatMoney" width="60"/>
+                                <a:column name="standard_money" align="right" prompt="ACP_BILL.STANDARD_MONEY" renderer="Aurora.formatMoney" width="60"/>
+                                <a:column name="tax_included_flag" align="center" prompt="ACP_INVOICE_LINES.TAX_INCLUDED_FLAG" width="40"/>
+                                <a:column name="tax_type_rate" align="right" prompt="ACP_WEB_INVOICE.TAX_RATE" width="40"/>
+                                <a:column name="amount_include_tax" align="right" prompt="ACP_SUBJECT_DOCUMENTS.AMOUNT_INCLUDE_TAX" renderer="Aurora.formatMoney" width="60"/>
+                                <a:column name="note" align="left" prompt="ACP_BILL.SUBJECT_NOTE" width="70"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab> -->
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+        <script><![CDATA[
+            Aurora.onReady(function(){
+                var item_value = '${/model/bg_item_invoice_01/record/@bg_config_item_value}'; //发票，开启价格屏蔽
+                if(!Aurora.isEmpty(item_value) && item_value == "Y"){
+                    $('acp_web_invoice_lines_uploadFun_btn').disable();
+                }
+            });
+        ]]></script>
+    </a:view>
+</a:screen>

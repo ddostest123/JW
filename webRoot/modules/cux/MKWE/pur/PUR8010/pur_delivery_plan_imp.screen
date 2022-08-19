@@ -1,0 +1,270 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: 9505 $  
+    $Date: 2017-06-28 下午03:45:27 $  
+    $Revision: 1.0 $ 
+    $Purpose: 送货计划明细页面$
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure><![CDATA[
+    ]]></a:init-procedure>
+    <a:view>
+        <a:link id="pur8010_pur_import_upload_link" url="${/request/@context_path}/modules/cux/MKWE/pur/PUR8010/IMP8010/pur_import_iframe.screen"/>
+        <a:link id="pur8010_delivery_check_temp_url" model="cux.MKWE.inv.INV8010.pur_delivery_check_temp" modelaction="query"/>
+        <a:link id="pur8010_delivery_imp_submit_url" url="${/request/@context_path}/modules/cux/MKWE/pur/PUR8010/delivery_plan_batch_update.svc"/>
+        <a:link id="pur8010_check_import_link" url="${/request/@context_path}/modules/cux/MKWE/pur/PUR8010/IMP8010/pur_import.screen"/>
+        <style type="text/css"><![CDATA[
+			.status-red {
+			    background-color: #f6504d;
+			}
+			}
+        ]]></style>
+        <script><![CDATA[
+            var g_index = 0;
+            var batch_id = '${/session/@session_id}' ;
+            var v_message ='' ;
+            function pur8010_PurImportLoadData() {
+                new Aurora.Window({
+                    id: 'pur8010_pur_import_upload_window',
+                    url: $('pur8010_pur_import_upload_link').getUrl() + '?batch_id=' + batch_id,
+                    title: '送货计划批量导入',
+                    //fullScreen: true
+                    width: 460,
+                    height: 300
+                });
+            }
+            
+            function pur8010_LookImportLoadData(){
+                new Aurora.Window({
+                    id: 'pur8010_delivery_import_link_window',
+                    url: $('pur8010_check_import_link').getUrl() + '?batch_id=' + batch_id,
+                    title: '查看批量导入数据',
+                   // fullScreen: true
+                    width: 1000,
+                    height: 460
+                }); 
+            }
+            
+ 
+          function pur8010_return_win() {
+                $('pur8010_delivery_imp_wdn').close();
+            }
+            
+           function pur8010HdResultEditor(record, name) {
+                if (name == "promise_date") {
+                    if (record.get('promise_date') != '待通知') {
+                        return 'delivery_ln_temp_dp';
+                    }
+                    return '';
+                }
+                if(name == "mrp_locked_flag"){
+                 if (record.get('promise_date') != '待通知' ) {
+                        return 'delivery_ln_temp_cbx';
+                    } 
+                    return '';
+                }
+            }
+            
+            function pur8010_delivery_ln_temp_grid_rd(value, record, name) {
+                if (name == 'promise_date' || name =='need_arrive_date' || name =='need_arrive_date') {
+                        return '<div >' + Aurora.formatDate(value) + '</div>';
+                }
+               else if (name == 'modify_flag'){
+    	            return 'N';
+                }else if(name == 'mrp_locked_flag_old'){
+                    return record.get(mrp_locked_flag);
+                } 
+            }
+            
+            function pur8010_delivery_imp_submit() {
+                var header_id_arr ='' ;
+                var record = {};
+                var select_records = $('pur8010_delivery_detail_ds').getSelected();
+                 
+                if (select_records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.SELECT_ONE_RECORD_AT_LEAST}');
+                    return;
+                }
+               
+                  $('pur8010_delivery_imp_submit_btn').disable();
+ 
+                var datas = [];
+                var to_ebs = 'false';
+                 
+                 //删除临时表
+                 record._status = 'delete'; 
+                 record.batch_id = batch_id;
+                 datas.push(record); 
+                 
+                  for (var i = 0;i < select_records.length;i++) {
+                     record = {};
+                   if (header_id_arr.indexOf(select_records[i].get('header_id'))== -1 &&
+                       select_records[i].get('del_plan_status') == 'WAIT_CONFIRMED'){
+                    header_id_arr =header_id_arr + ','+ select_records[i].get('header_id'); 
+                    record.header_id = select_records[i].get('header_id'); 
+                    record._status = 'submit'; 
+                    datas.push(record);
+                   
+                    } 
+                    record = {};
+                  if(select_records[i].get('modify_flag') == 'Y'){
+                     record._status = 'update';
+                     record.line_id	= select_records[i].get('line_id'); 
+                     record.promise_date	= select_records[i].get('promise_date'); 
+                     record.mrp_locked_flag	= select_records[i].get('mrp_locked_flag'); 
+                     record.es_line_location_id = select_records[i].get('es_line_location_id'); 
+                     record.batch_id = batch_id;
+                     datas.push(record); 
+                     to_ebs = 'true';
+                    }
+                   }
+                   header_id_arr = '';
+                   if (to_ebs == 'true'){
+                     record ={};   
+                     record._status = 'to_ebs'; 
+                     record.batch_id = batch_id;
+                     datas.push(record); 
+                     }
+                    Aurora.request({
+                    url: $('pur8010_delivery_imp_submit_url').getUrl(),
+                    para: datas,
+                    success: function(args) {
+                        Aurora.showMessage('${l:PROMPT}', '提交成功！');
+                        $('pur8010_delivery_imp_submit_btn').enable();
+                        $('pur8010_delivery_detail_ds').query();
+                    },
+                    failure: function(args) {
+                        $('pur8010_delivery_imp_submit_btn').enable();
+                    },
+                    error: function(args) {
+                        $('pur8010_delivery_imp_submit_btn').enable();
+                    },
+                    scope: this
+                });  
+                      
+            }
+            
+          function   pur8010_delivery_detail_modify(ds, record, name, value){
+                 record.set('modify_flag', 'Y');
+            }
+         
+         //   function pur8010_mrpLockedFlagValidate(record, name, value){
+          //  if( value=='N' &&  record.get(mrp_locked_flag_old) =='Y' ){
+         //      return '锁定状态不能改为未锁定'; 
+         //   }
+         // } 
+            
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="delivery_del_status_ds" lookupCode="PUR_DELIVER_PLAN_STATUS_QUERY"/>
+            <a:dataSet id="pur8010_delivery_detail_imp_query_ds">
+                <a:fields>
+                    <a:field name="del_plan_status_desc" displayField="code_value_name" options="delivery_del_status_ds" returnField="del_plan_status" valueField="code_value"/>
+                    <a:field name="mrp_locked_flag_query" displayField="code_value_name" options="delivery_lock_flg_ds" returnField="mrp_locked_flag_query" valueField="code_value"/>
+                    <a:field name="online_vender_flg" displayField="code_value_name" options="delivery_lock_flg_ds" returnField="online_vender_flg" valueField="code_value_name"/>
+                    <a:field name="vendor_name" autoComplete="true" autoCompleteField="vendor_name" lovGridHeight="320" lovHeight="480" lovService="cux.MKWE.pur.PUR8010.pur_vendor_lov" lovWidth="500" title="请选择供应商">
+                        <a:mapping>
+                            <a:map from="vendor_code" to="vendor_code"/>
+                            <a:map from="vendor_name" to="vendor_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="vendor_site_code" autoComplete="true" autoCompleteField="vendor_site_code" lovGridHeight="330" lovHeight="470" lovService="pur.PUR7010.pur_vendor_sites_lov?vendor_id=-1" lovWidth="530" readOnly="true" title="PUR_HEADERS_ALL.VENDOR_SITE">
+                        <a:mapping>
+                            <a:map from="vendor_site_id" to="vendor_site_id"/>
+                            <a:map from="vendor_site_code" to="vendor_site_code"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="business_unit_name" autoComplete="true" autoCompleteField="business_unit_name" lovGridHeight="500" lovHeight="500" lovService="cux.MKWE.pur.PUR8010.Business_Units_lov" lovWidth="400" ovWidth="500" title="库存组织">
+                        <a:mapping>
+                            <a:map from="business_unit_id" to="business_unit_id"/>
+                            <a:map from="business_unit_code" to="business_unit_code"/>
+                            <a:map from="business_unit_name" to="business_unit_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="business_unit_id"/>
+                    <a:field name="business_unit_code"/>
+                    <a:field name="po_number"/>
+                    <a:field name="need_by_date"/>
+                    <a:field name="promise_date"/>
+                    <a:field name="del_plan_status"/>
+                    <a:field name="item_code"/>
+                    <a:field name="po_create_date"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="pur5320_onPurchaseOarderHeaderQueryDs_updateFun"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="pur8010_delivery_detail_ds" autoCount="true" autoPageSize="true" autoQuery="true" model="cux.MKWE.inv.INV8010.inv_delivery_plan_imp" queryDataSet="pur8010_delivery_detail_imp_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="mrp_locked_flag" displayField="code_value_name" options="delivery_lock_flg_ds" returnField="mrp_locked_flag" valueField="code_value"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="pur8010_delivery_detail_modify"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="pur8010_PurImportLoadData" text="导入数据" width="100"/>
+                <a:toolbarButton id="pur8010_delivery_imp_submit_btn" click="pur8010_delivery_imp_submit" text="提交" width="100"/>
+                <a:toolbarButton click="pur8010_LookImportLoadData" text="查看导入信息" width="100"/>
+                <a:gridButton bind="pur8010_delivery_ln_grid" bindTarget="pur8010_delivery_detail_imp_query_ds" text="HAP_EXPORT" type="excel" width="100"/>
+                <a:toolbarButton click="pur8010_return_win" text="HAP_BACK" width="100"/>
+            </a:screenTopToolbar>
+            <a:queryForm id="pur8010_delivery_imp_query_form" bindTarget="pur8010_delivery_detail_imp_query_ds" resultTarget="pur8010_delivery_detail_ds" style="width:100%;">
+                <a:formToolBar>
+                    <a:hBox labelWidth="100">
+                        <a:lov name="vendor_name" bindTarget="pur8010_delivery_detail_imp_query_ds" prompt="供应商"/>
+                        <a:textField name="po_number" bindTarget="pur8010_delivery_detail_imp_query_ds" prompt="订单编号"/>
+                        <a:comboBox name="del_plan_status_desc" bindTarget="pur8010_delivery_detail_imp_query_ds" prompt="送货计划状态"/>
+                        <a:comboBox name="mrp_locked_flag_query" bindTarget="pur8010_delivery_detail_imp_query_ds" prompt="是否交期锁定"/>
+                    </a:hBox>
+                </a:formToolBar>
+                <a:formBody style="margin-left:-3px">
+                    <a:hBox labelWidth="100">
+                        <a:lov name="business_unit_name" bindTarget="pur8010_delivery_detail_imp_query_ds" prompt="组织名称"/>
+                        <a:textField name="item_code" bindTarget="pur8010_delivery_detail_imp_query_ds" prompt="物料编码"/>
+                        <a:datePicker name="need_by_date" bindTarget="pur8010_delivery_detail_imp_query_ds" prompt="需求日期"/>
+                    </a:hBox>
+                    <a:hBox labelWidth="100">
+                        <a:datePicker name="promise_date" bindTarget="pur8010_delivery_detail_imp_query_ds" prompt="承诺日期"/>
+                        <a:datePicker name="po_create_date" bindTarget="pur8010_delivery_detail_imp_query_ds" prompt="下单日期"/>
+                        <a:comboBox name="online_vender_flg" bindTarget="pur8010_delivery_detail_imp_query_ds" prompt="是否上线"/>
+                    </a:hBox>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="pur8010_delivery_ln_grid" autoAppend="false" bindTarget="pur8010_delivery_detail_ds" marginHeight="250" marginWidth="50" navBar="true">
+                <a:columns>
+                    <a:column name="line_id" align="center" forExport="true" hidden="true" prompt="订单行Id" width="50"/>
+                    <a:column name="del_plan_status_desc" align="center" prompt="送货计划状态" resizable="true" width="50"/>
+                    <a:column name="online_vender_flg" align="center" prompt="是否上线" resizable="true" width="40"/>
+                    <a:column name="del_plan_number" align="center" prompt="送货计划号" width="50"/>
+                    <a:column name="vendor_name" align="center" prompt="供应商名称" width="80"/>
+                    <a:column name="vendor_site_name" align="center" prompt="供应商地点" width="50"/>
+                    <a:column name="po_number" align="center" prompt="采购订单号" width="50"/>
+                    <a:column name="line_num" align="center" prompt="订单行号" width="40"/>
+                    <a:column name="source_po_line_location_num" align="center" prompt="发运行号" width="40"/>
+                    <a:column name="unit_meas_lookup_code" align="center" prompt="单位" width="20"/>
+                    <a:column name="item_code" align="center" prompt="MTL_SYSTEM_ITEMS.ITEM_CODE" sortable="true" width="60"/>
+                    <a:column name="item_name" align="center" prompt="MTL_SYSTEM_ITEMS.ITEM_DESC" width="60"/>
+                    <a:column name="quantity" align="center" prompt="订单数量" width="40"/>
+                    <a:column name="need_del_quantity" align="center" prompt="要求到货数量" width="50"/>
+                    <a:column name="trx_amount" align="center" prompt="已交数量" width="40"/>
+                    <a:column name="un_trx_amount" align="center" prompt="未交数量" width="50"/>
+                    <a:column name="po_create_date" align="center" prompt="下单日期" renderer="pur8010_delivery_ln_temp_grid_rd" width="50"/>
+                    <a:column name="need_arrive_date" align="center" prompt="需求日期" renderer="pur8010_delivery_ln_temp_grid_rd" width="50"/>
+                    <a:column name="promise_date" align="center" editorFunction="pur8010HdResultEditor" prompt="承诺日期" renderer="pur8010_delivery_ln_temp_grid_rd" width="60"/>
+                    <a:column name="mrp_locked_flag" align="center" editorFunction="pur8010HdResultEditor" prompt="是否交期锁定" width="60"/>
+                    <a:column name="modify_flag" hidden="true" renderer="pur8010_delivery_ln_temp_grid_rd"/>
+                    <a:column name="mrp_locked_flag_old" hidden="true" renderer="pur8010_delivery_ln_temp_grid_rd"/>
+                </a:columns>
+                <a:editors>
+                    <a:numberField id="delivery_ln_temp_nf" allowDecimals="true" decimalPrecision="20"/>
+                    <a:datePicker id="delivery_ln_temp_dp"/>
+                    <a:textField id="delivery_ln_temp_tf"/>
+                    <a:comboBox id="delivery_ln_temp_cbx"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

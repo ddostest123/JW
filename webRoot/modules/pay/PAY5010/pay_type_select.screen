@@ -1,0 +1,499 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: kg  
+    $Date: 2017-1-12 下午6:04:40   
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <a:model-query model="pay.PAY5010.pay_order_information" rootPath="detail_info"/>
+        <a:model-query defaultWhereClause="enabled_flag = &apos;Y&apos;" model="pay.PAY1010.pay_method_information" rootPath="method_info"/>
+        <a:model-query defaultWhereClause="config_code = &apos;NOTIFY_URL&apos;" model="pay.PAY1010.pay_payment_config" rootPath="pay_payment_config"/>
+        <s:server-script><![CDATA[
+            var param = $ctx.parameter;
+            
+            // 取出app_id
+            var bm0 = $bm('pay.PAY1010.pay_payment_config', {
+                rootPath: 'config0'
+            });
+            param.config_code = 'APP_ID';
+            bm0.query();
+            var config0 = $ctx.get('/model/config0/record');
+            var app_id = config0.config_value;
+            
+            // 取出app_secret
+            var bm1 = $bm('pay.PAY1010.pay_payment_config', {
+                rootPath: 'config1'
+            });
+            param.config_code = 'APP_SECRET';
+            bm1.query();
+            var config1 = $ctx.get('/model/config1/record');
+            var app_secret = config1.config_value;
+            
+            // 取出master_secret
+            var bm2 = $bm('pay.PAY1010.pay_payment_config', {
+                rootPath: 'config2'
+            });
+            param.config_code = 'MASTER_SECRET';
+            bm2.query();
+            var config2 = $ctx.get('/model/config2/record');
+            var master_secret = config2.config_value;
+            
+            importPackage(Packages.cn.beecloud);
+            BeeCloud.registerApp(app_id, "", app_secret, master_secret);
+        ]]></s:server-script>
+    </a:init-procedure>
+    <a:view>
+        <link href="${/request/@context_path}/modules/pay/PAY5010/css/style.css" rel="stylesheet" type="text/css"/>
+        <link href="${/request/@context_path}/modules/pay/PAY5010/css/home.css" rel="stylesheet" type="text/css"/>
+        <a:link id="pay_check_and_get_detail_link" model="pay.PAY5010.get_order_no" modelaction="execute"/>
+        <a:link id="pay_link" model="pay.PAY5010.pay_payment_info_details" modelaction="execute"/>
+        <style><![CDATA[
+.step-icon{
+    float: left;
+    background-color:#E0DED9;
+    color: #ffeefe;
+    font-size: 12px;
+    text-align: center;
+}
+
+.step-icon p{
+    margin: 0 auto;
+}
+
+.line-icon{
+    float: left;
+    height: 0;
+    border-bottom: 1px solid #E0DED9;
+    position: relative;
+}
+
+li{
+    list-style:none;
+}
+
+.clear:after {
+	content: ".";
+	display: block;
+	clear: both;
+	visibility: hidden;
+	line-height: 0;
+	height: 0;
+}
+
+html {
+	width: 100%;
+}
+
+body {
+	margin: 0;
+	padding: 0;
+	width: 100%;
+	font-size:12px;
+    font-family: Microsoft YaHei; 
+    background-color:#eee;
+}
+
+.shadow{ 
+	-webkit-box-shadow:0 0 20px #D1D1D1;  
+	-moz-box-shadow:0 0 20px #D1D1D1;  
+	box-shadow:0 0 20px #D1D1D1;  
+}
+
+.banner{
+    width:956px;
+    height:60px;
+    background-color:#F7F7F7;
+    border-width: 0 0 1px 0; 
+    border-style: solid;  
+    border-color:#E3E3E3;
+    margin-top:30px;
+}
+
+.ship{
+    width:956px;
+    height:500px;
+    background-color:#fff;
+}
+
+ul {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+	width: 100%;
+}
+
+ul li {
+	float: left;
+	margin: 0 1em;
+}
+
+ul li img {
+	cursor: pointer;
+	border-radius: 8px;
+    border: 2px solid transparent;
+    box-shadow: none;
+	//width: 90px;
+	//border: rgba(0, 0, 0, 0.2) 2px solid;
+}
+
+ul li img:hover {
+	box-shadow: 0 0 2px #ff5451;
+	border: #ff5451 2px solid;
+}
+
+.button {
+	cursor: pointer;
+	display: block;
+	width: 200px;
+	height: 45px;
+	color: #fff;
+	font-size: 12px;
+    font-weight: bold;
+	background-color:#ff5451;
+		
+}
+
+.button:hover {
+	background-color:#ea4c48;	
+}
+
+li.clicked img {
+	box-shadow: 0 0 2px #ff5451;
+	border: #ff5451 2px solid;
+	/* margin-left:30px; */
+}
+
+input {
+	display: none;
+}
+        ]]></style>
+        <script><![CDATA[
+            var detail_number, v_success_check;
+            
+            function pay_success() {
+                var param = {};
+                param['detail_number'] = detail_number;
+                Aurora.post('${/request/@context_path}/modules/pay/PAY5010/pay_success_check.screen', param);
+            }
+            
+            function success_check() {
+                $('pay_sucess_check_ds').setQueryParameter('detail_number', detail_number);
+                $('pay_sucess_check_ds').query();
+            }
+            
+            function pay_sucess_check_load(ds) {
+                var status = ds.getAt(0).get('status');
+                if (status == 'PAID') {
+                    pay_success();
+                } else {
+                    v_success_check = setTimeout(function() {
+                        success_check();
+                    }, 400);
+                }
+            }
+            
+            function pay(value) {
+                //判断当前订单是否超时
+                //并且生成交易单号
+                Aurora.Masker.mask(Ext.getBody());
+                Aurora.request({
+                    url: $('pay_link').getUrl(),
+                    para: {
+                        'order_number': '${/parameter/@order_number}',
+                        'payment_type': value
+                    },
+                    success: function(res) {
+                        Aurora.Masker.unmask(Ext.getBody());
+                        //将交易号传出
+                        detail_number = res.result.detail_number;
+                        document.getElementById("order_number_id").value = '${/parameter/@order_number}';
+                        document.getElementById("detail_number_id").value = detail_number;
+                        //实际支付时金额单位为分
+                        document.getElementById("package_price_id").value = Number('${/parameter/@package_price}') * 100;
+                        document.getElementById("notify_url_id").value = '${/model/pay_payment_config/record/@config_value}';
+            
+                        var width = document.body.clientWidth;
+                        var width1 = (width - 900) / 2;
+                        if (value == 'BC_NATIVE' || value == 'BC_ALI_QRCODE' || value == 'WX_NATIVE'||value == 'ALI_QRCODE') {
+                            document.getElementById('type_id').target = 'qrcode';
+                            document.getElementById('qrcode_id').contentWindow.document.getElementById('loading_div_id').style.display = 'block';
+                            document.getElementById('qrcode_id').contentWindow.document.getElementById('loading_div_id').style.left = width1 + 'px';
+                            document.getElementById('qrcode_id').contentWindow.document.getElementById('package_price_id').innerHTML = '${/parameter/@package_price}元';
+                            document.getElementById('qrcode_id').contentWindow.document.getElementById('order_number_id').innerHTML = '${/parameter/@order_number}';
+                            document.getElementById('qrcode_id').style.display = 'block';
+                            document.getElementById('type_change_id').style.display = 'block';
+                            document.getElementById('buttom_id').style.marginTop = '26px';
+                            document.getElementById('pay_style_content').style.display = 'none';
+                            document.getElementById("type_id").submit();
+                            success_check(detail_number);
+                        } else {
+                            var url = '${/request/@context_path}/modules/pay/PAY5010/pay_check.screen?detail_number=' + detail_number;
+                            document.getElementById('type_id').target = '_blank';
+                            document.getElementById("type_id").submit();
+                            document.getElementById('qrcode_id').style.display = 'none';
+                            document.getElementById('type_change_id').style.display = 'none';
+                            document.getElementById('buttom_id').style.marginTop = '30px';
+                            document.getElementById('pay_style_content').style.display = 'block';
+                            new Aurora.Window({
+                                id: 'submit_check_window',
+                                title: '支付确认',
+                                url: url,
+                                width: 440,
+                                height: 200
+                            });
+                        }
+                    },
+                    failure: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    error: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    scope: this
+                });
+            }
+            
+            function pay_type_change() {
+                //更换支付方式的时候将记数器停止掉
+                clearTimeout(v_success_check);
+                //设置展示界面
+                document.getElementById('type_id').target = '_blank';
+                document.getElementById('qrcode_id').style.display = 'none';
+                document.getElementById('type_change_id').style.display = 'none';
+                document.getElementById('pay_style_content').style.display = 'block';
+                document.getElementById('buttom_id').style.marginTop = '30px';
+            }
+            
+            function submit_check() {
+            
+                if (document.getElementById('check_box_id').checked == true) {
+                    var paytype = document.getElementsByName('paytype');
+                    for (var i = 0;i < paytype.length;i++) {
+                        if (paytype[i].checked == true) {
+                            pay(paytype[i].value);
+                            return true;
+                        }
+                    }
+                    Aurora.showMessage('提示', '未选择付款方式！');
+                    return false;
+                } else {
+                    Aurora.showMessage('提示', '未同意支付协议！');
+                    return false;
+                }
+            }
+            
+            function open_agreement_detail() {
+                window.open('${/request/@context_path}/modules/pay/PAY5010/pay_agreement.screen');
+            }
+            Aurora.onReady(function() {
+                var records = $('pay_method_ds').getAll();
+                for (var i = 0;i < records.length;i++) {
+                    method_load_li(records[i]);
+                }
+                //add_new_address_li();
+            });
+            
+            
+            function method_load_li(record) {
+                var ul = document.getElementById('method-ul');
+                var method_name = record.data.method_name;
+                var bc_code = record.data.bc_code;
+                var method_icon = record.data.method_icon;
+                var enabled_flag = record.data.enabled_flag;
+                var default_flag = record.data.default_flag;
+                //console.log(bc_code);
+                var li;
+            
+                // 创建li标签
+                li = window.document.createElement('LI');
+                li.onclick = function() {
+                    paySwitch(this);
+                };
+                if (default_flag == 'Y') {
+                    li.className = "clicked";
+                    li.innerHTML = '<input name="paytype" type="radio" checked="checked" value="' + bc_code + '"/><img class="active-img" src="${/request/@context_path}/' + method_icon.toString() + '" />';
+                } else {
+                    li.innerHTML = '<input name="paytype" type="radio" value="' + bc_code + '"/><img class="active-img" src="${/request/@context_path}/' + method_icon.toString() + '" />';
+                }
+                ul.appendChild(li);
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="pay_sucess_check_ds" autoQuery="false" model="pay.PAY5010.pay_sucess_check">
+                <a:events>
+                    <a:event name="load" handler="pay_sucess_check_load"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="pay_method_ds">
+                <a:datas dataSource="method_info"/>
+                <!--  <a:events>
+                    <a:event name="load" handler="pay_method_load"/>
+                </a:events> -->
+            </a:dataSet>
+        </a:dataSets>
+        <div style="width: 100%;overflow:hidden;background: #EEEEEE;">
+            <div class="shadow">
+                <ul style="background-color: #fff;border-bottom: 1px solid #ddd;width:100%;height:60px">
+                    <span style="margin-left:30px;">
+                        <img src="img/logo1.png" style="margin-top:10px;"/>
+                    </span>
+                    <span style="float:right;margin-right:30px;font-size:14px;color:#666666;margin-top:5px;">
+                        <p><![CDATA[官方电话：400-900-9298]]></p>
+                    </span>
+                    <span style="margin-top:17px;margin-right:8px;float:right">
+                        <img src="img/phone-icon.png"/>
+                    </span>
+                </ul>
+            </div>
+            <div id="pay_style_content" class="all" style="-webkit-box-shadow:0 0 20px #D1D1D1;-moz-box-shadow:0 0 20px #D1D1D1;box-left-shadow:0 0 20px #D1D1D1;width:956px;margin:auto;">
+                <div class="banner" style="color:#000">
+                    <div style="float:left;font-size:18px;margin-left:50px;">
+                        <P><![CDATA[收银台]]></P>
+                    </div>
+                    <div style="margin-left:600px;">
+                        <li style="float:left;margin-top:15px;">
+                            <div style="float:left;line-height:35px;margin-left: 30px;font-size: 14px;"><![CDATA[请于]]></div>
+                            <div style="float:left;line-height:35px;color: #ff5451;font-size: 16px;"><![CDATA[15分钟内]]></div>
+                            <div style="float:left;line-height:35px;font-size: 14px;"><![CDATA[完成支付,逾期交易自动关闭。]]></div>
+                        </li>
+                    </div>
+                </div>
+                <div class="ship" style="color:#000">
+                    <br/>
+                    <div style="width:100%;overflow:hidden;">
+                        <li style="height:35px;line-height:35px;font-size:14px;float:left;width:50%;">
+                            <div style="float:left;text-indent:53px;"><![CDATA[订单编号：]]></div>
+                            <div id="order_number" style="float:left;font-size:14px;"/>
+                        </li>
+                        <li style="height:35px;line-height:35px;font-size:14px;float:left;width:50%;">
+                            <div style="float:left;text-indent:53px;"><![CDATA[付款企业：]]></div>
+                            <div id="business_group_name" style="float:left;font-size:14px;"/>
+                        </li>
+                        <li style="height:35px;line-height:35px;font-size:14px;float:left;width:50%;">
+                            <div style="float:left;text-indent:53px;"><![CDATA[订购时间：]]></div>
+                            <div id="requisition_date" style="float:left;font-size:14px;"/>
+                        </li>
+                        <li style="height:35px;line-height:35px;font-size:14px;float:left;width:50%;">
+                            <div style="float:left;text-indent:53px;"><![CDATA[付款人：]]></div>
+                            <div id="user_description" style="float:left;font-size:14px;"/>
+                        </li>
+                    </div>
+                    <div>
+                        <table border="1" bordercolor="#CCCCCC" rules="all" style="width:90%;text-align:center;margin-top: 30px;margin-left:50px">
+                            <tr style="height:40px;background: #F7F7F7">
+                                <th style="text-align:center" width="20%"><![CDATA[产品]]></th>
+                                <th style="text-align:center" width="15%"><![CDATA[服务类型]]></th>
+                                <th style="text-align:center" width="15%"><![CDATA[套餐类型]]></th>
+                                <th style="text-align:center" width="20%"><![CDATA[有效时间]]></th>
+                                <th style="text-align:center" width="10%"><![CDATA[优惠]]></th>
+                                <th style="text-align:center" width="20%"><![CDATA[实付金额（元）]]></th>
+                            </tr>
+                            <tr style="height:60px">
+                                <td><![CDATA[企业服务标准]]></td>
+                                <td><![CDATA[软件产品]]></td>
+                                <td><![CDATA[${/model/detail_info/record/@package_name}]]></td>
+                                <td><![CDATA[${/model/detail_info/record/@valid_period}]]></td>
+                                <td><![CDATA[无]]></td>
+                                <td><![CDATA[${/model/detail_info/record/@package_price}]]></td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div>
+                        <hr style="width:860px;margin-left:3px;margin-top:50px;margin-left:47px;"/>
+                    </div>
+                    <div>
+                        <div style="background-color: #fff;float: left;width: 100%;">
+                            <div style="float: left;border-bottom: 1px solid #ddd;padding:10px 15px;">
+                                <div style="font-size:14px;padding: 0px 38px;"><![CDATA[选择支付方式:]]></div>
+                                <div>
+                                    <form id="type_id" action="pay.jsp" method="POST" target="_top">
+                                        <input name="order_number" id="order_number_id" type="hidden" value=""/>
+                                        <input name="detail_number" id="detail_number_id" type="hidden" value=""/>
+                                        <input name="package_price" id="package_price_id" type="hidden" value=""/>
+                                        <input name="notify_url" id="notify_url_id" type="hidden" value=""/>
+                                        <div>
+                                            <ul id="method-ul" class="method-ul clear" style="margin-top: 20px">
+                                                <!--  <li class="clicked" onclick="paySwitch(this)">
+                                                    <input name="paytype" checked="checked" type="radio" value="BC_NATIVE"/>
+                                                    <img alt="BC NATIVE" src="${/request/@context_path}/modules/pay/PAY5010/img/pay-way-wet.png"/>
+                                                </li> -->
+                                                <!--  <li class="clicked" onclick="paySwitch(this)">
+                                                    <input name="paytype" checked="checked" type="radio" value="WX_NATIVE"/>
+                                                    <img alt="WX NATIVE" src="${/request/@context_path}/modules/pay/PAY5010/img/pay-way-wet.png"/>
+                                                </li> -->
+                                                <!--  <li onclick="paySwitch(this)">
+                                                    <input name="paytype" type="radio" value="BC_ALI_QRCODE"/>
+                                                    <img alt="BC_ALI_QRCODE" src="${/request/@context_path}/modules/pay/PAY5010/img/pay-way-2.png"/>
+                                                </li>
+                                                <li onclick="paySwitch(this)">
+                                                    <input name="paytype" type="radio" value="BC_EXPRESS"/>
+                                                    <img alt="BC EXPRESS" src="${/request/@context_path}/modules/pay/PAY5010/img/pay-way-3.png"/>
+                                                </li> --><![CDATA[
+                                                
+                                               
+                                                
+                                            ]]></ul>
+                                        </div>
+                                        <div style="clear: both;float: left;margin-top: 1.5em;padding: 0px 0px 20px 20px;">
+                                            <input name="check_box" id="check_box_id" checked="true" style="border-radius: 5px;display: block;height:40px;width: 16px;float:left;margin: 0 10px;" type="checkbox" value=""/>
+                                            <div class="left_div" style="float:left;line-height:40px;color:#5E697F"><![CDATA[我已阅读并同意该条款]]></div>
+                                            <div style="float: left;line-height: 40px;color:solid;">
+                                                <a href="javascript:open_agreement_detail();" style="cursor: pointer;color:#494D54"><![CDATA[《going-link支付协议》]]></a>
+                                            </div>
+                                            <li>
+                                                <div style="font-size:28px;padding-left: 460px;margin-top: -4px;;"><![CDATA[总计：]]></div>
+                                                <div id="package_price" style="font-size:28px;color:#F54D56;padding-left: 550px;margin-top: -42px;"/>
+                                            </li>
+                                            <input class="button" onclick="submit_check()" style="border-radius:5px;font-size:16px;margin-left: 675px;margin-top: -44px;" type="button" value="立即充值"/>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <iframe name="qrcode" id="qrcode_id" frameborder="0" height="550px" scrolling="yes" src="pay.jsp" style="display:none;background-color:#eeeeee;" width="100%"/>
+        <div id="type_change_id" style="clear: both;padding: 20px 20px 20px 20px;display:none;background-color:#eeeeee;">
+            <input class="button" onclick="pay_type_change()" style="position:relative;margin:0 auto;border-radius: 5px;" type="button" value="更换付款方式"/>
+        </div>
+        <div id="buttom_id" style="width: 100%;text-align: center !important;bottom: 20px;background:#eeeeee;margin-top:30px;">
+            <span><![CDATA[沪ICP备14039535号-1]]></span>
+            <span><![CDATA[ © Copyright Hand China Co.,Ltd.]]></span>
+        </div>
+        <script><![CDATA[
+            function paySwitch(that) {
+                var li = that.parentNode.children;
+                for (var i = 0;i < li.length;i++) {
+                    li[i].className = "";
+                    li[i].childNodes[0].removeAttribute("checked");
+                }
+                that.className = "clicked";
+                that.childNodes[0].setAttribute("checked", "checked");
+            }
+            
+            function window_close() {
+                window.close();
+            }
+            
+            Aurora.onReady(function() {
+                var order_number = '${/parameter/@order_number}';
+                var package_price = '${/parameter/@package_price}';
+                var session_id = '${/session/@session_id}';
+                if (Aurora.isEmpty(order_number) || Aurora.isEmpty(package_price) || Aurora.isEmpty(session_id)) {
+                    Aurora.showErrorMessage('错误', '非法访问，页面即将关闭！');
+                    window.setTimeout('window_close()', 3000);
+                }
+            
+                document.getElementById('order_number').innerHTML = '${/parameter/@order_number}';
+                document.getElementById('package_price').innerHTML = '${/parameter/@package_price}' + '元';
+                document.getElementById('requisition_date').innerHTML = '${/model/detail_info/record/@requisition_date}';
+                document.getElementById('user_description').innerHTML = '${/model/detail_info/record/@description}';
+                document.getElementById('business_group_name').innerHTML = '${/model/detail_info/record/@business_group_name}';
+            });
+        ]]></script>
+    </a:view>
+</a:screen>

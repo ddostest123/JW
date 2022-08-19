@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    rownum AS line_num,
+                    p.*,
+                    (TO_CHAR(p.total_costs2,'FM999,999,999,999,999')) AS total_costs,
+                    (TO_CHAR(p.account_total_costs2,'FM999,999,999,999,999')) AS account_total_costs,
+                    NVL(p.retail_total_price - p.total_cost, 0) difference,
+                    (
+                        CASE p.total_cost
+                            WHEN 0
+                            THEN 0
+                            WHEN NULL
+                            THEN 0
+                            ELSE (NVL(p.retail_total_price - p.total_cost, 0))/p.total_cost
+                        END) proportion,
+                    (TO_CHAR((
+                            CASE
+                                WHEN p.total_costs2 >= p.account_total_costs2
+                                THEN 0
+                                ELSE p.account_total_costs2 - p.total_costs2
+                            END),'FM999,999,999,999,999')) AS exceed_money,
+                    (TO_CHAR(NVL(approved_amount2,0),'FM999,999,999,999,999')) AS approved_amount,
+                    0 highest
+                FROM
+                    (SELECT
+                        li.rfx_header_id,
+                        (SELECT
+                            NVL(rh.approved_amount,0)
+                        FROM
+                            pur_rfx_header_snaps rh
+                        WHERE
+                            rh.rfx_header_id = li.rfx_header_id AND
+                            NOT EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                pur_rfx_header_snaps rh2
+                            WHERE
+                                rh.rfx_header_snap_id<rh2.rfx_header_snap_id
+                                and rh2.rfx_header_id = li.rfx_header_id
+                            )
+                        ) AS approved_amount2,
+                        li.item_desc,
+                        li.item_parameter_config,
+                        li.uom_code,
+                        --li.quantity,
+                        fl.quantity,
+                        li.work_num,
+                        li.line_num AS num,
+                        NVL(NVL(li.head_adjust_cost,li.head_total_cost),0) AS total_costs2,
+                        (SELECT
+                            ppcv.purchase_category_name ppcv
+                        FROM
+                            pur_req_lines prl,
+                            pur_purchase_category_vl ppcv
+                        WHERE
+                            li.req_line_id            = prl.req_line_id AND
+                            prl.purchasing_agent_code = ppcv.purchase_category_code and
+                            ppcv.business_group = li.owner_business_group
+                        GROUP BY
+                            ppcv.purchase_category_name
+                        ) AS purchasing_agent_name,
+                        NVL(li.cost_price, 0) cost_price,
+                        NVL(li.quantity * li.cost_price, '0') total_cost,
+                        NVL(fl.valid_fb_retail_price, 0) valid_fb_retail_price,
+                        NVL(fl.valid_fb_retail_price * li.quantity, 0) retail_total_price,
+                        (SELECT
+                            SUM(NVL(fl2.valid_fb_retail_price, 0) * NVL(fl2.allotted_quantity, 0))
+                        FROM
+                            pur_rfx_feedback_lines fl2,
+                            pur_rfx_feedback_headers fh2,
+                            pur_rfx_ln_items li2
+                        WHERE
+                            fl2.rfx_line_item_id   = li2.rfx_line_item_id AND
+                            fl2.feedback_header_id = fh2.feedback_header_id AND
+                            li2.rfx_header_id      = li.rfx_header_id AND
+                            li2.current_round      = fh2.rfx_round AND
+                            li2.current_version    = fh2.rfx_version
+                        ) AS account_total_costs2
+                    FROM
+                        (SELECT
+                            rh.round,
+                            rh.version,
+                            li.rfx_line_item_id,
+                            li.rfx_header_id,
+                            li.inv_organization_id,
+                            (SELECT
+                                io.description
+                            FROM
+                                inv_organizations_vl io
+                            WHERE
+                                io.inv_organization_id = li.inv_organization_id
+                            ) inv_organization_desc,
+                            li.item_category_id,
+                            (SELECT
+                                ic.category_name
+                            FROM
+                                mtl_categories_user_defined_vl ic
+                            WHERE
+                                ic.category_udf_id = li.item_category_id
+                            ) item_category_desc,
+                            li.item_id,
+                            li.item_code,
+                            li.item_desc,
+                            li.item_note,
+                            li.item_parameter_config,
+                            li.suggested_feedback_line_id,
+                            li.uom_code,
+                            rh.total_cost AS head_total_cost,
+                            rh.adjust_cost AS head_adjust_cost,
+                            (SELECT
+                                fv.uom_desc
+                            FROM
+                                fnd_uom_codes_vl fv
+                            WHERE
+                                fv.uom_code       = li.uom_code AND
+                                fv.business_group = rh.owner_business_group
+                            ) uom_desc,
+                            li.quantity,
+                            TO_CHAR(need_by_date, 'yyyy-mm-dd') need_by_date,
+                            li.suggested_operation,
+                            (SELECT
+                                scv.code_value_name
+                            FROM
+                                sys_code_values_vl scv,
+                                sys_codes_vl sc
+                            WHERE
+                                sc.code_id     = scv.code_id AND
+                                scv.code_value = li.suggested_operation AND
+                                sc.code        = 'PUR_RFX_SUGGESTED_OPERATION'
+                            ) suggested_operation_desc,
+                            li.cancel_flag,
+                            li.rfx_finished_flag,
+                            li.data_source,
+                            li.source_from,
+                            li.comments,
+                            li.pur_req_num,
+                            li.feedback_range,
+                            li.flex_appl_relevance_id,
+                            li.finish_in_version,
+                            li.finish_in_round,
+                            li.line_num,
+                            li.current_round,
+                            li.current_version,
+                            li.samples_requested,
+                            li.req_number,
+                            rh.owner_business_group,
+                            li.req_line_num,
+                            li.work_num,
+                            li.bom_num,
+                            li.limit_price,
+                            li.cost_price,
+                            li.tax_included_flag,
+                            li.tax_type_rate,
+                            li.req_line_id
+                        FROM
+                            pur_rfx_ln_items li,
+                            pur_rfx_headers rh
+                        WHERE
+                            li.rfx_header_id = rh.rfx_header_id
+                        ) li,
+                        (SELECT
+                            fh.rfx_header_id,
+                            fh.rfx_round,
+                            fh.rfx_version,
+                            fh.coop_business_group,
+                            fh.coop_company_id,
+                            fh.vendor_id,
+                            (SELECT
+                                fc.company_code
+                            FROM
+                                fnd_companies fc
+                            WHERE
+                                fc.company_id = fh.coop_company_id
+                            ) vendor_code,
+                            (SELECT
+                                fc.company_full_name
+                            FROM
+                                fnd_companies_vl fc
+                            WHERE
+                                fc.company_id = fh.coop_company_id
+                            ) vendor_desc,
+                            fl.feedback_line_id,
+                            fl.item_id,
+                            fl.rfx_line_item_id,
+                            NVL(
+                            (SELECT
+                                SUM(fl3.allotted_quantity)
+                            FROM
+                                pur_rfx_feedback_lines fl3
+                            WHERE
+                                fl3.rfx_line_item_id = fl.rfx_line_item_id
+                            ) ,0) AS quantity,
+                            fl.inv_organization_id,
+                            fl.promised_date,
+                            fl.feedback_expiry_date_from,
+                            fl.feedback_expiry_date_to,
+                            fl.valid_fb_retail_price,
+                            fl.valid_fb_wholesale_price,
+                            fl.suggested_flag
+                        FROM
+                            pur_rfx_feedback_headers fh,
+                            pur_rfx_feedback_lines fl,
+                            pur_rfx_ln_items li
+                        WHERE
+                            fh.feedback_header_id = fl.feedback_header_id AND
+                            fl.rfx_line_item_id   = li.rfx_line_item_id
+                        ) fl #WHERE_CLAUSE# AND
+                        fl.feedback_line_id(+) = li.suggested_feedback_line_id
+                    ORDER BY
+                        li.line_num
+                    ) p
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

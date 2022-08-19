@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: zhenweiyin  
+    $Date: 2012-10-17 上午8:28:46  
+    $Revision: 1.0  
+    $Purpose: 
+    $modify:xuls 2012-10-26 
+    $comment: 去掉设置多余的编辑器和初始化赋值
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query model="db.erpfnd_precision_pkg.get_price_precision" rootPath="erpord5010_get_price_precision"/>
+        <a:model-query model="db.erpfnd_parameter_pkg.get_amount_precision" rootPath="erpord5010_amount_precision"/>
+        <a:model-query fetchAll="true" model="erpord.ERPORD5010.ord_sales_order_lines" rootPath="erpord5010_init_lines"/>
+        <a:model-query defaultWhereClause="t1.company_id = ${@company_id}" model="erpfnd.ERPFND1010.fnd_companies" rootPath="erpord5010_fnd_tax"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="erpord5010_order_close_link" model="db.erpord_sales_order_pkg.close_ord_sales_header" modelaction="execute"/>
+        <script src="${/request/@context_path}/modules/erpord/ord.js" type="text/javascript"/>
+        <script><![CDATA[
+			function erpord5010_close_open_init(){
+			    if('${/model/erpord5010_fnd_tax/record/@tax_nature}'=='SMALL_SCALE_TAXPAYERS'){
+                    $('erpord5010_oc_line_gd').hideColumn('tax_rate');
+                    $('erpord5010_oc_line_gd').hideColumn('tax_included_flag');
+                }
+			}
+			
+            function erpord5010_item_footRender(records, name) {
+                return '<font size=2>合计</font>';
+            }
+            
+            function erpord5010_amount_footRender(records, name) {
+                var sum = 0;
+                for (var i = 0;i < records.length;i++) {
+                    var r = records[i].get(name);
+                    var n = parseFloat(r);
+                    if (!isNaN(n)) {
+                        sum += n;
+                    }
+                }
+                $('erpord5010_order_header_new_ds').getAt(0).set('total_amount', sum);
+                return '<label style="font-weight:bold">'+Aurora.formatNumber(sum, '${/model/erpord5010_amount_precision/record/@value}')+'</label>';
+            }
+            
+            function erpord5010_new_order_back() {
+                $('erpord5010_order_form_window').close();
+            }
+            
+            function erpord5010_price_ren_fun(value, record, name) {
+                var precision = ${/model/erpord5010_get_price_precision/record/@value};
+                return show_price_num(value, precision);
+            }
+            
+            function erpord5010_show_positive_number(value, record, name) {
+                if (value < 0) {
+                    value = -value;
+                }
+                return Aurora.formatNumber(value, '${/model/erpord5010_amount_precision/record/@value}');
+            }
+            
+            //行打开按钮
+            function erpord5010_order_oc_line_open() {
+                var select_arr = $('erpord5010_order_line_ds').getSelected();
+                if (select_arr.length == 0) {
+                    Aurora.showMessage('${l:HAP_PROMPT}', '${l:ERPORD5010.NEED_SELECT_FOROPEN}');
+                    return;
+                } else {
+                    for (var i = 0;i < select_arr.length;i++) {
+                        select_arr[i].set('operator_flag', 'open');
+                        select_arr[i].getField('closed_flag').setReadOnly(false);
+                        select_arr[i].set('closed_flag','N');
+                        select_arr[i].getField('closed_flag').setReadOnly(true);
+                    }
+                    Aurora.showConfirm('${l:HAP_PROMPT}', '${l:ERPORD5010.CONFIRM_ORDERLINE_OPEN}', function() {
+                        $('erpord5010_order_line_ds').submitSelected();
+                    });
+                }
+            }
+            function erpord51010_oc_lines_sucess_clear_fun(ds, res) {
+                var url = $('erpord5010_order_detail_link').getUrl() + '?sales_order_id=' + $('erpord5010_order_header_new_ds').getAt(0).get('sales_order_id');
+                $('erpord5010_order_form_window').close();
+                new Aurora.Window({
+                    id: 'erpord5010_order_form_window',
+                    url: url,
+                    title: '销售提单',
+                    fullScreen: true
+                });
+                $('erpord5010_order_form_window').addListener('close', erpord5110_order_update_window_close);
+                //ds.query();
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="erpord5010_label_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="order_label_name" defaultValue="销售订单"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="erpord5010_order_header_new_ds" loadData="true" model="erpord.ERPORD3010.ord_sales_order_headers">
+                <a:fields>
+                    <a:field name="order_number" readOnly="true"/>
+                    <a:field name="customer_name" readOnly="true"/>
+                    <a:field name="customer_id"/>
+                    <a:field name="currency_code" readOnly="true"/>
+                    <a:field name="currency_code_name"/>
+                    <a:field name="order_date" readOnly="true"/>
+                    <a:field name="gi_warehouse_id"/>
+                    <a:field name="gi_warehouse_name" readOnly="true"/>
+                    <a:field name="status" defaultValue="VERIFIED" readOnly="true"/>
+                    <a:field name="status_name" defaultValue="正常" readOnly="true"/>
+                    <a:field name="salesmen_employee_name" readOnly="true"/>
+                    <a:field name="salesmen_employee_id"/>
+                    <a:field name="return_order_flag" checkedValue="Y" defaultValue="N" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="goods_issue_flag" checkedValue="Y" defaultValue="N" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="closed_flag" checkedValue="Y" defaultValue="N" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="description" readOnly="true"/>
+                    <a:field name="company_id" defaultValue="${/session/@company_id}"/>
+                    <a:field name="total_amount"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="erpord5010_order_line_ds" model="erpord.ERPORD5010.ord_sales_order_lines" queryUrl="${/request/@context_path}/autocrud/erpord.ERPORD5010.ord_sales_order_lines/query?sales_order_id=${/parameter/@sales_order_id}" selectable="true" submitUrl="${/request/@context_path}/modules/erpord/ERPORD5010/ord_sales_order_line_submit.svc">
+                <a:datas dataSource="erpord5010_init_lines"/>
+                <a:fields>
+                    <a:field name="line_number" readOnly="true"/>
+                    <a:field name="item_id"/>
+                    <a:field name="item_code_name_specs" autoComplete="true" autoCompleteField="quick_value" autoCompleteSize="1" lovGridHeight="250" lovHeight="400" lovService="erpord.ERPORD5010.inv_items_basics_lov" lovWidth="500" readOnly="true" title="物品查询">
+                        <a:mapping>
+                            <a:map from="item_code_name_specs" to="item_code_name_specs"/>
+                            <a:map from="item_id" to="item_id"/>
+                            <a:map from="trade_uom" to="trade_uom"/>
+                            <a:map from="primary_uom" to="primary_uom"/>
+                            <a:map from="trade_uom_name" to="trade_uom_name"/>
+                            <a:map from="primary_uom_name" to="primary_uom_name"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="trade_uom"/>
+                    <a:field name="trade_uom_name" autoComplete="true" autoCompleteField="quick_value" autoCompleteSize="1" lovGridHeight="250" lovHeight="400" lovLabelWidth="120" lovService="erpord.ERPORD5010.inv_uom_codes_lov" lovWidth="530" readOnly="true" title="单位查询">
+                        <a:mapping>
+                            <a:map from="uom_description" to="trade_uom_name"/>
+                            <a:map from="uom_code" to="trade_uom"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="tax_included_flag" checkedValue="Y" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="amount"/>
+                    <a:field name="gi_warehouse_id"/>
+                    <a:field name="gi_warehouse_name" readOnly="true"/>
+                    <a:field name="closed_flag" checkedValue="Y" defaultValue="N" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="gift_flag" checkedValue="Y" defaultValue="N" readOnly="true" uncheckedValue="N"/>
+                    <a:field name="company_id" defaultValue="${/session/@company_id}"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="submitsuccess" handler="erpord51010_oc_lines_sucess_clear_fun"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:defaultScreen>
+            <a:screenTopToolbar>
+                <a:toolbarButton className="item-rbtn-blue back" click="erpord5010_new_order_back" style="margin-left:20px;" text="ERPGLD_ACCOUNTS.BACK" width="100"/>
+            </a:screenTopToolbar>
+            <a:hBox padding="0">
+                <a:textField name="order_number" bindTarget="erpord5010_order_header_new_ds" prompt="ERPORD_SALES_ORDER_HEADERS.ORDER_NUMBER" typeCase="upper" width="150"/>
+                <a:textField name="customer_name" bindTarget="erpord5010_order_header_new_ds" prompt="ERPORD_SALES_ORDER_HEADERS.CUSTOMER_DESCRIPTION" width="190"/>
+                <a:textField name="currency_code" bindTarget="erpord5010_order_header_new_ds" prompt="ERPORD_SALES_ORDER_HEADERS.CURRENCY_CODE" width="150"/>
+                <a:textField name="order_date" bindTarget="erpord5010_order_header_new_ds" prompt="ERPORD_SALES_ORDER_HEADERS.ORDER_DATE" renderer="Aurora.formatDate" width="150"/>
+            </a:hBox>
+            <a:hBox padding="0">
+                <a:textField name="gi_warehouse_name" bindTarget="erpord5010_order_header_new_ds" prompt="ERPORD_SALES_ORDER_HEADERS.GI_WAREHOUSE_ID"/>
+                <a:textField name="status_name" bindTarget="erpord5010_order_header_new_ds" prompt="ERPORD_SALES_ORDER_HEADERS.STATUS" width="100"/>
+                <a:checkBox name="return_order_flag" bindTarget="erpord5010_order_header_new_ds" prompt="ERPORD_SALES_ORDER_HEADERS.RETURN_ORDER_FLAG" width="30"/>
+                <a:checkBox name="goods_issue_flag" bindTarget="erpord5010_order_header_new_ds" prompt="ERPORD_SALES_ORDER_HEADERS.GOODS_ISSUE_FLAG" width="32"/>
+                <a:checkBox name="closed_flag" bindTarget="erpord5010_order_header_new_ds" prompt="ERPORD_SALES_ORDER_LINES.CLOSED_FLAG" width="30"/>
+                <a:textField name="salesmen_employee_name" bindTarget="erpord5010_order_header_new_ds" prompt="ERPORD_SALES_ORDER_HEADERS.SALESMEN_EMPLOYEE_ID" width="150"/>
+            </a:hBox>
+            <a:hBox padding="0">
+                <a:textField name="description" bindTarget="erpord5010_order_header_new_ds" prompt="ERPORD_SALES_ORDER_HEADERS.DESCRIPTION" width="870"/>
+            </a:hBox>
+            <a:grid id="ord5010_oc_line_gd" bindTarget="erpord5010_order_line_ds" height="300" marginHeight="250" marginWidth="50" width="900">
+                <a:toolBar>
+                    <a:button click="erpord5010_order_oc_line_open" icon="${/request/@context_path}/images/add.gif" text="ERPORD5010.LINE_OPEN"/>
+                </a:toolBar>
+                <a:columns>
+                    <a:column name="line_number" align="right" lock="true" prompt="ERPORD_SALES_ORDER_LINES.LINE_NUMBER" width="25"/>
+                    <a:column name="item_code_name_specs" footerRenderer="erpord5010_item_footRender" lock="true" prompt="物品" width="125"/>
+                    <a:column name="trade_quantity" align="right" prompt="ERPORD_SALES_ORDER_LINES.TRADE_QUANTITY" width="60"/>
+                    <a:column name="delivery_trade_quantity" align="right" prompt="已提货" width="60"/>
+                    <a:column name="post_delivery_trade_qty" align="right" prompt="已发货" width="60"/>
+                    <a:column name="trade_uom_name" prompt="ERPORD_SALES_ORDER_LINES.TRADE_UOM" width="60"/>
+                    <a:column name="primary_quantity" align="right" prompt="ERPORD_SALES_ORDER_LINES.PRIMARY_QUANTITY" width="60"/>
+                    <!-- <a:column name="yet_trade_quantity" align="right" prompt="已提货" renderer="ord5010_show_positive_number" width="60"/>
+                    <a:column name="yet_primary_quantity" align="right" prompt="已发货" renderer="ord5010_show_positive_number" width="60"/> -->
+                    <a:column name="primary_uom_name" prompt="ERPORD_SALES_ORDER_LINES.PRIMARY_UOM" width="40"/>
+                    <a:column name="gift_flag" prompt="ERPORD_SALES_ORDER_LINES.GIFT_FLAG" width="25"/>
+                    <a:column name="require_date" prompt="ERPORD_SALES_ORDER_LINES.REQUIRE_DATE" renderer="Aurora.formatDate" width="60"/>
+                    <a:column name="tax_included_flag" prompt="ERPORD_SALES_ORDER_LINES.TAX_INCLUDED_FLAG" width="25"/>
+                    <a:column name="price" align="right" prompt="ERPORD_SALES_ORDER_LINES.PRICE" renderer="ord5010_price_ren_fun" width="60"/>
+                    <a:column name="tax_rate" align="right" prompt="ERPORD.TAX_RATE" renderer="ord5010_show_positive_number" width="40"/>
+                    <a:column name="amount" align="right" footerRenderer="erpord5010_amount_footRender" prompt="ERPORD_SALES_ORDER_LINES.AMOUNT" renderer="ord5010_show_positive_number" width="75"/>
+                    <a:column name="gi_warehouse_name" prompt="ERPORD_SALES_ORDER_HEADERS.GI_WAREHOUSE_ID" width="60"/>
+                    <a:column name="description" prompt="ERPORD_SALES_ORDER_LINES.DESCRIPTION" width="100"/>
+                    <a:column name="closed_flag" editor="erpord51010_check_ed" prompt="ERPORD_SALES_ORDER_HEADERS.CLOSED_FLAG" width="25"/>
+                </a:columns>
+                <a:editors>
+                    <a:checkBox id="erpord51010_check_ed"/>
+                </a:editors>
+            </a:grid>
+        </a:defaultScreen>
+        <script><![CDATA[
+        	erpord5010_close_open_init();
+        ]]></script>
+    </a:view>
+</a:screen>

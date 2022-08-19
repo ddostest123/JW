@@ -1,0 +1,327 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: 7211
+    $Date: 2018-3-05 下午13:46:29  
+    $Revision: 1.0  
+    $Purpose: 珀莱雅产品认证创建
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="cux.PROYA.get_proya_bg_info" rootPath="proyamtl5010_product_query_proya_data"/>
+        <a:model-query defaultWhereClause="t.flex_value_set_code = &apos;PROYA_MTL_PRODUCT_STATUS&apos;" fetchAll="true" model="cux.PROYA.fnd_flex_value_sets_query" rootPath="proyamtl5010_product_status_data"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="proyamtl5010_products_create_link" url="${/request/@context_path}/modules/cux/PROYA/PROYAMTL5010/proyamtl5010_products_maintain.screen"/>
+        <a:link id="proyamtl5010_products_operation_record_link" url="${/request/@context_path}/modules/cux/PROYA/proya_mtl_operation_records.screen"/>
+        <a:link id="proyamtl5010_products_batch_release_link" model="cux.PROYA.PROYAMTL5010.proyamtl5010_products_query" modelaction="batch_update"/>
+        <a:link id="proyamtl5010_products_batch_cancel_link" model="cux.PROYA.PROYAMTL5010.proyamtl5010_product_tech_lns" modelaction="batch_update"/>
+        <a:link id="proyamtl5010_products_batch_delete_link" model="cux.PROYA.PROYAMTL5010.proyamtl5010_products_query" modelaction="batch_update"/>
+        <a:link id="proyamtl5010_products_batch_import_url" url="${/request/@context_path}/modules/cux/PROYA/PROYAMTL5010/proyamtl5010_products_import.screen"/>
+        <a:link id="proyamtl5010_product_image_validate_link" model="cux.PROYA.fnd_atm_attachment_query" modelaction="query"/>
+        <script><![CDATA[
+            //日期校检
+            
+            function proyamtl5010_query_release_dateValidator(record, name, value) {
+                if (name == "release_date_from" || name == "release_date_to") {
+                    var start_date = record.get("release_date_from");
+                    var end_date = record.get("release_date_to");
+                    if (typeof(end_date) != 'undefined' && !Ext.isEmpty(end_date) && typeof(start_date) != 'undefined' && !Ext.isEmpty(start_date)) {
+                        if (start_date > end_date) {
+                            return '${l:TIME_ERROR}';
+                        }
+                    }
+                    return true;
+                }
+            }
+            
+            
+            //查询
+            
+            function proyamtl5010_products_query() {
+                $('proyamtl5010_products_result_ds').query();
+            }
+            
+            //新建
+            
+            function proyamtl5010_products_create() {
+                new Aurora.Window({
+                    id: 'proyamtl5010_products_maintain_win',
+                    title: '${l:PROYA_MTL_PRODUCTS.PRODUCT_MAINTAIN}',
+                    url: $('proyamtl5010_products_create_link').getUrl(),
+                    fullScreen: true
+                });
+                $('proyamtl5010_products_maintain_win').on('close', function() {
+                    $('proyamtl5010_products_result_ds').query();
+                });
+            }
+            
+            //维护
+            
+            function proyamtl5010_products_maintain(product_id) {
+                new Aurora.Window({
+                    id: 'proyamtl5010_products_maintain_win',
+                    title: '${l:PROYA_MTL_PRODUCTS.PRODUCT_MAINTAIN}',
+                    url: $('proyamtl5010_products_create_link').getUrl() + '?product_id=' + product_id,
+                    fullScreen: true
+                });
+                $('proyamtl5010_products_maintain_win').on('close', function() {
+                    $('proyamtl5010_products_result_ds').query();
+                });
+            }
+            
+            //单号渲染
+            
+            function proyamtl5010_products_code_renderer(value, record, name) {
+                return '<a href="javascript:proyamtl5010_products_maintain(' + record.get('product_id') + ');">' + value + '</a>';
+            }
+            
+            //发布
+            
+            function proyamtl5010_products_batch_release() {
+                var records = $('proyamtl5010_products_result_ds').getSelected();
+                if (records.length > 0) {
+                    Aurora.showConfirm('${l:PROMPT}', '${l:PROMPT.CONFIRM_RELEASE}', function() {
+                        var para = [];
+                        for (var i = 0;i < records.length;i++) {
+                            records[i].set('_status', 'execute');
+                            para.push(records[i].data);
+                        }
+                        //Add by Jehu 15294 2018年5月7日 15:02:32
+                        //发布前校验是否已传产品图片
+                        Aurora.request({
+                            url: $('proyamtl5010_product_image_validate_link').getUrl(),
+                            para: {
+                                'table_pk_value': record.get('product_id'),
+                                'table_name': 'PROYA_MTL_PRODUCT_IMAGES'
+                            },
+                            success: function(args) {
+                                if (args.result.record.atm == 0) {
+                                    Aurora.Masker.unmask($('proyamtl5010_products_maintain_win').wrap);
+                                    Aurora.showMessage('${l:PROMPT}', '${l:PROYAPUR5010.PRODUCT_IMAGE_IS_NULL}');
+                                    return;
+                                }
+                                Aurora.Masker.mask(Ext.getBody(), '${l:QMS5050.BEING_SUBMITTED}');
+                                Aurora.request({
+                                    url: $('proyamtl5010_products_batch_release_link').getUrl(),
+                                    para: para,
+                                    success: function() {
+                                        Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                            proyamtl5010_products_query();
+                                            Aurora.Masker.unmask(Ext.getBody());
+                                        });
+                                    },
+                                    failure: function() {
+                                        Aurora.Masker.unmask(Ext.getBody());
+                                    },
+                                    error: function() {
+                                        Aurora.Masker.unmask(Ext.getBody());
+                                    },
+                                    scope: this
+                                });
+            
+                            },
+                            error: function() {
+                                Aurora.Masker.unmask($('proyamtl5010_products_maintain_win').wrap);
+                            },
+                            failure: function() {
+                                Aurora.Masker.unmask($('proyamtl5010_products_maintain_win').wrap);
+                            },
+                            scope: this
+                        });
+                    }, function() {}, 300, 100);
+                }
+            }
+            
+            //下架
+            
+            function proyamtl5010_products_batch_cancel() {
+                var records = $('proyamtl5010_products_result_ds').getSelected();
+                if (records.length > 0) {
+                    Aurora.showConfirm('${l:PROMPT}', '${l:PROYAMTL5010.COMFIRN_CANCEL}', function() {
+                        var para = [];
+                        for (var i = 0;i < records.length;i++) {
+                            records[i].set('_status', 'execute');
+                            para.push(records[i].data);
+                        }
+                        Aurora.Masker.mask(Ext.getBody(), '${l:QMS5050.BEING_SUBMITTED}');
+                        Aurora.request({
+                            url: $('proyamtl5010_products_batch_cancel_link').getUrl(),
+                            para: para,
+                            success: function() {
+                                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                    proyamtl5010_products_query();
+                                    Aurora.Masker.unmask(Ext.getBody());
+                                });
+                            },
+                            failure: function() {
+                                Aurora.Masker.unmask(Ext.getBody());
+                            },
+                            error: function() {
+                                Aurora.Masker.unmask(Ext.getBody());
+                            },
+                            scope: this
+                        });
+                    }, function() {}, 300, 100);
+                }
+            }
+            
+            //删除
+            
+            function proyamtl5010_products_batch_delete() {
+                var records = $('proyamtl5010_products_result_ds').getSelected();
+                if (records.length > 0) {
+                    Aurora.showConfirm('${l:PROMPT}', '${l:PROMPT.CONFIRM_DELETE}', function() {
+                        var para = [];
+                        for (var i = 0;i < records.length;i++) {
+                            records[i].set('_status', 'delete');
+                            para.push(records[i].data);
+                        }
+                        Aurora.Masker.mask(Ext.getBody(), '${l:QMS5050.BEING_SUBMITTED}');
+                        Aurora.request({
+                            url: $('proyamtl5010_products_batch_delete_link').getUrl(),
+                            para: para,
+                            success: function() {
+                                Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                    proyamtl5010_products_query();
+                                    Aurora.Masker.unmask(Ext.getBody());
+                                });
+                            },
+                            failure: function() {
+                                Aurora.Masker.unmask(Ext.getBody());
+                            },
+                            error: function() {
+                                Aurora.Masker.unmask(Ext.getBody());
+                            },
+                            scope: this
+                        });
+                    }, function() {}, 300, 100);
+                }
+            }
+            
+            
+            //操作记录
+            
+            function proyamtl5010_products_operation_record_renderer(value, record, name) {
+                return '<a href="javascript:proyamtl5010_products_operation_record(' + record.get('product_id') + ');">${l:PORMPT.OPERATION_RECORD}</a>';
+            }
+            
+            function proyamtl5010_products_operation_record(product_id) {
+                new Aurora.Window({
+                    id: 'proyamtl_product_operation_record_win',
+                    title: '${l:PORMPT.OPERATION_RECORD}',
+                    url: $('proyamtl5010_products_operation_record_link').getUrl() + '?product_id=' + product_id,
+                    width: 600,
+                    height: 490
+                });
+            }
+            
+            //批量导入
+            
+            function proyamtl5010_products_batch_import() {
+                window.open($('proyamtl5010_products_batch_import_url').getUrl());
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="proyamtl5010_product_status_ds">
+                <a:datas dataSource="proyamtl5010_product_status_data"/>
+            </a:dataSet>
+            <a:dataSet id="proyamtl5010_product_yes_no_ds" lookupCode="YES_NO"/>
+            <a:dataSet id="proyamtl5010_products_query_ds">
+                <a:fields>
+                    <a:field name="release_date_from" validator="proyamtl5010_query_release_dateValidator"/>
+                    <a:field name="release_date_to" validator="proyamtl5010_query_release_dateValidator"/>
+                    <a:field name="is_attention_flag_desc" displayField="code_value_name" options="proyamtl5010_product_yes_no_ds" returnField="is_attention_flag" valueField="code_value"/>
+                    <a:field name="product_status_desc" displayField="flex_desc" options="proyamtl5010_product_status_ds" returnField="product_status" valueField="flex_value"/>
+                    <a:field name="category_desc" autoComplete="true" autoCompleteField="category_code_name" lovHeight="490" lovService="cux.PROYA.mtl_categories_lov?business_group=${/model/proyamtl5010_product_query_proya_data/record/@proya_business_group}" lovWidth="500" title="PROYA_MTL_PRODUCTS.CATEGORY_ID">
+                        <a:mapping>
+                            <a:map from="category_udf_id" to="category_id"/>
+                            <a:map from="category_name" to="category_desc"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="proyamtl5010_products_result_ds" autoCount="true" autoPageSize="true" model="cux.PROYA.PROYAMTL5010.proyamtl5010_products_query" queryDataSet="proyamtl5010_products_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="is_attention_flag" checkedValue="Y" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="proyamtl5010_products_create" text="PROMPT.CREATE" width="100"/>
+                <a:toolbarButton click="proyamtl5010_products_batch_release" text="PROMPT.RELEASE" width="100"/>
+                <a:toolbarButton click="proyamtl5010_products_batch_cancel" text="PROYAMTL5010.CANCEL" width="100"/>
+                <a:toolbarButton click="proyamtl5010_products_batch_delete" text="PROMPT.DELETE" width="100"/>
+                <a:toolbarButton click="proyamtl5010_products_batch_import" text="PROMPT.BATCH_IMPORT" width="100"/>
+            </a:screenTopToolbar>
+            <a:queryForm id="proyamtl5010_products_modify_query_form" bindTarget="proyamtl5010_products_query_ds" queryHook="proyamtl5010_products_query" resultTarget="proyamtl5010_products_result_ds" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:textField style="width:100%;display:none"/>
+                    <a:hBox labelWidth="110">
+                        <a:textField name="product_code" bindTarget="proyamtl5010_products_query_ds" prompt="PROYA_MTL_PRODUCTS.PRODUCT_CODE" width="150">
+                            <a:events>
+                                <a:event name="enterdown" handler="proyamtl5010_products_query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:textField name="product_name" bindTarget="proyamtl5010_products_query_ds" prompt="PROYA_MTL_PRODUCTS.PRODUCT_NAME" width="150">
+                            <a:events>
+                                <a:event name="enterdown" handler="proyamtl5010_products_query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:textField name="key_words" bindTarget="proyamtl5010_products_query_ds" prompt="PROYA_MTL_PRODUCTS.KEY_WORDS" width="150">
+                            <a:events>
+                                <a:event name="enterdown" handler="proyamtl5010_products_query"/>
+                            </a:events>
+                        </a:textField>
+                    </a:hBox>
+                </a:formToolBar>
+                <a:formBody>
+                    <a:hBox labelWidth="110">
+                        <a:comboBox name="product_status_desc" bindTarget="proyamtl5010_products_query_ds" prompt="PROYA_MTL_PRODUCTS.PRODUCT_STATUS" width="150">
+                            <a:events>
+                                <a:event name="enterdown" handler="proyamtl5010_products_query"/>
+                            </a:events>
+                        </a:comboBox>
+                        <a:lov name="category_desc" bindTarget="proyamtl5010_products_query_ds" prompt="PROYA_MTL_PRODUCTS.CATEGORY_ID" width="150">
+                            <a:events>
+                                <a:event name="enterdown" handler="proyamtl5010_products_query"/>
+                            </a:events>
+                        </a:lov>
+                        <a:comboBox name="is_attention_flag_desc" bindTarget="proyamtl5010_products_query_ds" prompt="PROYA_MTL_PRODUCTS.IS_ATTENTION_FLAG" width="150">
+                            <a:events>
+                                <a:event name="enterdown" handler="proyamtl5010_products_query"/>
+                            </a:events>
+                        </a:comboBox>
+                    </a:hBox>
+                    <a:hBox labelWidth="110">
+                        <a:datePicker name="release_date_from" bindTarget="proyamtl5010_products_query_ds" prompt="PROYA_MTL_PRODUCTS.RELEASED_DATE_FROM" width="150">
+                            <a:events>
+                                <a:event name="enterdown" handler="proyamtl5010_products_query"/>
+                            </a:events>
+                        </a:datePicker>
+                        <a:datePicker name="release_date_to" bindTarget="proyamtl5010_products_query_ds" prompt="PROYA_MTL_PRODUCTS.RELEASED_DATE_TO" width="150">
+                            <a:events>
+                                <a:event name="enterdown" handler="proyamtl5010_products_query"/>
+                            </a:events>
+                        </a:datePicker>
+                    </a:hBox>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid bindTarget="proyamtl5010_products_result_ds" marginHeight="180" marginWidth="80" navBar="true" width="1000">
+                <a:columns>
+                    <a:column name="product_status_desc" align="center" prompt="PROYA_MTL_PRODUCTS.PRODUCT_STATUS" sortable="true" width="60"/>
+                    <a:column name="product_code" align="center" prompt="PROYA_MTL_PRODUCTS.PRODUCT_CODE" renderer="proyamtl5010_products_code_renderer" sortable="true" width="90"/>
+                    <a:column name="product_name" prompt="PROYA_MTL_PRODUCTS.PRODUCT_NAME" width="120"/>
+                    <a:column name="category_desc" align="center" prompt="PROYA_MTL_PRODUCTS.CATEGORY_ID" width="100"/>
+                    <a:column name="key_words" prompt="PROYA_MTL_PRODUCTS.KEY_WORDS" width="100"/>
+                    <a:column name="is_attention_flag" align="center" prompt="PROYA_MTL_PRODUCTS.IS_ATTENTION_FLAG" width="50"/>
+                    <a:column name="creation_date_fmt" align="center" prompt="PROYA_MTL_PRODUCTS.CREATION_DATE" sortable="true" width="70"/>
+                    <a:column name="release_date_fmt" align="center" prompt="PROYA_MTL_PRODUCTS.RELEASE_DATE" sortable="true" width="70"/>
+                    <a:column name="authenticate_date_fmt" align="center" prompt="PROYA_MTL_PRODUCTS.AUTHENTICATED_DATE" sortable="true" width="70"/>
+                    <a:column name="authenticate_count" align="right" prompt="PROYA_MTL_PRODUCTS.AUTHENTICATED_COUNT" sortable="true" width="50"/>
+                    <a:column name="product_id" align="center" prompt="PROMPT.OPERATION_RECORD" renderer="proyamtl5010_products_operation_record_renderer" width="80"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

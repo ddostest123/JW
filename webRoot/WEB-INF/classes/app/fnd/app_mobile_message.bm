@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    message_send_id,
+                    send_to_user_id,
+                    title,
+                    content,
+                    'PushNote' MESSAGE_TEMPLATE,
+                    message_type,
+                    TO_CHAR(creation_date, 'YYYY-MM-DD HH24:MI:SS') message_time,
+                    read_flag
+                FROM
+                    (SELECT
+                        v.*,
+                        ceil(rownum / NVL(${/parameter/@page_size}, 5)) AS page_num
+                    FROM
+                        (SELECT
+                            *
+                        FROM
+                            (SELECT
+                                l.message_send_id,
+                                l.send_to_user_id,
+                                l.title,
+                                l.content,
+                                m.message_type,
+                                m.creation_date,
+                                l.app_read_flag AS read_flag
+                            FROM
+                                app_message_send_list l,
+                                app_message_send_ins_list il,
+                                sys_user_messages m
+                            WHERE
+                                l.message_send_id = il.message_send_id AND
+                                m.message_id      = l.message_id AND
+                                il.instance_id    = ${@instance_id}
+                            UNION ALL
+                            SELECT
+                                l.message_send_id,
+                                l.send_to_user_id,
+                                l.title,
+                                l.content,
+                                m.message_type,
+                                m.creation_date,
+                                l.app_read_flag AS read_flag
+                            FROM
+                                app_message_send_list l,
+                                sys_user_messages m
+                            WHERE
+                                m.message_id            = l.message_id AND
+                                l.app_send_success_flag = 'Y' AND
+                                l.send_to_user_id       = ${/session/@user_id}
+                            ) #WHERE_CLAUSE#
+                        GROUP BY
+                            message_send_id,
+                            send_to_user_id,
+                            title,
+                            content,
+                            message_type,
+                            creation_date,
+                            read_flag
+                        ORDER BY
+                            read_flag,
+                            message_send_id DESC
+                        ) v
+                    )
+                WHERE
+                    (
+                        (
+                            ${@page_num} IS NOT NULL AND
+                            ${@page_num}  = page_num
+                        )
+                        OR
+                        (
+                            ${@page_num} IS NULL AND
+                            1             = 1
+                        )
+                    )
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:update-sql><![CDATA[BEGIN
+  app_message_pkg.create_instance(x_instance_id          => ${@instance_id},
+                                  x_exist_flag          => ${@exit_flag},
+                                             p_send_to_user_id               => ${/session/@user_id});
+END;
+]]></bm:update-sql>
+            <bm:parameters>
+                <bm:parameter name="instance_id" input="false" output="true" outputPath="@instance_id"/>
+                <bm:parameter name="exit_flag" input="false" output="true" outputPath="@exit_flag"/>
+            </bm:parameters>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[BEGIN
+  app_message_pkg.push(p_instance_id          => ${@instance_id},
+                                             p_user_id               => ${/session/@user_id});
+END;
+]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[BEGIN
+  app_message_pkg.read_message(p_message_send_id          => ${@message_send_id},
+                                             p_user_id               => ${/session/@user_id});
+END;
+]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="message_type" queryExpression="message_type = ${@message_type}"/>
+    </bm:query-fields>
+</bm:model>

@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="p.release_date desc">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+         select * from(select rownum rownumber,v.*,(SELECT f.flex_desc
+                    FROM fnd_flex_values_v f
+                   WHERE f.flex_value_set_code = 'PUR_VENDOR_LIFE_CYCLE'
+                         AND f.flex_value = v.vendor_stage) vendor_stage_desc from (
+            		SELECT p.product_id,
+					       p.product_code,
+					       p.product_name,
+					       p.product_status,
+					       (SELECT f.flex_desc
+					          FROM fnd_flex_values_v f
+					         WHERE f.flex_value_set_code = 'PROYA_MTL_PRODUCT_STATUS'
+					               AND f.flex_value = p.product_status) product_status_desc,
+					       p.product_desc,
+					       p.key_words,
+					       p.is_attention_flag,
+					       p.release_date,
+					       to_char(p.release_date,'yyyy-mm-dd') release_date_fmt,
+					       p.released_by,
+					       p.authenticate_date,
+					       to_char(p.authenticate_date,'yyyy-mm-dd') authenticate_date_fmt,
+					       p.authenticated_by,
+					       p.creation_date,
+					       to_char(p.creation_date,'yyyy-mm-dd') creation_date_fmt,
+					       p.created_by,
+					       p.category_id,
+					       (SELECT msv.category_name FROM mtl_categories_user_defined_vl msv WHERE msv.category_udf_id = p.category_id) category_desc,
+					       p.base_price,
+					       p.tax_included_flag,
+					       p.tax_code_id,
+					       (select fbv.tax_type_name from fnd_tax_type_codes_bg_v fbv
+							where fbv.tax_type_id = p.tax_code_id
+							and rownum < 2) tax_code_desc,
+							p.approve_comments,
+							p.authenticate_count,
+							p.owner_business_group,
+							--rownum rownumBer,
+							(SELECT fbv.business_group_name FROM fnd_business_groups_vl fbv WHERE fbv.business_group_code = p.owner_business_group) vendor_name,
+					        (select pvc.stage_code from pur_vendor_life_cycle pvc where pvc.owner_business_group = p.coop_business_group
+					        and pvc.coop_business_group = p.owner_business_group
+					        and pvc.current_flag = 'Y') vendor_stage,
+					        (SELECT su.description FROM sys_user su WHERE su.user_id = p.created_by) created_by_desc,
+					        (select s.mobile_phone from sys_user s where s.user_id = p.created_by and s.mobile_phone_verify_flag = 'Y') contact_info,
+      						p.primary_picture_id,
+							p.vendor_product_code
+					  FROM proya_mtl_products p
+					  where p.coop_business_group = ${/session/@business_group}
+					  	and p.product_status not in ('NEW','CANCELLED')#ORDER_BY_CLAUSE#
+					  	--order by rownumBer desc
+            	) v
+            	#WHERE_CLAUSE#)vv where rownumber <= (to_number(nvl(${@pageNum},1)) * 20)
+AND rownumber > ((to_number(nvl(${@pageNum},1)) - 1) * 20) 
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+            	begin
+            		proya_mtl_product_pkg.unattend_product
+								  (
+								    p_product_id => ${@product_id},
+								    p_user_id    => ${/session/@user_id}
+								  );
+            	end;
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+            	begin
+            		proya_mtl_product_pkg.attend_product
+								  (
+								    p_product_id => ${@product_id},
+								    p_user_id    => ${/session/@user_id}
+								  );
+            	end;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="product_id" queryExpression="v.product_id = ${@product_id}"/>
+        <bm:query-field name="category_id" queryExpression="v.category_id IN (SELECT mcud.category_udf_id FROM mtl_categories_user_defined mcud WHERE mcud.business_group = ${/session/@business_group} AND mcud.enabled_flag = &apos;Y&apos; START WITH mcud.category_udf_id = ${@category_id} CONNECT BY PRIOR mcud.category_udf_id = mcud.parent_category_udf_id)"/>
+        <bm:query-field name="product_status" queryExpression="v.product_status = ${@product_status}"/>
+        <bm:query-field name="vendor_stage" queryExpression="v.vendor_stage = ${@vendor_stage}"/>
+        <bm:query-field name="vendor_business_group" queryExpression="v.owner_business_group = ${@vendor_business_group}"/>
+        <bm:query-field name="is_attention_flag" queryExpression="v.is_attention_flag = ${@is_attention_flag}"/>
+        <bm:query-field name="is_approve_flag" queryExpression="((v.product_status = &apos;APPROVED&apos; and &apos;Y&apos; = ${@is_approve_flag}) or (v.product_status != &apos;APPROVED&apos; and &apos;N&apos; = ${@is_approve_flag}))"/>
+        <bm:query-field name="product_name" queryExpression="((v.product_name like &apos;%&apos;||${@product_name}||&apos;%&apos;)or (v.key_words like &apos;%&apos;||${@product_name}||&apos;%&apos;))"/>
+        <bm:query-field name="product_code" queryExpression="v.product_code like &apos;%&apos;||${@product_code}||&apos;%&apos;"/>
+        <bm:query-field name="key_words" queryExpression="v.key_words like &apos;%&apos;||${@key_words}||&apos;%&apos;"/>
+        <bm:query-field name="release_date_from" queryExpression="v.release_date &gt;= to_date(${@release_date_from}, &apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="release_date_to" queryExpression="v.release_date &lt; to_date(${@release_date_to}, &apos;yyyy-mm-dd&apos;) + 1"/>
+        <bm:query-field name="base_price_from" queryExpression="v.base_price &gt;= ${@base_price_from}"/>
+        <bm:query-field name="base_price_to" queryExpression="v.base_price &lt;= ${@base_price_to}"/>
+        <!-- <bm:query-field name="pageNum" queryExpression="rownum &lt;= (to_number(${@pageNum}) * 20) AND rownum  &gt; ((to_number(${@pageNum}) -1) * 20)"/> -->
+    </bm:query-fields>
+</bm:model>

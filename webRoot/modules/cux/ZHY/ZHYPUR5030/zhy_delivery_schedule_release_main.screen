@@ -1,0 +1,344 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao
+    $Date: 2018年4月10日 下午2:50:06  
+    $Revision: 1.0  
+    $Purpose: 周黑鸭，二开功能，交货计划发布，入口页面
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-insert model="cux.ZHY.ZHYPUR5030.zhy_delivery_schedule_maintain"/>
+        <a:model-query defaultWhereClause="v.flex_value_set_code = &apos;ZHY_DELIVERY_SCHEDULE_STATUS&apos; and v.flex_value in (&apos;NEW&apos;,&apos;APPROVE_REFUSE&apos;)" model="public.fnd_flex_value_v_lov" rootPath="status_list"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="zhy5030_delivery_schedule_maintain_save_link" url="${/request/@context_path}/modules/cux/ZHY/ZHYPUR5030/zhy_delivery_schedule_save.svc"/>
+        <a:link id="zhy5030_delivery_schedule_maintain_release_link" url="${/request/@context_path}/modules/cux/ZHY/ZHYPUR5030/zhy_delivery_schedule_release.svc"/>
+        <a:link id="zhy5030_delivery_schedule_delete_link" model="cux.ZHY.ZHYPUR5030.zhy_delivery_schedule_maintain" modelaction="delete"/>
+        <div/>
+        <script><![CDATA[
+            function zhy5030_deliveryScheduleSave() {
+                var records = $('zhy5030_delivery_schedule_result_ds').getAll();
+                var datas = [];
+                for (var i = 0;i < records.length;i++) {
+            
+                    if (Aurora.isEmpty(records[i].get("distribute_vendor_company_id"))) {
+                        Aurora.showMessage('${l:PROMPT}', '拆分分配供货商不能为空!');
+                        return false;
+                    }
+            
+                    if (records[i].dirty) {
+                        if (Aurora.isEmpty(records[i].get("order_quantity"))) {
+                            Aurora.showMessage('${l:PROMPT}', '下单数量不能为空!');
+                            return false;
+                        }
+            
+                        if ((records[i].get("order_quantity") * 1) > (records[i].get("enable_distribute_quantity") * 1)) {
+                            Aurora.showMessage('${l:PROMPT}', '下单数量不能大于可分配数量!');
+                            return false;
+                        }
+            
+                        if (Aurora.isEmpty(records[i].get("deliver_date_fmt"))) {
+                            Aurora.showMessage('${l:PROMPT}', '交付日期不能为空!');
+                            return false;
+                        }
+                        datas.push({
+                            "schedule_id": records[i].get("schedule_id"),
+                            "copy_flag": records[i].get("copy_flag"),
+                            "parent_schedule_id": records[i].get("parent_schedule_id"),
+                            "batch_line_num": records[i].get("batch_line_num"),
+                            "distribute_vendor_company_id": records[i].get("distribute_vendor_company_id"),
+                            "carrier_company_id": records[i].get("carrier_company_id"),
+                            "order_quantity": records[i].get("order_quantity"),
+                            "deliver_date_fmt": records[i].get("deliver_date_fmt"),
+                            "vendor_comments": records[i].get("vendor_comments")
+                        });
+                    }
+                }
+                Aurora.Masker.mask(Ext.getBody(), '${l:LOADING}');
+                Aurora.request({
+                    url: $('zhy5030_delivery_schedule_maintain_save_link').getUrl(),
+                    para: datas,
+                    success: function() {
+                        Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                            zhy5030_deliveryScheduleQuery();
+                        });
+                    },
+                    failure: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    error: function() {
+                        Aurora.Masker.unmask(Ext.getBody());
+                    },
+                    scope: this
+                });
+            }
+            
+            function zhy5030_deliveryScheduleQuery() {
+                $('zhy5030_delivery_schedule_result_ds').query();
+            }
+            
+            function zhy5030_deliveryScheduleResultDsGridRenderer(value, record, name) {
+                if (name == "operation") {
+                    if (record.get('copy_flag') == 'Y') {
+                        if (Aurora.isEmpty(record.get("schedule_id"))) {
+                            return '<a href="javascript:zhy5030_deliveryScheduleResultDsGridRendererClear(' + record.id + ')">清除</a>';
+                        } else {
+                            return '<a href="javascript:zhy5030_deliveryScheduleResultDsGridRendererRemove(' + record.get("schedule_id") + ')">删除</a>';
+                        }
+                    } else {
+                        return '<a href="javascript:zhy5030_deliveryScheduleResultDsGridRendererSplit(' + record.id + ')">拆分</a>';
+                    }
+                }
+            }
+            
+            function zhy5030_deliveryScheduleResultDsGridRendererClear(record_id) {
+                var record = $('zhy5030_delivery_schedule_result_ds').findById(record_id);
+                $('zhy5030_delivery_schedule_result_ds').remove(record);
+            }
+            
+            function zhy5030_deliveryScheduleResultDsGridRendererRemove(schedule_id) {
+                Aurora.showConfirm('${l:PROMPT}', '确认删除吗？', function() {
+                    Aurora.Masker.mask(Ext.getBody(), '${l:LOADING}');
+                    Aurora.request({
+                        url: $('zhy5030_delivery_schedule_delete_link').getUrl(),
+                        para: {
+                            "schedule_id": schedule_id
+                        },
+                        success: function() {
+                            Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                Aurora.Masker.unmask(Ext.getBody());
+                                zhy5030_deliveryScheduleQuery();
+                            });
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        scope: this
+                    });
+                });
+            }
+            
+            function zhy5030_deliveryScheduleResultDsGridRendererSplit(record_id) {
+                var max_as_line_num = 0;
+                var records = $('zhy5030_delivery_schedule_result_ds').getAll();
+                for (var i = 0;i < records.length;i++) {
+                    max_as_line_num = max_as_line_num > records[i].get('batch_line_num') ? max_as_line_num : records[i].get('batch_line_num');
+                }
+                var old_record = $('zhy5030_delivery_schedule_result_ds').findById(record_id);
+                var new_record = $('zhy5030_delivery_schedule_result_ds').create({
+                    'status_display': old_record.get('status_display'),
+                    'company_name': old_record.get('company_name'),
+                    'select_vendor_company_name': old_record.get('select_vendor_company_name'),
+                    'pur_organization_name': old_record.get('pur_organization_name'),
+                    'agent_name': old_record.get('agent_name'),
+                    'framework_agreement': old_record.get('framework_agreement'),
+                    'batch_line_num': max_as_line_num + 1,
+                    'inv_organization_name': old_record.get('inv_organization_name'),
+                    'item_code': old_record.get('item_code'),
+                    'item_name': old_record.get('item_name'),
+                    'line_num': old_record.get('line_num'),
+                    'unit_meas_code': old_record.get('unit_meas_code'),
+                    'unit_price': old_record.get('unit_price'),
+                    'tax_rate': old_record.get('tax_rate'),
+                    'distribute_quantity': old_record.get('distribute_quantity'),
+                    'deliver_date_fmt': old_record.get('deliver_date_fmt'),
+                    'rfx_number': old_record.get('rfx_number'),
+                    'req_number': old_record.get('req_number'),
+                    'req_line_num': old_record.get('req_line_num'),
+                    'deliver_address': old_record.get('deliver_address'),
+                    'copy_flag': 'Y',
+                    'parent_schedule_id': old_record.get('schedule_id')
+                });
+            }
+            
+            function zhy5030_deliveryScheduleResultDsGridEditorFunction(record, name) {
+                if (name == "distribute_vendor_company_name") {
+                    if (!Aurora.isEmpty(record.get("copy_flag")) && record.get("copy_flag") == "Y") {
+                        return 'zhy5030_delivery_schedule_result_ds_grid_lov';
+                    } else {
+                        return '';
+                    }
+                }
+            }
+            
+            function zhy5030_deliveryScheduleRelease() {
+                var records = $('zhy5030_delivery_schedule_result_ds').getSelected();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '至少勾选一条数据!');
+                    return false;
+                }
+                var datas = [];
+                for (var i = 0;i < records.length;i++) {
+            
+                    if (Aurora.isEmpty(records[i].get("distribute_vendor_company_id"))) {
+                        Aurora.showMessage('${l:PROMPT}', '拆分分配供货商不能为空!');
+                        return false;
+                    }
+            
+                    if (Aurora.isEmpty(records[i].get("order_quantity"))) {
+                        Aurora.showMessage('${l:PROMPT}', '下单数量不能为空!');
+                        return false;
+                    }
+            
+                    if ((records[i].get("order_quantity") * 1) > (records[i].get("enable_distribute_quantity") * 1)) {
+                        Aurora.showMessage('${l:PROMPT}', '下单数量不能大于可分配数量!');
+                        return false;
+                    }
+            
+                    if (Aurora.isEmpty(records[i].get("deliver_date_fmt"))) {
+                        Aurora.showMessage('${l:PROMPT}', '交付日期不能为空!');
+                        return false;
+                    }
+            
+                    datas.push({
+                        "schedule_id": records[i].get("schedule_id"),
+                        "copy_flag": records[i].get("copy_flag"),
+                        "parent_schedule_id": records[i].get("parent_schedule_id"),
+                        "distribute_vendor_company_id": records[i].get("distribute_vendor_company_id"),
+                        "order_quantity": records[i].get("order_quantity"),
+                        "deliver_date_fmt": records[i].get("deliver_date_fmt"),
+                        "vendor_comments": records[i].get("vendor_comments")
+                    });
+                }
+                Aurora.showConfirm('${l:PROMPT}', '确认发布吗？', function() {
+                    Aurora.Masker.mask(Ext.getBody(), '${l:LOADING}');
+                    Aurora.request({
+                        url: $('zhy5030_delivery_schedule_maintain_release_link').getUrl(),
+                        para: datas,
+                        success: function() {
+                            Aurora.showMessage('${l:PROMPT}', '${l:PROMPT.OPERATION_SUCCESS}', function() {
+                                Aurora.Masker.unmask(Ext.getBody());
+                                zhy5030_deliveryScheduleQuery();
+                            });
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask(Ext.getBody());
+                        },
+                        scope: this
+                    });
+                });
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="zhy5030_delivery_schedule_status_list_ds">
+                <a:datas dataSource="/model/status_list"/>
+            </a:dataSet>
+            <a:dataSet id="zhy5030_delivery_schedule_query_ds">
+                <a:fields>
+                    <a:field name="status_display" displayField="flex_desc" options="zhy5030_delivery_schedule_status_list_ds" returnField="status" valueField="flex_value"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="zhy5030_delivery_schedule_result_ds" autoCount="true" autoPageSize="true" autoQuery="false" model="cux.ZHY.ZHYPUR5030.zhy_delivery_schedule_query" queryDataSet="zhy5030_delivery_schedule_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="distribute_vendor_company_name" autoComplete="true" autoCompleteField="code_name" lovHeight="510" lovService="public.fnd_companies_lov" lovWidth="500" title="供货商">
+                        <a:mapping>
+                            <a:map from="company_full_name" to="distribute_vendor_company_name"/>
+                            <a:map from="company_id" to="distribute_vendor_company_id"/>
+                            <a:map from="company_full_name" to="drawer_company_name"/>
+                            <a:map from="company_id" to="drawer_company_id"/>
+                            <a:map from="company_id" to="coop_company_id"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="carrier_company_name" autoComplete="true" autoCompleteField="carrier_code_name" lovHeight="510" lovService="cux.ZHY.PUBLIC.zhy_carriers_lov" lovWidth="500" title="承运商">
+                        <a:mapping>
+                            <a:map from="carrier_company_id" to="carrier_company_id"/>
+                            <a:map from="vendor_code" to="vendor_code"/>
+                            <a:map from="carrier_company_name" to="carrier_company_name"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton id="zhy5030_deliveryScheduleSave_btn" click="zhy5030_deliveryScheduleSave" style="margin-left:20px;" text="PROMPT.SAVE" width="100"/>
+                <a:toolbarButton id="zhy5030_deliveryScheduleRelease_btn" click="zhy5030_deliveryScheduleRelease" style="margin-left:20px;" text="PROMPT.RELEASE" width="100"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="zhy5030_delivery_schedule_query_ds" resultTarget="zhy5030_delivery_schedule_result_ds" style="width:100%;border:none">
+                <a:formToolBar>
+                    <a:hBox labelWidth="120">
+                        <a:textField name="rfx_number" prompt="询价单号">
+                            <a:events>
+                                <a:event name="enterdown" handler="zhy5030_deliveryScheduleQuery"/>
+                            </a:events>
+                        </a:textField>
+                        <a:textField name="req_number" prompt="申请号">
+                            <a:events>
+                                <a:event name="enterdown" handler="zhy5030_deliveryScheduleQuery"/>
+                            </a:events>
+                        </a:textField>
+                        <a:textField name="req_line_num" prompt="申请行号">
+                            <a:events>
+                                <a:event name="enterdown" handler="zhy5030_deliveryScheduleQuery"/>
+                            </a:events>
+                        </a:textField>
+                    </a:hBox>
+                </a:formToolBar>
+                <a:formBody>
+                    <a:hBox labelWidth="120">
+                        <a:textField name="framework_agreement" prompt="框架协议">
+                            <a:events>
+                                <a:event name="enterdown" handler="zhy5030_deliveryScheduleQuery"/>
+                            </a:events>
+                        </a:textField>
+                        <a:textField name="item_name" prompt="物品">
+                            <a:events>
+                                <a:event name="enterdown" handler="zhy5030_deliveryScheduleQuery"/>
+                            </a:events>
+                        </a:textField>
+                        <a:comboBox name="status_display" prompt="状态">
+                            <a:events>
+                                <a:event name="enterdown" handler="zhy5030_deliveryScheduleQuery"/>
+                            </a:events>
+                        </a:comboBox>
+                    </a:hBox>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="zhy5030_delivery_schedule_result_ds_grid" autoAppend="false" bindTarget="zhy5030_delivery_schedule_result_ds" marginHeight="160" marginWidth="80" navBar="true">
+                <a:columns>
+                    <a:column name="status_display" align="center" prompt="状态" width="40"/>
+                    <a:column name="company_name" align="left" prompt="公司" width="80"/>
+                    <a:column name="select_vendor_company_name" align="left" prompt="供应商" width="100"/>
+                    <a:column name="pur_organization_name" align="left" prompt="采购组织" width="80"/>
+                    <a:column name="agent_name" align="left" prompt="采购组" width="60"/>
+                    <a:column name="framework_agreement" align="left" prompt="框架协议" width="60"/>
+                    <a:column name="operation" align="center" prompt="操作" renderer="zhy5030_deliveryScheduleResultDsGridRenderer" width="30"/>
+                    <a:column name="batch_line_num" align="center" prompt="分批行号" width="30"/>
+                    <a:column name="distribute_vendor_company_name" align="left" editorFunction="zhy5030_deliveryScheduleResultDsGridEditorFunction" prompt="供货商" width="100"/>
+                    <a:column name="drawer_company_name" align="left" prompt="出票方" width="100"/>
+                    <a:column name="carrier_company_name" align="left" editor="zhy5030_delivery_schedule_result_ds_grid_lov" prompt="承运商" width="100"/>
+                    <a:column name="inv_organization_name" align="left" prompt="库存组织" width="60"/>
+                    <a:column name="item_code" align="left" prompt="物品编码" width="50"/>
+                    <a:column name="item_name" align="left" prompt="物品名称" width="80"/>
+                    <a:column name="line_num" align="center" prompt="行号" width="30"/>
+                    <a:column name="unit_meas_code" align="left" prompt="单位" width="40"/>
+                    <a:column name="unit_price" align="left" prompt="单价" width="40"/>
+                    <a:column name="tax_rate" align="left" prompt="税率" width="40"/>
+                    <a:column name="distribute_quantity" align="left" prompt="分配数量" width="40"/>
+                    <a:column name="enable_distribute_quantity" align="left" prompt="可分配数量" width="50"/>
+                    <a:column name="order_quantity" align="left" editor="zhy5030_delivery_schedule_result_ds_grid_numberField" prompt="下单数量" width="40"/>
+                    <a:column name="deliver_date_fmt" align="center" editor="zhy5030_delivery_schedule_result_ds_grid_datePicker" prompt="交货日期" renderer="Aurora.formatDate" width="50"/>
+                    <a:column name="rfx_number" align="left" prompt="询价单号" width="70"/>
+                    <a:column name="req_number" align="left" prompt="申请号" width="50"/>
+                    <a:column name="req_line_num" align="center" prompt="申请行号" width="30"/>
+                    <a:column name="deliver_address" align="left" prompt="交货地点" width="60"/>
+                    <a:column name="vendor_comments" align="left" editor="zhy5030_delivery_schedule_result_ds_grid_textField" prompt="供应商备注" width="80"/>
+                    <a:column name="purchase_comments" align="left" prompt="备注" width="80"/>
+                </a:columns>
+                <a:editors>
+                    <a:lov id="zhy5030_delivery_schedule_result_ds_grid_lov"/>
+                    <a:numberField id="zhy5030_delivery_schedule_result_ds_grid_numberField"/>
+                    <a:datePicker id="zhy5030_delivery_schedule_result_ds_grid_datePicker"/>
+                    <a:textField id="zhy5030_delivery_schedule_result_ds_grid_textField"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

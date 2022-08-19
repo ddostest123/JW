@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" alias="t1">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+		        select v.*, ceil(line_count / 15) creat_pages from (SELECT t1.display_po_number,
+				       to_char(nvl(t1.erp_creation_date,t1.creation_date),
+				               'YYYY-MM-DD') creation_date,
+					(SELECT full_name FROM pur_vendors_vl pvv WHERE pvv.vendor_id = t1.vendor_id) vendor_name,
+				       t1.company_name,
+				       t1.vendor_site_name,
+				         (select pbv.attribute1 from pur_buyers_vl pbv
+							  where pbv.buyer_id = t1.agent_id) buyer_phone,
+					   t1.agent_name,
+				       t1.company_id,
+				       t1.comments,
+				       t1.currency_code,
+				       (SELECT tc.bg_tax_type_desc
+				          FROM pur_lines_all      pla,
+				               fnd_tax_type_codes_bg tc
+				         WHERE pla.pur_header_id = t1.pur_header_id
+				               AND tc.tax_type_id = pla.tax_code_id
+				               AND rownum = 1) tax_display,
+				               to_char(sysdate,'YYYY-MM-DD') current_date,
+				       (SELECT  bu.business_unit_name
+						        FROM fnd_business_units_vl bu WHERE bu.business_unit_id = t1.business_unit_id) business_unit_name,
+                       (SELECT COUNT(*) FROM pur_lines_all pla WHERE pla.pur_header_id = t1.pur_header_id) line_count,
+                       (SELECT fcv.official_telephone FROM fnd_companies_vl fcv WHERE fcv.company_id = t1.company_id) official_telephone,
+				       nvl(t1.type_lookup_desc,
+                           t1.erp_po_type_desc) type_lookup_desc,
+                       to_char(sysdate,'yyyy-mm-dd') as print_date,
+                       (SELECT f.official_telephone
+				          FROM fnd_companies_vl f
+				         WHERE EXISTS (SELECT 1
+				                  FROM pur_vendors_vl pvv
+				                 WHERE pvv.vendor_id = t1.vendor_id
+				                       AND pvv.coop_company_id = f.company_id)) vendor_official_telephone,
+				        (SELECT round(SUM(decode(fnd_config_cnt_get_pkg.get_bg_item_value_po_05(p_business_group => t1.owner_business_group),
+                                'Y',
+                                (pla.unit_price * (1 + nvl((SELECT tc.bg_tax_type_rate
+                                                              FROM fnd_tax_type_codes_bg tc
+                                                             WHERE tc.tax_type_id = nvl(plla.tax_code_id,
+                                                                                        pla.tax_code_id)
+                                                                   AND tc.business_group = t1.owner_business_group
+                                                                   AND rownum < 2) / 100,
+                                                           0))),
+                                pla.original_unit_price) * (CASE
+                                                              WHEN pla.is_returned_flag = 'Y' THEN
+                                                               plla.quantity * -1
+                                                              ELSE
+                                                               plla.quantity
+                                                            END)),
+							                     4)
+							          FROM pur_lines_all          pla,
+							               pur_line_locations_all plla
+							         WHERE pla.pur_line_id = plla.pur_line_id
+							               AND pla.pur_header_id = t1.pur_header_id
+							               AND pla.cancel_flag = 'N'
+							               AND plla.cancel_flag = 'N') pur_total_amount
+				  FROM pur_headers_all_v t1 
+                     #WHERE_CLAUSE#) v
+        ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter name="pur_header_id" expression="t1.pur_header_id=${@pur_header_id}"/>
+    </bm:data-filters>
+</bm:model>

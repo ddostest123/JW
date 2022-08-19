@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: WangQiaosen  
+    $Date: 2013-3-11 下午1:27:02  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:service xmlns:t="aurora.application.action" xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <a:model-execute model="bid.BID6040.bid_submit_to_oa"/>
+        <a:model-query fetchAll="true" model="bid.BID6040.bid_entrustment_headers" rootPath="headers"/>
+        <a:model-query fetchAll="true" model="bid.print.bid_entrustment_print_bidder" rootPath="bidders"/>
+        <a:model-query fetchAll="true" model="pur.PUR5240.pur_rfx_geturl_to_oa" rootPath="url"/>
+        <a:model-query fetchAll="true" model="bid.BID6040.bid_bidding_get_tcode_to_oa" rootPath="tcode"/>
+        <a:rest-invoker acceptLanguage="zh-CN,zh;q=0.8" cacheControl="no-cache" contentType="application/json;charset=UTF-8" raiseExceptionOnError="true" requestMethod="GET" returnPath="/soapResponse/USER" url="${/model/url/record/@get_user_url}"/>
+        <p:set field="/parameter/@userName" sourceField="/soapResponse/USER/@userName"/>
+        <s:server-script><![CDATA[
+            var logger = $logger('server-script');
+            
+            function log(msg) {
+                logger.info(msg);
+            }
+            var para = $ctx.parameter;
+            log($ctx.model.getChild('headers').toXML);
+            var dataList = $ctx.model.getChild('headers').getChildren();
+            var data = [];
+            
+            for (var i = 0;i < dataList.length;i++) {
+                data.push(dataList[i]);
+            }
+            log(dataList.length);
+            var dataList2 = $ctx.model.getChild('bidders').getChildren();
+            var vendors = [];
+            
+            for (var i = 0;i < dataList2.length;i++) {
+                vendors.push(dataList2[i]);
+            }
+            log(dataList2.length);
+            var tableListAll = new CompositeMap('tableListAll');
+            var record = new CompositeMap('record');
+            var tableList = new CompositeMap('TableList');
+            var loginName = new CompositeMap('loginName');
+            loginName.setText(para.userName);
+            var tCode = new CompositeMap('tCode');
+            var tcodeValue = $ctx.model.getChild('tcode').getChild('record').quote_code;
+            tCode.setText(tcodeValue);
+            var title = new CompositeMap('title');
+            var title_text = '定标申请单';
+            title.setText(title_text);
+            tableList.addChild(loginName);
+            tableList.addChild(tCode);
+            tableList.addChild(title);
+            var table1 = new CompositeMap('Table');
+            table1['isson'] = '1';
+            tableList.addChild(table1);
+            var nameList = {
+                "设备工程采购单号": data[0].eq_application_number,
+                "流水号": data[0].entrustment_header_number,
+             //   "综合评定入选投标商及入选理由": '',
+                "招标书编号": data[0].entrustment_header_number,
+                "专家组评分结论": vendors[0].total_score,
+                "是否SRM发起":'-20179779770759243'
+            }
+            for (var tempName in nameList) {
+                var field = new CompositeMap('Field');
+                field.name = tempName;
+                if (nameList[tempName]) {
+                    field.value = nameList[tempName];
+                } else {
+                    field.value = '';
+                }
+                table1.addChild(field);
+            }
+            var table2 = new CompositeMap('Table');
+            table2['isson'] = '2';
+            tableList.addChild(table2);
+            var row = [];
+            for (var i = 0;i < vendors.length;i++) {
+                row.push(new CompositeMap('row'));
+                table2.addChild(row[i]);
+                var nameList2 = {
+                    "投标方名称": vendors[i].company_full_name,
+                    "第一次": vendors[i].total_amount_1,
+                    "第二次": vendors[i].total_amount_2,
+                    "第三次": vendors[i].total_amount_3,
+                    "第四次": vendors[i].total_amount_4,
+                    "第五次": vendors[i].total_amount_5,
+                    "第六次": vendors[i].total_amount_6,
+                    "第七次": vendors[i].total_amount_7,
+                    "第八次": vendors[i].total_amount_8,
+                    "交货期限": data[0].delivery_term,
+                    "付款方式": data[0].payment_method_desc,
+                    "税点": data[0].tax_rate 
+                  //  "后期承诺服务": data[0].commitment_service
+                }
+                for (var tempName in nameList2) {
+                    var field = new CompositeMap('Field');
+                    field.name = tempName;
+                    if (nameList2[tempName]) {
+                        field.value = nameList2[tempName];
+                    } else {
+                        field.value = '';
+                    }
+                    row[i].addChild(field);
+                }
+            }
+            
+            record.setText(tableList.toXML());
+            log(tableList.toXML());
+            tableListAll.addChild(record);
+            var url = $ctx.model.getChild('url').getChild('record').post_url + '&key=BD2B0CCCBC954FA6';
+            try {
+                var is = Packages.com.hand.jw_webservice.HttpUtils.urlPost(url, tableList.toXML(), 'text/xml;charset=utf8', "POST", "UTF-8", "", "");
+                var ret = Packages.com.hand.jw_webservice.IOUtilsEx.newString(is, "UTF-8");
+                log(ret);
+                ret = JSON.parse(ret);
+                if (ret.status == 'S') {
+                    $ctx.put('/soapResponse/RESPONSE/@status', ret.status);
+                } else if (ret.status == 'E') {
+                    $ctx.put('/soapResponse/RESPONSE/@status', ret.status);
+                    $ctx.put('/soapResponse/RESPONSE/@message', ret.message);
+                }
+            } catch (e) {
+                log(e)
+            }
+        ]]></s:server-script>
+        <p:echo/>
+        <t:test field="/soapResponse/RESPONSE/@status" message="${/soapResponse/RESPONSE/@message}" operator="!=" value="S"/>
+    </a:init-procedure>
+    <a:service-output output="/parameter"/>
+</a:service>

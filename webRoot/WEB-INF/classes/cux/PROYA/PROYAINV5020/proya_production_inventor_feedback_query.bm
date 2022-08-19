@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao
+    $Date: 2018年2月11日 上午11:33:14  
+    $Revision: 1.0  
+    $Purpose: 珀莱雅，二开功能，供应商生产库存反馈查询BM
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+	            SELECT *
+				  FROM (SELECT pi.inventory_id,
+				               decode((SELECT COUNT(*) FROM proya_inv_prod_inventory ipi WHERE ipi.parent_inventory_id = pi.inventory_id),
+				                      0,
+				                      'N',
+				                      'Y') AS expanded,
+				               decode((SELECT COUNT(*) FROM proya_inv_prod_inventory ipi WHERE ipi.inventory_id = pi.inventory_id),
+				                      0,
+				                      'Y',
+				                      'N') AS data_show_flag,
+				               pi.parent_inventory_id,
+				               ph.pur_header_id,
+				               pl.pur_line_id,
+				               ph.display_po_number,
+				               ph.coop_business_group,
+				               pl.line_num AS po_line_num,
+				               pl.item_code,
+				               pl.item_description,
+				               pl.quantity AS po_quantity,
+				               nvl((SELECT SUM(pll.deliver_quantity)
+				                     FROM pur_line_locations_all pll
+				                    WHERE pll.pur_line_id = pl.pur_line_id),
+				                   0) AS deliver_quantity,
+				               (pl.quantity - nvl((SELECT SUM(pll.deliver_quantity)
+				                                    FROM pur_line_locations_all pll
+				                                   WHERE pll.pur_line_id = pl.pur_line_id),
+				                                  0)) AS need_to_deliver_quantity,
+				               decode((pl.quantity - nvl((SELECT SUM(pll.deliver_quantity)
+				                                           FROM pur_line_locations_all pll
+				                                          WHERE pll.pur_line_id = pl.pur_line_id),
+				                                         0)),
+				                      0,
+				                      'N',
+				                      'Y') AS need_deliver_flag,
+				               pi.finished_product_quantity,
+				               pi.inventory_total_quantity,
+				               nvl((SELECT vl.uom_code || '/' || vl.uom_desc
+				                     FROM fnd_uom_codes_vl vl
+				                    WHERE pl.unit_meas_lookup_code = vl.uom_code
+				                          AND vl.business_group = ph.owner_business_group),
+				                   pl.unit_meas_lookup_code) unit_meas_lookup_code,
+				               pi.last_save_date,
+				               to_char(pi.last_save_date,
+				                       'yyyy-mm-dd hh24:mi:ss') AS last_save_date_fmt,
+				               pi.status,
+				               pi.process_module_name,
+				               pi.quantity,
+				               pi.planned_finish_date,
+				               to_char(pi.planned_finish_date,
+				                       'yyyy-mm-dd') AS planned_finish_date_fmt,
+				               pi.actual_finish_date,
+				               to_char(pi.actual_finish_date,
+				                       'yyyy-mm-dd') AS actual_finish_date_fmt
+				          FROM proya_inv_prod_inventory pi,
+				               pur_lines_all            pl,
+				               pur_headers_all_v        ph
+				         WHERE pi.pur_line_id = pl.pur_line_id
+				               AND pi.pur_header_id = ph.pur_header_id
+				               AND ph.srm_status = 'CONFIRMED'
+				               AND pl.cancel_flag = 'N') v
+				 #WHERE_CLAUSE#
+			]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter expression="v.coop_business_group = ${/session/@business_group}"/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field name="display_po_number" queryExpression="v.display_po_number like &apos;%&apos;||trim(${@display_po_number})||&apos;%&apos;"/>
+        <bm:query-field name="po_line_num" queryExpression="v.po_line_num  = trim(${@po_line_num})"/>
+        <bm:query-field name="item_code_name" queryExpression="((v.item_code like &apos;%&apos;||trim(${@item_code_name})||&apos;%&apos;) OR (v.item_description like &apos;%&apos;||trim(${@item_code_name})||&apos;%&apos;))"/>
+        <bm:query-field name="need_deliver_flag" queryExpression="v.need_deliver_flag = ${@need_deliver_flag}"/>
+        <bm:query-field name="last_save_date_from" queryExpression="v.last_save_date &gt;= to_date(${@last_save_date_from},&apos;YYYY-MM-DD&apos;)"/>
+        <bm:query-field name="last_save_date_to" queryExpression="v.last_save_date &lt;= to_date(${@last_save_date_to},&apos;YYYY-MM-DD&apos;)+1"/>
+    </bm:query-fields>
+</bm:model>

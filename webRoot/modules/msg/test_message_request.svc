@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:service xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="messageCenter.sys_notify_message_rec" rootPath="sys_notify_message_rec"/>
+        <s:server-script import="AuroraHttpPostRequest.js"><![CDATA[
+        //import jar
+        importPackage(Packages.uncertain.composite)
+        importPackage(Packages.org.json)
+        //get logger
+        var logger = $logger('server-script');
+        // get notify message
+        var message;
+        var status;
+        var notify_message = $ctx.model.getChild("sys_notify_message_rec");
+        var notify_msgs_list = notify_message.getChildren();
+        // get MC info
+        
+        function get_sys_parameter_value(sys_parameter) {
+            //set key
+            $ctx.parameter.sys_parameter_key = sys_parameter;
+            //set bm
+            var sys_parameter_value_bm = $bm('messageCenter.get_sys_parameter_value');
+            //bm.query
+            var res = sys_parameter_value_bm.queryAsMap();
+            //get bm's query result
+            var arr = res.getChildren();
+            //check whether sys parameter is defined
+            // if (arr[0].SYS_PARAMETER_VALUE == 'undefined') log('SYS PARAMETER UNDEFINED: ' + sys_parameter)
+            return arr[0].SYS_PARAMETER_VALUE;
+        }
+        var msg_src_sys = get_sys_parameter_value('MSG_SOURCE_SYSTEM');
+        var msg_src_sys_token = get_sys_parameter_value('MSG_SOURCE_SYSTEM_TOKEN');
+        var msg_center_url = get_sys_parameter_value('MSG_CNETER_URL');
+        var msg_src_sys_app_flag = get_sys_parameter_value('MSG_SOURCE_SYSTEM_APP_FLAG');
+        var msg_center_able_flag = get_sys_parameter_value('MSG_CENTER_ABLE_FLAG');
+        var msg_center_handle_mt = get_sys_parameter_value('MSG_CENTER_HANDLE_MT');
+        var request_parameter_map = new CompositeMap('parameter');
+        var request_paras_map = new CompositeMap('paras');
+        var num_of_request = 0;
+        log('check sys parameter!!'); /*  邮箱验证 ，一个或多个号码，用分号';'或者','隔开，并以‘;’或‘,’结束*/
+        
+        function checkMail(value) {
+            var szReg = /^(.+)@(.+)$/;
+            //var Reg = /^((([a-z0-9_\.-]+)@([\da-z\.-]+)\.([a-z\.]{2,6}\;))*(([a-z0-9_\.-]+)@([\da-z\.-]+)\.([a-z\.]{2,6})))$/;
+            if (!szReg.test(value)) {
+                return 'N';
+            } else {
+                return 'Y';
+            }
+        }
+        
+        /*  接受电话验证,一个或多个号码，用分号';'或者','隔开，并以‘;’或‘,’结束 */
+        
+        function checkPhone(value) {
+            //if (!(^(1(3|4|5|7|8)\d{9})([\,,;]1(3|4|5|7|8)\d{9})*$.test(value)))
+            var Reg = /^(1(3|4|5|7|8)\d{9})([\,,;]1(3|4|5|7|8)\d{9})*[\,,;]?$/;
+        
+            if (!Reg.test(value)) {
+                return 'N';
+            } else {
+                return 'Y';
+            }
+        }
+        log('There are ' + notify_msgs_list.length + ' messages to handle!');
+        for (var i = 0;i < notify_msgs_list.length;i++) {
+            var message_2_request = notify_msgs_list[i];
+            $bm("messageCenter.sys_notify_message_rec").insert(message_2_request);
+            var isEmail = checkMail(message_2_request.recipient_mail);
+            var isPhone = checkPhone(message_2_request.recipient_mobile);
+            message_2_request.setName('para');
+            //handle sys msg
+            if (message_2_request.msg_flag == 'Y') {
+                try {
+                    log('handel  msg！！')
+                    $bm('db.sys_user_message_pkg.load_user_message').execute(message_2_request);
+                    if (msg_src_sys_app_flag == 'Y') {
+                        log('handel APP msg！！')
+                        $bm('db.app_message_pkg.create_message_send_list').execute(message_2_request);
+                    }
+                    $ctx.parameter.record_id = message_2_request.record_id;
+                    $bm('messageCenter.sys_notify_message_rec').update();
+                } catch (e) {
+                    //e.message.substring(e.message.lastIndexOf(":") + 1).trim()
+                    var rec = {
+                        'record_id': notify_msgs_list[i].record_id,
+                        'request_status': 'failure',
+                        'request_error_message': e.message,
+                        'user_id': 1
+                    };
+                    log('request_error_message----->' + e.message);
+                    $bm("messageCenter.sys_notify_message_rec").execute(rec);
+                }
+            }
+            //handle others: mail/sms/..
+            if ((message_2_request.mail_flag == 'Y' && isEmail == 'Y') || (message_2_request.sms_flag == 'Y' && isPhone == 'Y')) {
+                if (msg_center_able_flag == 'Y' && msg_center_handle_mt == 'START') {
+                    log('handel  mail/sms!!');
+                    num_of_request++;
+                    request_paras_map.addChild(message_2_request);
+                } else if (msg_center_able_flag == 'N' && msg_center_handle_mt == 'STOP') {
+                    var rec = {
+                        'record_id': notify_msgs_list[i].record_id,
+                        'request_status': msg_center_handle_mt,
+                        'request_error_message': '消息中心暂停服务！请等待!',
+                        'user_id': 1
+                    };
+                    log('request_error_message----->' + '消息中心暂停服务！请等待!');
+                    $bm("messageCenter.sys_notify_message_rec").execute(rec);
+                } else if (msg_center_able_flag == 'N' && msg_center_handle_mt == 'CLOSE') {
+                    var rec = {
+                        'record_id': notify_msgs_list[i].record_id,
+                        'request_status': msg_center_handle_mt,
+                        'request_error_message': '消息中心关闭服务！请等待!(如果你有要发送的信息，请将消息的状态(status)修改为'
+                        NOT SEND ')',
+                        'user_id': 1
+                    };
+                    log('request_error_message----->' + '消息中心暂停服务！请等待!');
+                    $bm("messageCenter.sys_notify_message_rec").execute(rec);
+                }
+            } else if ((message_2_request.mail_flag == 'Y' && isEmail == 'N') || (message_2_request.sms_flag == 'Y' && isPhone == 'N')) {
+                var rec = {
+                    'record_id': notify_msgs_list[i].record_id,
+                    'request_status': 'failure',
+                    'request_error_message': '邮箱/电话格式错误!',
+                    'user_id': 1
+                };
+                log('request_error_message----->' + '邮箱/电话格式错误!');
+                $bm("messageCenter.sys_notify_message_rec").execute(rec);
+            }
+        }
+        request_parameter_map.addChild(request_paras_map);
+        request_parameter_map.put('@source_system', msg_src_sys);
+        request_parameter_map.put('@token', msg_src_sys_token);
+        // log('request_parameter_map:\n' + request_parameter_map.toXML());
+        //wrap request_parameter_map
+        var request_para_wrap = new CompositeMap('parameters');
+        request_para_wrap.addChild(request_parameter_map);
+        //tranfer map to json
+        var request_para = JSONAdaptor.toJSONObject(request_para_wrap.getData());
+        //check num_of_request
+        if (num_of_request > 0) {
+            log('request  mail/sms!!');
+            var data = JSON.parse(request_para);
+            var para = data.parameter.paras.record;
+            try {
+                request({
+                    url: msg_center_url,
+                    para: request_para,
+                    success: function(rs) {
+                        status = rs.result.status;
+                        message = rs.result.message;
+                    },
+                    failure: function(rs) {
+                        null;
+                    }
+                })
+            } catch (e) {
+                status = 'failure';
+                message = e.message;
+            } finally {
+                log('requst_status----->' + status);
+                log('message----->' + message);
+        
+                for (var i = 0;i < para.length;i++) {
+                    var rec = {
+                        'record_id': para[i].record_id,
+                        'request_status': status,
+                        'request_error_message': message,
+                        'user_id': 1
+                    };
+                    $bm("messageCenter.sys_notify_message_rec").execute(rec);
+                }
+            }
+        }
+        
+        function log(msg) {
+            logger.info(msg)
+        }
+    ]]></s:server-script>
+        <p:echo/>
+    </a:init-procedure>
+    <a:service-output output="/parameter/"/>
+</a:service>

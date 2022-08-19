@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:service xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <a:model-query defaultWhereClause="a.api_code=&apos;PRODUCT_SELL_PRICE&apos;" fetchAll="true" model="api.PUBLIC.jd_sku_method" rootPath="mes"/>
+        <a:model-query model="api.PUBLIC.jd_product_detail_main" rootPath="jd_detail"/>
+        <s:server-script import="request.js"><![CDATA[
+            var record = $ctx.model.getChild('mes').getChildren()[0];
+            var stock = '&format=json&v=1.0&method=biz.stock.forList.batget';
+            var detail = $ctx.model.getChild('jd_detail').getChildren()[0];
+            var v_str = record.url + record.app_key + record.access_token + record.timestamp;
+            var d_str = v_str + record.method;
+            var s_str = v_str + stock;
+            //接收传进来的参数
+            var sku = $ctx.get('/parameter/@sku'); //${@sku}569172
+            var province = $ctx.get('/parameter/@province'); //${@provinces}2
+            var city = $ctx.get('/parameter/@city'); //${@city}2833
+            var county = $ctx.get('/parameter/@county'); //${@county}51955
+            var town = $ctx.get('/parameter/@town'); //${@towns};0
+            
+            //请求价格参数
+            var pre_str = '&param_json={%22sku%22:%22';
+            var last_str = '%22}';
+            var mid_str = sku;
+            var api_url = d_str + pre_str + mid_str + last_str;
+            
+            //请求库存参数--&param_json={%22area%22:%222_2833_51955_0%22,%22sku%22:%222927478%22}
+            
+            var s_pre_str = '&param_json={%22area%22:%22';
+            var s_last_str = '%22}';
+            var s_mid_str = province + '_' + city + '_' + county + '_' + town + '%22,%22sku%22:%22' + sku;
+            var s_api_url = s_str + s_pre_str + s_mid_str + s_last_str;
+            $ctx.parameter.sku = detail.sku;
+            $ctx.parameter.name = detail.name;
+            $ctx.parameter.sale_unit = detail.sale_unit;
+            $ctx.parameter.weight = detail.weight;
+            $ctx.parameter.product_area = detail.product_area;
+            $ctx.parameter.ware_qd = detail.ware_qd;
+            $ctx.parameter.image_path = detail.image_path;
+            $ctx.parameter.param = detail.param;
+            $ctx.parameter.state = detail.state;
+            $ctx.parameter.barnd_name = detail.barnd_name;
+            $ctx.parameter.upc = detail.upc;
+            $ctx.parameter.introduction = detail.introduction;
+            //println(s_api_url);
+            //价格请求
+            request({
+                url: api_url,
+                //para: para,
+                success: function(args) {
+                        var result = args.biz_price_sellPrice_get_response.result;
+                        if (result.length == 0) {
+                            $ctx.parameter.price = '暂无报价';
+                        } else {
+                            $ctx.parameter.price = result[0].price;
+                            $ctx.parameter.jdPrice = result[0].jdPrice;
+                        }
+                  
+                },
+                failure: function(args) {
+                    raise_app_error(args.error.message);
+                }
+            });
+            //
+            //查询库存请求
+            request({
+                url: s_api_url,
+                //para: para,
+                success: function(args) {
+                   
+                        var result = args.biz_stock_forList_batget_response.result;
+                        if (result == null) {
+                            $ctx.parameter.desc = '暂无库存信息';
+                            $ctx.parameter.state = '34';
+                        } else {
+                            $ctx.parameter.state = result[0].state;
+                            $ctx.parameter.desc = result[0].desc;
+                        }
+                },
+                failure: function(args) {
+                    raise_app_error(args.error.message);
+                }
+            });
+        ]]></s:server-script>
+        <p:echo/>
+    </a:init-procedure>
+    <a:service-output output="/parameter/"/>
+</a:service>

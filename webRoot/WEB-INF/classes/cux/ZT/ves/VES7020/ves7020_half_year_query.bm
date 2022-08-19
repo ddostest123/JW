@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: zc  
+    $Date: 2017-9-26 下午8:11:23  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="false">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*,
+                    ves_archive_pkg.get_monnth_score(p_template_id => ${/parameter/@template_id},p_vendor_id => v.vendor_id,p_item_category_id => v.ITEM_CATEGORY_ID ,p_eval_quarter => TO_CHAR(${/parameter/@ves_year_desc})
+                    || '-'
+                    || TO_CHAR(${@ves_half_year}*6-5) ) one_month,
+                    ves_archive_pkg.get_monnth_score(p_template_id => ${/parameter/@template_id},p_vendor_id => v.vendor_id,p_item_category_id => v.ITEM_CATEGORY_ID ,p_eval_quarter => TO_CHAR(${/parameter/@ves_year_desc})
+                    || '-'
+                    || TO_CHAR(${@ves_half_year}*6-4)) two_month,
+                    ves_archive_pkg.get_monnth_score(p_template_id => ${/parameter/@template_id},p_vendor_id => v.vendor_id,p_item_category_id => v.ITEM_CATEGORY_ID ,p_eval_quarter => TO_CHAR(${/parameter/@ves_year_desc})
+                    || '-'
+                    || TO_CHAR(${@ves_half_year}*6-3)) three_month,
+                    ves_archive_pkg.get_monnth_score(p_template_id => ${/parameter/@template_id},p_vendor_id => v.vendor_id,p_item_category_id => v.ITEM_CATEGORY_ID ,p_eval_quarter => TO_CHAR(${/parameter/@ves_year_desc})
+                    || '-'
+                    || TO_CHAR(${@ves_half_year}*6-2)) four_month,
+                    ves_archive_pkg.get_monnth_score(p_template_id => ${/parameter/@template_id},p_vendor_id => v.vendor_id,p_item_category_id => v.ITEM_CATEGORY_ID ,p_eval_quarter => TO_CHAR(${/parameter/@ves_year_desc})
+                    || '-'
+                    || TO_CHAR(${@ves_half_year}*6-1)) five_month,
+                    ves_archive_pkg.get_monnth_score(p_template_id => ${/parameter/@template_id},p_vendor_id => v.vendor_id,p_item_category_id => v.ITEM_CATEGORY_ID ,p_eval_quarter => TO_CHAR(${/parameter/@ves_year_desc})
+                    || '-'
+                    || TO_CHAR(${@ves_half_year}*6)) six_month
+                FROM
+                    (SELECT
+                        (SELECT
+                            (SELECT
+                                DESCRIPTION_TEXT
+                            FROM
+                                fnd_descriptions
+                            WHERE
+                                DESCRIPTION_ID = ves.description_id AND
+                                Language       = 'ZHS'
+                            )
+                        FROM
+                            VES_TEMPLATE ves
+                        WHERE
+                            ves.VE_TEMPLATE_ID = ${/parameter/@template_id}
+                        ) AS ves_template_desc,
+                        t1.VENDOR_ID,
+                        (SELECT
+                            pvv.display_vendor_code vendor_code
+                        FROM
+                            pur_vendors_vl pvv
+                        WHERE
+                            pvv.VENDOR_ID = t1.vendor_id
+                        ) AS vendor_code,
+                        (SELECT
+                            NVL(pvv.short_name, pvv.full_name)
+                        FROM
+                            pur_vendors_vl pvv
+                        WHERE
+                            pvv.VENDOR_ID = t1.vendor_id
+                        ) AS vendor_desc,
+                        t1.ITEM_CATEGORY_ID,
+                        (SELECT
+                            mcud.category_name
+                        FROM
+                            mtl_categories_zt_defined_vl mcud
+                        WHERE
+                            mcud.category_udf_id = t1.item_category_id
+                        ) AS item_category_desc,
+                        SUM(t1.score)/COUNT(*) ves_year,
+                        ${/parameter/@ves_year_desc} ves_year_desc,
+                        ves_archive_pkg.get_rank( SUM(t1.score)/COUNT(*) ) AS vae_level,
+                        dense_rank() over (order by SUM(t1.score)/COUNT(*) DESC) ves_rank_by_category
+                    FROM
+                        ves_archive_total_lines t1,
+                        ves_archive_headers h
+                    WHERE
+                        h.archive_header_id                           = t1.archive_id AND
+                        h.archive_status                              = '70_RELEASED' AND
+                        h.enabled_flag                                = 'Y' AND
+                        h.template_id                                 = ${/parameter/@template_id} AND
+                        TRUNC(to_date(h.eval_quarter,'yyyy-mm'),'yy') = TRUNC(to_date(${/parameter/@ves_year_desc},'yyyy'),'yy') AND
+                        to_date(h.eval_quarter,'yyyy-mm') BETWEEN to_date(TO_CHAR(${/parameter/@ves_year_desc})
+                        || '-'
+                        || TO_CHAR(${@ves_half_year} * 6 - 5),'yyyy-mm') AND
+                        to_date(TO_CHAR(${/parameter/@ves_year_desc})
+                        || '-'
+                        || TO_CHAR(${@ves_half_year} * 6),'yyyy-mm') AND
+                        (
+                            EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                fnd_companies_vl fc
+                            WHERE
+                                fc.company_id =
+                                (SELECT
+                                    v.coop_company_id
+                                FROM
+                                    pur_vendors_vl v
+                                WHERE
+                                    v.vendor_id = t1.vendor_id
+                                ) AND
+                                fc.default_user_id = ${/session/@user_id}
+                            ) OR
+                            (
+                                EXISTS
+                                (SELECT
+                                    1
+                                FROM
+                                    fnd_business_groups bg
+                                WHERE
+                                    bg.center_flag         = 'Y' AND
+                                    bg.business_group_code = ${/session/@business_group}
+                                )
+                            )
+                        )
+                    GROUP BY
+                        t1.VENDOR_ID,
+                        t1.ITEM_CATEGORY_ID
+                    ) v
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

@@ -1,0 +1,1497 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao2658  
+    $Date: 2014-7-31 下午14:37:10  
+    $Revision: 1.0  
+    $Purpose: 登录后首页，默认页面 供应商   /超级业务员
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query model="sys.sys_user_last_login_info" rootPath="default_role_name"/>
+        <a:model-query fetchAll="true" model="sys.SYS_WFL.sys_message_count" rootPath="sys_messge_count"/>
+        <a:model-query fetchAll="true" model="sys.SYS_WFL.sys_favaorite_messageConfig" rootPath="sys_messge_config"/>
+        <a:model-query fetchAll="true" model="sys.sys_user_infor" rootPath="sys_user_infor_ds"/>
+        <a:model-query model="wfl.WFL1001.fnd_business_notification_count" rootPath="wfl1001_business_notification_count"/>
+        <a:model-query model="wfl.newWFL.workflow_count" rootPath="workflow_count"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="wfl1001_create_bulletin_browsing_history_link" model="blt.BLT1010.create_bulletin_browsing_history" modelaction="execute"/>
+        <a:link id="wfl1001_blt_bulletin_detail_link" url="${/request/@context_path}/modules/blt/BLT1010/blt_bulletin_details_no_login.screen"/>
+        <a:link id="wfl1001_rfx_detail_link" url="${/request/@context_path}/modules/pur/PUR7130/pur_rfx_details.screen"/>
+        <a:link id="wfl1001_sys_user_message_read_link" model="sys.sys_user_messages" modelaction="update"/>
+        <a:link id="wfl1001_sys_user_message_delete_link" model="sys.sys_user_messages" modelaction="execute"/>
+        <a:link id="wfl1001_sys_schedule_message_insert_link" model="sys.sys_schedule_messages" modelaction="insert"/>
+        <a:link id="wfl1001_sys_schedule_message_delete_link" model="sys.sys_schedule_messages" modelaction="delete"/>
+        <a:link id="wfl1001_sys_schedule_types_insert_link" model="sys.SYS7020.sys_schedule_types" modelaction="insert"/>
+        <a:link id="wfl1001_sys_schedule_message_detail_link" url="${/request/@context_path}/modules/wfl/WFL1001/sys_schedule_message_detail.screen"/>
+        <a:link id="wfl1001_fnd_user_todo_list_insert_link" model="fnd.fnd_user_todo_list" modelaction="insert"/>
+        <a:link id="wfl1001_fnd_user_todo_list_update_link" model="fnd.fnd_user_todo_list" modelaction="update"/>
+        <a:link id="wfl1001_fnd_user_todo_list_delete_link" model="fnd.fnd_user_todo_list" modelaction="delete"/>
+        <link href="${/request/@context_path}/css/main/main-user.css?v=2.17" rel="stylesheet" type="text/css"/>
+        <!-- <link href="${/request/@context_path}/component/handCalendar/handCalendar.css?v=2.14" rel="stylesheet" type="text/css"/> -->
+        <a:link id="finance_url_request_link" url="${/request/@context_path}/modules/finance/validation/url_request_parameter.screen"/>
+        <!-- <script async="async" defer="defer" src="${/request/@context_path}/component/handCalendar/handCalendar.js?v=2.5"/> -->
+        <a:script><![CDATA[
+            //未签收业务通知单数量
+            var businessNotificationCount = '${/model/wfl1001_business_notification_count/record/@business_notification_count}';
+            document.getElementById("wfl1001_businessNotificationCount").innerHTML = businessNotificationCount;
+            var myFunctionFlag = '${/model/wfl1001_business_notification_count/record/@my_function_flag}';
+            
+            Aurora.onReady(function() {
+                //消息列表权限
+                init_messageListConfig();
+                //初始化，校验用户的手机和邮箱
+                initValidateUserInfor();
+                
+                initTab();
+                
+                //和角色类型相关的信息
+                init_role_info();
+                //初始化日程
+               // handCalendar.initHandCalendar("cldTest", getHandCalendarEvents($('wfl1001_user_schedule_messages_ds')), showUserEventW);
+            
+                if (myFunctionFlag == '1') {
+                    document.getElementById("business_notification_link").style.display = "";
+                };
+                if (myFunctionFlag == '0') {
+                    document.getElementById("business_notification_link").style.display = "none";
+                }
+            
+            });
+            
+            function onLoadUserMessageEvent(ds) {
+                handCalendar.updateHandCalendarData(getHandCalendarEvents(ds));
+            }
+            
+            function showUserEventW(eventData) {
+                if (Aurora.isEmpty(eventData)) {
+                    return;
+                }
+                var id = eventData.schedule_message_id;
+                if (Aurora.isEmpty(id)) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:WFL_HOME_PAGE.NO_CONTENT_ON_THE_AGENDA}');
+                    return;
+                }
+                var url = "${/request/@context_path}/modules/wfl/WFL1001/sys_schedule_message_detail.screen?schedule_message_id=" + id;
+                new Aurora.Window({
+                    id: 'wfl1001_sys_schedule_message_detail_window',
+                    title: '${l:WFL_HOME_PAGE.SCHEDULE_DETAILS}',
+                    url: url,
+                    height: 200,
+                    width: 300
+                });
+            }
+            
+            function getHandCalendarEvents(ds) {
+                var userScheduleMessages = ds.getAll();
+                var record;
+                var userEvents = [];
+                var startYear, startMonth, startDay, startHour, startMinute, endYear, endMonth, endDay, endHour, endMinute;
+                for (var i = 0;i < userScheduleMessages.length;i++) {
+                    userEvents[i] = record = userScheduleMessages[i].data;
+                    userEvents[i].backgroundColor = colorPicker(record.schedule_color);
+                    userEvents[i].borderColor = colorPicker(record.schedule_color);
+                }
+                return userEvents;
+            }
+            
+            
+            function init_role_info() {
+                var servicesRecords = $('services_permission_ds').getAll();
+                var service, domArrays = new Array();
+                var l = servicesRecords.length;
+                var ds, url;
+                window.document.getElementById('my_order_link').url = "";
+                window.document.getElementById('my_order_link').titleName = "";
+                for (var i = 0;i < l;i++) {
+                    service = servicesRecords[i].data.service_name;
+            
+                    //采购方，收到的报价单
+                    if (service == 'modules/pur/PUR5130/pur_rfx_headers_query.screen') {
+                        url = "javascript:wfl1001_sidebarOnclick('modules/pur/PUR5130/pur_rfx_headers_query.screen?function_code=PUR5130','" + servicesRecords[i].data.function_name + "');";
+                        window.document.getElementById('receivedInquirySheetForBuyerLink').setAttribute('href', url);
+                        $('wfl_receivedInquirySheetForBuyer_ds').query();
+            
+                        //采购方，加急订单
+                    } else if (service == 'modules/pur/PUR7010/pur_purchase_order_query.screen') {
+                        url = "javascript:wfl1001_sidebarOnclick('modules/pur/PUR7010/pur_purchase_order_query.screen?function_code=PUR7010','" + servicesRecords[i].data.function_name + "','Y');";
+                        window.document.getElementById('purchaseOrderLink').setAttribute('href', url);
+                        $('wfl_purchaseOrderUrgentStatisticsForRequire_ds').query();
+            
+                        //采购方，待收货
+                    } else if (service == 'modules/inv/INV7010/inv_asn_query.screen') {
+                        url = "javascript:wfl1001_sidebarOnclick('modules/inv/INV7010/inv_asn_query.screen?function_code=INV7010','" + servicesRecords[i].data.function_name + "');";
+                        window.document.getElementById('asnReceiveStatisticsForRequireLink').setAttribute('href', url);
+                        $('wfl_asnReceiveStatisticsForRequire_ds').query();
+            
+                        //采购方，待对账，创建开票通知
+                    } else if (service == 'modules/acp/ACP5210/acp_bill.screen') {
+                        url = "javascript:wfl1001_sidebarOnclick('modules/acp/ACP5210/acp_bill.screen?function_code=ACP5210','" + servicesRecords[i].data.function_name + "');";
+                        window.document.getElementById('billCreateForRequireLink').setAttribute('href', url);
+                        ds = $('wfl_billCreateForRequire_ds');//非寄销
+                        ds.query();
+                        ds = $('wfl_billCreateForRequire_2_ds');//寄销
+                        ds.query();
+            
+                        //采购方，待确认对账单，开票申请审批
+                    } else if (service == 'modules/acp/ACP5270/acp_bill_query.screen') {
+                        url = "javascript:wfl1001_sidebarOnclick('modules/acp/ACP5270/acp_bill_query.screen?function_code=ACP5270','" + servicesRecords[i].data.function_name + "');";
+                        window.document.getElementById('billApproveForRequireLink').setAttribute('href', url);
+                        ds = $('wfl_billApproveForRequire_ds');//非寄销
+                        ds.query();
+                        ds = $('wfl_billApproveForRequire_2_ds');//寄销
+                        ds.query();
+            
+                        //供应商，收到的询价单，发出的报价单
+                    } else if (service == 'modules/pur/SACPUR5210/pur_rfx_feedback.screen') {
+                        url = "javascript:wfl1001_sidebarOnclick('modules/pur/SACPUR5210/pur_rfx_feedback.screen?function_code=SACPUR5210','" + servicesRecords[i].data.function_name + "');";
+                        window.document.getElementById('receivedInquirySheetForSupplyLink').setAttribute('href', url);
+                        window.document.getElementById('quotationForSupplyLink').setAttribute('href', url);
+                        ds = $('wfl_receivedInquirySheetForSupply_ds'); //收到的询价单（已还价）
+                        ds.query();
+                        ds = $('wfl_receivedInquirySheetForSupply_2_ds'); //收到的询价单（未参与）
+                        ds.query();
+                        ds = $('wfl_quotationForSupply_ds'); //发出的报价单
+                        ds.query();
+            
+                        //供应商，加急订单，待确认
+                    } else if (service == 'modules/pur/PUR3010/pur_purchase_order_confirm.screen') {
+                        url = "javascript:wfl1001_sidebarOnclick('modules/pur/PUR3010/pur_purchase_order_confirm.screen?function_code=PUR3010','" + servicesRecords[i].data.function_name + "');";
+                        window.document.getElementById('purchaseOrderUrgentStatisticsForSupplyLink').setAttribute('href', url);
+                        window.document.getElementById('purchaseOrderConfirmStatisticsForSupplyLink').setAttribute('href', url);
+                        ds = $('wfl_purchaseOrderUrgentStatisticsForSupply_ds');//加急订单
+                        ds.query();
+                        ds = $('wfl_purchaseOrderConfirmStatisticsForSupply_ds');//待确认
+                        ds.query();
+            
+                        //供应商，待发货
+                    } else if (service == 'modules/inv/INV5010/inv_asn_query.screen') {
+                        url = "javascript:wfl1001_sidebarOnclick('modules/inv/INV5010/inv_asn_query.screen?function_code=INV5010','" + servicesRecords[i].data.function_name + "');";
+                        window.document.getElementById('salesSendForSupplyLink').setAttribute('href', url);
+                        ds = $('wfl_purchaseOrderDeliverStatisticsForSupply_ds');
+                        ds.query();
+            
+                        //供应商，待买家收货
+                    } else if (service == 'modules/inv/INV7020/inv_asn_query.screen') {
+                        url = "javascript:wfl1001_sidebarOnclick('modules/inv/INV7020/inv_asn_query.screen?function_code=INV7020','" + servicesRecords[i].data.function_name + "');";
+                        window.document.getElementById('toPurchaseReceiveForSupplyLink').setAttribute('href', url);
+                        ds = $('wfl_asnEnabledToReceiveStatisticsForSupply_ds');
+                        ds.query();
+            
+                        //供应商，待对账（创建开票申请）
+                    } else if (service == 'modules/acp/ACP5260/acp_bill_query.screen') {
+                        url = "javascript:wfl1001_sidebarOnclick('modules/acp/ACP5260/acp_bill_query.screen?function_code=ACP5260','" + servicesRecords[i].data.function_name + "');";
+                        window.document.getElementById('billCreateForSupplyLink').setAttribute('href', url);
+                        ds = $('wfl_billCreateForSupply_ds');//非寄销
+                        ds.query();
+                        ds = $('wfl_billCreateForSupply_2_ds');//寄销
+                        ds.query();
+            
+                        //供应商，待确认对账单（确认开票通知）
+                    } else if (service == 'modules/acp/ACP5230/acp_bill_query.screen') {
+                        url = "javascript:wfl1001_sidebarOnclick('modules/acp/ACP5230/acp_bill_query.screen?function_code=ACP5230','" + servicesRecords[i].data.function_name + "');";
+                        window.document.getElementById('billApproveForSupplyLink').setAttribute('href', url);
+                        ds = $('wfl_billApproveForSupply_ds');//非寄销
+                        ds.query();
+                        ds = $('wfl_billApproveForSupply_2_ds');//寄销
+                        ds.query();
+            
+                        //供应商，待开票对账单
+                    } else if (service == 'modules/acp/ACP5220/acp_web_invoice.screen') {
+                        url = "javascript:wfl1001_sidebarOnclick('modules/acp/ACP5220/acp_web_invoice.screen?function_code=ACP5220','" + servicesRecords[i].data.function_name + "');";
+                        window.document.getElementById('invoiceForStatementForSupplyLink').setAttribute('href', url);
+                        ds = $('wfl_invoiceForStatementForSupply_ds');//非寄销
+                        ds.query();
+                        ds = $('wfl_invoiceForStatementForSupply_2_ds');//寄销
+                        ds.query();
+            
+                    }
+                }
+            }
+            
+            //tab页面的设计对象 以及 函数
+            var tabObj = {
+                beforeDisplayTgr: null,
+                CurrentDisplayTgr: null,
+                titleTgr: null
+            };
+            
+            function initTab() {
+                tabObj.beforeDisplayTgr = window.document.getElementById("tab-son5");
+                tabObj.CurrentDisplayTgr = window.document.getElementById("tab-son5");
+                tabObj.titleTgr = window.document.getElementById("tab-son1-title");
+                
+                new initTypeTab("tab_con1");
+            }
+            
+			function initTypeTab(con){
+				var _con = (typeof con == "string" ? document.getElementById(con) : con);
+				_con.activeIndex = 0;
+				var _tabTitle = _con.children[0];
+				var _tabContent = _con.children[1];
+				_init();
+				
+				function _init(){
+					var children = _tabContent.children;
+					var l = children.length;
+					for (var i = 1; i < l; i ++){
+						children[i].style.display = "none";
+					}
+				}
+				_tabTitle.onclick = function (e){
+					var event = e || window.event;
+					var target = event.target || event.srcElement;
+					while(target.className.indexOf('tab-title') == -1 && target.tagName.toUpperCase() != "BODY"){
+						target = target.parentNode;
+					}
+					var index = target.getAttribute("index");
+					var activeIndex = _con.activeIndex;
+					
+					if (index && index != activeIndex){
+						_tabContent.children[activeIndex].style.display = "none";
+						_tabContent.children[index].style.display = "block";
+						
+						_tabTitle.children[activeIndex].className = "tab-title-item";
+						_tabTitle.children[index].className = "active tab-title-item";
+						
+						_con.activeIndex = index;
+					}
+				}
+			}
+			
+            
+            function changeTabSon(e) {
+                var tgr = e.target || e.srcElement;
+                if (tgr.tagName == 'LI') {
+                    var id = tgr.getAttribute('contentId');
+                    tabObj.tabCurrentDisplayTgr = window.document.getElementById(id);
+                    if (tabObj.beforeDisplayTgr == tabObj.tabCurrentDisplayTgr) {
+                        return;
+                    }
+                    tabObj.beforeDisplayTgr.style.display = 'none';
+                    tabObj.tabCurrentDisplayTgr.style.display = 'block';
+                    tabObj.tabCurrentDisplayTgr.style.marginTop = '18';
+                    tabObj.beforeDisplayTgr = tabObj.tabCurrentDisplayTgr;
+            
+                    //改变标题的边框
+                    tabObj.titleTgr.className = '';
+                    tgr.className = 'active-pcd-tab-item';
+                    tabObj.titleTgr = tgr;
+                }
+            }
+            
+            function colorPicker(s) {
+                var r;
+                switch (s) {
+                case 'PRIMARY':
+                    return '#3498db';
+                case 'RED':
+                    return '#f56954';
+                case 'INFO':
+                    return '#00afd1';
+                case 'PURPLE':
+                    return '#9b59b6';
+                case 'DANGER':
+                    return '#f6504d';
+                case 'SUCCESS':
+                    return '#27ae60';
+                case 'WARNING':
+                    return '#ffc61d';
+                case 'GREEN':
+                    return '#01b6ad';
+                case 'PINK':
+                    return '#ff3366';
+                case 'INVERSE':
+                    return '#2d2d2d';
+                }
+                return '#00ffff';
+            }
+            
+            function userEventInsert(o) {
+                if (!Aurora.isEmpty(o.id)) {
+                    Aurora.request({
+                        url: $('wfl1001_sys_schedule_message_insert_link').getUrl(),
+                        para: {
+                            'schedule_type_id': o.id,
+                            'message_title': o.title,
+                            'all_day': true,
+                            'start_year': o.start.getFullYear(),
+                            'start_month': o.start.getMonth(),
+                            'start_day': o.start.getDate(),
+                            'start_hour': o.start.getHours(),
+                            'start_minute': o.start.getMinutes()
+                        },
+                        success: function(result) {
+                        },
+                        scope: this
+                    });
+                }
+            }
+            
+            function userEventDelete(id) {
+                if (!Aurora.isEmpty(id)) {
+                    Aurora.request({
+                        url: $('wfl1001_sys_schedule_message_delete_link').getUrl(),
+                        para: {
+                            'schedule_message_id': id
+                        },
+                        success: function() {},
+                        scope: this
+                    });
+                }
+            }
+        ]]></a:script>
+        <script><![CDATA[
+            /*
+             * 全局参数定义
+             */
+            var g_userMessagesList_pageSize = 5; //默认显示消息数量
+            //init_messageListConfig();
+            
+            //商友圈
+            var g_coopMessagesList_pageNo = 1;
+            var g_coopMessagesListPageAll = Math.ceil('${/model/sys_messge_count/record/@coop_count}' / g_userMessagesList_pageSize);
+            var g_coopMessageFrom = 1;
+            wfl1001_messageListInit(0, 'wfl1001_coopMessagesListShowMoreDiv', g_coopMessagesListPageAll);
+            
+            //公司动态
+            var g_ownerMessagesList_pageNo = 1;
+            var g_ownerMessagesListPageAll = Math.ceil('${/model/sys_messge_count/record/@owner_count}' / g_userMessagesList_pageSize);
+            var g_ownerMessageFrom = 1;
+            wfl1001_messageListInit(0, 'wfl1001_ownerMessagesListShowMoreDiv', g_ownerMessagesListPageAll);
+            
+            //求购动态
+            var g_rfxMessagesList_pageNo = 1;
+            var g_rfxMessagesListPageAll = Math.ceil('${/model/sys_messge_count/record/@rfx_count}' / g_userMessagesList_pageSize);
+            var g_rfxMessageFrom = 1;
+            wfl1001_messageListInit(0, 'wfl1001_rfxMessagesListShowMoreDiv', g_rfxMessagesListPageAll);
+            
+            //系统消息
+            var g_sysMessagesList_pageNo = 1;
+            var g_sysMessagesListPageAll = Math.ceil('${/model/sys_messge_count/record/@system_count}' / g_userMessagesList_pageSize);
+            var g_sysMessageFrom = 1;
+            wfl1001_messageListInit(0, 'wfl1001_sysMessagesListShowMoreDiv', g_sysMessagesListPageAll);
+            
+            //行业资讯
+            var g_platformMessagesList_pageNo = 1;
+            var g_platformMessagesListPageAll = Math.ceil('${/model/sys_messge_count/record/@industry_count}' / g_userMessagesList_pageSize);
+            var g_platformMessageFrom = 1;
+            wfl1001_messageListInit(0, 'wfl1001_platformMessagesListShowMoreDiv', g_platformMessagesListPageAll);
+            /*
+             * END
+             */
+            
+            //全局参数初始化
+            
+            function wfl1001_sidebarOnclick(screen, prompt, flag) {
+                if (screen == undefined || screen === '') {
+                    return;
+                }
+                $('mainTab').openMainTab(screen, prompt, 'load_main_tab.screen');
+            }
+            
+            function getId(id) {
+                return document.getElementById(id);
+            }
+            
+            //消息权限
+            
+            function init_messageListConfig() {
+                if ('${/model/sys_messge_config/record/@owner_config}' == 'N') {
+                    messageListClear('tab-son2-title');
+                } else {
+                    $('wfl1001_owner_messages_list_ds').query();
+                }
+                if ('${/model/sys_messge_config/record/@rfx_config}' == 'N') {
+                    messageListClear('tab-son3-title');
+                } else {
+                    $('wfl1001_rfx_messages_list_ds').query();
+                }
+                if ('${/model/sys_messge_config/record/@coop_config}' == 'N') {
+                    messageListClear('tab-son4-title');
+                } else {
+                    $('wfl1001_coop_messages_list_ds').query();
+                }
+                if ('${/model/sys_messge_config/record/@industry_config}' == 'N') {
+                    messageListClear('tab-son5-title');
+                } else {
+                    $('wfl1001_platform_messages_list_ds').query();
+                }
+            
+            }
+            
+            function messageListClear(id) {
+                var div = getId(id);
+                div.style.display = 'none';
+            }
+            
+            //消息初始化(系统消息，公司动态，求购动态，商友圈，行业资讯)
+            
+            function wfl1001_messageListInit(pageNum, id, listPageAll) {
+                var div = getId(id);
+                if (listPageAll == pageNum || listPageAll == 0) {
+                    div.style.display = "none";
+                } else {
+                    div.style.display = "block";
+                }
+            }
+            //消息列表div渲染
+            
+            function wfl1001_messageListHTML(dataset, ul_id, pageNo, showMore_id, pageAll) {
+                var records = dataset.getAll(),
+                    record;
+                var nextpagehtml, length = records.length,
+                    li, count;
+                var ul = getId(ul_id);
+                for (var i = 0;i < length;i++) {
+                    record = records[i];
+                    count = i + (g_userMessagesList_pageSize * (g_sysMessagesList_pageNo - 1));
+                    li = window.document.createElement('LI');
+                    li.className = 'notification-messages info';
+                    li.id = 'user_msg_info_div_' + count;
+                    li.setAttribute('read_flag', 'false');
+                    nextpagehtml = '<div class="message-wrapper" onclick="javascript:wfl1001_showUserMessageListDetail(this,' + count + ',' + record.get('message_id') + ',' + record.get('source_id') + ',\'' + record.get('source_table') + '\',\'' + record.get('url') + '\',\'' + record.get('read_flag') + '\');">';
+                    if (record.get('read_flag') == 'N') {
+                        nextpagehtml += '<div id="user_msg_head_div_' + count + '" class="heading" style="font-weight:bold;color:#111">' + record.get('message_title') + '</div>';
+                    } else {
+                        nextpagehtml += '<div id="user_msg_head_div_' + count + '" class="heading" style="font-weight:normal;">' + record.get('message_title') + '</div>';
+                    }
+                    nextpagehtml += '<div id="user_msg_desc_div_' + count + '" class="description" style="font-weight:normal;">' + record.get('message_content') + '</div>';
+            
+                    nextpagehtml += '</div>';
+                    nextpagehtml += '<div class="date">' + record.get('creation_date') + '</div>';
+                    nextpagehtml += '</div>';
+            
+                    nextpagehtml += '<div class="msg-close">';
+                    nextpagehtml += '<a class="remove fa fa-times icon-remove" onclick="javascript:wfl1001_deleteUserMessage(this,' + count + ',' + record.get('message_id') + ',\'' + record.get('source_table') + '\');"></a>';
+                    nextpagehtml += '</div>';
+            
+                    li.innerHTML = nextpagehtml;
+                    ul.appendChild(li);
+                }
+                wfl1001_messageListInit(g_sysMessagesList_pageNo, 'wfl1001_sysMessagesListShowMoreDiv', g_sysMessagesListPageAll);
+            }
+            
+            function wfl1001_coopMessagesListDsLoad(dataset) {
+                wfl1001_messageListHTML(dataset, 'coop_messages_list_div_view', g_coopMessagesList_pageNo, 'wfl1001_coopMessagesListShowMoreDiv', g_coopMessagesListPageAll);
+            }
+            
+            function wfl1001_ownerMessagesListDsLoad(dataset) {
+                wfl1001_messageListHTML(dataset, 'owner_messages_list_div_view', g_ownerMessagesList_pageNo, 'wfl1001_ownerMessagesListShowMoreDiv', g_ownerMessagesListPageAll);
+            }
+            
+            function wfl1001_rfxMessagesListDsLoad(dataset) {
+                wfl1001_messageListHTML(dataset, 'rfx_messages_list_div_view', g_rfxMessagesList_pageNo, 'wfl1001_rfxMessagesListShowMoreDiv', g_rfxMessagesListPageAll);
+            }
+            
+            function wfl1001_sysMessagesListDsLoad(dataset) {
+                wfl1001_messageListHTML(dataset, 'sys_messages_list_div_view', g_sysMessagesList_pageNo, 'wfl1001_sysMessagesListShowMoreDiv', g_sysMessagesListPageAll);
+            }
+            
+            function wfl1001_platformMessagesListDsLoad(dataset) {
+                wfl1001_messageListHTML(dataset, 'platform_messages_list_div_view', g_platformMessagesList_pageNo, 'wfl1001_platformMessagesListShowMoreDiv', g_platformMessagesListPageAll);
+            }
+            
+            function wfl1001_showMoreCoopMessagesList() {
+                var ds = $('wfl1001_coop_messages_list_ds');
+                g_coopMessagesList_pageNo++;
+                g_coopMessageFrom += g_userMessagesList_pageSize * 1;
+                ds.setQueryParameter('pagenum_from', g_coopMessageFrom);
+                ds.query();
+            }
+            
+            function wfl1001_showMoreOwnerMessagesList() {
+                var ds = $('wfl1001_owner_messages_list_ds');
+                g_ownerMessagesList_pageNo++;
+                g_ownerMessageFrom += g_userMessagesList_pageSize * 1;
+                ds.setQueryParameter('pagenum_from', g_ownerMessageFrom);
+                ds.query();
+            }
+            
+            function wfl1001_showMoreRfxMessagesList() {
+                var ds = $('wfl1001_rfx_messages_list_ds');
+                g_rfxMessagesList_pageNo++;
+                g_rfxMessageFrom += g_userMessagesList_pageSize * 1;
+                ds.setQueryParameter('pagenum_from', g_rfxMessageFrom);
+                ds.query();
+            }
+            
+            function wfl1001_showMoreSysMessagesList() {
+                var ds = $('wfl1001_sys_messages_list_ds');
+                g_sysMessagesList_pageNo++;
+                g_sysMessageFrom += g_userMessagesList_pageSize * 1;
+                ds.setQueryParameter('pagenum_from', g_sysMessageFrom);
+                ds.query();
+            }
+            
+            function wfl1001_showMorePlatformMessagesList() {
+                var ds = $('wfl1001_platform_messages_list_ds');
+                g_platformMessagesList_pageNo++;
+                g_platformMessageFrom += g_userMessagesList_pageSize * 1;
+                ds.setQueryParameter('pagenum_from', g_platformMessageFrom);
+                ds.query();
+            }
+            
+            function wfl1001_showBltBulletinDetail(id, url) {
+                Aurora.request({
+                    url: $('wfl1001_create_bulletin_browsing_history_link').getUrl(),
+                    para: {
+                        'bulletin_id': id
+                    },
+                    success: function() {
+                        var new_url = $('wfl1001_blt_bulletin_detail_link').getUrl() + '?bulletin_id=' + id;
+                        window.open(new_url, 'WFL_USER_MESSAGE_SHOW_WINDOWS', "left=" + 0 + ",top=" + 0 + ",width=" + (window.screen.availWidth - 10) + ",height=" + (window.screen.availHeight - 50) + ",status=0,toolbar=0,menubar=0,location=0,scrollbars=" + 1 + ",resizable=" + 1, false);
+                    },
+                    scope: this
+                });
+            }
+            
+            function wfl1001_showUserMessageDetail(id, url) {
+                var new_url = url + id;
+                window.open(new_url, 'WFL_USER_MESSAGE_SHOW_WINDOWS', "left=" + 0 + ",top=" + 0 + ",width=" + (window.screen.availWidth - 10) + ",height=" + (window.screen.availHeight - 50) + ",status=0,toolbar=0,menubar=0,location=0,scrollbars=" + 1 + ",resizable=" + 1, false);
+            }
+            
+            function wfl1001_showUserMessageListDetail(_this, count, message_id, source_id, source_table, url, read_flag) {
+                if (source_table != 'BLT_BULLETIN' && source_table != 'FND_COOP_PRATNER_REQ' && source_table != 'FND_COOP_PARTNER_REQ') {
+                    var text_div = _this.children[1],
+                        text = '';
+                    if (text_div.innerText) {
+                        text = text_div.innerText;
+                    } else if (text_div.textContent) {
+                        text = text_div.textContent;
+                    }
+                    //设置读取的样式
+                    var parent = _this.parentNode;
+                    if (parent.getAttribute('read_flag') == 'false') {
+                        _this.className = 'message-wrapper read';
+                        var height = text_div.offsetHeight;
+                        _this.style.height = height + 25 + 'px';
+                        parent.style.height = height + 55 + 'px';
+                        parent.setAttribute('read_flag', 'true');
+                    } else {
+                        _this.className = 'message-wrapper';
+                        parent.style.height = 65 + 'px';
+                        _this.style.height = 40 + 'px';
+                        parent.setAttribute('read_flag', 'false');
+                    }
+            
+                }
+                Aurora.request({
+                    url: $('wfl1001_sys_user_message_read_link').getUrl(),
+                    para: {
+                        'message_id': message_id
+                    },
+                    success: function() {
+                        //点击“未读”的用户消息后，修改用户消息的样式，去掉标题和内容的加粗样式
+                        if (read_flag == 'N') {
+                            _this.children[0].setAttribute("style", "font-weight:normal;color:#666");
+                        }
+            
+                        //打开用户消息
+                        if (url != 'URL_NULL') {
+                            if (source_table == 'BLT_BULLETIN') {
+                                wfl1001_showBltBulletinDetail(source_id, url);
+                            } else if (source_table == 'FND_COOP_PRATNER_REQ' || source_table == 'FND_COOP_PARTNER_REQ') {
+                                wfl1001_showUserMessageDetail(source_id, url);
+                            }
+                        }
+                    },
+                    scope: this
+                });
+            }
+            
+            function wfl1001_deleteUserMessage(thisDiv, count, message_id, source_table) {
+                var parent = thisDiv.parentNode;
+                Aurora.request({
+                    url: $('wfl1001_sys_user_message_delete_link').getUrl(),
+                    para: {
+                        'message_id': message_id,
+                        'source_table': source_table
+                    },
+                    success: function() {
+                        while (parent.nodeName != 'LI') {
+                            parent = parent.parentNode;
+                        }
+                        parent.parentNode.removeChild(parent);
+                    },
+                    scope: this
+                });
+            }
+            
+            //采购方，收到的报价单
+            function wfl_receivedInquirySheetForBuyer_ds_loadFun(ds) {
+                document.getElementById("wfl_receivedInquirySheetForBuyer_span").innerHTML = ds.getAt(0).get('received_quotation_count');
+            }
+            
+            //采购方，加急订单
+            function wfl_purchaseOrderUrgentStatisticsForRequire_ds_loadFun(ds) {
+                document.getElementById("wfl_salesOrderUrgentStatisticsForRequire_span").innerHTML = ds.getAt(0).get('urgent_order_number');
+            }
+            
+            //采购方，待收货
+            function wfl_asnReceiveStatisticsForRequire_ds_loadFun(ds) {
+                document.getElementById("wfl_salesAsnEnabledToReceiveStatisticsForRequire_span").innerHTML = ds.getAt(0).get('asn_count');
+            }
+            
+            //采购方，待对账（非寄销）
+            function wfl_billCreateForRequire_ds_loadFun(ds) {
+                document.getElementById("wfl_billCreateForRequire_span").innerHTML = (document.getElementById("wfl_billCreateForRequire_span").innerText * 1) + ds.getAt(0).get('bill_create_count_non_csgn');
+            }
+            
+            //采购方，待对账（寄销）
+            function wfl_billCreateForRequire_2_ds_loadFun(ds) {
+                document.getElementById("wfl_billCreateForRequire_span").innerHTML = (document.getElementById("wfl_billCreateForRequire_span").innerText * 1) + ds.getAt(0).get('bill_create_count_csgn');
+            }
+            
+            //采购方，待确认对账（非寄销）
+            function wfl_billApproveForRequire_ds_loadFun(ds) {
+                document.getElementById("wfl_billApproveForRequire_span").innerHTML = (document.getElementById("wfl_billApproveForRequire_span").innerText * 1) + ds.getAt(0).get('bill_approve_count_non_csgn');
+            }
+            
+            //采购方，待确认对账（寄销）
+            function wfl_billApproveForRequire_2_ds_loadFun(ds) {
+                document.getElementById("wfl_billApproveForRequire_span").innerHTML = (document.getElementById("wfl_billApproveForRequire_span").innerText * 1) + ds.getAt(0).get('bill_approve_count_csgn');
+            }
+            
+            //供应商，收到的询价单（已还价的报价单）
+            function wfl_receivedInquirySheetForSupply_ds_loadFun(ds) {
+                document.getElementById("wfl_receivedInquirySheetForSupply_span").innerHTML = (document.getElementById("wfl_receivedInquirySheetForSupply_span").innerText * 1) + ds.getAt(0).get('received_inquiry_count');
+            }
+            
+            //供应商，收到的询价单（未参与的询价单）
+            function wfl_receivedInquirySheetForSupply_2_ds_loadFun(ds) {
+                document.getElementById("wfl_receivedInquirySheetForSupply_span").innerHTML = (document.getElementById("wfl_receivedInquirySheetForSupply_span").innerText * 1) + ds.getAt(0).get('received_inquiry_count_notin');
+            }
+            
+            //供应商，发出的报价单
+            function wfl_quotationForSupply_ds_loadFun(ds) {
+                document.getElementById("wfl_quotationForSupply_span").innerHTML = ds.getAt(0).get('released_quotation_count');
+            }
+            
+            //供应商，卖方加急订单
+            function wfl_purchaseOrderUrgentStatisticsForSupply_ds_loadFun(ds) {
+                document.getElementById("wfl_purchaseOrderUrgentStatisticsForSupply_span").innerHTML = ds.getAt(0).get('urgent_order_number');
+            }
+            
+            //供应商，待确认
+            function wfl_purchaseOrderConfirmStatisticsForSupply_ds_loadFun(ds) {
+                document.getElementById("wfl_purchaseOrderConfirmStatisticsForSupply_span").innerHTML = ds.getAt(0).get('confirm_order_number');
+            }
+            
+            //供应商，待发货
+            function wfl_purchaseOrderDeliverStatisticsForSupply_ds_loadFun(ds) {
+                document.getElementById("wfl_purchaseOrderDeliverStatisticsForSupply_span").innerHTML = ds.getAt(0).get('deliver_order_number');
+            }
+            
+            //供应商，待买家收货
+            function wfl_asnEnabledToReceiveStatisticsForSupply_ds_loadFun(ds) {
+                document.getElementById("wfl_asnEnabledToReceiveStatisticsForSupply_span").innerHTML = ds.getAt(0).get('asn_count');
+            }
+            
+            //供应商，待对账，非寄销
+            function wfl_billCreateForSupply_ds_loadFun(ds) {
+                document.getElementById("wfl_billCreateForSupply_span").innerHTML = (document.getElementById("wfl_billCreateForSupply_span").innerText * 1) + ds.getAt(0).get('bill_create_count_non_csgn');
+            }
+            
+            //供应商，待对账，寄销
+            function wfl_billCreateForSupply_2_ds_loadFun(ds) {
+                document.getElementById("wfl_billCreateForSupply_span").innerHTML = (document.getElementById("wfl_billCreateForSupply_span").innerText * 1) + ds.getAt(0).get('bill_create_count_csgn');
+            }
+            
+            //供应商，待确认对账单，非寄销
+            function wfl_billApproveForSupply_ds_loadFun(ds) {
+                document.getElementById("wfl_billApproveForSupply_span").innerHTML = (document.getElementById("wfl_billApproveForSupply_span").innerText * 1) + ds.getAt(0).get('bill_approve_count_non_csgn');
+            }
+            
+            //供应商，待确认对账单，寄销
+            function wfl_billApproveForSupply_2_ds_loadFun(ds) {
+                document.getElementById("wfl_billApproveForSupply_span").innerHTML = (document.getElementById("wfl_billApproveForSupply_span").innerText * 1) + ds.getAt(0).get('bill_approve_count_csgn');
+            }
+            
+            //供应商，待开票对账单，非寄销
+            function wfl_invoiceForStatementForSupply_ds_loadFun(ds) {
+                document.getElementById("wfl_invoiceForStatementForSupply_span").innerHTML = (document.getElementById("wfl_invoiceForStatementForSupply_span").innerText * 1) + ds.getAt(0).get('invoice_create_count_non_csgn');
+            }
+
+            //供应商，待开票对账单，寄销
+            function wfl_invoiceForStatementForSupply_2_ds_loadFun(ds) {
+                document.getElementById("wfl_invoiceForStatementForSupply_span").innerHTML = (document.getElementById("wfl_invoiceForStatementForSupply_span").innerText * 1) + ds.getAt(0).get('invoice_create_count_csgn');
+            }
+            
+            var user_phone = '${/model/sys_user_infor_ds/record/@mobile_phone}';
+            var user_phone_verify = '${/model/sys_user_infor_ds/record/@mobile_phone_verify_flag}';
+            var phone_bidding_flag = '${/model/sys_user_infor_ds/record/@phone_bidding_flag}';
+            var user_email = '${/model/sys_user_infor_ds/record/@email}';
+            var user_email_verify = '${/model/sys_user_infor_ds/record/@email_verify_flag}';
+            var email_bidding_flag = '${/model/sys_user_infor_ds/record/@email_bidding_flag}';
+            var email_check = '${/model/sys_user_infor_ds/record/@email_check}';
+            
+            function initValidateUserInfor() {
+                if ((!Aurora.isEmpty(user_phone) && user_phone_verify == 'Y'||phone_bidding_flag == 'N') && (!Aurora.isEmpty(user_email) && user_email_verify == 'Y'||email_bidding_flag == 'N')) {
+                    return;
+                }
+                sys_favorite_load();
+            }
+            
+            function sys_favorite_back1() {
+                var iframe = document.getElementById('ext_loadValidateIframe');
+                iframe.parentNode.removeChild(iframe);
+                var div = getId('ext-loadValidate');
+                var _div = getId('ext-loadValidate_bg');
+                div.parentNode.removeChild(div);
+                _div.parentNode.removeChild(_div);
+            }
+            
+            function sys_favorite_back() {
+                var iframe = document.getElementById('ext_loadValidateIframe');
+                iframe.parentNode.removeChild(iframe);
+                location.reload();
+            }
+            
+            function sys_favorite_load() {
+                var body = document.getElementById('ext-gen11');
+                var div = document.createElement('div');
+                div.id = 'ext-loadValidate';
+                div.className = 'fGuide validate';
+                body.appendChild(div);
+                var _div = document.createElement('div');
+                _div.className = 'fGuide validate_bg';
+                _div.id = 'ext-loadValidate_bg';
+                body.appendChild(_div);
+                var html = '<iframe id="ext_loadValidateIframe" allowtransparency="true" src="${/request/@context_path}/modules/wfl/WFL1001/sys_favorite_userInfor_validate.html" frameBorder="0" onload="main_iFrameHeight(\'ext_loadValidateIframe\',620,242)"></iframe>';
+                div.innerHTML = html;
+            }
+            
+            function functionGuide() {
+                var body = document.getElementById('ext-gen11');
+                var width = screen.availWidth;
+                var div = document.createElement('div');
+                div.id = 'ext-fGuide';
+                div.className = 'fGuide';
+                body.appendChild(div);
+                var iframe = document.createElement("iframe");
+                iframe.setAttribute("id", "ext_fGuideIframe");
+                iframe.setAttribute("src", "${/request/@context_path}/modules/wfl/WFL1001/newrs_show.html");
+                iframe.setAttribute("style", "height:100%;width:100%;border:0");
+                iframe.setAttribute("onLoad", "main_iFrameHeight('ext-fGuid')");
+                div.appendChild(iframe);
+            }
+            
+            function main_iFrameHeight(id,width,height) {
+                var ifm = document.getElementById(id);
+                ifm.style.width = width + 'px';
+                ifm.style.height = height + 'px';
+                var screenHeight = ifm.parentNode.offsetHeight;
+                var screenWidth = ifm.parentNode.offsetWidth;
+                ifm.style.marginTop = (screenHeight - ifm.offsetHeight)/2 + 'px';
+                ifm.style.marginLeft = (screenWidth - ifm.offsetWidth)/2 + 'px';
+                ifm.style.backgroundColor = 'transparent';
+            }
+            
+            function close_tip() {
+                var div = document.getElementById('ext-fGuide');
+                div.parentNode.removeChild(div);
+            }
+            
+            function finance_url_request() {
+                window.open($('finance_url_request_link').getUrl());
+            }
+        ]]></script>
+        <a:dataSets>
+            <!-- 角色 -->
+            <a:dataSet id="role_list_ds" autoQuery="true" fetchAll="true" model="sys.sys_user_role_groups"/>
+            <a:dataSet id="role_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="role_id" defaultValue="${/model/default_role_name/record/@role_id}"/>
+                    <a:field name="role_code" defaultValue="${/model/default_role_name/record/@role_code}"/>
+                    <a:field name="role_name" defaultValue="${/model/default_role_name/record/@role_name}" displayField="role_name" options="role_list_ds">
+                        <a:mapping>
+                            <a:map from="role_id" to="role_id"/>
+                            <a:map from="role_code" to="role_code"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="roleSelectUpdateFunction"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 商友圈 -->
+            <a:dataSet id="wfl1001_coop_messages_list_ds" autoQuery="false" model="sys.SYS_WFL.sys_coop_bulletin_list" pageSize="5" queryUrl="${/request/@context_path}/autocrud/sys.SYS_WFL.sys_coop_bulletin_list/query?pagenum_from=1">
+                <a:events>
+                    <a:event name="load" handler="wfl1001_coopMessagesListDsLoad"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 公司动态 -->
+            <a:dataSet id="wfl1001_owner_messages_list_ds" autoQuery="false" model="sys.SYS_WFL.sys_owner_bulletin_list" pageSize="5" queryUrl="${/request/@context_path}/autocrud/sys.SYS_WFL.sys_owner_bulletin_list/query?pagenum_from=1">
+                <a:events>
+                    <a:event name="load" handler="wfl1001_ownerMessagesListDsLoad"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 求购动态(rfx) -->
+            <a:dataSet id="wfl1001_rfx_messages_list_ds" autoQuery="false" model="sys.SYS_WFL.sys_rfx_list" pageSize="5" queryUrl="${/request/@context_path}/autocrud/sys.SYS_WFL.sys_rfx_list/query?pagenum_from=1">
+                <a:events>
+                    <a:event name="load" handler="wfl1001_rfxMessagesListDsLoad"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 系统消息 -->
+            <a:dataSet id="wfl1001_sys_messages_list_ds" autoQuery="true" model="sys.SYS_WFL.sys_system_message_list" pageSize="5" queryUrl="${/request/@context_path}/autocrud/sys.SYS_WFL.sys_system_message_list/query?pagenum_from=1">
+                <a:events>
+                    <a:event name="load" handler="wfl1001_sysMessagesListDsLoad"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 行业消息 -->
+            <a:dataSet id="wfl1001_platform_messages_list_ds" autoQuery="false" model="sys.SYS_WFL.sys_platform_message_list" pageSize="5" queryUrl="${/request/@context_path}/autocrud/sys.SYS_WFL.sys_platform_message_list/query?pagenum_from=1">
+                <a:events>
+                    <a:event name="load" handler="wfl1001_platformMessagesListDsLoad"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 日历 -->
+            <!--  <a:dataSet id="wfl1001_user_schedule_messages_ds" fetchAll="true" loadData="true" model="sys.sys_schedule_messages">
+                <a:events>
+                    <a:event name="load" handler="onLoadUserMessageEvent"/>
+                </a:events>
+            </a:dataSet> -->
+            <!-- 首页单据数量 start -->
+            <!-- 采购方，收到的报价单 -->
+            <a:dataSet id="wfl_receivedInquirySheetForBuyer_ds" autoQuery="false" model="sys.SYS_WFL.wfl_received_inquiry_sheet_for_require">
+                <a:events>
+                    <a:event name="load" handler="wfl_receivedInquirySheetForBuyer_ds_loadFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 采购方，加急订单 -->
+            <a:dataSet id="wfl_purchaseOrderUrgentStatisticsForRequire_ds" autoQuery="false" model="sys.SYS_WFL.wfl_purchase_order_urgent_statistics_for_require">
+                <a:events>
+                    <a:event name="load" handler="wfl_purchaseOrderUrgentStatisticsForRequire_ds_loadFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 采购方，待卖家发货 -->
+            <!-- <a:dataSet id="wfl_toBeShippedBySaler_ds" autoQuery="false" model="sys.SYS_WFL.wfl_to_be_shipped_by_saler_for_require">
+                <a:events>
+                    <a:event name="load" handler="wfl_toBeShippedBySaler_ds_loadFun"/>
+                </a:events>
+            </a:dataSet> -->
+            <!-- 采购方，待收货 -->
+            <a:dataSet id="wfl_asnReceiveStatisticsForRequire_ds" autoQuery="false" model="sys.SYS_WFL.wfl_asn_enabled_to_receive_statistics_for_require">
+                <a:events>
+                    <a:event name="load" handler="wfl_asnReceiveStatisticsForRequire_ds_loadFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 采购方，待对账（非寄销） -->
+            <a:dataSet id="wfl_billCreateForRequire_ds" autoQuery="false" model="sys.SYS_WFL.wfl_bill_create_for_require">
+                <a:events>
+                    <a:event name="load" handler="wfl_billCreateForRequire_ds_loadFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 采购方，待对账（寄销） -->
+            <a:dataSet id="wfl_billCreateForRequire_2_ds" autoQuery="false" model="sys.SYS_WFL.wfl_bill_create_for_require_2">
+                <a:events>
+                    <a:event name="load" handler="wfl_billCreateForRequire_2_ds_loadFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 采购方，待确认对账单（非寄销） -->
+            <a:dataSet id="wfl_billApproveForRequire_ds" autoQuery="false" model="sys.SYS_WFL.wfl_bill_approve_for_require">
+                <a:events>
+                    <a:event name="load" handler="wfl_billApproveForRequire_ds_loadFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 采购方，待确认对账单（寄销） -->
+            <a:dataSet id="wfl_billApproveForRequire_2_ds" autoQuery="false" model="sys.SYS_WFL.wfl_bill_approve_for_require_2">
+                <a:events>
+                    <a:event name="load" handler="wfl_billApproveForRequire_2_ds_loadFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 供应商，收到的询价单（已还价的报价单） -->
+            <a:dataSet id="wfl_receivedInquirySheetForSupply_ds" autoQuery="false" model="sys.SYS_WFL.wfl_received_inquiry_sheet_for_supply">
+                <a:events>
+                    <a:event name="load" handler="wfl_receivedInquirySheetForSupply_ds_loadFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 供应商，收到的询价单 （未参与的询价单）-->
+            <a:dataSet id="wfl_receivedInquirySheetForSupply_2_ds" autoQuery="false" model="sys.SYS_WFL.wfl_received_inquiry_sheet_for_supply_2">
+                <a:events>
+                    <a:event name="load" handler="wfl_receivedInquirySheetForSupply_2_ds_loadFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 供应商，发出的报价单 -->
+            <a:dataSet id="wfl_quotationForSupply_ds" autoQuery="false" model="sys.SYS_WFL.wfl_released_quotation_for_supply">
+                <a:events>
+                    <a:event name="load" handler="wfl_quotationForSupply_ds_loadFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 待开票对账单 -->
+            <!-- <a:dataSet id="wfl_invoiceForStatementForRequire_ds" autoQuery="false" model="sys.SYS_WFL.wfl_invoice_for_statement_for_require">
+                <a:events>
+                    <a:event name="load" handler="wfl_invoiceForStatementForRequire_ds_loadFun"/>
+                </a:events>
+            </a:dataSet> -->
+            <!-- 供应商，加急订单 -->
+            <a:dataSet id="wfl_purchaseOrderUrgentStatisticsForSupply_ds" autoQuery="false" model="sys.SYS_WFL.wfl_purchase_order_urgent_statistics_for_supply">
+                <a:events>
+                    <a:event name="load" handler="wfl_purchaseOrderUrgentStatisticsForSupply_ds_loadFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 供应商，待确认 -->
+            <a:dataSet id="wfl_purchaseOrderConfirmStatisticsForSupply_ds" autoQuery="false" model="sys.SYS_WFL.wfl_purchase_order_confirm_statistics_for_supply">
+                <a:events>
+                    <a:event name="load" handler="wfl_purchaseOrderConfirmStatisticsForSupply_ds_loadFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 供应商，待发货 -->
+            <a:dataSet id="wfl_purchaseOrderDeliverStatisticsForSupply_ds" autoQuery="false" model="sys.SYS_WFL.wfl_purchase_order_deliver_statistics_for_supply">
+                <a:events>
+                    <a:event name="load" handler="wfl_purchaseOrderDeliverStatisticsForSupply_ds_loadFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 供应商，待买家收货 -->
+            <a:dataSet id="wfl_asnEnabledToReceiveStatisticsForSupply_ds" autoQuery="false" model="sys.SYS_WFL.wfl_asn_enabled_to_receive_statistics_for_supply">
+                <a:events>
+                    <a:event name="load" handler="wfl_asnEnabledToReceiveStatisticsForSupply_ds_loadFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 供应商，待对账（非寄销） -->
+            <a:dataSet id="wfl_billCreateForSupply_ds" autoQuery="false" model="sys.SYS_WFL.wfl_bill_create_for_supply">
+                <a:events>
+                    <a:event name="load" handler="wfl_billCreateForSupply_ds_loadFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 供应商，待对账（寄销） -->
+            <a:dataSet id="wfl_billCreateForSupply_2_ds" autoQuery="false" model="sys.SYS_WFL.wfl_bill_create_for_supply_2">
+                <a:events>
+                    <a:event name="load" handler="wfl_billCreateForSupply_2_ds_loadFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 供应商，待确认对账单（非寄销） -->
+            <a:dataSet id="wfl_billApproveForSupply_ds" autoQuery="false" model="sys.SYS_WFL.wfl_bill_approve_for_supply">
+                <a:events>
+                    <a:event name="load" handler="wfl_billApproveForSupply_ds_loadFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 供应商，待确认对账单（寄销） -->
+            <a:dataSet id="wfl_billApproveForSupply_2_ds" autoQuery="false" model="sys.SYS_WFL.wfl_bill_approve_for_supply_2">
+                <a:events>
+                    <a:event name="load" handler="wfl_billApproveForSupply_2_ds_loadFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 供应商，待开票对账单（非寄销） -->
+            <a:dataSet id="wfl_invoiceForStatementForSupply_ds" autoQuery="false" model="sys.SYS_WFL.wfl_invoice_for_statement_for_supply">
+                <a:events>
+                    <a:event name="load" handler="wfl_invoiceForStatementForSupply_ds_loadFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 供应商，待开票对账单（寄销） -->
+            <a:dataSet id="wfl_invoiceForStatementForSupply_2_ds" autoQuery="false" model="sys.SYS_WFL.wfl_invoice_for_statement_for_supply_2">
+                <a:events>
+                    <a:event name="load" handler="wfl_invoiceForStatementForSupply_2_ds_loadFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 首页单据数量 end -->
+        </a:dataSets>
+        <!-- 内容概要 -->
+        <div style="width:100%;height:100%;background-color:#d1eaf5;overflow:auto;">
+            <div id="wfl1001_content" style="width: 1200px;margin-left: auto;margin-right:auto;padding: 0px;margin-top: 0px;">
+                <table class="body-content" height="100%" style="width:1200px;margin-top:0px;padding: 0px;margin-left: auto;margin-right: auto;border-collapse: collapse;">
+                    <tr>
+                        <td height="100%" style="background-color: #FFFFFF;vertical-align:top;padding: 0px;" width="200px">
+                            <div class="fl content-main-left">
+                                <div class="user-infor">
+                                    <div class="user-infor-con" onclick="wfl1001_sidebarOnclick(&apos;modules/wfl/WFL1001/sys_user_personal_page.screen&apos;,&apos;${l:WFL_HOME_PAGE.PERSONAL_CENTER}&apos;)">
+                                        <img class="user-infor-img" src="${/request/@context_path}/images/headIcon.jpg"/>
+                                    </div>
+                                    <ul style="padding-bottom: 5px;">
+                                        <li style="text-align: center;">
+                                            <a href="javascript:wfl1001_sidebarOnclick(&apos;modules/wfl/WFL1001/sys_user_personal_page.screen&apos;,&apos;${l:WFL_HOME_PAGE.PERSONAL_CENTER}&apos;)"><![CDATA[${/model/sys_user_infor_ds/record/@description}]]></a>
+                                        </li>
+                                        <li style="text-align: center;"><![CDATA[${/model/sys_user_infor_ds/record/@business_group_name}]]></li>
+                                        <li class="select-role">
+                                            <a:comboBox name="role_name" bindTarget="role_ds" style="font-size: 12px; width:110px;margin-bottom: 2px;"/>
+                                        </li>
+                                    </ul>
+                                </div>
+                                <div class="short-link-con">
+                                    <div class="short-link fl" onclick="openFunction(&apos;modules/wfl/WFL1001/sys_user_personal_page.screen&apos;, &apos;个人主页&apos;)">
+                                        <i class="icon-home" style="font-size:16px;"/>
+                                        <span style="width:60px"><![CDATA[${l:SYS.PERSONAL_HOMEPAGE}]]></span>
+                                    </div>
+                                    <div class="short-link fr" onclick="exitSystem()">
+                                        <i class="icon-signout" style="font-size:16px;"/>
+                                        <span style="width:40px;left:-10px"><![CDATA[${l:SYS.EXIT}]]></span>
+                                    </div>
+                                </div>
+                                <div class="person-attribute" style="display:none;">
+                                    <ul class="person-attribute-list">
+                                        <li class="person-attribute-item">
+                                            <ul>
+                                                <li class="person-attribute-item-value"><![CDATA[0]]></li>
+                                                <li class="person-attribute-item-name"><![CDATA[${l:WFL_HOME_PAGE.CONCERN}]]></li>
+                                            </ul>
+                                        </li>
+                                        <li class="person-attribute-item">
+                                            <ul>
+                                                <li class="person-attribute-item-value"><![CDATA[0]]></li>
+                                                <li class="person-attribute-item-name"><![CDATA[${l:WFL_HOME_PAGE.FANS}]]></li>
+                                            </ul>
+                                        </li>
+                                        <li class="person-attribute-item">
+                                            <ul>
+                                                <li class="person-attribute-item-value"><![CDATA[0]]></li>
+                                                <li class="person-attribute-item-name"><![CDATA[${l:WFL_HOME_PAGE.DYNAMIC}]]></li>
+                                            </ul>
+                                        </li>
+                                    </ul>
+                                </div>
+                                <div class="common-used-function">
+                                    <div class="common-used-function-title"><![CDATA[${l:WFL_HOME_PAGE.COMMON_FUNCTION}]]></div>
+                                    <ul class="common-used-function-list">
+                                        <li id="my_order_link" class="common-used-function-item" onclick="wfl1001_sidebarOnclick(&apos;modules/pur/newPur/fnd_company_matters_center.screen?loc_url=modules/pur/newPur/pur_purchase_my_received_orders.screen&apos;, &apos;${l:WFL_HOME_PAGE.TO-DO_CENTER}&apos;);">
+                                            <a>
+                                                <i class="fa icon-tasks" style="padding-right:5px"/>
+                                                <span class="title"><![CDATA[${l:WFL_HOME_PAGE.TO-DO_CENTER}]]></span>
+                                            </a>
+                                        </li>
+                                        <li id="my_order_link" class="common-used-function-item" onclick="wfl1001_sidebarOnclick(this.url, this.titleName);">
+                                            <a>
+                                                <i class="fa icon-shopping-cart" style="padding-right:5px"/>
+                                                <span class="title"><![CDATA[${l:WFL_HOME_PAGE.MY_PO}]]></span>
+                                            </a>
+                                        </li>
+                                        <li class="common-used-function-item">
+                                            <a href="#">
+                                                <i class="fa icon-truck" style="padding-right:5px"/>
+                                                <span class="title"><![CDATA[${l:WFL_HOME_PAGE.LOGISTICS_DETAIL}]]></span>
+                                            </a>
+                                        </li>
+                                        <li id="business_notification_link" class="common-used-function-item" onclick="wfl1001_sidebarOnclick(&apos;modules/fnd/FND9510/fnd_business_notification_query_main.screen?function_code=FND9510&apos;,&apos;${l:WFL_HOME_PAGE.BUSINESS_NOTICE_SIGN_MANAGEMENT}&apos;);">
+                                            <a href="#">
+                                                <i class="fa icon-comments" style="padding-right:5px"/>
+                                                <span class="title"><![CDATA[${l:WFL_HOME_PAGE.BUSINESS_NOTICE}[]]></span>
+                                                <span id="wfl1001_businessNotificationCount"><![CDATA[0]]></span>
+                                                <span class="title"><![CDATA[]]]></span>
+                                            </a>
+                                        </li>
+                                        <li class="common-used-function-item" onclick="wfl1001_sidebarOnclick(&apos;update_self_password.screen&apos;,&apos;密码修改&apos;);">
+                                            <a href="javascript:wfl1001_sidebarOnclick(&apos;update_self_password.screen&apos;,&apos;密码修改&apos;);">
+                                                <i class="fa icon-lock" style="padding-right:5px"/>
+                                                <span class="title"><![CDATA[${l:SYS.ALTER_PASSWWORD}]]></span>
+                                            </a>
+                                        </li>
+                                        <li class="common-used-function-item" onclick="wfl1001_sidebarOnclick(&apos;modules/fnd/FND7010/fnd_message.screen?function_code=FND7010&apos;,&apos;${l:WFL_HOME_PAGE.INSIDE_LETTER}&apos;);">
+                                            <a href="javascript:wfl1001_sidebarOnclick(&apos;modules/fnd/FND7010/fnd_message.screen?function_code=FND7010&apos;,&apos;${l:WFL_HOME_PAGE.INSIDE_LETTER}&apos;);">
+                                                <i class="fa icon-envelope" style="padding-right:5px"/>
+                                                <span class="title"><![CDATA[${l:WFL_HOME_PAGE.INSIDE_LETTER}]]></span>
+                                            </a>
+                                        </li>
+                                        <!-- <li class="common-used-function-item" onclick="functionGuide()">
+                                            <a>
+                                                <i class="fa icon-exclamation-sign" style="padding-right:5px"/>
+                                                <span class="title"><![CDATA[功能指引]]></span>
+                                            </a>
+                                        </li> -->
+                                        <li id="assign_function_link" class="common-used-function-item" onclick="wfl1001_sidebarOnclick(&apos;modules/fnd/FND9520/fnd_share_function_list.screen?loc_url=modules/pur/newPur/pur_purchase_my_received_orders.screen&apos;, &apos;${l:WFL_HOME_PAGE.SIGNED_APPLICATION}&apos;);">
+                                            <a>
+                                                <i class="fa icon-circle" style="padding-right:5px"/>
+                                                <span class="title"><![CDATA[${l:WFL_HOME_PAGE.SIGNED_APPLICATION}]]></span>
+                                            </a>
+                                        </li>
+                                        <li class="common-used-function-item" onclick="wfl1001_sidebarOnclick(&apos;modules/wfl/newWFL/fnd_company_matters_center.screen?loc_url=modules/wfl/WFL5010/wfl_instance_node_recipient.screen&amp;type=0&apos;, &apos;${l:SYS_APPROVE_DOCUMENT.APPROVEMENT}&apos;);">
+                                            <a id="wfl_function_approve_link" href="#">
+                                                <i class="fa icon-circle" style="padding-right:5px"/>
+                                                <span class="title"><![CDATA[${l:SYS_APPROVE_DOCUMENT.APPROVEMENT}]]></span>
+                                                <span id="all_approve_num" style="display:none;"/>
+                                            </a>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </td>
+                        <td style="vertical-align: top;margin-right: 0px;" width="1000px">
+                            <div class="body-right" style="width:1000px;">
+                                <div class="fl content-main-right">
+                                    <div class="main-left sales-container">
+                                        <div class="sale-container-body">
+                                            <div class="trade-state-label">
+                                                <ul class="trade-state-label-item-container">
+                                                    <li class="fl trade-state-label-item-before"><![CDATA[${l:WFL_HOME_PAGE.BEFORE_TRADE}]]></li>
+                                                    <li class="fl trade-state-label-item-middle"><![CDATA[${l:WFL_HOME_PAGE.TRADING_IN}]]></li>
+                                                    <li class="fl trade-state-label-item-last"><![CDATA[${l:WFL_HOME_PAGE.AFTER_TRADE}]]></li>
+                                                </ul>
+                                            </div>
+                                            <div class="sales-state-content">
+                                                <ul class="sales-state-content-purchase">
+                                                    <li class="sales-state-content-purchase-icon"><![CDATA[${l:WFL_HOME_PAGE.PURCHASE}]]></li>
+                                                    <li class="sales-state-content-purchase-item sale-part">
+                                                        <ul>
+                                                            <li>
+                                                                <!-- 采购方，收到的报价单 -->
+                                                                <a id="receivedInquirySheetForBuyerLink" href="#">
+                                                                    <span><![CDATA[${l:WFL_HOME_PAGE.RECEIVED_INQUIRY_SHEET_FOR_BUYER}(]]></span>
+                                                                    <span id="wfl_receivedInquirySheetForBuyer_span"><![CDATA[0]]></span>
+                                                                    <span><![CDATA[)]]></span>
+                                                                </a>
+                                                            </li>
+                                                        </ul>
+                                                    </li>
+                                                    <li class="sales-state-content-purchase-item sale-part">
+                                                        <ul>
+                                                            <li>
+                                                                <!-- 采购方，加急订单 -->
+                                                                <a id="purchaseOrderLink" href="#">
+                                                                    <span><![CDATA[${l:WFL_HOME_PAGE.URGENT_PO}(]]></span>
+                                                                    <span id="wfl_salesOrderUrgentStatisticsForRequire_span"><![CDATA[0]]></span>
+                                                                    <span><![CDATA[)]]></span>
+                                                                </a>
+                                                            </li>
+                                                        </ul>
+                                                    </li>
+                                                    <li class="sales-state-content-purchase-item sale-part">
+                                                        <ul>
+                                                            <li>
+                                                                <!-- 采购方，待收货 -->
+                                                                <a id="asnReceiveStatisticsForRequireLink" href="#">
+                                                                    <spann><![CDATA[${l:WFL_HOME_PAGE.TO_BE_RECEIVED}(]]></spann>
+                                                                    <span id="wfl_salesAsnEnabledToReceiveStatisticsForRequire_span"><![CDATA[0]]></span>
+                                                                    <span><![CDATA[)]]></span>
+                                                                </a>
+                                                            </li>
+                                                        </ul>
+                                                    </li>
+                                                    <li class="sales-state-content-purchase-item sale-part">
+                                                        <ul>
+                                                            <li>
+                                                                <!-- 采购方，待对账 -->
+                                                                <a id="billCreateForRequireLink" href="#">
+                                                                    <spann><![CDATA[${l:WFL_HOME_PAGE.TO_BE_BILLED}(]]></spann>
+                                                                    <span id="wfl_billCreateForRequire_span"><![CDATA[0]]></span>
+                                                                    <span><![CDATA[)]]></span>
+                                                                </a>
+                                                            </li>
+                                                            <li>
+                                                                <!-- 采购方，待确认对账单 -->
+                                                                <a id="billApproveForRequireLink" href="#">
+                                                                    <spann><![CDATA[${l:WFL_HOME_PAGE.TO_BE_CONFIRM_BILL}(]]></spann>
+                                                                    <span id="wfl_billApproveForRequire_span"><![CDATA[0]]></span>
+                                                                    <span><![CDATA[)]]></span>
+                                                                </a>
+                                                            </li>
+                                                        </ul>
+                                                    </li>
+                                                </ul>
+                                                <ul class="sales-state-content-sale">
+                                                    <li class="sales-state-content-sale-icon"><![CDATA[${l:WFL_HOME_PAGE.SALES}]]></li>
+                                                    <li class="sales-state-content-sale-item">
+                                                        <ul>
+                                                            <li>
+                                                                <!-- 供应商，收到的询价单 -->
+                                                                <a id="receivedInquirySheetForSupplyLink" href="#">
+                                                                    <spann><![CDATA[${l:WFL_HOME_PAGE.RECEIVED_INQUIRY_SHEET_FOR_SALER}(]]></spann>
+                                                                    <span id="wfl_receivedInquirySheetForSupply_span"><![CDATA[0]]></span>
+                                                                    <span><![CDATA[)]]></span>
+                                                                </a>
+                                                            </li>
+                                                            <li>
+                                                                <!-- 供应商，发出的报价单 -->
+                                                                <a id="quotationForSupplyLink" href="#">
+                                                                    <spann><![CDATA[${l:WFL_HOME_PAGE.QUOTATION}(]]></spann>
+                                                                    <span id="wfl_quotationForSupply_span"><![CDATA[0]]></span>
+                                                                    <span><![CDATA[)]]></span>
+                                                                </a>
+                                                            </li>
+                                                        </ul>
+                                                    </li>
+                                                    <li class="sales-state-content-sale-item sale-part">
+                                                        <ul>
+                                                            <li>
+                                                                <!-- 供应商，加急订单 -->
+                                                                <a id="purchaseOrderUrgentStatisticsForSupplyLink" href="#">
+                                                                    <spann><![CDATA[${l:WFL_HOME_PAGE.URGENT_PO}(]]></spann>
+                                                                    <span id="wfl_purchaseOrderUrgentStatisticsForSupply_span"><![CDATA[0]]></span>
+                                                                    <span><![CDATA[)]]></span>
+                                                                </a>
+                                                            </li>
+                                                            <li>
+                                                                <!-- 供应商，待确认 -->
+                                                                <a id="purchaseOrderConfirmStatisticsForSupplyLink" href="#">
+                                                                    <spann><![CDATA[${l:WFL_HOME_PAGE.TO_BE_CONFIRMED}(]]></spann>
+                                                                    <span id="wfl_purchaseOrderConfirmStatisticsForSupply_span"><![CDATA[0]]></span>
+                                                                    <span><![CDATA[)]]></span>
+                                                                </a>
+                                                            </li>
+                                                            <li>
+                                                                <!-- 供应商，待发货 -->
+                                                                <a id="salesSendForSupplyLink" href="#">
+                                                                    <span><![CDATA[${l:WFL_HOME_PAGE.TO_BE_SHIPPED}(]]></span>
+                                                                    <span id="wfl_purchaseOrderDeliverStatisticsForSupply_span"><![CDATA[0]]></span>
+                                                                    <span><![CDATA[)]]></span>
+                                                                </a>
+                                                            </li>
+                                                        </ul>
+                                                    </li>
+                                                    <li class="sales-state-content-sale-item sale-part">
+                                                        <ul>
+                                                            <li>
+                                                                <!-- 供应商，待买家收货 -->
+                                                                <a id="toPurchaseReceiveForSupplyLink" href="#">
+                                                                    <span><![CDATA[${l:WFL_HOME_PAGE.TO_BE_RECEIVED_BY_BUYER}(]]></span>
+                                                                    <span id="wfl_asnEnabledToReceiveStatisticsForSupply_span"><![CDATA[0]]></span>
+                                                                    <span><![CDATA[)]]></span>
+                                                                </a>
+                                                            </li>
+                                                        </ul>
+                                                    </li>
+                                                    <li class="sales-state-content-sale-item sale-part">
+                                                        <ul>
+                                                            <li>
+                                                                <!-- 供应商，待对账 -->
+                                                                <a id="billCreateForSupplyLink" href="#">
+                                                                    <spann><![CDATA[${l:WFL_HOME_PAGE.TO_BE_BILLED}(]]></spann>
+                                                                    <span id="wfl_billCreateForSupply_span"><![CDATA[0]]></span>
+                                                                    <span><![CDATA[)]]></span>
+                                                                </a>
+                                                            </li>
+                                                            <li>
+                                                                <!-- 供应商，待确认对账单 -->
+                                                                <a id="billApproveForSupplyLink" href="#">
+                                                                    <spann><![CDATA[${l:WFL_HOME_PAGE.TO_BE_CONFIRM_BILL}(]]></spann>
+                                                                    <span id="wfl_billApproveForSupply_span"><![CDATA[0]]></span>
+                                                                    <span><![CDATA[)]]></span>
+                                                                </a>
+                                                            </li>
+                                                        </ul>
+                                                    </li>
+                                                    <li class="sales-state-content-sale-item sale-part">
+                                                        <ul>
+                                                            <li>
+                                                                <!-- 供应商，待开票对账单 -->
+                                                                <a id="invoiceForStatementForSupplyLink" href="#">
+                                                                    <span><![CDATA[${l:WFL_HOME_PAGE.INVOICE_FOR_STATEMENT}(]]></span>
+                                                                    <span id="wfl_invoiceForStatementForSupply_span"><![CDATA[0]]></span>
+                                                                    <span><![CDATA[)]]></span>
+                                                                </a>
+                                                            </li>
+                                                        </ul>
+                                                    </li>
+                                                </ul>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- 公告 -->
+                                    <div class="main-right notice-container" style="position: relative;">
+                                        <div style="width: 250px;height: 300px;margin: auto;margin-top: 10px;">
+                                            <div id="tab_con1" class="tab-type">
+                                                <ul class="tab-title-list">
+                                                    <li class="tab-title-item active" index="0">
+                                                        <div class="tt-content"><![CDATA[商务]]></div>
+                                                    </li>
+                                                    <li class="tab-title-item" index="1">
+                                                        <div class="tt-content"><![CDATA[数码]]></div>
+                                                    </li>
+                                                    <li class="tab-title-item" index="2">
+                                                        <div class="tt-content"><![CDATA[居家]]></div>
+                                                    </li>
+                                                    <li class="tab-title-item" index="3" style="width: 67px;">
+                                                        <div class="tt-content"><![CDATA[户外]]></div>
+                                                    </li>
+                                                    <li style="clear: both;"/>
+                                                </ul>
+                                                <ul class="tab-content-list" index="0" tabindex="0">
+                                                    <li class="tab-content active"><![CDATA[
+                                                    	<p>&nbsp;B2B的春天正在到来</p>
+														<p>&nbsp;如何打造一个健康的供应链生态圈</p>
+													]]></li>
+                                                    <li class="tab-content"><![CDATA[
+													]]></li>
+                                                    <li class="tab-content"><![CDATA[
+													]]></li>
+                                                    <li class="tab-content"><![CDATA[
+													]]></li>
+                                                </ul>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="main-left tab-container">
+                                        <div/>
+                                        <div class="pcd-tab" style="position:relative">
+                                            <div class="tab-title">
+                                                <ul onclick="changeTabSon(event);">
+                                                    <li id="tab-son1-title" class="active-pcd-tab-item" contentId="tab-son5"><![CDATA[${l:WFL_HOME_PAGE.SYSTEM_MESSAGE}]]></li>
+                                                    <li id="tab-son2-title" contentId="tab-son2"><![CDATA[${l:WFL_HOME_PAGE.COMPANY_DYNAMIC}]]></li>
+                                                    <li id="tab-son3-title" contentId="tab-son4"><![CDATA[${l:WFL_HOME_PAGE.PUR-DYNAMICS}]]></li>
+                                                    <li id="tab-son4-title" contentId="tab-son1"><![CDATA[${l:WFL_HOME_PAGE.BUSINESS_CIRCLE}]]></li>
+                                                    <li id="tab-son5-title" contentId="tab-son6"><![CDATA[${l:WFL_HOME_PAGE.INDUSTRY_NEWS}]]></li>
+                                                </ul>
+                                            </div>
+                                            <div id="tab-son1" class="tab-content tab-business-dynamic">
+                                                <div class="scroller" data-always-visible="1" data-height="450px" style="background-color: #fff">
+                                                    <div class="tiles white">
+                                                        <div class="tiles-body">
+                                                            <div class="user_messages_list_content" style="padding-top: 20px">
+                                                                <ul id="coop_messages_list_div_view"/>
+                                                            </div>
+                                                        </div>
+                                                        <div id="wfl1001_coopMessagesListShowMoreDiv" class="showmore">
+                                                            <a class="handle" href="javascript:wfl1001_showMoreCoopMessagesList()"><![CDATA[${l:WFL_HOME_PAGE.SHOW_MORE}]]></a>
+                                                        </div>
+                                                        <div class="row spacing-bottom"/>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div id="tab-son2" class="tab-content tab-company-dynamic">
+                                                <div class="scroller" data-always-visible="1" data-height="450px" style="background-color: #fff">
+                                                    <div class="tiles white">
+                                                        <div class="tiles-body">
+                                                            <div class="user_messages_list_content" style="padding-top: 20px">
+                                                                <ul id="owner_messages_list_div_view"/>
+                                                            </div>
+                                                        </div>
+                                                        <div id="wfl1001_ownerMessagesListShowMoreDiv" class="showmore">
+                                                            <a class="handle" href="javascript:wfl1001_showMoreOwnerMessagesList()"><![CDATA[${l:WFL_HOME_PAGE.SHOW_MORE}]]></a>
+                                                        </div>
+                                                        <div class="row spacing-bottom"/>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div id="tab-son4" class="tab-content tab-buy-dynamic">
+                                                <div class="scroller" data-always-visible="1" data-height="450px" style="background-color: #fff">
+                                                    <div class="tiles white">
+                                                        <div class="tiles-body">
+                                                            <div class="user_messages_list_content" style="padding-top: 20px">
+                                                                <ul id="rfx_messages_list_div_view"/>
+                                                            </div>
+                                                        </div>
+                                                        <div id="wfl1001_rfxMessagesListShowMoreDiv" class="showmore">
+                                                            <a class="handle" href="javascript:wfl1001_showMoreRfxMessagesList()"><![CDATA[${l:WFL_HOME_PAGE.SHOW_MORE}]]></a>
+                                                        </div>
+                                                        <div class="row spacing-bottom"/>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div id="tab-son5" class="tab-content tab-buy-dynamic">
+                                                <div class="scroller" data-always-visible="1" data-height="450px" style="background-color: #fff">
+                                                    <div class="tiles white">
+                                                        <div class="tiles-body">
+                                                            <div class="user_messages_list_content" style="padding-top: 20px">
+                                                                <!-- <ul id="user_messages_list_div_view"/> -->
+                                                                <ul id="sys_messages_list_div_view"/>
+                                                            </div>
+                                                        </div>
+                                                        <div id="wfl1001_sysMessagesListShowMoreDiv" class="showmore">
+                                                            <a class="handle" href="javascript:wfl1001_showMoreSysMessagesList()"><![CDATA[${l:WFL_HOME_PAGE.SHOW_MORE}]]></a>
+                                                        </div>
+                                                        <!-- <div id="wfl1001_userMessagesListShowMoreDiv" class="showmore">
+                                                            <a class="handle" href="javascript:wfl1001_showMoreUserMessagesList()"><![CDATA[${l:WFL_HOME_PAGE.SHOW_MORE}]]></a>
+                                                        </div> -->
+                                                        <div class="row spacing-bottom"/>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div id="tab-son6" class="tab-content tab-buy-dynamic">
+                                                <div class="scroller" data-always-visible="1" data-height="450px" style="background-color: #fff">
+                                                    <div class="tiles white">
+                                                        <div class="tiles-body">
+                                                            <!-- <div class="controller">
+                                                                <a class="reload" href="javascript:wfl1001_userMessageListRefreshBusiness();"/>
+                                                            </div>
+                                                            <br/>
+                                                            <div class="user_messages_viewBusiness_list_content">
+                                                                <ul id="user_messages_list_div_viewBusiness"/>
+                                                            </div> -->
+                                                            <div class="user_messages_list_content" style="padding-top: 20px">
+                                                                <ul id="platform_messages_list_div_view"/>
+                                                            </div>
+                                                        </div>
+                                                        <!--  <div id="wfl1001_userMessagesListShowMoreDivBusiness" class="showmore">
+                                                            <a class="handle" href="javascript:wfl1001_showMoreUserMessagesListBusiness()"><![CDATA[${l:WFL_HOME_PAGE.SHOW_MORE}]]></a>
+                                                        </div> -->
+                                                        <div id="wfl1001_platformMessagesListShowMoreDiv" class="showmore">
+                                                            <a class="handle" href="javascript:wfl1001_showMorePlatformMessagesList()"><![CDATA[${l:WFL_HOME_PAGE.SHOW_MORE}]]></a>
+                                                        </div>
+                                                        <div class="row spacing-bottom"/>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="main-right person-journey">
+                                        <div class="person-journey-container">
+                                            <div class="notice-list-con" style="width:240px;height:100px;">
+                                                <ul name="handPlayMovie" id="handPlayMovieId" class="hand-play-movie-con" type="lf-bar">
+                                                    <li>
+                                                        <div>
+                                                            <img src="${/request/@context_path}/images/main/1.jpg" style="margin-top: 5px;"/>
+                                                        </div>
+                                                    </li>
+                                                    <li>
+                                                        <div>
+                                                            <img src="${/request/@context_path}/images/main/2.jpg" style="margin-top: 5px;"/>
+                                                        </div>
+                                                    </li>
+                                                    <li>
+                                                        <div>
+                                                            <img src="${/request/@context_path}/images/main/3.jpg" style="margin-top: 5px;"/>
+                                                        </div>
+                                                    </li>
+                                                    <li>
+                                                        <div>
+                                                            <img src="${/request/@context_path}/images/main/4.jpg" style="margin-top: 5px;"/>
+                                                        </div>
+                                                    </li>
+                                                </ul>
+                                            </div>
+                                            <!-- 格子广告 -->
+                                            <ul class="gl-ads">
+                                                <li class="gl-ad">
+                                                    <img src="${/request/@context_path}/images/main/1.jpg" style="margin-top: 2px;margin-left:2px;"/>
+                                                </li>
+                                                <li class="gl-ad">
+                                                    <img src="${/request/@context_path}/images/main/2.jpg" style="margin-top: 2px;margin-left:2px;"/>
+                                                </li>
+                                                <li class="gl-ad">
+                                                    <img src="${/request/@context_path}/images/main/3.jpg" style="margin-top: 2px;margin-left:2px;"/>
+                                                </li>
+                                                <li class="gl-ad">
+                                                    <img src="${/request/@context_path}/images/main/4.jpg" style="margin-top: 2px;margin-left:2px;"/>
+                                                </li>
+                                                <li class="gl-ad">
+                                                    <img src="${/request/@context_path}/images/main/1.jpg" style="margin-top: 2px;margin-left:2px;"/>
+                                                </li>
+                                                <li class="gl-ad">
+                                                    <img src="${/request/@context_path}/images/main/2.jpg" style="margin-top: 2px;margin-left:2px;"/>
+                                                </li>
+                                                <li class="gl-ad">
+                                                    <img src="${/request/@context_path}/images/main/3.jpg" style="margin-top: 2px;margin-left:2px;"/>
+                                                </li>
+                                                <li class="gl-ad">
+                                                    <img src="${/request/@context_path}/images/main/4.jpg" style="margin-top: 2px;margin-left:2px;"/>
+                                                </li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+        <link href="${/request/@context_path}/component/handPlayMovie/handPlayMovie.css?v=2.4" rel="stylesheet" type="text/css"/>
+        <script async="async" defer="defer" src="${/request/@context_path}/component/handPlayMovie/handPlayMovie.js?v=2.4"/>
+        <script><![CDATA[
+            if(${/model/workflow_count/record/@for_todo_num} != 0||${/model/workflow_count/record/@approve_num} !=0)
+                    {
+                        var num =parseInt(${/model/workflow_count/record/@approve_num})+parseInt(${/model/workflow_count/record/@for_todo_num});
+                        document.getElementById('all_approve_num').style.display="inline";
+                        document.getElementById('all_approve_num').innerHTML='['+num+']';
+                        
+                    }
+			jQuery('.scroller').each(function() {
+                jQuery(this).slimScroll({
+                    size: '7px',
+                    color: '#a1b2bd',
+                    height: jQuery(this).attr("data-height"),
+                    alwaysVisible: (jQuery(this).attr("data-always-visible") == "1" ? true : false),
+                    railVisible: (jQuery(this).attr("data-rail-visible") == "1" ? true : false),
+                    disableFadeOut: true
+                });
+            });
+		]]></script>
+    </a:view>
+</a:screen>

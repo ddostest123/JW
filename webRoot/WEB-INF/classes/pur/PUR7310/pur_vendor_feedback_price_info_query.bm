@@ -1,0 +1,253 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao  
+    $Date: 2016-2-25 下午7:18:49  
+    $Revision: 1.0  
+    $Purpose: 供应商报价情况查询BM
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        h.rfx_header_id,
+                        lv.rfx_line_vendor_id,
+                        h.status,
+                        (SELECT
+                            scv.code_value_name
+                        FROM
+                            sys_code_values_v scv
+                        WHERE
+                            scv.code                    = 'PUR_RFX_STATUS' AND
+                            scv.code_enabled_flag       = 'Y' AND
+                            scv.code_value_enabled_flag = 'Y' AND
+                            scv.code_value              = h.status
+                        ) AS status_display,
+                        h.rfx_number,
+                        h.title,
+                        h.rfx_category,
+                        h.rfx_type_id,
+                        (SELECT
+                            p.rfx_type_desc
+                        FROM
+                            pur_bg_rfx_types_vl p
+                        WHERE
+                            p.RFX_TYPE_ID = h.rfx_type_id
+                        ) rfx_type_desc,
+                        h.owner_company_id,
+                        h.owner_business_unit_id,
+                        (SELECT
+                            buv.business_unit_name
+                        FROM
+                            fnd_business_units_vl buv
+                        WHERE
+                            buv.business_unit_id = h.owner_business_unit_id
+                        ) AS owner_business_unit_name,
+                        h.created_by,
+                        h.creation_date AS header_creation_date,
+                        (SELECT su.description FROM sys_user su WHERE su.user_id = h.created_by
+                        ) AS created_by_user,
+                        h.issued_date,
+                        h.feedback_end_time,
+                        fh.coop_business_group,
+                        fh.coop_company_id,
+                        (SELECT
+                            fcv.company_code
+                        FROM
+                            fnd_companies_vl fcv
+                        WHERE
+                            fcv.company_id = fh.coop_company_id
+                        ) AS coop_company_code,
+                        (SELECT
+                            fcv.company_full_name
+                        FROM
+                            fnd_companies_vl fcv
+                        WHERE
+                            fcv.company_id = fh.coop_company_id
+                        ) AS coop_company_name,
+                        li.item_id,
+                        li.item_code,
+                        li.item_desc,
+                        li.req_number,
+                        (SELECT
+                            io.description
+                        FROM
+                            inv_organizations_vl io
+                        WHERE
+                            io.inv_organization_id = li.inv_organization_id
+                        ) inv_organization_desc,
+                        li.inv_organization_id,
+                        li.item_category_id,
+                        (SELECT
+                            ic.category_name
+                        FROM
+                            mtl_categories_user_defined_vl ic
+                        WHERE
+                            ic.category_udf_id = li.item_category_id
+                        ) item_category_desc,
+                        fl.quantity,
+                        fl.valid_fb_retail_price AS feedback_price,
+                        li.suggested_operation,
+                        (SELECT
+                            scv.code_value_name
+                        FROM
+                            sys_code_values_v scv
+                        WHERE
+                            scv.code       = 'PUR_RFX_SUGGESTED_OPERATION' AND
+                            scv.code_value = li.suggested_operation
+                        )AS suggested_operation_display,
+                        DECODE(fl.suggested_flag,'Y','是','N','否') AS suggested_flag,
+                        fl.allotted_quantity,
+                        h.early_or_delay,
+                        (SELECT
+                            scv.code_value_name
+                        FROM
+                            sys_code_values_v scv
+                        WHERE
+                            scv.code       = 'PUR_RFX_EARLY_OR_DELAY' AND
+                            scv.code_value = h.early_or_delay
+                        )AS early_or_delay_display,
+                        lv.complaint_flag,
+                        (SELECT
+                            scv.code_value_name
+                        FROM
+                            sys_code_values_v scv
+                        WHERE
+                            scv.code       = 'YES_OR_NO' AND
+                            scv.code_value = lv.complaint_flag
+                        )AS complaint_display,
+                        lv.breach_of_contract,
+                        (SELECT
+                            scv.code_value_name
+                        FROM
+                            sys_code_values_v scv
+                        WHERE
+                            scv.code       = 'YES_OR_NO' AND
+                            scv.code_value = lv.breach_of_contract
+                        )AS breach_of_contract_display,
+                        lv.feedback_comments,
+                        TO_CHAR(fl.feedback_expiry_date_from, 'yyyy-mm-dd') feedback_expiry_date_from,
+                        TO_CHAR(fl.feedback_expiry_date_to, 'yyyy-mm-dd') feedback_expiry_date_to,
+                        fl.delivery_cycle,
+                        fl.valid_fb_reason,
+                        h.agent_id,
+	                    (SELECT bv.buyer_desc
+	                       FROM pur_buyers_vl bv
+	                      WHERE bv.buyer_id = h.agent_id) AS agent_name,
+	                   (SELECT
+                            COUNT(*)
+                        FROM
+                            fnd_atm_attachment_multi aam
+                        WHERE
+                            aam.table_name = 'PUR_RFX_HEADERS' AND
+                            EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                fnd_atm_lines fal
+                            WHERE
+                                fal.source_table_name = 'PUR_RFX_HEADERS' AND
+                                fal.atm_line_id       = aam.table_pk_value AND
+                                fal.source_pk_value   = TO_CHAR(h.rfx_header_id)
+                            ) AND
+                            rownum = 1
+                        ) AS atm_counts,
+                        (SELECT
+                            COUNT(*)
+                        FROM
+                            fnd_atm_attachment_multi aam
+                        WHERE
+                            aam.table_name     = 'BID_PREQUAL_HEADERS' AND
+                            aam.table_pk_value = TO_CHAR(-h.rfx_header_id) AND
+                            rownum             = 1
+                        ) AS prequal_atm_counts,
+                        h.round ,
+                        h.version
+                    FROM
+                        pur_rfx_headers h,
+                        pur_rfx_ln_items li,
+                        pur_rfx_ln_vendors lv,
+                        pur_rfx_feedback_headers fh,
+                        pur_rfx_feedback_lines fl
+                    WHERE
+                        h.rfx_header_id        = li.rfx_header_id AND
+                        h.rfx_header_id        = lv.rfx_header_id AND
+                        h.rfx_header_id        = fh.rfx_header_id AND
+                        fh.feedback_header_id  = fl.feedback_header_id AND
+                        fh.coop_business_group = lv.coop_business_group AND
+                        fh.coop_company_id     = lv.coop_company_id AND
+                        fl.rfx_line_item_id    = li.rfx_line_item_id AND
+                        h.status              IN ('FINISHED','SUBMITTED') AND
+                        h.round                = fh.rfx_round AND
+                        fl.cancel_flag         = 'N' AND
+                        li.cancel_flag         = 'N' AND
+                        h.owner_business_group = ${/session/@business_group}
+                    ) v #AUTHORIY_FROM# #WHERE_CLAUSE# #AUTHORIY_WHERE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+                begin
+                    pur_rfx_pkg.save_vendor_feedback_info
+                    (
+                        p_rfx_header_id			=> ${@rfx_header_id},
+                        p_rfx_line_vendor_id	=> ${@rfx_line_vendor_id},
+                        p_early_or_delay		=> ${@early_or_delay},
+                        p_complaint				=> ${@complaint},
+                        p_breach_contract		=> ${@breach_contract},
+                        p_feedback_comments		=> ${@feedback_comments},
+                        p_user_id				=> ${/session/@user_id}
+                    );
+                end;]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="rfx_number" queryExpression="v.rfx_number like &apos;%&apos;||trim(${@rfx_number})||&apos;%&apos;"/>
+        <bm:query-field name="title" queryExpression="v.title like &apos;%&apos;||trim(${@title})||&apos;%&apos;"/>
+        <bm:query-field name="vendor_company_id" queryExpression="v.coop_company_id = ${@vendor_company_id}"/>
+        <bm:query-field name="business_unit_id" queryExpression="v.owner_business_unit_id = ${@business_unit_id}"/>
+        <bm:query-field name="item_id" queryExpression="v.item_id = ${@item_id}"/>
+        <bm:query-field name="rfx_category" queryExpression="v.rfx_category = ${@rfx_category}"/>
+        <bm:query-field name="early_or_delay" queryExpression="v.early_or_delay = ${@early_or_delay}"/>
+        <bm:query-field name="complaint" queryExpression="v.complaint_flag = ${@complaint}"/>
+        <bm:query-field name="breach_contract" queryExpression="v.breach_of_contract = ${@breach_contract}"/>
+        <bm:query-field name="created_by" queryExpression="v.created_by = ${@created_by}"/>
+        <bm:query-field name="creation_date_from" queryExpression="trunc(v.header_creation_date) &gt;= to_date(${@creation_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="creation_date_to" queryExpression="trunc(v.header_creation_date) &lt;= to_date(${@creation_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="status" queryExpression="v.status = ${@status}"/>
+        <bm:query-field name="rfx_type_id" queryExpression="v.rfx_type_id = ${@rfx_type_id}"/>
+        <bm:query-field name="category_udf_id" queryExpression="v.item_category_id = ${@category_udf_id}"/>
+        <bm:query-field name="item_desc" queryExpression="v.item_desc like &apos;%&apos;||trim(${@item_desc})||&apos;%&apos;"/>
+        <bm:query-field name="inv_organization_desc" queryExpression="v.inv_organization_desc like &apos;%&apos;||${@inv_organization_desc}||&apos;%&apos;"/>
+        <bm:query-field name="req_number" queryExpression="v.req_number like &apos;%&apos;||${@req_number}||&apos;%&apos;"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="1 = 1"/>
+    </bm:data-filters>
+    <authority foundation_code="RFX">
+        <authority-segment source_alias="v" source_name="created_by" type="CREATER"/>
+        <authority-segment source_alias="v" source_name="owner_company_id" type="COMPANY"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="RECEIVER"/>
+        <authority-segment source_alias="v" source_name="owner_business_unit_id" type="BUSINESS_UNIT"/>
+        <!-- <authority-segment source_alias="v" source_name="useless_id" type="PUR_ORGANIZATION"/> -->
+        <authority-segment source_alias="v" source_name="useless_id" type="INV_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="SD_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="VENDOR"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="CLIENT"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="PURHASE_MATERIAL"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="SALES_PRODUCTION"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="CLIENT_SITE"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="VENDOR_SITE"/>
+        <authority-segment source_alias="v" source_name="agent_id" type="PUR_BUYER"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+            var cx = Packages.aurora.javascript.Context.getCurrentContext();
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

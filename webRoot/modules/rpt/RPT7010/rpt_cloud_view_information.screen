@@ -1,0 +1,587 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: hansen  
+    $Date: 2015-4-1 上午10:42:11  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:view>
+        <link href="${/request/@context_path}/component/handReceiveFairComponent/handReceiveFairComponent.css" rel="stylesheet" type="text/css"/>
+        <script language="JavaScript" src="${/request/@context_path}/component/handReceiveFairComponent/windowHandRecFairCp.js"/>
+        <link href="${/request/@context_path}/component/handLockScreen/handLockScreen.css" rel="stylesheet" type="text/css"/>
+        <script language="JavaScript" src="${/request/@context_path}/component/handLockScreen/handLockScreen.js"/>
+        <link href="${/request/@context_path}/index/css/rpt_view_information.css" rel="stylesheet" type="text/css"/>
+        <script><![CDATA[
+            var cvobj = {
+                queryDoneFlag: false,
+                queryFlag: false,
+                //强制查询标志(用于切换tab时首次进行查询)
+                dateDesc: '',
+                colorArray: ['red', 'yellow', 'green', 'purple', 'blue', 'black'],
+                colorIndex: 0,
+                ownerBgCode: null,
+                ownerBgName: null,
+                vendorId: null,
+                vendorName: null,
+                onSwitchTab: null
+            };
+            var queryCondition = [];
+            
+            //时间校验
+            
+            function rpt7010_cViewInfor_queryUpdate(ds, record, name, value) {
+                if (name == 'erp_creation_from' || name == 'erp_creation_to') {
+                    record.validate((name == 'erp_creation_from') ? 'erp_creation_to' : 'erp_creation_from');
+                } else if (name == 'owner_business_group_code') {
+                    record.getField('vendor').setLovPara('business_group', value);
+                }
+            }
+            
+            function rpt7010_cViewInfor_dateValidate(record, name, value) {
+                if (name == 'erp_creation_from' || name == 'erp_creation_to') {
+                    var date_from = record.get('erp_creation_from');
+                    var date_to = record.get('erp_creation_to');
+                    if (date_from > date_to) {
+                        return '开始时间不能大于结束时间';
+                    }
+                }
+                return true;
+            }
+            
+            function getId(id) {
+                return document.getElementById(id);
+            }
+            
+            function getQueryData() {
+                var record = $('rpt7010_cViewInfor_query_ds').getAt(0);
+                var data = record.data;
+                if (!Aurora.isEmpty(cvobj.onSwitchTab)) {
+                    var code = cvobj.onSwitchTab.getAttribute('code');
+                    var vendorId = cvobj.onSwitchTab.getAttribute('vendor_id');
+                    for (var i = 0;i < queryCondition.length;i++) {
+                        if (queryCondition[i].bgCode == code && queryCondition[i].vendorId == vendorId) {
+                            record.set('owner_business_group_code', (code == '-1')?null:code);
+                            record.set('owner_business_group', (code == '-1')?null:queryCondition[i].bgName);
+                            record.set('vendor_id', (vendorId == -1)?null:vendorId);
+                            record.set('vendor', (vendorId == -1)?null:queryCondition[i].vendorName);
+                            record.set('erp_creation_from', queryCondition[i].erp_creation_from);
+                            record.set('erp_creation_to', queryCondition[i].erp_creation_to);
+                        }
+                    }
+                }
+                cvobj.ownerBgCode = (Aurora.isEmpty(data.owner_business_group_code)) ? '-1' : data.owner_business_group_code;
+                cvobj.ownerBgName = (Aurora.isEmpty(data.owner_business_group)) ? '全部采购方' : data.owner_business_group;
+                cvobj.vendorId = (Aurora.isEmpty(data.vendor_id)) ? -1 : data.vendor_id;
+                cvobj.vendorName = (Aurora.isEmpty(data.vendor)) ? '全部供应商' : data.vendor;
+            }
+            
+            function queryDateFlagInit(w_flag, m_flag, y_flag) {
+                query_ds = $('rpt7010_cViewInfor_query_ds').getAt(0);
+                query_ds.set('owner_erp_creation_week', w_flag);
+                query_ds.set('owner_erp_creation_month', m_flag);
+                query_ds.set('owner_erp_creation_year', y_flag);
+            }
+            /*
+             ***************************************************************
+             *作为采购方查询时判断是否有期间约束，若无则查询近一周一月一年的三行数据
+             *同时判断在tab是否有同bg同一时段下的查询存在
+             ***************************************************************
+             */
+            
+            function rpt7010_owner_query_set() {
+                var query_ds = $('rpt7010_cViewInfor_query_ds').getAt(0);
+                var data = query_ds.data;
+                getQueryData();
+                //当日期选择为空时默认查询出近一周，近一月，近一年的数据
+                if (Aurora.isEmpty(data.erp_creation_from) && Aurora.isEmpty(data.erp_creation_to)) {
+                    var week = data.owner_erp_creation_week;
+                    var month = data.owner_erp_creation_month;
+                    var year = data.owner_erp_creation_year;
+                    cvobj.queryDoneFlag = true;
+                    if (week == 'false' && month == 'false' && year == 'false') {
+                        queryDateFlagInit('true', 'false', 'false');
+                        cvobj.dateDesc = '近一周内';
+                    } else if (week == 'true' && month == 'false' && year == 'false') {
+                        queryDateFlagInit('false', 'true', 'false');
+                        cvobj.dateDesc = '近一月内';
+                    } else if (week == 'false' && month == 'true' && year == 'false') {
+                        queryDateFlagInit('false', 'false', 'true');
+                        cvobj.queryDoneFlag = false;
+                        cvobj.dateDesc = '近一年内';
+                    }
+                } else {
+                    queryDateFlagInit('false', 'false', 'false');
+                    var from_date = (Aurora.isEmpty(data.erp_creation_from)) ? '' : ' 从 ' + Aurora.formatDate(data.erp_creation_from);
+                    var to_date = (Aurora.isEmpty(data.erp_creation_to)) ? '' : ' 至 ' + Aurora.formatDate(data.erp_creation_to);
+                    cvobj.dateDesc = from_date + to_date;
+                }
+                if (rpt7010_cViewInfor_owner_bgJudge() && !cvobj.queryFlag) {
+                    var table = getId('rpt7010_cVInOwner1_' + cvobj.ownerBgCode + cvobj.vendorId);
+                    if (!rpt7010_cViewInfor_bgDateReQueryJudge(table, cvobj.dateDesc)) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            //判断owner里bg是否存在
+            
+            function rpt7010_cViewInfor_owner_bgJudge() {
+                var parent = getId('rpt7010_cView_owner_bg');
+                for (var j = 0;j < parent.children.length;j++) {
+                    var children = parent.children[j];
+                    var code = parent.children[j].getAttribute('code');
+                    var vendor_id = parent.children[j].getAttribute('vendor_id');
+                    if (cvobj.ownerBgCode == code && cvobj.vendorId == vendor_id && children.style.display != 'none') {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            //判断在同一bg下是否对同一时间同一对象进行了重复查询
+            
+            function rpt7010_cViewInfor_bgDateReQueryJudge(table, date) {
+                var children = table.children[0].children;
+                var parent = table.parentNode.parentNode;
+                var length = children.length;
+                for (var i = 0;i < length;i++) {
+                    if (children[i].children[0].innerHTML == date && parent.style.display != 'none') {
+                        Aurora.showMessage('提示', '查询结果已经存在！');
+                        return false;
+                    }
+                }
+                return true;
+            }
+            
+            function rpt7010_owner_query() {
+                if (rpt7010_owner_query_set()) {
+                    handmask.mask();
+                    $('rpt7010_cViewInfor_order_ds').query();
+                }
+            }
+            
+            function rpt7010_vendor_query() {
+                cvobj.queryFlag = true;
+                if (rpt7010_owner_query_set()) {
+                    handmask.mask();
+                    $('rpt7010_cViewInfor_vendor_ds').query();
+                }
+            }
+            
+            function rpt7010_item_query() {
+                cvobj.queryFlag = true;
+                if (rpt7010_owner_query_set()) {
+                    handmask.mask();
+                    $('rpt7010_cViewInfor_item_ds').query();
+                }
+            }
+            
+            function rpt7010_asn_query() {
+                cvobj.queryFlag = true;
+                if (rpt7010_owner_query_set()) {
+                    handmask.mask();
+                    $('rpt7010_cViewInfor_asn_ds').query();
+                }
+            }
+            
+            function rpt7010_inv_query() {
+                cvobj.queryFlag = true;
+                if (rpt7010_owner_query_set()) {
+                    handmask.mask();
+                    $('rpt7010_cViewInfor_inv_ds').query();
+                }
+            }
+            
+            function insertQueryCondition() {
+                var record = $('rpt7010_cViewInfor_query_ds').getAt(0).data;
+                var data = {
+                    bgCode: cvobj.ownerBgCode,
+                    bgName: cvobj.ownerBgName,
+                    vendorId: cvobj.vendorId,
+                    vendorName: cvobj.vendorName,
+                    fromDate: record.erp_creation_from,
+                    toDate: record.erp_creation_to
+                };
+                queryCondition.push(data);
+            }
+            
+            //查询出数据时添加到页面
+            
+            function rpt7010_cViewInfor_order_load() {
+                rpt7010_cViewInfor_loadDataInOwner();
+                if (cvobj.queryDoneFlag) {
+                    rpt7010_owner_query();
+                } else {
+                    queryDateFlagInit('false', 'false', 'false');
+                    insertQueryCondition();
+                    cvobj.onSwitchTab = null;
+                    handmask.unmask();
+                }
+            }
+            
+            function rpt7010_cViewInfor_vendor_load() {
+                cvInforInsertVendor();
+                if (cvobj.queryDoneFlag) {
+                    rpt7010_vendor_query();
+                } else {
+                    queryDateFlagInit('false', 'false', 'false');
+                    cvobj.queryFlag = false;
+                    cvobj.onSwitchTab = null;
+                    handmask.unmask();
+                }
+            }
+            
+            function rpt7010_cViewInfor_item_load() {
+                cvInforInsertItem();
+                if (cvobj.queryDoneFlag) {
+                    rpt7010_item_query();
+                } else {
+                    queryDateFlagInit('false', 'false', 'false');
+                    cvobj.queryFlag = false;
+                    cvobj.onSwitchTab = null;
+                    handmask.unmask();
+                }
+            }
+            
+            function rpt7010_cViewInfor_asn_load() {
+                cvInforInsertAsn();
+                if (cvobj.queryDoneFlag) {
+                    rpt7010_asn_query();
+                } else {
+                    queryDateFlagInit('false', 'false', 'false');
+                    cvobj.queryFlag = false;
+                    cvobj.onSwitchTab = null;
+                    handmask.unmask();
+                }
+            }
+            
+            function rpt7010_cViewInfor_inv_load() {
+                cvInforInsertInv();
+                if (cvobj.queryDoneFlag) {
+                    rpt7010_inv_query();
+                } else {
+                    queryDateFlagInit('false', 'false', 'false');
+                    cvobj.queryFlag = false;
+                    cvobj.onSwitchTab = null;
+                    handmask.unmask();
+                }
+            }
+            //订单金额显示设置
+            
+            function rpt7010_cViewInfor_numberSet(num) {
+                var r_num;
+                if (num < 10000) {
+                    r_num = num;
+                } else if (num >= 1000 && num < 100000000) {
+                    r_num = (num / 10000).toFixed(4) + '万';
+                } else {
+                    r_num = (num / 100000000).toFixed(4) + '亿';
+                }
+                return '￥' + r_num;
+            }
+            
+            function rpt7010_caluateSpeedWithLast(now_amout, last_amount) {
+                if (last_amount == 0) {
+                    return '上期送货单为0';
+                } else {
+                    var speed = (now_amout - last_amount) / last_amount;
+                    return speed.toFixed(2);
+                }
+            }
+            
+            //将查询出的数据以磁贴的显示贴到对应身份的tab页下，同一bg下的查询放到同一框内。不同bg则新增框
+            
+            function rpt7010_cViewInfor_loadDataInOwner() {
+                var qs = $('rpt7010_cViewInfor_query_ds').getAt(0);
+                var rs = $('rpt7010_cViewInfor_order_ds').getAll()[0];
+                var parent = getId('rpt7010_cView_owner_bg');
+                var children = parent.children;
+                var last_child;
+                var length = children.length;
+                if (rpt7010_cViewInfor_owner_bgJudge()) {
+                    cvInforInsertOrder();
+                    initTabQuery(getId('rpt7010_cViewOwner_div' + cvobj.ownerBgCode + cvobj.vendorId));
+                } else {
+                    var div = document.createElement("div");
+                    var color = cvobj.colorArray[cvobj.colorIndex];
+                    cvobj.colorIndex = (cvobj.colorIndex >= cvobj.colorArray.length - 1) ? 0 : cvobj.colorIndex + 1;
+                    div.setAttribute('name', 'handReceiveFairComponent');
+                    div.setAttribute('color', color);
+                    div.setAttribute('title_text', cvobj.ownerBgName + '->' + cvobj.vendorName + '：订单情况');
+                    div.setAttribute('title_pre', cvobj.ownerBgName + '->' + cvobj.vendorName + '：');
+                    div.setAttribute('code', cvobj.ownerBgCode);
+                    div.setAttribute('vendor_id', cvobj.vendorId);
+                    div.setAttribute('comlistvalue', '订单情况,供应商情况,物料情况,送货单情况,未付款发票情况');
+                    div.setAttribute('id', 'rpt7010_cViewOwner_div' + cvobj.ownerBgCode + cvobj.vendorId);
+                    var html = '<div style="text-align:center"></div>';
+                    div.innerHTML = html;
+                    parent.appendChild(div);
+                    var title = copyTitle();
+                    title.push({
+                        width: '17.5%',
+                        html: '订单金额'
+                    }, {
+                        width: '10%',
+                        html: '订单头数'
+                    }, {
+                        width: '10%',
+                        html: '订单行数'
+                    }, {
+                        width: '25%',
+                        html: '最大额订单'
+                    });
+                    createTable(div.children[0], 'rpt7010_cVInOwner1_' + cvobj.ownerBgCode + cvobj.vendorId, title, 'table');
+                    title = copyTitle();
+                    title.push({
+                        width: '25%',
+                        html: '最大额供应商'
+                    }, {
+                        width: '25%',
+                        html: '最频繁供应商'
+                    }, {
+                        width: '12.5%',
+                        html: '合作伙伴数'
+                    });
+                    createTable(div.children[0], 'rpt7010_cVInOwner2_' + cvobj.ownerBgCode + cvobj.vendorId, title, 'none');
+                    title = copyTitle();
+                    title.push({
+                        width: '20%',
+                        html: '最频繁物料'
+                    }, {
+                        width: '20%',
+                        html: '最大额物料'
+                    }, {
+                        width: '22.5%',
+                        html: '最贵的物料'
+                    });
+                    createTable(div.children[0], 'rpt7010_cVInOwner3_' + cvobj.ownerBgCode + cvobj.vendorId, title, 'none');
+                    title = copyTitle();
+                    title.push({
+                        width: '20%',
+                        html: '送货单数量'
+                    }, {
+                        width: '20%',
+                        html: '上期送货单数量'
+                    }, {
+                        width: '22.5%',
+                        html: '送货单环比'
+                    });
+                    createTable(div.children[0], 'rpt7010_cVInOwner4_' + cvobj.ownerBgCode + cvobj.vendorId, title, 'none');
+                    title = copyTitle();
+                    title.push({
+                        width: '62.5%',
+                        html: '未付款总金额'
+                    });
+                    createTable(div.children[0], 'rpt7010_cVInOwner5_' + cvobj.ownerBgCode + cvobj.vendorId, title, 'none');
+                    cvInforInsertOrder();
+                    handRecFaircp(div);
+                    rpt7010_cloudViewInfor_switchTable(div, 'rpt7010_cVInOwner');
+                }
+            }
+            
+            function copyTitle() {
+                return [{
+                    width: '12.5%',
+                    html: '期间'
+                }, {
+                    width: '12.5%',
+                    html: '采购方'
+                }, {
+                    width: '12.5%',
+                    html: '供应商'
+                }];
+            }
+            
+            function createTable(parent, id, title, display) {
+                var table = document.createElement('TABLE');
+                table.id = id;
+                table.className = 'table';
+                table.style.display = display;
+                parent.appendChild(table);
+                var tr = table.insertRow(table.rows.length);
+                tr.className = 'head';
+                for (var i = 0;i < title.length;i++) {
+                    var td = tr.insertCell();
+                    td.style.width = title[i].width;
+                    td.innerHTML = title[i].html;
+                }
+            }
+            
+            /*
+             ********在已存在的owner的bg块里添加一行新查询出的信息
+             ********在三个table中都插入
+             */
+            
+            function cvInforInsertOrder() {
+                var rs = $('rpt7010_cViewInfor_order_ds').getAll()[0].data;
+                //三个tabel的数据加载，分页显示
+                var table = getId('rpt7010_cVInOwner1_' + cvobj.ownerBgCode + cvobj.vendorId);
+                tableInsertRow(table, [cvobj.dateDesc, cvobj.ownerBgName, cvobj.vendorName, rpt7010_cViewInfor_numberSet(rs.head_sum), rs.count_head, rs.count_line, rpt7010_cViewInfor_numberSet(rs.mostsum_head)]);
+            }
+            
+            function cvInforInsertVendor() {
+                var rs = $('rpt7010_cViewInfor_vendor_ds').getAll()[0].data;
+                table = getId('rpt7010_cVInOwner2_' + cvobj.ownerBgCode + cvobj.vendorId);
+                tableInsertRow(table, [cvobj.dateDesc, cvobj.ownerBgName, cvobj.vendorName, rs.mostvendor_name, rs.mostfvendor_name, rs.parntner_count]);
+            }
+            
+            function cvInforInsertItem() {
+                var rs = $('rpt7010_cViewInfor_item_ds').getAll()[0].data;
+                table = getId('rpt7010_cVInOwner3_' + cvobj.ownerBgCode + cvobj.vendorId);
+                tableInsertRow(table, [cvobj.dateDesc, cvobj.ownerBgName, cvobj.vendorName, rs.mostfitem_name, rs.mostsitem_name, rs.mostdearitem_name]);
+            }
+            
+            function cvInforInsertAsn() {
+                var rs = $('rpt7010_cViewInfor_asn_ds').getAll()[0].data;
+                table = getId('rpt7010_cVInOwner4_' + cvobj.ownerBgCode + cvobj.vendorId);
+                tableInsertRow(table, [cvobj.dateDesc, cvobj.ownerBgName, cvobj.vendorName, rs.asn_amount, rs.asn_amountlast, rpt7010_caluateSpeedWithLast(rs.asn_amount, rs.asn_amountlast)]);
+            }
+            
+            function cvInforInsertInv() {
+                var rs = $('rpt7010_cViewInfor_inv_ds').getAll()[0].data;
+                table = getId('rpt7010_cVInOwner5_' + cvobj.ownerBgCode + cvobj.vendorId);
+                tableInsertRow(table, [cvobj.dateDesc, cvobj.ownerBgName, cvobj.vendorName, rs.notpay_invoice]);
+            }
+            
+            function tableInsertRow(table, array) {
+                var tr = table.insertRow(table.rows.length);
+                for (var i = 0;i < array.length;i++) {
+                    var td = tr.insertCell();
+                    td.innerHTML = (Aurora.isEmpty(array[i]))?'':array[i];
+                }
+            }
+            
+            //框的切换功能
+            
+            function rpt7010_cloudViewInfor_switchTable(parent, li_id) {
+                var ul = parent.children[0].children[1].children[3];
+                for (var i = 0;i < ul.children.length;i++) {
+                    ul.children[i].setAttribute('query', 'false');
+                    ul.children[i].onclick = function() {
+                        var text = this.innerHTML;
+                        var index = parseInt(this.getAttribute('index')) + 1;
+                        var table, queryFlag = this.getAttribute('query');
+                        for (var j = 1;j <= 5;j++) {
+                            table = getId(li_id + j + '_' + cvobj.ownerBgCode + cvobj.vendorId);
+                            table.style.display = 'none';
+                        }
+                        getId(li_id + index + '_' + cvobj.ownerBgCode + cvobj.vendorId).style.display = 'table';
+                        parent.children[0].children[0].children[1].innerHTML = parent.getAttribute('title_pre') + text;
+                        if (queryFlag == 'false') {
+                            cvobj.onSwitchTab = parent;
+                            switchQuery(index);
+                            this.setAttribute('query', 'true');
+                        }
+                    };
+                }
+                ul.children[0].setAttribute('query', 'true');
+            }
+            
+            function initTabQuery(parent) {
+                var ul = parent.children[0].children[1].children[3];
+                for (var i = 0;i < ul.children.length;i++) {
+                    ul.children[i].setAttribute('query', 'false');
+                }
+                ul.children[0].setAttribute('query', 'true');
+            }
+            
+            function switchQuery(index) {
+                switch (index) {
+                case 1:
+                    break;
+                case 2:
+                    rpt7010_vendor_query();
+                    break;
+                case 3:
+                    rpt7010_item_query();
+                    break;
+                case 4:
+                    rpt7010_asn_query();
+                    break;
+                case 5:
+                    rpt7010_inv_query();
+                    break;
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="rpt7010_cViewInfor_query_ds">
+                <a:fields>
+                    <a:field name="business_group_code"/>
+                    <a:field name="owner_business_group" autoComplete="true" autoCompleteField="business_group_code" lovHeight="500" lovService="public.fnd_business_group_lov" lovWidth="690" title="采购方">
+                        <a:mapping>
+                            <a:map from="business_group_id" to="owner_business_group_id"/>
+                            <a:map from="business_group_code" to="owner_business_group_code"/>
+                            <a:map from="business_group_name" to="owner_business_group"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="coop_business_group" autoComplete="true" autoCompleteField="business_group_code" lovHeight="500" lovService="public.fnd_business_group_lov" lovWidth="690" title="采购方">
+                        <a:mapping>
+                            <a:map from="business_group_id" to="coop_business_group_id"/>
+                            <a:map from="business_group_code" to="coop_business_group_code"/>
+                            <a:map from="business_group_name" to="coop_business_group"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="vendor" autoComplete="true" autoCompleteField="vendor_code" lovHeight="500" lovService="rpt.RPT7010.pur_vendors_v_lov" lovWidth="690" title="供应商">
+                        <a:mapping>
+                            <a:map from="vendor_id" to="vendor_id"/>
+                            <a:map from="full_name" to="vendor"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="erp_creation_from" validator="rpt7010_cViewInfor_dateValidate"/>
+                    <a:field name="erp_creation_to" validator="rpt7010_cViewInfor_dateValidate"/>
+                    <a:field name="owner_erp_creation_week" defaultValue="false"/>
+                    <a:field name="owner_erp_creation_month" defaultValue="false"/>
+                    <a:field name="owner_erp_creation_year" defaultValue="false"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="rpt7010_cViewInfor_queryUpdate"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 订单情况 -->
+            <a:dataSet id="rpt7010_cViewInfor_order_ds" autoCount="true" fetchAll="true" model="rpt.RPT7010.rpt_cView_information_owner_result" queryDataSet="rpt7010_cViewInfor_query_ds">
+                <a:events>
+                    <a:event name="load" handler="rpt7010_cViewInfor_order_load"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 供应商情况 -->
+            <a:dataSet id="rpt7010_cViewInfor_vendor_ds" autoCount="true" fetchAll="true" model="rpt.RPT7010.rpt_cView_information_vendor" queryDataSet="rpt7010_cViewInfor_query_ds">
+                <a:events>
+                    <a:event name="load" handler="rpt7010_cViewInfor_vendor_load"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 物料情况 -->
+            <a:dataSet id="rpt7010_cViewInfor_item_ds" autoCount="true" fetchAll="true" model="rpt.RPT7010.rpt_cView_information_item" queryDataSet="rpt7010_cViewInfor_query_ds">
+                <a:events>
+                    <a:event name="load" handler="rpt7010_cViewInfor_item_load"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 送货单情况 -->
+            <a:dataSet id="rpt7010_cViewInfor_asn_ds" autoCount="true" fetchAll="true" model="rpt.RPT7010.rpt_cView_information_asn" queryDataSet="rpt7010_cViewInfor_query_ds">
+                <a:events>
+                    <a:event name="load" handler="rpt7010_cViewInfor_asn_load"/>
+                </a:events>
+            </a:dataSet>
+            <!-- 开票单情况 -->
+            <a:dataSet id="rpt7010_cViewInfor_inv_ds" autoCount="true" fetchAll="true" model="rpt.RPT7010.rpt_cView_information_inv" queryDataSet="rpt7010_cViewInfor_query_ds">
+                <a:events>
+                    <a:event name="load" handler="rpt7010_cViewInfor_inv_load"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton id="rpt5010_save_btn" className="item-rbtn-blue save" click="rpt7010_owner_query" text="RPT_MAKING_UP" width="100"/>
+            </a:screenTopToolbar>
+            <a:form marginWidth="100" row="1" title="查询">
+                <a:lov name="owner_business_group" bindTarget="rpt7010_cViewInfor_query_ds" prompt="采购方"/>
+                <a:lov name="vendor" bindTarget="rpt7010_cViewInfor_query_ds" prompt="供应商"/>
+                <a:datePicker name="erp_creation_from" bindTarget="rpt7010_cViewInfor_query_ds" prompt="订单时间从"/>
+                <a:datePicker name="erp_creation_to" bindTarget="rpt7010_cViewInfor_query_ds" prompt="订单时间至"/>
+            </a:form>
+            <a:vBox marginWidth="100">
+                <div id="rpt7010_cView_owner_bg"/>
+            </a:vBox>
+        </a:screenBody>
+    </a:view>
+</a:screen>

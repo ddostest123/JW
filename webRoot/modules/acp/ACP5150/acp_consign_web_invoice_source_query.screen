@@ -1,0 +1,388 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: WangQiaosen  
+    $Date: 2014年1月17日 下午2:55:17  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure/>
+    <a:view>
+        <a:link id="acp5150_consign_web_invoice_create_temp_link" url="${/request/@context_path}/modules/acp/ACP5150/acp_consign_web_invoice_create_temp.svc"/>
+        <a:link id="acp5150_consign_web_invoice_create_preview_link" url="${/request/@context_path}/modules/acp/ACP5150/acp_consign_web_invoice_create_preview.screen"/>
+        <a:link id="acp5150_consign_web_invoice_create_detail_link" url="${/request/@context_path}/modules/acp/ACP5150/acp_consign_web_invoice_create_detail.screen"/>
+        <script><![CDATA[
+            function acp5150Query() {
+                $('acp5150_consign_web_invoice_source_result_ds').query();
+            }
+            
+            //浮点数相乘
+            function acp5150_multiply(para1,para2){
+                var m = 0;
+                var s1 = para1.toString();
+                var s2 = para2.toString();
+                try{m+=s1.split(".")[1].length}catch(e){}
+                try{m+=s2.split(".")[1].length}catch(e){}
+                return Number(s1.replace(".",""))*Number(s2.replace(".",""))/Math.pow(10,m);
+            }
+            //取精度
+            function acp5150_js_round(para1,para2){
+                return Math.round(acp5150_multiply(para1,Math.pow(10,para2)))/Math.pow(10,para2);
+            }
+            
+            
+            //校验所选数据都一致
+            
+            function acp5150_checkHeaderExists(record) {
+                var header_record = $('acp5150_consign_web_invoice_create_header_ds').getCurrentRecord();
+                if (header_record.get('company_id') == record.get('company_id') && header_record.get('vendor_id') == record.get('vendor_id') && header_record.get('vendor_site_id') == record.get('vendor_site_id') && header_record.get('currency_code') == record.get('currency_code') && header_record.get('tax_type_id') == record.get('tax_type_id') && (header_record.get('terms_id') == record.get('terms_id') || Ext.isEmpty(header_record.get('terms_id'))) && (header_record.get('rate_type') == record.get('rate_type') || Ext.isEmpty(header_record.get('rate_type'))) && (header_record.get('rate_date') == record.get('rate_date') || Ext.isEmpty(header_record.get('rate_date'))) && (header_record.get('rate') == record.get('rate') || Ext.isEmpty(header_record.get('rate'))) && header_record.get('external_system_id') == record.get('external_system_id')) {
+                    return true;
+                }
+                return false;
+            }
+            
+            //创建预览信息
+            
+            
+            function acp5150_createPreviewDs(records) {
+                $('acp5150_consign_web_invoice_create_header_ds').removeAll();
+                $('acp5150_consign_web_invoice_create_line_ds').removeAll();
+                var invoice_amount_system = 0;
+                var invoice_tax_amount_system = 0;
+                //创建头
+                $('acp5150_consign_web_invoice_create_header_ds').create();
+                var header_record = $('acp5150_consign_web_invoice_create_header_ds').getAt(0);
+                header_record.set('company_id', records[0].get('company_id'));
+                header_record.set('company_desc', records[0].get('company_desc'));
+                header_record.set('vendor_id', records[0].get('vendor_id'));
+                header_record.set('vendor_site_id', records[0].get('vendor_site_id'));
+                header_record.set('vendor_site_desc', records[0].get('vendor_site_desc'));
+                header_record.set('currency_code', records[0].get('currency_code'));
+                header_record.set('tax_type_id', records[0].get('tax_type_id'));
+                header_record.set('terms_id', records[0].get('terms_id'));
+                header_record.set('rate_type', records[0].get('rate_type'));
+                header_record.set('rate_date', records[0].get('rate_date'));
+                header_record.set('rate', records[0].get('rate'));
+                header_record.set('external_system_id', records[0].get('external_system_id'));
+            
+                for (var i = 0;i < records.length;i++) {
+                    var invoice_quantity = records[i].get('invoice_quantity');
+                    invoice_quantity = invoice_quantity * 1;
+                    var invoice_price = records[i].get('invoice_price');
+                    invoice_price = invoice_price * 1;
+                    var tax_type_code = records[i].get('tax_type_code');
+                    if (Ext.isEmpty(invoice_quantity) || isNaN(invoice_quantity) || invoice_quantity == 'undefined') {
+                        Aurora.showMessage('${l:PROMPT}', '${l:ACP5150.INVOICE_QUANTITY_FOTMAT_ERROR}');
+                        return false;
+                    }
+            
+                    if (Ext.isEmpty(invoice_price) || isNaN(invoice_price) || invoice_price == 'undefined') {
+                        Aurora.showMessage('${l:PROMPT}', '${l:ACP5150.INVOICE_PRICE_FOTMAT_ERROR}');
+                        return false;
+                    }
+            
+                    if (Ext.isEmpty(tax_type_code) || tax_type_code == 'undefined') {
+                        Aurora.showMessage('${l:PROMPT}', '${l:ACP5150.TAX_TYPE_CODE_ERROR}');
+                        return false;
+                    }
+            
+                    if (!acp5150_checkHeaderExists(records[i])) {
+                        Aurora.showMessage('${l:PROMPT}', '勾选的数据中公司+供应商+供应商地点+币种+税种+汇率+业务实体对应外部系统有不一致的!');
+                        return false;
+                    } else {
+                        records[i].set('web_line_num', (i + 1) * 10);
+                        var line_invoice_amout = records[i].get('invoice_amount');
+                        line_invoice_amout = line_invoice_amout * 1;
+                        var line_tax = acp5150_js_round(acp5150_multiply(acp5150_multiply(invoice_quantity,invoice_price),(records[i].get('tax_rate')/100)),2);
+                        // var line_tax = Math.round((invoice_quantity * invoice_price * records[i].get('tax_rate') / 100)*100)/100;
+                        line_tax = line_tax * 1;
+
+                        records[i].set('invoice_taxed_amount',acp5150_js_round((line_invoice_amout + line_tax),2));
+                        $('acp5150_consign_web_invoice_create_line_ds').create(records[i].data);
+            
+                        invoice_amount_system = invoice_amount_system * 1;
+                        invoice_amount_system += (records[i].get('invoice_taxed_amount') * 1);
+                        
+                        
+                        invoice_tax_amount_system += line_tax ;
+                    }
+                }
+                header_record.set('invoice_amount_system',acp5150_js_round(invoice_amount_system,2));
+                header_record.set('invoice_tax_amount_system',acp5150_js_round(invoice_tax_amount_system,2));
+            
+            
+                return true;
+            }
+            
+            
+            function acp5150CreatePreview() {
+                var result_ds = $('acp5150_consign_web_invoice_list_ds');
+                var records = result_ds.getAll();
+            
+                if (records.length > 0) {
+                    if (acp5150_createPreviewDs(records)) {
+                        new Aurora.Window({
+                            id: 'acp5150_consign_web_invoice_create_detail_window',
+                            title: '寄销网上发票创建',
+                            url: $('acp5150_consign_web_invoice_create_detail_link').getUrl(),
+                            fullScreen: true
+                        }).on('beforeclose', function() {
+                            acp5150Query();
+                        });
+                    }
+            
+                } else {
+                    Aurora.showMessage('${l:PROMPT}', '至少勾选一条数据创建预览网上发票信息');
+                }
+            }
+            
+            function acp5150ConsignWebInvoiceSourceResultRender(value, rec, name) {
+                if (name == 'invoice_list') {
+                    //TODO
+                    return value;
+                }
+            }
+            
+            function acp5150_moneyRenderFun(value, record, name) {
+                if (value == '***') {
+                    return value;
+                } else {
+                    return Aurora.formatNumber(value);
+                }
+            }
+            
+            //Update Function
+            
+            
+            function acp5150_csgnWebInvoiceSourceResult_updateFun(dataSet, record, name, value, oldvalue) {
+                record.dirty = false;
+            
+                var bill_line_id = record.get('bill_line_id');
+                var list_ds = $('acp5150_consign_web_invoice_list_ds');
+                var select_record = list_ds.find('bill_line_id', bill_line_id);
+                var invoice_quantity = record.get('invoice_quantity');
+                var invoice_price = record.get('invoice_price');
+                invoice_quantity = invoice_quantity * 1;
+                invoice_price = invoice_price * 1;
+                var invoice_amount = 0;
+            
+                //本次开票数量
+                if (name == 'invoice_quantity') {
+                    var bill_quantity = record.get('bill_quantity'); //可开票数量
+            
+                    //校验2.本次开票数量不能大于剩余开票数量(绝对值)
+                    //可开票数量、本次开票数量取绝对值
+            
+                    if (value > record.get('quantity_left') || Aurora.isEmpty(value)) {
+                        Aurora.showMessage('提示', '本次开票数量不能大于剩余开票数量,请检查！');
+                        record.set('invoice_quantity', oldvalue);
+                        return false;
+                    }
+            
+            
+                    if (Aurora.isEmpty(invoice_price)) {
+                        invoice_price = 0;
+                    }
+                    invoice_amount = acp5150_js_round(acp5150_multiply(invoice_quantity,invoice_price),2);
+                    record.set('invoice_amount', invoice_amount);
+                    if (!Aurora.isEmpty(select_record)) {
+                        select_record.set('invoice_quantity', invoice_quantity);
+                        select_record.set('invoice_amount', invoice_amount);
+                    }
+                }
+            
+                //本次开票单价
+                if (name == 'invoice_price') {
+                    invoice_amount = acp5150_js_round(acp5150_multiply(invoice_quantity,invoice_price),2);
+                    record.set('invoice_amount', invoice_amount);
+                    if (!Aurora.isEmpty(select_record)) {
+                        select_record.set('invoice_price', invoice_price);
+                        select_record.set('invoice_amount', invoice_amount);
+                    }
+                }
+            
+                //税率
+                if (name == 'tax_type_id') {
+                    if (!Aurora.isEmpty(select_record)) {
+                        select_record.set('tax_type_name', record.get('tax_type_name'));
+                        select_record.set('tax_rate', record.get('tax_rate'));
+                        select_record.set('tax_type_id', record.get('tax_type_id'));
+                    }
+                }
+            }
+            
+            //Select Function
+            
+            
+            function acp5150_csgnWebInvoiceSourceResult_selectFun(ds, record) {
+                var list_ds = $('acp5150_consign_web_invoice_list_ds');
+                var bill_line_id = record.get('bill_line_id');
+                var result_record = list_ds.find('bill_line_id', bill_line_id);
+                if (Aurora.isEmpty(result_record)) {
+                    $('acp5150_consign_web_invoice_list_ds').create(record.data);
+                }
+            }
+            
+            //UnSelect Function
+            
+            
+            function acp5150_csgnWebInvoiceSourceResult_unselectFun(ds, record) {
+                var list_ds = $('acp5150_consign_web_invoice_list_ds');
+                var bill_line_id = record.get('bill_line_id');
+                var result_record = list_ds.find('bill_line_id', bill_line_id);
+                if (!Aurora.isEmpty(result_record)) {
+                    list_ds.remove(result_record);
+                }
+            }
+            
+            // 页面执行重新查询时所做的操作
+            
+            
+            function acp5150_grid_render(grid) {
+                var ds = $('acp5150_consign_web_invoice_source_result_ds');
+                var records = ds.getAll();
+                var list_ds = $('acp5150_consign_web_invoice_list_ds');
+                var list_records = list_ds.getAll();
+                for (var i = 0;i < records.length;i++) {
+                    var select_record = list_ds.find('bill_line_id', records[i].get('bill_line_id'));
+                    if (!Aurora.isEmpty(select_record)) {
+                        ds.select(records[i]);
+                        records[i].set('invoice_quantity', select_record.get('invoice_quantity'));
+                        records[i].set('invoice_price', select_record.get('invoice_price'));
+                        records[i].set('tax_type_id', select_record.get('tax_type_id'));
+                    }
+                    records[i].getField('tax_type_code').setLovPara('business_group', records[i].get('owner_business_group'));
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="acp5150_consign_web_invoice_create_header_ds">
+                <a:fields>
+                    <a:field name="invoice_amount" required="true"/>
+                    <a:field name="invoice_tax_amount" required="true"/>
+                    <a:field name="tax_invoice_num" required="true"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="acp5150_consign_web_invoice_create_line_ds" autoCount="true"/>
+            <a:dataSet id="acp5150_consign_web_invoice_list_ds"/>
+            <a:dataSet id="acp5150_consign_web_invoice_source_query_ds">
+                <a:fields>
+                    <a:field name="company_name" autoComplete="true" autoCompleteField="company_full_name" lovHeight="480" lovService="public.fnd_cooperative_company_by_supply_lov" lovWidth="500" title="FND_COMPANIES.QUERY">
+                        <a:mapping>
+                            <a:map from="company_id" to="company_id"/>
+                            <a:map from="company_full_name" to="company_name"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="acp5150_consign_web_invoice_source_result_ds" autoCount="true" autoPageSize="true" model="acp.ACP5150.acp_consign_web_invoice_source_query" queryDataSet="acp5150_consign_web_invoice_source_query_ds" selectable="true">
+                <a:fields>
+                    <a:field name="invoice_quantity" required="true"/>
+                    <a:field name="invoice_price" required="true"/>
+                    <a:field name="tax_type_code" autoComplete="true" autoCompleteField="tax_type_code" lovGridHeight="350" lovHeight="500" lovService="public.fnd_tax_type_code_lov?business_group=bg" lovWidth="500" required="true" title="税率">
+                        <a:mapping>
+                            <a:map from="tax_type_id" to="tax_type_id"/>
+                            <a:map from="tax_type_code" to="tax_type_code"/>
+                            <a:map from="tax_type_rate" to="tax_rate"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="acp5150_csgnWebInvoiceSourceResult_updateFun"/>
+                    <a:event name="select" handler="acp5150_csgnWebInvoiceSourceResult_selectFun"/>
+                    <a:event name="unselect" handler="acp5150_csgnWebInvoiceSourceResult_unselectFun"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="acp5150CreatePreview" text="创建预览" width="100"/>
+                <a:gridButton bind="acp5150_consign_web_invoice_source_result_grid" type="excel" width="100"/>
+            </a:screenTopToolbar>
+            <a:queryForm bindTarget="acp5150_consign_web_invoice_source_query_ds" marginWidth="50" resultTarget="acp5150_consign_web_invoice_source_result_ds" style="border:none">
+                <a:formToolBar labelWidth="100">
+                    <a:textField name="bill_number" bindTarget="acp5150_consign_web_invoice_source_query_ds" prompt="开票单编号">
+                        <a:events>
+                            <a:event name="enterdown" handler="acp5150Query"/>
+                        </a:events>
+                    </a:textField>
+                    <a:textField name="line_num" bindTarget="acp5150_consign_web_invoice_source_query_ds" prompt="开票单行号">
+                        <a:events>
+                            <a:event name="enterdown" handler="acp5150Query"/>
+                        </a:events>
+                    </a:textField>
+                    <a:lov name="company_name" bindTarget="acp5150_consign_web_invoice_source_query_ds" prompt="客户">
+                        <a:events>
+                            <a:event name="enterdown" handler="acp5150Query"/>
+                        </a:events>
+                    </a:lov>
+                </a:formToolBar>
+                <a:formBody>
+                    <a:hBox labelWidth="100">
+                        <a:textField name="po_num" bindTarget="acp5150_consign_web_invoice_source_query_ds" prompt="订单号">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5150Query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:textField name="release_num" bindTarget="acp5150_consign_web_invoice_source_query_ds" prompt="订单发放号">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5150Query"/>
+                            </a:events>
+                        </a:textField>
+                    </a:hBox>
+                    <a:hBox labelWidth="100">
+                        <a:textField name="po_line_num" bindTarget="acp5150_consign_web_invoice_source_query_ds" prompt="订单行号">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5150Query"/>
+                            </a:events>
+                        </a:textField>
+                        <a:textField name="shipment_num" bindTarget="acp5150_consign_web_invoice_source_query_ds" prompt="订单发运号">
+                            <a:events>
+                                <a:event name="enterdown" handler="acp5150Query"/>
+                            </a:events>
+                        </a:textField>
+                    </a:hBox>
+                </a:formBody>
+            </a:queryForm>
+            <a:grid id="acp5150_consign_web_invoice_source_result_grid" autoAppend="false" bindTarget="acp5150_consign_web_invoice_source_result_ds" marginHeight="180" marginWidth="50" navBar="true">
+                <a:columns>
+                    <a:column name="bill_number" align="center" prompt="开票单编号" sortable="true" width="80"/>
+                    <a:column name="line_num" align="center" prompt="开票单行" sortable="true" width="60"/>
+                    <a:column name="po_num" align="center" prompt="采购订单号" sortable="true" width="60"/>
+                    <a:column name="release_num" align="center" prompt="发放号" sortable="true" width="50"/>
+                    <a:column name="item_code" align="center" prompt="客户物品编码" sortable="true" width="80"/>
+                    <a:column name="item_desc" align="left" prompt="客户物品名称" sortable="true" width="100"/>
+                    <a:column name="unit_price" align="right" prompt="订单单价" renderer="acp5150_moneyRenderFun" sortable="true" width="80"/>
+                    <a:column name="uom" align="center" prompt="单位" sortable="true" width="60"/>
+                    <a:column name="quantity_left" align="right" prompt="剩余可开票数量" sortable="true" width="80"/>
+                    <a:column name="invoice_quantity" align="right" editor="acp5150_consign_web_invoice_source_result_nf" prompt="本次开票数量" sortable="true" width="80"/>
+                    <a:column name="invoice_price" align="right" editor="acp5150_consign_web_invoice_source_result_nf" prompt="本次开票单价" renderer="acp5150_moneyRenderFun" sortable="true" width="80"/>
+                    <a:column name="invoice_amount" align="right" prompt="本次开票金额" renderer="acp5150_moneyRenderFun" sortable="true" width="80"/>
+                    <a:column name="tax_type_code" align="center" editor="acp5150_consign_web_invoice_source_result_lov" prompt="税率" width="60"/>
+                    <a:column name="currency_code" align="center" prompt="币种" sortable="true" width="60"/>
+                    <a:column name="quantity" align="right" prompt="行数量" sortable="true" width="80"/>
+                    <a:column name="amount" align="right" prompt="行金额" renderer="acp5150_moneyRenderFun" sortable="true" width="80"/>
+                    <a:column name="invoiced_quantity" align="right" prompt="已开票数量" sortable="true" width="80"/>
+                    <!-- <a:column name="invoice_list" align="center" prompt="网上发票" renderer="acp5150ConsignWebInvoiceSourceResultRender" width="80"/> -->
+                    <a:column name="company_desc" align="left" prompt="客户名称" sortable="true" width="100"/>
+                    <a:column name="business_unit_name" align="center" prompt="业务实体" sortable="true" width="80"/>
+                    <a:column name="erp_creation_date_desc" align="center" prompt="订单创建日期" sortable="true" width="60"/>
+                    <a:column name="confirmed_date_desc" align="center" prompt="确认日期" renderer="Aurora.formatDate" sortable="true" width="60"/>
+                    <a:column name="vendor_site_desc" align="left" prompt="供应商地点" sortable="true" width="60"/>
+                    <a:column name="po_line_num" align="center" prompt="订单行" sortable="true" width="60"/>
+                    <a:column name="shipment_num" align="center" prompt="发运行" sortable="true" width="60"/>
+                    <a:column name="vendor_item_code" align="center" prompt="物品编码" sortable="true" width="80"/>
+                    <a:column name="vendor_item_name" align="left" prompt="物品名称" sortable="true" width="100"/>
+                    <a:column name="external_system_name" align="center" prompt="外部系统" sortable="true" width="60"/>
+                </a:columns>
+                <a:events>
+                    <a:event name="render" handler="acp5150_grid_render"/>
+                </a:events>
+                <a:editors>
+                    <a:numberField id="acp5150_consign_web_invoice_source_result_nf" allowDecimals="true" allowNegative="false" decimalPrecision="4"/>
+                    <a:lov id="acp5150_consign_web_invoice_source_result_lov"/>
+                </a:editors>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

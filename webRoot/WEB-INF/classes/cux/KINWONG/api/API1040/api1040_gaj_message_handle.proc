@@ -1,0 +1,424 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<p:procedure xmlns:rs="aurora.database.rsconsumer" xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+      <a:model-query fetchAll="true" model="cux.KINWONG.api.API1040.api1040_gaj_message_handle" rootPath="message"/>
+        <s:server-script import="request.js"><![CDATA[
+            // type = 2商品价格变更
+            // type = 4商品上下架变更
+            // type = 5订单已投妥 / 拒收
+            // type = 6添加、删除商品池内商品
+            // type = 9代表西域商城订单确认
+            // type = 10西域商城订单取消
+            // type = 16商品介绍及规格参数变更消息
+            var handle_message = $ctx.model.getChild('message').getChildren();
+            var bm = new ModelService('cux.KINWONG.api.PUBLIC.api_get_request_all');
+            var status;
+            var message;
+            //订单查询接口，修改父子订单映射关系
+            
+            function gaj_sub_order_query(porder) {
+                $ctx.parameter.api_code = 'GAJ_ORDER_QUERY';
+                var record = bm.queryAsMap();
+                var arr = record.getChildren()[0];
+                var para_str = arr.REQUEST_DATA + porder + '"}';
+                if (arr.API_URL) {
+                    log(para_str);
+                    request({
+                        url: arr.API_URL,
+                        para: para_str,
+                        success: function(args) {
+                            var rec = {
+                                'history_id': arr.HISTORY_ID,
+                                'url': arr.API_URL,
+                                'config_id': arr.CONFIG_ID,
+                                'api_id': arr.API_ID,
+                                'request_data': JSON.stringify(para_str),
+                                'response_data': args
+                            };
+                            $bm("api.PUBLIC.api_exec_process").insert(rec);
+                            var data = JSON.parse(args);
+                            if (data['success'] == true) {
+                                run_fun(data, arr);
+                            }
+                        },
+                        failure: function(args) {
+                            raise_app_error(args.error.message);
+                        }
+                    });
+                }
+            }
+            //详情接口，修改详情数据
+            
+            function gaj_detail(sku) {
+                $ctx.parameter.api_code = 'GAJ_PRODUCT_DETAIL_MS';
+                var record = bm.queryAsMap();
+                var arr = record.getChildren()[0];
+                var para_str = arr.REQUEST_DATA + sku + '"}';
+                if (arr.API_URL) {
+                    log(para_str);
+                    request({
+                        url: arr.API_URL,
+                        para: para_str,
+                        success: function(args) {
+                            var rec = {
+                                'history_id': arr.HISTORY_ID,
+                                'url': arr.API_URL,
+                                'config_id': arr.CONFIG_ID,
+                                'api_id': arr.API_ID,
+                                'request_data': JSON.stringify(para_str),
+                                'response_data': args
+                            };
+                            $bm("api.PUBLIC.api_exec_process").insert(rec);
+                            var data = JSON.parse(args);
+                            if (data['success'] == true) {
+                                run_fun(data, arr);
+                            }
+                        },
+                        failure: function(args) {
+                            raise_app_error(args.error.message);
+                        }
+                    });
+                }
+            }
+            //价格接口，修改价格数据
+            
+            function gaj_price(sku) {
+                $ctx.parameter.api_code = 'GAJ_SELL_PRICE_MS';
+                var record = bm.queryAsMap();
+                var arr = record.getChildren()[0];
+                var para_str = arr.REQUEST_DATA + sku + '"]}';
+                if (arr.API_URL) {
+                    log(para_str);
+                    request({
+                        url: arr.API_URL,
+                        para: para_str,
+                        success: function(args) {
+                            var rec = {
+                                'history_id': arr.HISTORY_ID,
+                                'url': arr.API_URL,
+                                'config_id': arr.CONFIG_ID,
+                                'api_id': arr.API_ID,
+                                'request_data': JSON.stringify(para_str),
+                                'response_data': args
+                            };
+                            $bm("api.PUBLIC.api_exec_process").insert(rec);
+                            var data = JSON.parse(args);
+                            if (data['success'] == true) {
+                                run_fun(data, arr);
+                            }
+                        },
+                        failure: function(args) {
+                            raise_app_error(args.error.message);
+                        }
+                    });
+                }
+            }
+            
+            function xy_order_checked(record, page) {
+                var message = '';
+                var check_response;
+                var total_page;
+                $ctx.parameter.config_code = 'XY_ORDER_CHECKED';
+                var res5 = bm.queryAsMap();
+                var arr5 = res5.getChildren()[0];
+                var check_para = {
+                    token: arr5.ACCESS_TOKEN,
+                    date: record.check_date,
+                    page: page
+                }
+                var orders;
+                try {
+                    request({
+                        url: arr5.URL,
+                        para: JSON.stringify(check_para),
+                        success: function(args) {
+                            println(JSON.stringify(args.result.orders));
+                            if (args.success == true && args.resultCode == '0000') {
+                                total_page = args.result.totalPage;
+                                orders = args.result.orders;
+                            } else if (args.resultCode == '2007') {
+                                message = (args.resultCode);
+                            } else {
+                                message = (args.resultMessage);
+                            }
+                        },
+                        failure: function(args) {
+                            raise_app_error(args.error.message);
+                        }
+                    });
+                } catch (e) {
+                    status = 'failure';
+                    message = e.message;
+                    result = null;
+                    var orders = null;
+                    total_page = page;
+                } finally {
+                    println(status);
+                    if (message) {
+                        raise_app_error(message.substring(47));
+                    } else {
+                        println(JSON.stringify(orders));
+                        for (d = 0;d < orders.length;d++) {
+                            var check_para = {
+                                date: record.check_date,
+                                invoice_state: orders[d].invoiceState,
+                                orderId: orders[d].orderId,
+                                state: orders[d].state,
+                                hang_up_state: orders[d].hangUpState,
+                                order_price: orders[d].orderPrice,
+                            }
+                            $bm("cux.KINWONG.api.API1040.api1040_gaj_message_handle").execute(check_para);
+                        }
+                        if (total_page > 1) {
+                            for (e = 1;e < total_page;e++)
+                            xy_order_checked(record, e)
+                        }
+                    }
+                }
+            }
+            
+            function order_info_query(order_id, type) {
+                var bm_n = new ModelService('xy.api_get_url_token');
+                $ctx.parameter.config_code = 'XY_ORDER_QUERY';
+                var res_n = bm_n.queryAsMap();
+                var arr_n = res_n.getChildren()[0];
+                var para_str = '{"token":"' + arr_n.ACCESS_TOKEN + '","orderId":"' + order_id + '"}'
+                var message;
+                var result
+                println('info' + arr_n.URL);
+                println('info' + para_str);
+                try {
+                    request({
+                        url: arr_n.URL,
+                        para: para_str,
+                        success: function(args) {
+                            println('info' + JSON.stringify(args));
+                            if (args.success == true) {
+                                result = args.result;
+                                message = null;
+                            } else {
+                                raise_app_error(args.resultMessage);
+                            }
+                        },
+                        failure: function(args) {
+                            raise_app_error(args.error.message);
+                        }
+                    });
+                } catch (e) {
+                    status = 'failure';
+                    message = e.message;
+                    result = null;
+                } finally {
+                    if (message) {
+                        raise_app_error(message.substring(47));
+                    } else {
+                        if (type == 9) {
+                            var p_order_herders = {
+                                pur_header_id: null,
+                                display_po_number: null,
+                                eb_order_id: result.orderId,
+                                parent_eb_order_id: 0,
+                                data_source: 'XY',
+                                freight: result.baseFreight || 0,
+                                total_amount: result.orderPrice,
+                                naked_amount: result.orderNakedPrice,
+                                tax_amount: result.orderTaxPrice,
+                                type: result.type,
+                                split_flag: 'N',
+                                split_date: null,
+                                delivered_flag: 'N',
+                                delivered_date: null,
+                                bill_flag: 'N',
+                                bill_date: null,
+                                user_id: 1
+                            }
+                            $bm("cux.KINWONG.api.API1040.api1040_gaj_message_handle_n").update(p_order_herders);
+                            var skus = result.sku;
+                            for (m = 0;m < skus.length;m++) {
+                                var line_para = {
+                                    eb_order_id: result.orderId,
+                                    skuid: skus[m].skuId,
+                                    name: skus[m].name,
+                                    category: skus[m].category,
+                                    quantity: skus[m].quantity,
+                                    price: skus[m].price,
+                                    naked_price: skus[m].nakedPrice,
+                                    tax: skus[m].tax,
+                                    type: skus[m].type,
+                                    user_id: 1
+                                }
+                                $bm("cux.KINWONG.api.API1040.api1040_gaj_message_handle_n").execute(line_para);
+                            }
+                            var c_inv_asn_para = {
+                                p_order_id: result.orderId,
+                                c_order_id: null,
+                                data_source: 'XY'
+                            }
+                            $bm("cux.KINWONG.api.API1040.api1040_gaj_message_handle_n").delete(c_inv_asn_para);
+                        }
+                    }
+                }
+            }
+            //将已处理的消息修改状态，归档，del
+            
+            function message_last_status(message, id) {
+                if (message) {
+                    //特殊的错误，token已过期在处理
+                    if (message == '2007') {
+                        var start_para = {
+                            id: id,
+                            handle_status: 'NEW',
+                            error_msg: ''
+                        }
+                        $bm("cux.KINWONG.api.API1040.api1040_gaj_message_handle").update(start_para);
+                    } else if (message == 'aurora.plugin.script.engine.InterruptException: 该商品不存在') {
+                        log('将消息状态改为已处理！')
+                        var last_para = {
+                            id: id,
+                            handle_status: 'HANDLED',
+                            error_msg: ''
+                        };
+                        $bm("cux.KINWONG.api.API1040.api1040_gaj_message_handle").update(last_para);
+                    } else {
+                        log('将消息状态改为错误！')
+                        var last_para = {
+                            id: id,
+                            handle_status: 'ERROR',
+                            error_msg: message
+                        };
+                        $bm("cux.KINWONG.api.API1040.api1040_gaj_message_handle").update(last_para);
+                    }
+            
+                } else {
+                    log('将消息状态改为已处理！')
+                    var last_para = {
+                        id: id,
+                        handle_status: 'HANDLED',
+                        error_msg: ''
+                    };
+                    $bm("cux.KINWONG.api.API1040.api1040_gaj_message_handle").update(last_para);
+                }
+            }
+            
+            if (handle_message.length) {
+                for (i = 0;i < handle_message.length;i++) {
+                    var record = handle_message[i];
+                    var start_para = {
+                        id: record.id,
+                        handle_status: 'HANDLEING',
+                        error_msg: ''
+                    }
+                    $bm("cux.KINWONG.api.API1040.api1040_gaj_message_handle").update(start_para);
+                    //妥投信息在获取日期后处理
+                    // if (record.type == 1) {
+                    // message = '';
+                    // //订单拆分
+                    // try {
+                    // var result2 = JSON.parse(record.result);
+                    // log(result2);
+                    // gaj_sub_order_query(result2.pOrder);
+                    // } catch (e) {
+                    // status = 'failure';
+                    // message = e.message;
+                    // result = false;
+                    // } finally {
+                    // message_last_status(message, record.id);
+                    // }
+                    // } else
+                    if (record.type == 2) {
+                        message = '';
+                        //价格变更
+                        try {
+                            var result2 = JSON.parse(record.result);
+                            gaj_price(result2.skuId);
+                        } catch (e) {
+                            status = 'failure';
+                            message = e.message;
+                            result = false;
+                        } finally {
+                            message_last_status(message, record.id);
+                        }
+                    } else if (record.type == 4) {
+                        message = '';
+                        //商品上下架变更消息;
+                        try {
+                            var result4 = JSON.parse(record.result);
+                            $bm("cux.KINWONG.api.API1040.api1040_gaj_message_handle").delete(result4);
+                        } catch (e) {
+                            status = 'failure';
+                            message = e.message;
+                            result = false;
+                        } finally {
+                            message_last_status(message, record.id);
+                        }
+                    } else if (record.type == 5) {
+                        //妥投信息在获取日期后处理
+                        var result5 = JSON.parse(record.result);
+                        message = '';
+                        var page = {
+                            ordertype: result5.orderType,
+                            orderid: result5.orderId,
+                            state: result5.state
+                        };
+                        //处理池内商品数据
+                        $bm("cux.KINWONG.api.API1040.api1040_gaj_order_check").update(page);
+                        message_last_status(message, record.id);
+                    } else if (record.type == 6) {
+                        message = '';
+                        // 代表添加、删除商品池内商品;
+                        var result6 = JSON.parse(record.result);
+                        try {
+                            if (result6.state == 1) {
+                                //先将商品同步
+                                gaj_detail(result6.skuId);
+                                gaj_price(result6.skuId);
+                                var page = {
+                                    sku: result6.skuId,
+                                    page_num: result6.page_num,
+                                    type: 1
+                                }
+                                //处理池内商品数据
+                                $bm("cux.KINWONG.api.API1040.api1040_gaj_message_handle_page").update(page);
+                            } else if (result6.state == 2) {
+                                var page = {
+                                    sku: result6.skuId,
+                                    page_num: result6.page_num,
+                                    type: 2
+                                }
+                                $bm("cux.KINWONG.api.API1040.api1040_gaj_message_handle_page").update(page);
+                            }
+                        } catch (e) {
+                            status = 'failure';
+                            message = e.message;
+                            result = false;
+                        } finally {
+                            message_last_status(message, record.id);
+                        }
+                    } else if (record.type == 16) {
+                        message = '';
+                        try {
+                            //println(record.result);
+                            var result16 = JSON.parse(record.result);
+                            gaj_detail(result16.skuId);
+                        } catch (e) {
+                            status = 'failure';
+                            message = e.message;
+                            result = false;
+                        } finally {
+                            message_last_status(message, record.id);
+                        }
+                    } else if (record.type == 101) {
+                        message = '';
+                        var result101 = JSON.parse(record.result);
+                        var page = {
+                            eb_order_number: result101.orderId,
+                            package_number: result101.packageId
+                        }
+                        $bm("cux.KINWONG.api.API1040.api1040_gaj_message_handle_101").insert(page);
+                        message_last_status(message, record.id);
+                    }
+                }
+            } else {
+                log('暂无待处理消息！');
+            }
+        ]]></s:server-script>
+</p:procedure>

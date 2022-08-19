@@ -1,0 +1,552 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: linyingjie 
+    $Date: 2017-12-21 下午3:25:08  
+    $Revision: 1.0  
+    $Purpose: 采购物料价格分析报表
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query model="cux.JINKO.rpt.JINKO_RPT7001.get_current_week" rootPath="jk_rpt5050_week"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="jk_rpt5050_init_link" model="cux.JINKO.rpt.JINKO_RPT5050.jinko_rpt_pur_mtl_price_analysis_query" modelaction="insert"/>
+        <script><![CDATA[
+            var rpt5050_data_change_flag = 0;
+            var rpt5050_rp_header_id = 0;
+            var jk_rpt5050_price_name_index = -1;
+            
+            function rpt5050_set_print_btn_disable() {
+                $('rpt5050_print_btn').disable();
+            }
+            
+            function rpt5050_set_print_btn_enable() {
+                $('rpt5050_print_btn').enable();
+            }
+            
+            function rpt5050_lock_current_window() {
+                Aurora.Masker.mask(Ext.getBody(), '${l:RPT.RPT_IS_OPERATING}');
+            }
+            
+            function rpt5050_unlock_current_window() {
+                Aurora.Masker.unmask(Ext.getBody());
+            }
+            
+            //比较两个日期的大小
+            
+            function jinko_rpt5050_compareDate(start, end) {
+                if (start > end) {
+                    return false;
+                }
+                return true;
+            }
+            
+            function jinko_rpt5050_query_year_validate_function(record, name, value) {
+                var query_ds = $('jk_rpt5050_make_ds').getAt(0);
+                if (name == 'base_period_year_from' || name == 'base_period_year_to') {
+                    var nowDate = new Date();
+                    if (query_ds.get('base_period_year_from') > query_ds.get('base_period_year_to')) {
+                        return '年度从不可超过年度至';
+                    }
+                    return true;
+                }
+                if ((name == 'base_period_from' || name == 'base_period_to') && (record.get('base_period_year_from') == record.get('base_period_year_to')) && !Aurora.isEmpty(record.get('base_period_year_from')) && !Aurora.isEmpty(record.get('base_period_year_to'))) {
+                    if (record.get('report_type_value') == 'HALF_YEAR') {
+                        if (record.get('base_period_from_value') > record.get('base_period_to_value')) {
+                            return '半年度从不可超过半年度至';
+                        }
+                        return true;
+                    }
+                    if (record.get('report_type_value') == 'QUARTER') {
+                        if (record.get('base_period_from_value') > record.get('base_period_to_value')) {
+                            return '季度从不可超过季度至';
+                        }
+                        return true;
+                    }
+                    if (record.get('report_type_value') == 'MONTH') {
+                        if (parseInt(record.get('base_period_from_value')) > parseInt(record.get('base_period_to_value'))) {
+                            return '月度从不可超过月度至';
+                        }
+                        return true;
+                    }
+            
+                    if (record.get('report_type_value') == 'WEEK') {
+                        if (parseInt(record.get('base_period_from_value')) > parseInt(record.get('base_period_to_value'))) {
+                            return '周从不可超过周至';
+                        }
+                        return true;
+                    }
+                }
+            
+                if (name == 'base_day_from' || name == 'base_day_to') {
+                    var start = record.get('base_day_from');
+                    var end = record.get('base_day_to');
+            
+                    if ( !! end) {
+                        if (!jinko_rpt5050_compareDate(start, end)) {
+                            return '日期从不可超过日期至';
+                        }
+                    }
+                    return true;
+                }
+                return true;
+            }
+            
+            function rpt5050_ds_clear() {
+                $('jk_rpt5050_make_ds').getAt(0).set('base_period_from', '');
+                $('jk_rpt5050_make_ds').getAt(0).set('base_period_to', '');
+                $('jk_rpt5050_make_ds').getAt(0).set('base_period_year_from', '');
+                $('jk_rpt5050_make_ds').getAt(0).set('base_period_year_to', '');
+                $('jk_rpt5050_make_ds').getAt(0).set('base_day_from', '');
+                $('jk_rpt5050_make_ds').getAt(0).set('base_day_to', '');
+            }
+            
+            function rpt5050_btn_required_false() {
+                $('jk_rpt5050_make_ds').getAt(0).getField('base_period_from').setRequired(false);
+                $('jk_rpt5050_make_ds').getAt(0).getField('base_period_to').setRequired(false);
+            }
+            
+            function rpt5050_btn_required_true() {
+                $('jk_rpt5050_make_ds').getAt(0).getField('base_period_from').setRequired(true);
+                $('jk_rpt5050_make_ds').getAt(0).getField('base_period_to').setRequired(true);
+            }
+            
+            function rpt5050_day_required_false() {
+                $('jk_rpt5050_make_ds').getAt(0).getField('base_day_from').setRequired(false);
+                $('jk_rpt5050_make_ds').getAt(0).getField('base_day_from').setReadOnly(true);
+                $('jk_rpt5050_make_ds').getAt(0).getField('base_day_to').setRequired(false);
+                $('jk_rpt5050_make_ds').getAt(0).getField('base_day_to').setReadOnly(true);
+            }
+            
+            function rpt5050_day_required_true() {
+                $('jk_rpt5050_make_ds').getAt(0).getField('base_day_from').setRequired(true);
+                $('jk_rpt5050_make_ds').getAt(0).getField('base_day_from').setReadOnly(false);
+                $('jk_rpt5050_make_ds').getAt(0).getField('base_day_to').setRequired(true);
+                $('jk_rpt5050_make_ds').getAt(0).getField('base_day_to').setReadOnly(false);
+            }
+            
+            function rpt5050_year_required_false() {
+                $('jk_rpt5050_make_ds').getAt(0).getField('base_period_year_from').setRequired(false);
+                $('jk_rpt5050_make_ds').getAt(0).getField('base_period_year_from').setReadOnly(true);
+                $('jk_rpt5050_make_ds').getAt(0).getField('base_period_year_to').setRequired(false);
+                $('jk_rpt5050_make_ds').getAt(0).getField('base_period_year_to').setReadOnly(true);
+            }
+            
+            function rpt5050_year_required_true() {
+                $('jk_rpt5050_make_ds').getAt(0).getField('base_period_year_from').setRequired(true);
+                $('jk_rpt5050_make_ds').getAt(0).getField('base_period_year_from').setReadOnly(false);
+                $('jk_rpt5050_make_ds').getAt(0).getField('base_period_year_to').setRequired(true);
+                $('jk_rpt5050_make_ds').getAt(0).getField('base_period_year_to').setReadOnly(false);
+            }
+            
+            
+            function jk_rpt5050_make_update(ds, record, name, value) {
+                if (value == '9999') {
+                    var date = new Date();
+                    var _name;
+                    if (name == 'base_period_year_from_value' || name == 'base_period_year_to_value') {
+                        _name = (name == 'base_period_year_from_value') ? 'base_period_year_from' : 'base_period_year_to';
+                        record.set(_name, date.getFullYear() + '年');
+                        record.set(name, date.getFullYear());
+                    } else if (name == 'base_period_from_value' || name == "base_period_to_value") {
+                        var type = record.get('report_type_value');
+                        var month = date.getMonth() + 1;
+                        var setValue;
+                        var _setValue;
+                        _name = (name == 'base_period_from_value') ? 'base_period_from' : 'base_period_to';
+                        if (type == 'HALF_YEAR') {
+                            if (month > 6) {
+                                setValue = '下半年';
+                                _setValue = 2;
+                            } else {
+                                setValue = '上半年';
+                                _setValue = 1;
+                            }
+                        } else if (type == 'QUARTER') {
+                            if (month >= 10) {
+                                setValue = '4季度';
+                                _setValue = 4;
+                            } else if (month >= 7) {
+                                setValue = '3季度';
+                                _setValue = 3;
+                            } else if (month >= 4) {
+                                setValue = '2季度';
+                                _setValue = 2;
+                            } else {
+                                setValue = '1季度';
+                                _setValue = 1;
+                            }
+                        } else if (type == 'MONTH') {
+                            setValue = month + '月';
+                            _setValue = month;
+                        } else if (type == 'WEEK') {
+                            var c_week = '${/model/jk_rpt5050_week/record/@week}';
+                            setValue = c_week + '周';
+                            _setValue = c_week;
+                        }
+                        record.set(_name, setValue);
+                        record.set(name, _setValue);
+                    }
+                }
+                if (name == 'base_period_year_from' || name == 'base_period_year_to') {
+                    record.validate((name == 'base_period_year_from') ? 'base_period_year_to' : 'base_period_year_from');
+                    record.validate('base_period_from');
+                    record.validate('base_period_to');
+                } else if (name == 'base_period_from_value' || name == 'base_period_to_value') {
+                    record.validate('base_period_from');
+                    record.validate('base_period_to');
+                } else if (name == 'report_type_value') {
+                    rpt5050_ds_clear();
+                    if (value == 'YEAR') {
+                        rpt5050_year_required_true();
+                        $('rpt5050_query_from_id').hide();
+                        $('rpt5050_query_to_id').hide();
+                        rpt5050_btn_required_false();
+                        rpt5050_day_required_false();
+                    } else if (value == 'HALF_YEAR') {
+                        rpt5050_year_required_true();
+                        $('rpt5050_query_from_id').show();
+                        $('rpt5050_query_to_id').show();
+                        $('rpt5050_query_from_id').setPrompt('${l:RPT.YEAR_PERIOD_FROM}:');
+                        $('rpt5050_query_to_id').setPrompt('${l:RPT.YEAR_PERIOD_TO}:');
+                        rpt5050_btn_required_true();
+                        flex_value_ds = $('jk_rpt5050_flex_value_ds');
+                        flex_value_ds.setQueryParameter('flex_value_set_code', 'HALF_YEAR');
+                        flex_value_ds.query();
+            
+                        rpt5050_day_required_false();
+                    } else if (value == 'QUARTER') {
+                        rpt5050_year_required_true();
+                        $('rpt5050_query_from_id').show();
+                        $('rpt5050_query_to_id').show();
+                        $('rpt5050_query_from_id').setPrompt('${l:RPT.SESSION_FROM}:');
+                        $('rpt5050_query_to_id').setPrompt('${l:RPT.SESSION_TO}:');
+                        rpt5050_btn_required_true();
+                        flex_value_ds = $('jk_rpt5050_flex_value_ds');
+                        flex_value_ds.setQueryParameter('flex_value_set_code', 'QUARTER');
+                        flex_value_ds.query();
+            
+                        rpt5050_day_required_false();
+                    } else if (value == 'MONTH') {
+                        rpt5050_year_required_true();
+                        $('rpt5050_query_from_id').show();
+                        $('rpt5050_query_to_id').show();
+                        $('rpt5050_query_from_id').setPrompt('${l:RPT.MONTH_FROM}:');
+                        $('rpt5050_query_to_id').setPrompt('${l:RPT.MONTH_TO}:');
+                        rpt5050_btn_required_true();
+                        flex_value_ds = $('jk_rpt5050_flex_value_ds');
+                        flex_value_ds.setQueryParameter('flex_value_set_code', 'MONTH');
+                        flex_value_ds.query();
+            
+                        rpt5050_day_required_false();
+                    } else if (value == 'WEEK') {
+                        rpt5050_year_required_true();
+                        $('rpt5050_query_from_id').show();
+                        $('rpt5050_query_to_id').show();
+                        $('rpt5050_query_from_id').setPrompt('周从:');
+                        $('rpt5050_query_to_id').setPrompt('周至:');
+                        rpt5050_btn_required_true();
+                        flex_value_ds = $('jk_rpt5050_flex_value_ds');
+                        flex_value_ds.setQueryParameter('flex_value_set_code', 'WEEK');
+                        flex_value_ds.query();
+            
+                        rpt5050_day_required_false();
+                    } else if (value == 'DAY') {
+                        rpt5050_year_required_false();
+            
+                        $('rpt5050_query_from_id').hide();
+                        $('rpt5050_query_to_id').hide();
+                        rpt5050_btn_required_false();
+                        rpt5050_day_required_true();
+                    } else if (value == '') {
+                        rpt5050_year_required_false();
+                        $('rpt5050_query_from_id').hide();
+                        $('rpt5050_query_to_id').hide();
+                        rpt5050_btn_required_false();
+                        rpt5050_day_required_false();
+                    }
+                }
+            }
+            
+            function rpt5050_before_save(value1, value2, value3, value4, value5, value6, value7, value8) {
+                var make_ds = $('jk_rpt5050_make_ds').getAt(0);
+                make_ds.set('base_year_period_from', value1);
+                make_ds.set('base_year_period_to', value2);
+                make_ds.set('base_season_from', value3);
+                make_ds.set('base_season_to', value4);
+                make_ds.set('base_month_from', value5);
+                make_ds.set('base_month_to', value6);
+                make_ds.set('base_week_from', value7);
+                make_ds.set('base_week_to', value8);
+            }
+            
+            function rpt5050_save() {
+                rpt5050_lock_current_window();
+                var ds = $('jk_rpt5050_make_ds').getAt(0);
+                if ($('jk_rpt5050_make_ds').validate() && $('jk_rpt_pur_mtl_price_analysis_query_ds').validate()) {
+                    var ds_null = '';
+                    var base_from = ds.get('base_period_from_value');
+                    var base_to = ds.get('base_period_to_value');
+                    if (ds.get('report_type_value') == 'YEAR') {
+                        rpt5050_before_save(ds_null, ds_null, ds_null, ds_null, ds_null, ds_null, ds_null, ds_null);
+                    } else if (ds.get('report_type_value') == 'HALF_YEAR') {
+                        rpt5050_before_save(base_from, base_to, ds_null, ds_null, ds_null, ds_null, ds_null, ds_null);
+                    } else if (ds.get('report_type_value') == 'QUARTER') {
+                        rpt5050_before_save(ds_null, ds_null, base_from, base_to, ds_null, ds_null, ds_null, ds_null);
+                    } else if (ds.get('report_type_value') == 'MONTH') {
+                        rpt5050_before_save(ds_null, ds_null, ds_null, ds_null, base_from, base_to, ds_null, ds_null);
+                    } else if (ds.get('report_type_value') == 'WEEK') {
+                        rpt5050_before_save(ds_null, ds_null, ds_null, ds_null, ds_null, ds_null, base_from, base_to);
+                    }
+                    Aurora.request({
+                        url: $('jk_rpt5050_init_link').getUrl(),
+                        para: {
+                            report_type_value: ds.get('report_type_value'),
+                            item_ids: $('jk_rpt_pur_mtl_price_analysis_query_ds').getAt(0).get('item_ids'),
+                            company_id: $('jk_rpt_pur_mtl_price_analysis_query_ds').getAt(0).get('vendor_id'),
+                            base_period_year_from_value: ds.get('base_period_year_from_value'),
+                            base_period_year_to_value: ds.get('base_period_year_to_value'),
+                            base_year_period_from: ds.get('base_year_period_from'),
+                            base_year_period_to: ds.get('base_year_period_to'),
+                            base_season_from: ds.get('base_season_from'),
+                            base_season_to: ds.get('base_season_to'),
+                            base_month_from: ds.get('base_month_from'),
+                            base_month_to: ds.get('base_month_to'),
+                            base_week_from: ds.get('base_week_from'),
+                            base_week_to: ds.get('base_week_to'),
+                            base_day_from: ds.get('base_day_from'),
+                            base_day_to: ds.get('base_day_to')
+                        },
+                        success: rpt5050_submitsuccess,
+                        failure: function(res) {
+                            rpt5050_unlock_current_window();
+                        },
+                        error: function(res) {
+                            rpt5050_unlock_current_window();
+                        },
+                        scope: this
+                    });
+                } else {
+                    rpt5050_unlock_current_window();
+                }
+            }
+            
+            function rpt5050_query_clear() {
+                var query_ds = $('jk_rpt_pur_mtl_price_analysis_query_ds').getAt(0);
+                query_ds.set('total_transaction_amount_from', '');
+                query_ds.set('total_transaction_amount_to', '');
+                query_ds.set('total_ranking_from', '');
+                query_ds.set('total_ranking_to', '');
+                query_ds.set('company_id', '');
+            }
+            
+            function rpt5050_submitsuccess(res) {
+                rpt5050_rp_header_id = res.result.rpt_header_id;
+                rpt5050_data_change_flag = 1;
+                jk_rpt5050_price_name_index = -1;
+                var result_ds = $('jk_rpt5050_price_result_ds');
+                rpt5050_query_clear();
+                result_ds.setQueryParameter('rpt_header_id', rpt5050_rp_header_id);
+                $('jk_rpt5050_chart_data_ds').setQueryParameter('rpt_header_id', rpt5050_rp_header_id);
+                $('jk_rpt5050_price_result_ds').query();
+                $('jk_rpt5050_chart_data_ds').query();
+                Aurora.SideBar.enable = true;
+                Aurora.SideBar.show({
+                    msg: '操作成功',
+                    duration: 600
+                });
+                rpt5050_unlock_current_window();
+              return;
+            }
+            
+            function rpt5050_query() {
+                result_ds = $('jk_rpt5050_price_result_ds');
+                result_ds.setQueryParameter('rpt_header_id', rpt5050_rp_header_id);
+                $('jk_rpt5050_price_result_ds').query();
+            }
+            
+            function rpt5050_queryHook_query(value, ds) {
+                result_ds = $('jk_rpt5050_price_result_ds');
+                result_ds.setQueryParameter('rpt_header_id', rpt5050_rp_header_id);
+                $('jk_rpt5050_price_result_ds').query();
+            }
+            
+            function rpt5050_formatter1() {
+                return '<b>' + this.x + '</b><br/>' + this.series.name + ': ' + this.y + '万元';
+            }
+            
+          
+            
+            //截取过长的字符串,第一个字符的起始位置为0
+            
+            function jk_rpt5050_substr(str, begin, length) {
+                if (Aurora.isEmpty(str.length)) {
+                    return str;
+                }
+                if (str.length - begin > length) {
+                    return str.substr(begin, length) + '...';
+                } else {
+                    return str.substr(begin);
+                }
+            }
+            
+            function jk_rpt5050_toolFormat1() {
+                var html = ['<table><caption>', this.x, '</caption><br>'];
+                var name_ds = $('jk_rpt_mtl_items_range_ds').getAll();
+                if (name_ds.length == 0) {
+                    html.push();
+                    return html.join('<br></table>');
+                }
+                // for(var j = 0;j<name_ds.length;j++){
+                    // if(document.getElementsByClassName("aurora-legend-item")[j].getAttribute('style')=='display:none'){
+                       // document.getElementsByClassName("aurora-series")[j].setAttribute('style','display:none');  
+                       // document.getElementsByClassName("aurora-markers")[j].setAttribute('style','display:none');  
+                    // }
+                // }
+                var y;
+                for (var i = 0;i < this.points.length;i++) {
+                    html.push('<tr>', '<td style="color:', this.points[i].series.color, '">', jk_rpt5050_substr(name_ds[i].get('item_name'), 0, 5), ': ', '</td>', '<td style="text-align:right"><b>', this.points[i].y, '元</b></td>', '</tr><br>');
+                }
+                html.push('</table>');
+                return html.join('');
+            }
+            
+            //折线图的legend的展示信息设置
+           
+            function rpt5050_label_format1() {
+                var name_ds = $('jk_rpt_mtl_items_range_ds').getAll();
+                jk_rpt5050_price_name_index++;
+                    return jk_rpt5050_substr(name_ds[jk_rpt5050_price_name_index].get('item_name'), 0, 5);
+                 //   document.getElementsByClassName("aurora-legend-item")[jk_rpt5050_price_name_index].setAttribute('style','display:none');
+            }
+            
+             //update触发
+            function jk_rpt_pur_mtl_price_analysis_query_ds_update(ds, record, name, value, oldvalue) {
+            	  var result_ds = $('jk_rpt_mtl_items_range_ds');
+                if (name == 'vendor_id') {
+                   record.getField('item_names').setLovPara('coop_company_id',value);
+                   result_ds.setQueryParameter('coop_company_id',value);
+                   record.getField('item_names').setReadOnly(false);
+                }
+                 if (name == 'item_ids') {
+                    result_ds.setQueryParameter('item_ids', value);
+                    $('jk_rpt_mtl_items_range_ds').query();
+                }
+            }
+           
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="jk_rpt5050_report_type_ds" lookupCode="JINKO_REPORT_TYPES"/>
+            <a:dataSet id="jk_rpt5050_flex_value_ds" fetchAll="true" loadData="true" model="cux.JINKO.rpt.JINKO_RPT7001.fnd_flex_value_v_lov"/>
+            <a:dataSet id="jk_rpt5050_make_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="report_type" displayField="code_value_name" options="jk_rpt5050_report_type_ds" required="true" returnField="report_type_value" valueField="code_value"/>
+                    <a:field name="base_period_from" displayField="flex_desc" options="jk_rpt5050_flex_value_ds" returnField="base_period_from_value" validator="jinko_rpt5050_query_year_validate_function" valueField="flex_value"/>
+                    <a:field name="base_period_to" displayField="flex_desc" options="jk_rpt5050_flex_value_ds" returnField="base_period_to_value" validator="jinko_rpt5050_query_year_validate_function" valueField="flex_value"/>
+                    <a:field name="base_period_year_from" autoComplete="true" autoCompleteField="flex_desc" lovHeight="490" lovService="public.fnd_flex_value_v_lov?flex_value_set_code=YEAR" lovWidth="490" readOnly="true" title="RPT.REPORTING_PERIOD_OF_THE_YEAR" validator="jinko_rpt5050_query_year_validate_function">
+                        <a:mapping>
+                            <a:map from="flex_desc" to="base_period_year_from"/>
+                            <a:map from="flex_value" to="base_period_year_from_value"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="base_period_year_to" autoComplete="true" autoCompleteField="flex_desc" lovHeight="490" lovService="public.fnd_flex_value_v_lov?flex_value_set_code=YEAR" lovWidth="490" readOnly="true" title="RPT.REPORTING_PERIOD_OF_THE_YEAR" validator="jinko_rpt5050_query_year_validate_function">
+                        <a:mapping>
+                            <a:map from="flex_desc" to="base_period_year_to"/>
+                            <a:map from="flex_value" to="base_period_year_to_value"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="base_day_from" readOnly="true" validator="jinko_rpt5050_query_year_validate_function"/>
+                    <a:field name="base_day_to" readOnly="true" validator="jinko_rpt5050_query_year_validate_function"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="jk_rpt5050_make_update"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="jk_rpt_pur_mtl_price_analysis_query_ds" autoCreate="true">
+                <a:fields>
+                    <a:field name="business_group"/>
+                    <a:field name="vendor_name" autoComplete="true" autoCompleteField="company_code" lovHeight="500" lovService="rpt.RPT5080.fnd_coop_partner_vendors_lov" lovWidth="690" required="true" title="RPT.RPT_VENDOR_NAME">
+                        <a:mapping>
+                            <a:map from="company_id" to="vendor_id"/>
+                            <a:map from="company_full_name" to="vendor_name"/>
+                            <a:map from="business_group" to="business_group"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="item_ids"/>
+                    <a:field name="item_names" lovHeight="480" lovUrl="${/request/@context_path}/modules/cux/JINKO/rpt/JINKO_RPT5050/pur_materiel_lov_query.screen" lovWidth="850" readOnly="true" required="true" title="RPT5080.MATERIALS"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="jk_rpt_pur_mtl_price_analysis_query_ds_update"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="jk_rpt_mtl_items_range_ds" autoCount="true" autoPageSize="true" model="cux.JINKO.rpt.JINKO_RPT5050.jk_rpt_mtl_items_range_lov"/>
+            <a:dataSet id="jk_rpt5050_price_result_ds" autoCount="true" autoPageSize="true" model="cux.JINKO.rpt.JINKO_RPT5050.jinko_rpt_pur_mtl_price_analysis_query" queryDataSet="jk_rpt_pur_mtl_price_analysis_query_ds"/>
+            <a:dataSet id="jk_rpt5050_chart_data_ds" bindTarget="jk_rpt5050_price_result_ds" fetchAll="true" queryUrl="${/request/@context_path}/modules/cux/JINKO/rpt/JINKO_RPT5050/jinko_rpt_pur_mtl_price_analysis_query.svc"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton id="jk_rpt5050_save_btn" className="item-rbtn-blue save" click="rpt5050_save" style="margin-left:20px;" text="RPT_MAKING_UP" width="100"/>
+                <a:gridButton bind="jinko_rpt5050_price_result_ds_grid" style="margin-left:20px;" type="excel" width="100"/>
+            </a:screenTopToolbar>
+            <a:form id="jk_rpt5050_make_ds_form" bindTarget="jk_rpt5050_make_ds" labelWidth="100" marginWidth="55" row="3" title="RPT.RPT_DATA_RAGE">
+                <a:hBox>
+                    <a:lov name="vendor_name" bindTarget="jk_rpt_pur_mtl_price_analysis_query_ds" prompt="PROMPT.VENDOR" width="120">
+                        <a:events>
+                            <a:event name="enterdown" handler="rpt5050_save"/>
+                        </a:events>
+                    </a:lov>
+                    <a:lov name="item_names" bindTarget="jk_rpt_pur_mtl_price_analysis_query_ds" prompt="PUR_ITEM_PRICE_HEADERS.ITEM_ID" width="324"/>
+                </a:hBox>
+                <a:hBox>
+                    <a:comboBox name="report_type" bindTarget="jk_rpt5050_make_ds" prompt="RPT.RPT_REPORT_TYPE" width="120"/>
+                    <a:datePicker name="base_day_from" id="rpt5050_base_day_from_id" bindTarget="jk_rpt5050_make_ds" prompt="日期从" width="120"/>
+                    <a:datePicker name="base_day_to" id="rpt5050_base_day_to_id" bindTarget="jk_rpt5050_make_ds" prompt="日期至" width="120"/>
+                </a:hBox>
+                <a:hBox>
+                    <a:lov name="base_period_year_from" id="rpt5050_base_period_year_from_id" allowDecimals="false" bindTarget="jk_rpt5050_make_ds" prompt="RPT.YEAR_FROM" width="120"/>
+                    <a:lov name="base_period_year_to" id="rpt5050_base_period_year_to_id" allowDecimals="false" bindTarget="jk_rpt5050_make_ds" prompt="RPT.YEAR_TO" width="120"/>
+                    <a:comboBox name="base_period_from" id="rpt5050_query_from_id" bindTarget="jk_rpt5050_make_ds" hidden="true" prompt="RPT.YEAR_PERIOD_FROM" width="120"/>
+                    <a:comboBox name="base_period_to" id="rpt5050_query_to_id" bindTarget="jk_rpt5050_make_ds" hidden="true" prompt="RPT.YEAR_PERIOD_TO" width="120"/>
+                </a:hBox>
+            </a:form>
+            <a:tabPanel marginHeight="273" marginWidth="55">
+                <a:tabs>
+                    <a:tab prompt="RPT.RPT_ORIGINAL_DATA" width="100">
+                        <a:grid id="jinko_rpt5050_price_result_ds_grid" bindTarget="jk_rpt5050_price_result_ds" marginHeight="307" marginWidth="58" navBar="true">
+                            <a:columns>
+                                <a:column name="vendor_name" align="left" prompt="PROMPT.VENDOR" width="100"/>
+                                <a:column name="item_code" align="left" prompt="PUR_LINES_ALL.ITEM_CODE" width="100"/>
+                                <a:column name="item_name" align="center" prompt="MTL_SYSTEM_ITEM.ITEM_NAME" width="100"/>
+                                <a:column name="period_name" align="center" prompt="RPT.RPT_PERIOD_NAME" width="100"/>
+                                <a:column name="period_net_price" align="center" prompt="RPT.PERIOD_NET_PRICE" width="100"/>
+                                <a:column name="period_tax_price" align="center" prompt="RPT.PERIOD_TAX_PRICE" width="100"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                    <a:tabl prompt="RPT.RPT_DATA_GRAPHICS" width="100">
+                        <a:chart backgroundColor="" bindTarget="jk_rpt5050_chart_data_ds" borderWidth="0" height="260" plotBackgroundColor="" plotBorderWidth="0" style="margin-right:10px">
+                            <a:title style="font-weight:normal;font-size:14px;font-family:Microsoft YaHei" text="" x="25"/>
+                            <a:legend align="right" backgroundColor="rgba(255,255,255,0.9)" borderWidth="1" floating="true" labelFormatter="rpt5050_label_format1" layout="vertical" verticalAlign="top"/>
+                            <a:xAxis>
+                                <a:xAxi name="period_name" gridLineWidth="0" tickLength="0">
+                                    <a:labels rotation="-45" style="font-weight:normal;font-size:12px;font-family:Microsoft YaHei"/>
+                                </a:xAxi>
+                            </a:xAxis>
+                            <a:yAxis>
+                                <a:yAxi name="item_name" bindTarget="jk_rpt_mtl_items_range_ds" gridLineWidth="1" minorGridLineWidth="0" tickLength="0">
+                                    <a:title style="font-size:12px;font-family:Microsoft YaHei" text="价格(元)"/>
+                                </a:yAxi>
+                            </a:yAxis>
+                            <a:tooltip formatter="jk_rpt5050_toolFormat1" shared="true" valueSuffix="RPT.RPT1010_TEN_THOUSANDS"/>
+                            <a:seriesList name="period_tax_price">
+                                <a:seriesItem>
+                                    <a:fillColor linearGradient="0,0,0,300" stops="[0,Aurora.Charts.getOptions().colors[0]],[1,Aurora.Charts.Color(Aurora.Charts.getOptions().colors[0]).setOpacity(0).get(&apos;rgba&apos;)]"/>
+                                </a:seriesItem>
+                            </a:seriesList>
+                        </a:chart>
+                    </a:tabl>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+    </a:view>
+</a:screen>

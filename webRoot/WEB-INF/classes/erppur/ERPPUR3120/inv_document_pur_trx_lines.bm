@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Wanq  
+    $Date: 2012-11-7 上午10:50:32  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" alias="t1" baseTable="ERPINV_DOC_PUR_TRX_LINES" defaultOrderBy="vender_code_name,item_code_name,trade_quantity,primary_uom_name,purchase_cost">
+    <bm:query-fields>
+        <bm:query-field name="company_id" queryExpression="v.company_id=${@company_id}"/>
+        <bm:query-field name="vender_id" queryExpression="v.vender_id = ${@vender_id}"/>
+        <bm:query-field name="item_id" queryExpression="v.item_id = ${@item_id}"/>
+        <bm:query-field name="warehouse_id" queryExpression="v.warehouse_id = ${@warehouse_id}"/>
+    </bm:query-fields>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+			select v.vender_id,
+			 	   v.company_id,
+				   (select f.company_full_name from fnd_companies_vl f where f.company_id = v.company_id) as company_name,
+				   (SELECT ERPFND_PRECISION_PKG.GET_PRICE_PRECISION(v.company_id) FROM dual) as value,
+                   (SELECT ERPFND_PRECISION_PKG.GET_AMOUNT_PRECISION(v.company_id) FROM dual) as value1,
+                   (SELECT ERPFND_PRECISION_PKG.GET_QUANTITY_PRECISION(v.company_id) FROM dual) as value2,
+			       p.partner_name vender_name,
+			       p.partner_code||'-'||p.partner_name vender_code_name,
+			       v.item_id,
+			       b.item_code||'-'||b.item_name item_code_name,
+			       v.warehouse_id,
+			       w.warehouse_code||'-'||w.warehouse_name warehouse_code_name,
+			       v.trade_quantity,
+			       v.trade_uom,
+			       (select c.uom_description
+			          from erpinv_uom_codes c
+			         where c.uom_code = v.trade_uom
+			           and c.company_id = v.company_id) trade_uom_name,
+			       v.primary_quantity,
+			       v.primary_uom,
+			       (select c.uom_description
+			          from erpinv_uom_codes c
+			         where c.uom_code = v.primary_uom
+			           and c.company_id = v.company_id) primary_uom_name,
+			       v.currency_code,
+			       v.purchase_cost
+			  from erpfnd_business_partners p,
+			       erpinv_items_basics b,
+			       erpinv_warehouses w,
+			       (select l.vender_id,
+			               l.item_id,
+			               l.warehouse_id,
+			               sum(l.trade_quantity) trade_quantity,
+			               l.trade_uom,
+			               sum(l.primary_quantity) primary_quantity,
+			               l.primary_uom,
+			               l.currency_code,
+			               sum(l.pretax_amount) purchase_cost,
+			               l.company_id
+			          from erpinv_document_pur_trx_h h,
+			               erpinv_document_pur_trx_lines   l
+			         where h.document_header_id = l.document_header_id
+			           and h.document_date >= to_date(nvl(${/parameter/@order_date_from},'1000-01-01'),'yyyy-mm-dd')
+					   and h.document_date <= to_date(nvl(${/parameter/@order_date_to},'9999-12-31'),'yyyy-mm-dd')
+			           and h.business_group = ${/session/@business_group}
+			           and l.purchase_order_line_id is not null
+			         group by l.vender_id,
+			                  l.item_id,
+			                  l.warehouse_id,
+			                  l.trade_uom,
+			                  l.primary_uom,
+			                  l.currency_code,
+			                  l.company_id) v
+			   #WHERE_CLAUSE#
+			   #ORDER_BY_CLAUSE#
+    		]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter enforceOperations="query" expression="p.partner_id = v.vender_id and b.item_id = v.item_id and w.warehouse_id = v.warehouse_id and b.business_group=${/session/@business_group}"/>
+    </bm:data-filters>
+</bm:model>

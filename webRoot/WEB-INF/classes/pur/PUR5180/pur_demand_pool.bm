@@ -1,0 +1,364 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wangcheng  
+    $Date: 2015-6-14 13:13:34  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="req_number desc,line_num">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        dp.demand_pool_id,
+                        dp.req_header_id,
+                        NVL(dp.es_req_number, dp.req_number) AS req_number,
+                        dp.enabled_flag,
+                        dp.authorization_status,
+                        dp.type_lookup_code,
+                        dp.cancel_flag,
+                        dp.closed_code,
+                        dp.org_id,
+                        dp.org_code,
+                        dp.approved_flag,
+                        dp.approved_date,
+                        dp.revision_num,
+                        dp.req_line_id,
+                        (SELECT
+                            TO_CHAR(need_by_date,'yyyy-mm-dd') AS need_by_date
+                        FROM
+                            pur_req_lines
+                        WHERE
+                            req_line_id = dp.req_line_id
+                        ) AS need_by_date,
+                        (SELECT
+                            need_by_date AS need_by_date
+                        FROM
+                            pur_req_lines
+                        WHERE
+                            req_line_id = dp.req_line_id
+                        ) AS need_by_date_value,
+                        NVL(
+                        (SELECT
+                            unit_meas_lookup_code
+                        FROM
+                            pur_req_lines
+                        WHERE
+                            req_line_id = dp.req_line_id
+                        ) , dp.unit_meas_lookup_code) AS unit_meas_lookup_code,
+                        dp.line_num,
+                        dp.line_type_id,
+                        dp.line_type_code,
+                        dp.item_id,
+                        NVL(
+                        (SELECT
+                            siv.display_item_code
+                        FROM
+                            mtl_system_items_vl siv
+                        WHERE
+                            siv.item_id = dp.item_id
+                        ), dp.item_code) AS item_code,
+                        dp.item_revision,
+                        NVL(
+                        (SELECT
+                            siv.item_name
+                        FROM
+                            mtl_system_items_vl siv
+                        WHERE
+                            siv.item_id = dp.item_id
+                        ),dp.item_description) AS item_desc,
+                        --dp.unit_meas_lookup_code,
+                        dp.unit_price,
+                        (
+                            CASE unit_price
+                                WHEN 0
+                                THEN 'Y'
+                                ELSE 'N'
+                            END) AS zero_flag,
+                        dp.quantity,
+                        dp.delivery_date,
+                        dp.deliver_to_location_id,
+                        dp.deliver_to_location_code,
+                        --dp.need_by_date,
+                        dp.line_location_id,
+                        dp.line_location_num,
+                        dp.purchasing_agent_id,
+                        dp.purchasing_agent_code,
+                        dp.currency_code,
+                        dp.rate_type,
+                        dp.rate_date,
+                        dp.rate,
+                        dp.currency_unit_price,
+                        dp.suggested_vendor_name,
+                        dp.must_use_sugg_vendor_flag,
+                        dp.line_cancel_flag,
+                        dp.source_organization_id,
+                        dp.source_subinventory,
+                        dp.cancel_reason,
+                        dp.line_closed_code,
+                        dp.sourcing_flag,
+                        dp.sourcing_doc_number,
+                        dp.sourcing_type,
+                        dp.pause_comment,
+                        (SELECT
+                            scv.code_value_name
+                        FROM
+                            sys_code_values_vl scv,
+                            sys_codes_vl sc
+                        WHERE
+                            sc.code_id     = scv.code_id AND
+                            scv.code_value = dp.sourcing_type AND
+                            sc.code        = 'PUR_DEMAND_POOL_TYPE'
+                        ) sourcing_type_desc,
+                        NVL(
+                        (SELECT
+                            ph.srm_status
+                        FROM
+                            pur_purchase_info_record_po rp,
+                            pur_headers_all ph
+                        WHERE
+                            rp.req_header_id = dp.req_header_id AND
+                            rp.req_line_id   = dp.req_line_id AND
+                            rp.pur_header_id = ph.pur_header_id AND
+                            rownum           =1
+                        ), dp.req_status ) req_status,
+                        DECODE(
+                        (SELECT
+                            ph.srm_status FROM pur_purchase_info_record_po rp,
+                            pur_headers_all ph WHERE rp.req_header_id = dp.req_header_id AND
+                            rp.req_line_id                            = dp.req_line_id AND
+                            rp.pur_header_id                          = ph.pur_header_id AND
+                            rownum                                    =1
+                        ),'SUBMITTED','已转订单','APPROVED','订单完成','RELEASED','订单完成','CONFIRMED','订单完成','CLOSED','订单完成',
+                        (SELECT
+                            scv.code_value_name
+                        FROM
+                            sys_code_values_vl scv,
+                            sys_codes_vl sc
+                        WHERE
+                            sc.code_id     = scv.code_id AND
+                            scv.code_value = dp.req_status AND
+                            sc.code        = 'PUR_DEMAND_POOL_STATUS'
+                        ) ) req_status_desc,
+                        NVL(dp.assigned_flag, 'N') AS assigned_flag,
+                        NVL(dp.pause_flag,'N') AS pause_flag,
+                        (
+                            CASE
+                                WHEN dp.assigned_flag='Y'
+                                THEN '已分配'
+                                ELSE '未分配'
+                            END) AS assign_status,
+                        dp.assigned_by,
+                        dp.assigned_date,
+                        dp.assigned_to,
+                        (SELECT su.user_name FROM sys_user su WHERE su.user_id = dp.assigned_to
+                        ) assigned_to_code,
+                        (SELECT su.description FROM sys_user su WHERE su.user_id = dp.assigned_to
+                        ) assigned_to_name,
+                        (SELECT
+                            su.description
+                            ||'('
+                            ||su.user_name
+                            ||')'
+                        FROM
+                            sys_user su
+                        WHERE
+                            su.user_id = dp.assigned_to
+                        ) AS assigned_to_desc,
+                        dp.business_group,
+                        dp.data_source,
+                        dp.creation_date,
+                        (
+                            CASE
+                                WHEN ${/session/@user_id} = dp.created_by
+                                THEN dp.created_by
+                                ELSE dp.ASSIGNED_TO
+                            END ) created_by_receiver,
+                        dp.created_by,
+                        dp.last_update_date,
+                        dp.last_updated_by,
+                        (SELECT
+                            bu.company_id
+                        FROM
+                            fnd_business_units bu
+                        WHERE
+                            bu.business_unit_id =
+                            (SELECT
+                                ov.business_unit_id
+                            FROM
+                                inv_organizations_vl ov
+                            WHERE
+                                ov.inv_organization_id= dp.destination_organization_id
+                            )
+                        ) AS company_id,
+                        (SELECT
+                            ov.business_unit_id
+                        FROM
+                            inv_organizations_vl ov
+                        WHERE
+                            ov.inv_organization_id= dp.destination_organization_id
+                        ) business_unit_id,
+                        (SELECT
+                            rh.pur_organization_id
+                        FROM
+                            pur_req_headers rh
+                        WHERE
+                            rh.REQ_HEADER_ID= dp.REQ_HEADER_ID
+                        ) pur_organization_id,
+                        (SELECT
+                            'Y'
+                        FROM
+                            fnd_atm_attachment_multi aam
+                        WHERE
+                            aam.table_name     = 'PUR_DEMAND_POOL' AND
+                            aam.table_pk_value = TO_CHAR(dp.demand_pool_id) AND
+                            rownum             =1
+                        ) AS atm_show_flag,
+                        (SELECT
+                            huv.unit_desc
+                        FROM
+                            hrm_units_vl huv,
+                            pur_req_headers prh
+                        WHERE
+                            huv.unit_id       = prh.unit_id AND
+                            prh.req_header_id = dp.req_header_id
+                        ) unit_desc,
+                        (SELECT
+                            prh.erp_create_desc
+                        FROM
+                            pur_req_headers prh
+                        WHERE
+                            prh.req_header_id = dp.req_header_id
+                        ) erp_create_desc,
+                        dp.comments,
+                        dp.assigned_comment,
+                        NULL useless_id_5,
+                        NULL useless_id_6,
+                        NULL useless_id_7,
+                        NULL useless_id_8,
+                        NULL useless_id_9,
+                        NULL useless_id_10,
+                        NULL useless_id_11,
+                        NULL useless_id_12,
+                        NULL useless_id_13
+                    FROM
+                        pur_demand_pool dp
+                    WHERE
+                        dp.business_group =${/session/@business_group} AND
+                        (
+                            NVL(dp.create_po_flag,'N')  = 'N' OR
+                            NVL(dp.create_po_flag,'N')  = 'Y' AND
+                            NVL(dp.po_release_flag,'Y') = 'Y'
+                        )
+                        AND
+                        NVL(dp.delete_flag,'N') = 'N'
+                    ) v #AUTHORIY_FROM# #WHERE_CLAUSE# #AUTHORIY_WHERE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+              DECLARE
+                    l_pur_req_operation_record pur_req_operation_records%ROWTYPE;
+              BEGIN
+                pur_demand_pool_pkg.pur_demand_pool_assign(
+    					p_demand_pool_id =>${@demand_pool_id},
+    					p_assigned_to    =>${@assigned_to},
+    					p_assigned_comment =>${@assigned_comment},
+    					p_user_id        =>${/session/@user_id}
+  						);
+  				SELECT
+                        pur_req_operation_records_s.nextval
+                    INTO
+                        l_pur_req_operation_record.record_id
+                    FROM
+                        dual;
+                    l_pur_req_operation_record.operation_table    := 'pur_demand_pool';
+                    l_pur_req_operation_record.operation_table_id := ${@demand_pool_id};
+                    l_pur_req_operation_record.status             := 'assigned';
+                    l_pur_req_operation_record.status_desc        := '分配';
+                    SELECT
+                        su.description
+                    INTO
+                        l_pur_req_operation_record.user_name
+                    FROM
+                        sys_user su
+                    WHERE
+                        su.user_id                           = ${@assigned_to};
+                   
+                  SELECT
+                        su.description
+                    INTO
+                        l_pur_req_operation_record.operation_desc
+                    FROM
+                        sys_user su
+                    WHERE
+                        su.user_id                           = ${/session/@user_id};
+                    
+                            
+                    l_pur_req_operation_record.created_by       := ${/session/@user_id};
+                    l_pur_req_operation_record.creation_date    := SYSDATE;
+                    l_pur_req_operation_record.last_updated_by  := ${/session/@user_id};
+                    l_pur_req_operation_record.last_update_date := SYSDATE;
+                    INSERT INTO pur_req_operation_records VALUES l_pur_req_operation_record;		
+              END;
+		      ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+              BEGIN
+                pur_demand_pool_pkg.pur_demand_pool_deassign(
+                		p_demand_pool_id =>${@demand_pool_id},
+    					p_user_id        =>${/session/@user_id}
+  						);
+              END;
+		      ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="pause_flag" queryExpression="v.pause_flag=${@pause_flag}"/>
+        <bm:query-field name="assigned_flag" queryExpression="assigned_flag = ${@assigned_flag}"/>
+        <bm:query-field name="req_number" queryExpression="req_number like &apos;%&apos;||${@req_number}||&apos;%&apos;"/>
+        <bm:query-field name="assigned_to_desc" queryExpression="(v.assigned_to_code like &apos;%&apos;||${@assigned_to_desc}||&apos;%&apos; or v.assigned_to_name like &apos;%&apos;||${@assigned_to_desc}||&apos;%&apos;)"/>
+        <bm:query-field name="zero_flag" queryExpression="(zero_flag = ${@zero_flag} or ${@zero_flag}  =  &apos;N&apos;)"/>
+        <bm:query-field name="req_status_code" queryExpression="req_status = ${@req_status_code}"/>
+        <bm:query-field name="need_by_date_from" queryExpression="need_by_date_value &gt;= to_date(${@need_by_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="need_by_date_to" queryExpression="need_by_date_value &lt;= to_date(${@need_by_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="line_num" queryExpression="line_num = ${@line_num}"/>
+        <!-- <bm:query-field name="item_desc" queryExpression="item_desc like &apos;%&apos;||${@item_desc}||&apos;%&apos;"/> -->
+        <bm:query-field name="item_code" queryExpression="item_code like &apos;%&apos;||${@item_code}||&apos;%&apos;"/>
+        <bm:query-field name="rfx_type_code" queryExpression="v.sourcing_type=${@rfx_type_code}"/>
+        <bm:query-field name="sourcing_doc_number" queryExpression="v.sourcing_doc_number like &apos;%&apos;||${@sourcing_doc_number}||&apos;%&apos;"/>
+        <bm:query-field name="data_source" queryExpression="v.data_source = ${@data_source}"/>
+        <bm:query-field name="vendor_flag" queryExpression="( v.suggested_vendor_name is null   or ${@vendor_flag}  = &apos;N&apos;)"/>
+        <!-- <bm:query-field name="item_code" queryExpression="item_code = ${@item_code}"/> -->
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="1 = 1"/>
+    </bm:data-filters>
+    <authority foundation_code="PUR_REQUISITION">
+        <authority-segment source_alias="v" source_name="created_by_receiver" type="CREATER"/>
+        <authority-segment source_alias="v" source_name="company_id" type="COMPANY"/>
+        <authority-segment source_alias="v" source_name="created_by_receiver" type="RECEIVER"/>
+        <authority-segment source_alias="v" source_name="business_unit_id" type="BUSINESS_UNIT"/>
+        <authority-segment source_alias="v" source_name="pur_organization_id" type="PUR_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id_5" type="PUR_BUYER"/>
+        <authority-segment source_alias="v" source_name="useless_id_6" type="INV_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id_7" type="SD_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id_8" type="VENDOR"/>
+        <authority-segment source_alias="v" source_name="useless_id_9" type="CLIENT"/>
+        <authority-segment source_alias="v" source_name="useless_id_10" type="PURHASE_MATERIAL"/>
+        <authority-segment source_alias="v" source_name="useless_id_11" type="SALES_PRODUCTION"/>
+        <authority-segment source_alias="v" source_name="useless_id_12" type="CLIENT_SITE"/>
+        <authority-segment source_alias="v" source_name="useless_id_13" type="VENDOR_SITE"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+            var cx = Packages.aurora.javascript.Context.getCurrentContext();
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

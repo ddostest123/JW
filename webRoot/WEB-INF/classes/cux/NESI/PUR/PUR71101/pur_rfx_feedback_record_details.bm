@@ -1,0 +1,363 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: IsaacF  
+    $Date: 2013-6-27 上午9:38:00  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    t.*,
+                    DECODE(t.valid_fb_retail_price,'***','***',NVL(t.valid_fb_retail_price, 0) * NVL(t.allotted_quantity, 0)) AS valid_fb_total_price
+                    /* DECODE(t.online_unit_price, '***','***') AS online_unit_price */
+                FROM
+                    (SELECT
+                        l.feedback_line_id,
+                        h.status header_status,
+                        h.rfx_header_id,
+                        h.rfx_version,
+                        h.rfx_round,
+                        h.coop_business_group,
+                        h.coop_company_id,
+                        h.vendor_id,
+                        (SELECT
+                            fc.company_code
+                        FROM
+                            fnd_companies fc
+                        WHERE
+                            fc.company_id = h.coop_company_id
+                        ) vendor_code,
+                        NVL(
+                        (SELECT
+                            fc.company_full_name
+                        FROM
+                            fnd_companies_vl fc
+                        WHERE
+                            fc.company_id = h.coop_company_id
+                        ),NVL(
+                        (SELECT
+                            pvv.full_name
+                        FROM
+                            PUR_VENDORS_VL pvv
+                        WHERE
+                            pvv.vendor_id = h.vendor_id
+                        ),h.vendor_desc)) vendor_desc,
+                        (SELECT
+                            pvv.display_vendor_code
+                        FROM
+                            PUR_VENDORS_VL pvv
+                        WHERE
+                            pvv.vendor_id = h.vendor_id
+                        ) erp_vendor_code,
+                        TO_CHAR(l.feedback_time, 'yyyy-mm-dd hh24:mi:ss') feedback_time,
+                        l.feedback_header_id,
+                        l.status,
+                        l.rfx_line_item_id,
+                        (SELECT
+                            scv.code_value_name
+                        FROM
+                            sys_code_values_vl scv,
+                            sys_codes_vl sc
+                        WHERE
+                            sc.code_id     = scv.code_id AND
+                            scv.code_value = l.status AND
+                            sc.code        = 'PUR_RFX_FEEDBACK_LINE_STATUS'
+                        ) status_desc,
+                        l.inv_organization_id,
+                        l.item_category_id,
+                        l.item_id,
+                        l.item_code,
+                        l.item_desc,
+                        l.uom_code,
+                        rl.quantity,
+                        TO_CHAR(l.need_by_date, 'yyyy-mm-dd') need_by_date,
+                        l.feedback_range,
+                        TO_CHAR(promised_date, 'yyyy-mm-dd') promised_date,
+                        TO_CHAR(feedback_expiry_date_from, 'yyyy-mm-dd') feedback_expiry_date_from,
+                        TO_CHAR(feedback_expiry_date_to, 'yyyy-mm-dd') feedback_expiry_date_to,
+                        l.delivery_cycle,
+                        l.current_fb_by,
+                        (SELECT u.user_desc FROM sys_user_v u WHERE u.user_id = l.current_fb_by
+                        ) current_fb_by_desc,
+                        l.current_fb_quantity,
+                        l.current_fb_retail_price,
+                        l.current_fb_wholesale_price,
+                        l.current_fb_reason,
+                        l.current_bargain_by,
+                        (SELECT u.user_desc FROM sys_user_v u WHERE u.user_id = l.current_bargain_by
+                        ) current_bargain_by_desc,
+                        l.current_bargain_quantity,
+                        l.current_bargain_retail_price,
+                        l.current_bargain_whlsale_price,
+                        l.current_bargain_reason,
+                        l.valid_fb_by,
+                        (SELECT
+                            u.user_desc
+                        FROM
+                            sys_user_v u
+                        WHERE
+                            u.user_id = l.valid_fb_by
+                        ) valid_fb_by_desc,
+                        l.valid_fb_quantity,
+                        (
+                            CASE
+                                WHEN
+                                    (
+                                        SYSDATE > rh.feedback_end_time AND
+                                        (
+                                            rt.PASSWORD_FLAG ='N' OR
+                                            NVL(
+                                            (SELECT
+                                                COUNT(1)
+                                            FROM
+                                                pur_rfx_password p
+                                            WHERE
+                                                p.rfx_header_id     = rh.rfx_header_id AND
+                                                NVL(p.open_flag,'N')='N'
+                                            ),0)                    =0
+                                        )
+                                    )
+                                    OR
+                                    NVL(rh.sealed_bid_flag, 'N') = 'N'
+                                THEN TO_CHAR(l.valid_fb_retail_price, 'fm99999999990.9999999')
+                                WHEN rh.sealed_bid_flag = 'Y' AND
+                                    (
+                                        SYSDATE <= rh.feedback_end_time OR
+                                        NVL(
+                                        (SELECT
+                                            COUNT(1)
+                                        FROM
+                                            pur_rfx_password p
+                                        WHERE
+                                            p.rfx_header_id     = rh.rfx_header_id AND
+                                            NVL(p.open_flag,'N')='N'
+                                        ),0)                    >0
+                                    )
+                                THEN '***'
+                            END) AS valid_fb_retail_price,
+                        (
+                            CASE
+                                WHEN
+                                    (
+                                        SYSDATE > rh.feedback_end_time AND
+                                        (
+                                            rt.PASSWORD_FLAG ='N' OR
+                                            NVL(
+                                            (SELECT
+                                                COUNT(1)
+                                            FROM
+                                                pur_rfx_password p
+                                            WHERE
+                                                p.rfx_header_id     = rh.rfx_header_id AND
+                                                NVL(p.open_flag,'N')='N'
+                                            ),0)                    =0
+                                        )
+                                    )
+                                    OR
+                                    NVL(rh.sealed_bid_flag, 'N') = 'N'
+                                THEN TO_CHAR(l.valid_fb_wholesale_price, 'fm99999999990.9999999')
+                                WHEN rh.sealed_bid_flag = 'Y' AND
+                                    (
+                                        SYSDATE <= rh.feedback_end_time OR
+                                        NVL(
+                                        (SELECT
+                                            COUNT(1)
+                                        FROM
+                                            pur_rfx_password p
+                                        WHERE
+                                            p.rfx_header_id     = rh.rfx_header_id AND
+                                            NVL(p.open_flag,'N')='N'
+                                        ),0)                    >0
+                                    )
+                                    AND
+                                    l.valid_fb_wholesale_price IS NOT NULL
+                                THEN '***'
+                            END) AS valid_fb_wholesale_price,
+                        l.valid_fb_reason,
+                        l.valid_bargain_by,
+                        (SELECT u.user_desc FROM sys_user_v u WHERE u.user_id = l.valid_bargain_by
+                        ) valid_bargain_by_desc,
+                        l.valid_bargain_quantity,
+                        l.valid_bargain_retail_price,
+                        l.valid_bargain_wholesale_price,
+                        l.valid_bargain_reason,
+                        l.abandoned_flag,
+                        l.suggested_flag,
+                        l.suggested_note,
+                        l.comments,
+                        l.creation_date,
+                        l.created_by,
+                        l.last_update_date,
+                        l.last_updated_by,
+                        (SELECT
+                            quote_header_id
+                        FROM
+                            pur_rfx_quote_headers rqh
+                        WHERE
+                            rqh.rfx_line_item_id = l.rfx_line_item_id
+                        ) quote_header_id,
+                        pur_rfx_feedback_pkg.get_last_round_price(h.rfx_header_id, h.owner_business_group, h.coop_company_id, l.item_id, ${/session/@user_id}) AS last_valid_fb_retail_price,
+                        pur_rfx_feedback_pkg.get_floating_percentage(h.rfx_header_id, l.valid_fb_retail_price, h.owner_business_group, h.coop_company_id, l.item_id, ${/session/@user_id}) AS floating_percentage,
+                        l.allotted_quantity,
+                        (ROUND((l.allotted_quantity / rl.quantity), 4) * 100) AS allotted_percentage,
+                        (SELECT
+                            li.line_num
+                        FROM
+                            pur_rfx_ln_items li
+                        WHERE
+                            li.rfx_line_item_id = l.rfx_line_item_id
+                        ) AS line_num,
+                        l.price_batch_quantity,
+                        l.min_purchase,
+                        l.min_package,
+                        (SELECT
+                            COUNT(*)
+                        FROM
+                            fnd_atm_attachment_multi am
+                        WHERE
+                            am.table_name     = 'PUR_RFX_FEEDBACK_LINES' AND
+                            am.table_pk_value = TO_CHAR(l.feedback_line_id) AND
+                            rownum            = 1
+                        ) AS atm_counts_feedback,
+                        (SELECT
+                            COUNT(*)
+                        FROM
+                            fnd_atm_attachment_multi am
+                        WHERE
+                            am.table_name     = 'PUR_RFX_LN_ITEMS' AND
+                            am.table_pk_value = TO_CHAR(l.rfx_line_item_id) AND
+                            rownum            = 1
+                        ) AS atm_counts_item,
+                        NVL(rl.ladder_inquiry_flag,'Y') ladder_inquiry_flag,
+                        rh.trans_cost_flag,
+                        l.trans_cost,
+                        CASE
+                            WHEN l.bargain_flag ='Y'
+                            THEN l.valid_fb_retail_price
+                            WHEN l.suggested_flag = 'Y'
+                            THEN ROUND(l.valid_fb_retail_price*h.bargain_amount/
+                                (SELECT
+                                    SUM(NVL(fl.valid_fb_retail_price, 0) * fl.allotted_quantity)
+                                FROM
+                                    pur_rfx_feedback_headers fh,
+                                    pur_rfx_feedback_lines fl,
+                                    pur_rfx_ln_items li
+                                WHERE
+                                    fh.rfx_header_id      = h.rfx_header_id AND
+                                    fh.feedback_header_id = fl.feedback_header_id AND
+                                    fl.rfx_line_item_id   = li.rfx_line_item_id AND
+                                    fh.rfx_round          = li.current_round AND
+                                    fh.rfx_version        = li.current_version AND
+                                    fh.coop_company_id    = h.coop_company_id AND
+                                    fl.suggested_flag     ='Y' AND
+                                    fh.cancel_flag        = 'N' AND
+                                    fl.cancel_flag        = 'N' AND
+                                    li.cancel_flag        = 'N'
+                                ),3)
+                            ELSE NULL
+                        END unit_price,
+                        -- NVL(l.online_unit_price,l.valid_fb_retail_price) online_unit_price,
+                        (
+                            CASE
+                                WHEN
+                                    (
+                                        SYSDATE > rh.feedback_end_time AND
+                                        (
+                                            rt.PASSWORD_FLAG = 'N' OR
+                                            NVL(
+                                            (SELECT
+                                                COUNT(1)
+                                            FROM
+                                                pur_rfx_password p
+                                            WHERE
+                                                p.rfx_header_id       = rh.rfx_header_id AND
+                                                NVL(p.open_flag, 'N') = 'N'
+                                            ), 0)                     = 0
+                                        )
+                                    )
+                                    OR
+                                    NVL(rh.sealed_bid_flag, 'N') = 'N'
+                                THEN TO_CHAR(NVL(l.online_unit_price, l.valid_fb_retail_price), 'fm99999999990.9999999')
+                                WHEN rh.sealed_bid_flag = 'Y' AND
+                                    (
+                                        SYSDATE <= rh.feedback_end_time OR
+                                        NVL(
+                                        (SELECT
+                                            COUNT(1)
+                                        FROM
+                                            pur_rfx_password p
+                                        WHERE
+                                            p.rfx_header_id       = rh.rfx_header_id AND
+                                            NVL(p.open_flag, 'N') = 'N'
+                                        ), 0)                     > 0
+                                    )
+                                    AND
+                                    NVL(l.online_unit_price,l.valid_fb_retail_price) IS NOT NULL
+                                THEN '****'
+                                ELSE TO_CHAR(NVL(l.online_unit_price, l.valid_fb_retail_price), 'fm99999999990.9999999')
+                            END) AS online_unit_price,
+                        (
+                            CASE
+                                WHEN rh.sealed_bid_flag = 'Y' AND
+                                    (
+                                        SYSDATE <= rh.feedback_end_time OR
+                                        NVL(
+                                        (SELECT
+                                            COUNT(1)
+                                        FROM
+                                            pur_rfx_password p
+                                        WHERE
+                                            p.rfx_header_id     = rh.rfx_header_id AND
+                                            NVL(p.open_flag,'N')='N'
+                                        ),0)                    >0
+                                    )
+                                THEN 'Y'
+                            END) seal_flag
+                    FROM
+                        pur_rfx_feedback_lines l,
+                        pur_rfx_feedback_headers h,
+                        pur_rfx_ln_items rl,
+                        pur_bg_rfx_types rt,
+                        pur_rfx_headers rh
+                    WHERE
+                        h.feedback_header_id = l.feedback_header_id AND
+                        l.rfx_line_item_id   = rl.rfx_line_item_id AND
+                        h.rfx_header_id      = rh.rfx_header_id AND
+                        rl.cancel_flag       = 'N' AND
+                        l.cancel_flag        = 'N'
+                        --AND rl.rfx_finished_flag = 'Y'
+                        AND
+                        h.rfx_round        = rl.current_round AND
+                        h.rfx_version      = rl.current_version AND
+                        rt.rfx_type_id (+) = rh.rfx_type_id
+                    ) t #WHERE_CLAUSE#
+                ORDER BY
+                    line_num
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+              BEGIN
+                pur_rfx_feedback_pkg.save_rfx_fb_ln_suggest(p_feedback_line_id =>${@feedback_line_id},
+                                   p_suggested_flag    =>${@suggested_flag},
+                                   p_suggested_note    =>${@suggested_note},
+                                   p_allotted_quantity =>${@allotted_quantity},
+                                   p_price_batch_quantity=>${@price_batch_quantity},
+                                   p_user_id           =>${/session/@user_id});
+              END;
+              ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="feedback_line_id" queryExpression="feedback_line_id = ${@feedback_line_id}"/>
+        <bm:query-field name="item_id" queryExpression="item_id = ${@item_id}"/>
+        <bm:query-field name="rfx_line_item_id" queryExpression="rfx_line_item_id = ${@rfx_line_item_id}"/>
+        <bm:query-field name="rfx_header_id" queryExpression="rfx_header_id = ${@rfx_header_id}"/>
+        <bm:query-field name="coop_company_id" queryExpression="coop_company_id = ${@coop_company_id}"/>
+        <bm:query-field name="current_round" queryExpression="rfx_round = ${@current_round}"/>
+        <bm:query-field name="current_version" queryExpression="rfx_version = ${@current_version}"/>
+    </bm:query-fields>
+</bm:model>

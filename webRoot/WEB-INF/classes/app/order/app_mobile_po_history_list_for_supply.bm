@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[select pur_header_ht_id po_history_id,
+            pur_header_id         po_id,
+       display_po_number     po_number,
+       vendor_name           coop_company_name,
+       status_desc           po_status_desc,
+       type_lookup_desc      po_type,
+       revision_num,
+       display_release_num   release_num,
+       release_date_desc     release_date,
+       ship_to_location_name,
+       bill_to_location_name,
+       comments
+  FROM (select v.*, ceil(rownum / nvl(${/parameter/@page_size}, 5)) as page_num
+          from (select pur_header_ht_id,
+                       h.pur_header_id,
+                       h.display_po_number,
+                       h.vendor_name,
+                       decode(h.erp_status,
+                              'OPEN',
+                              (SELECT v.code_value_name
+                                 FROM sys_code_values_v v
+                                WHERE v.code = 'SRM_STATUS'
+                                  AND v.code_value = h.srm_status),
+                              (SELECT v.code_value_name
+                                 FROM sys_code_values_v v
+                                WHERE v.code = 'PUR_HEADER_ERP_STATUS'
+                                  AND v.code_value = h.erp_status)) AS status_desc,
+                       nvl(h.type_lookup_desc, h.erp_po_type_desc) type_lookup_desc,
+                       h.revision_num,
+                       h.display_release_num,
+                       to_char(h.release_date, 'yyyy-mm-dd hh24:mi') AS release_date_desc,
+                       h.ship_to_location_name,
+                       h.bill_to_location_name,
+                       h.comments,
+                       fnd_document_control_pkg.get_reality_value(p_rule_code    => 'PRICE_SECRECY',
+                                             p_role_id         => ${/session/@role_id},
+                                             p_foundation_code => 'PUR_PO',
+                                             p_document_id     => h.pur_header_id,
+                                             p_control_area    => 'EXTERNAL',
+                                             p_business_group  => ${/session/@business_group},
+                                             p_value           => (SELECT SUM(l.unit_price * pll.quantity)
+                  FROM pur_lines_all_ht          l,
+                       pur_line_locations_all_ht pll
+                 WHERE l.pur_line_ht_id = pll.pur_line_ht_id
+                       AND l.pur_header_ht_id = h.pur_header_ht_id
+                       and nvl(pll.cancel_flag,'N') = 'N')) amount
+                  from pur_headers_all_ht h,
+                  	   pur_vendors            pvv
+                where  h.pur_header_id = ${@pur_header_id}
+                  and pvv.vendor_id = h.vendor_id
+                  and pvv.coop_business_group = ${/session/@business_group}
+                order by  h.revision_num desc
+                ) v)
+             where ((${@page_num} is not null and ${@page_num}=page_num) or (${@page_num} is null and 1=1))]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

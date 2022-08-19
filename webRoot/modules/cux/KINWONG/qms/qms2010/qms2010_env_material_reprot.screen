@@ -1,0 +1,304 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lianghuihao 
+    $Date: 2018年11月15日14:15:06  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:view>
+        <a:link id="qms2010_env_materials_report_save_link" model="cux.KINWONG.qms.qms2010.qms2010_env_materials_report" modelaction="batch_update"/>
+        <!-- <a:link id="fnd7210_sample_certify_record_link" url="${/request/@context_path}/modules/cux/KINWONG/fnd/fnd7210/fnd7210_sample_certify_record.screen"/> -->
+        <script><![CDATA[
+            function qms2010_env_materials_report_save() {
+                debugger;
+                var ds = $('qms2010_env_materials_report_ds');
+                var records = ds.getAll();
+                var count = 0;
+                for (var i = 0;i < records.length;i++) {
+                    var report_type = records[i].get('report_type');
+                    if (report_type == 'SGS' || report_type == 'SGS_HF') {
+                        count++;
+                    }
+                }
+                if (count < 1) {
+                    Aurora.showMessage('${l:PROMPT}', 'SGS报告为必传附件！', null);
+                }
+                var datas = ds.getJsonData();
+                Aurora.Masker.mask($('qms2010_envmsdl_report_detail_win').wrap, '...');
+                Aurora.request({
+                    url: $('qms2010_env_materials_report_save_link').getUrl(),
+                    para: datas,
+                    success: function(res) {
+                        Aurora.Masker.unmask($('qms2010_envmsdl_report_detail_win').wrap);
+                        qms2010_envMaterialReportSubmitFcn();
+                    },
+                    scope: this
+                });
+                Aurora.Masker.unmask($('qms2010_envmsdl_report_detail_win').wrap);
+            }
+            
+            function qms2010_compareDate(start, end) {
+                if (typeof(start) == 'string') {
+                    start = new Date(start.replace(/-/g, "/"));
+                }
+            
+                if (typeof(end) == 'string') {
+                    end = new Date(end.replace(/-/g, "/"));
+                }
+            
+                if (start > end) {
+                    return false;
+                }
+                return true;
+            }
+            
+            function qms2010_dateValidator(record, name, value) {
+            
+                if (name == 'available_time' || name == 'disable_time') {
+                    var available_time = record.get('available_time');
+                    var disable_time = record.get('disable_time');
+                    if (typeof(available_time) != 'undefined' && !Ext.isEmpty(disable_time)) {
+                        if (!qms2010_compareDate(available_time, disable_time)) {
+                            return '生效时间不能早于失效时间！';
+                        }
+                    }
+                    return true;
+                }
+            }
+            
+            function qms2010_harmfulSubstancesUpdateFcn(value, record, name) {
+                if (name == 'general_standard' || name == 'test_result') {
+                    var general_standard = record.get('general_standard');
+                    var test_result = record.get('test_result');
+                    if (!Aurora.isEmpty(general_standard) && !Aurora.isEmpty(test_result)) {
+                        if (general_standard < test_result) {
+                            record.getField('overproof_reason').setRequired(true);
+                        } else {
+                            record.getField('overproof_reason').setRequired(false);
+                            record.set('overproof_reason', '');
+                        }
+                    }
+                }
+            }
+            
+            function qms2010_envReportRenderer(value, record, name) {
+                if (!record.isNew) {
+                    if (name == 'status_display') {
+                        var disable_time = record.get('disable_time');
+                        if (!Aurora.isEmpty(disable_time)) {
+                            var days = record.get('days');
+                            if (days > 0 && days <= 15) {
+                                return '<div style="background-color:yellow">' + '临近过期' + '</div>';
+                            } else if (days <= 0) {
+                                return '<div style="background-color:red">' + '已过期' + '</div>';
+                            } else {
+                                return '正常';
+                            }
+                        } else {
+                            return null;
+                        }
+                    }
+                } else {
+                    return '';
+                }
+                if (name == 'report_file') {
+                    var report_id = record.get('report_id');
+                    if (record.isNew) {
+                        return '';
+                    }
+                    if (record.get('atm_counts') == 0) {
+                        return '<a style="color:blue" href="javascript:qms2010_env_material_report_uploadFun(' + report_id + ')">上传</a>';
+                    } else {
+                        return '<a style="color:blue" href="javascript:qms2010_env_material_report_uploadFun(' + report_id + ')">上传</a>' + '<img id="fnd5730_vendor_survey_manufacturer_uploadBtu_img_2" height="12" src="${/request/@context_path}/images/touch/report.png" width="15"/>';
+                    }
+                }
+            }
+            
+            function addDate(date, days) {
+                var d = new Date(date);
+                d.setDate(d.getDate() + days);
+                var m = d.getMonth() + 1;
+                return d.getFullYear() + '-' + m + '-' + d.getDate();
+            }
+            
+            function qms2010_env_material_report_uploadFun(id) {
+                var url = "${/request/@context_path}/attachment_file_upload.screen?table_name=QMS_ENV_MATERIALS_REPORT&pkvalue=" + id;
+                new Aurora.Window({
+                    id: 'fnd5730_attachment_file_upload_link_window',
+                    title: '环保报告附件',
+                    url: url,
+                    width: 610,
+                    height: 500
+                }).on('close', function() {
+                    $('qms2010_env_materials_report_ds').query();
+                });
+            }
+            
+            function qms2010_envMaterialReportEditor(record, name) {
+                if (record.isNew) {
+                    if (name == 'report_type_name') {
+                        return 'qms2010_env_materials_report_cbb';
+                    } else if (name == 'material_name') {
+                        return 'qms2010_harmful_substances_lv';
+                    }
+                    
+                } else {
+                    return '';
+                }
+            }
+            
+            function qms2010_envMaterialReportSubmitFcn() {
+                $('qms2010_env_materials_report_ds').query();
+            }
+            
+            function qms2010_harmfulSubstancesSubmitFcn() {
+                $('qms2010_harmful_substances_ds').query();
+            }
+            
+            function qms2010_envMaterialReportDsAdd(dataset, record, index) {
+                var now = new Date();
+                var month = now.getMonth() + 1;
+                month = month > 9 ? month : '0' + month;
+                var day = now.getDate();
+                day = day > 9 ? day : '0' + day;
+                var date = now.getFullYear() + '-' + month + '-' + day; //STRING类型
+                record.set('available_time', date);
+            }
+            
+            function qms2010_envMaterialReportDsUpdateFcn(value, record, name) {
+                debugger;
+                var available_time = record.get('available_time');
+            
+                if (name == 'report_type') {
+                    var report_type = record.get('report_type');
+                    if (report_type == 'MSDS') {
+                        record.getField('report_num').setRequired(false);
+                        record.getField('test_unit').setRequired(false);
+                    } else {
+                        record.getField('report_num').setRequired(true);
+                        record.getField('test_unit').setRequired(true);
+                    }
+                }
+            
+                if (name == 'available_time') {
+                    var report_type = record.get('report_type');
+                    if (report_type) {
+                        if (report_type == 'MSDS') {
+                            record.set('disable_time', addDate(available_time, 365 * 5));
+                        } else {
+                            record.set('disable_time', addDate(available_time, 364));
+                        }
+                    }
+                }
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="env_report_type_ds" lookupcode="ENV_REPORT_TYPE"/>
+            <a:dataSet id="env_meterial_name_ds" lookupcode="ENV_METERIAL_NAME"/>
+            <a:dataSet id="qms2010_env_materials_report_ds" autoCount="true" autoQuery="true" model="cux.KINWONG.qms.qms2010.qms2010_env_materials_report" pageSize="5" queryUrl="${/request/@context_path}/autocrud/cux.KINWONG.qms.qms2010.qms2010_env_materials_report/query?env_materials_id=${/parameter/@env_materials_id}" selectable="true">
+                <a:fields>
+                    <a:field name="env_materials_id" defaultValue="${/parameter/@env_materials_id}"/>
+                    <a:field name="report_type"/>
+                    <a:field name="report_num" required="true"/>
+                    <a:field name="test_unit" required="true"/>
+                    <a:field name="report_type_name" displayfield="code_value_name" options="env_report_type_ds" required="true" returnfield="report_type" valuefield="code_value"/>
+                    <a:field name="available_time" required="true" validator="qms2010_dateValidator"/>
+                    <a:field name="disable_time" required="true" validator="qms2010_dateValidator"/>
+                </a:fields>
+                <a:events>
+                    <!-- <a:event name="add" handler="qms2010_envMaterialReportDsAdd"/> -->
+                    <a:event name="submitsuccess" handler="qms2010_envMaterialReportSubmitFcn"/>
+                    <a:event name="update" handler="qms2010_envMaterialReportDsUpdateFcn"/>
+                </a:events>
+            </a:dataSet>
+            <a:dataSet id="qms2010_harmful_substances_ds" autoCount="true" autoQuery="true" model="cux.KINWONG.qms.qms2010.qms2010_harmful_substances" pageSize="10" queryUrl="${/request/@context_path}/autocrud/cux.KINWONG.qms.qms2010.qms2010_harmful_substances/query?env_materials_id=${/parameter/@env_materials_id}" selectable="true">
+                <a:fields>
+                    <a:field name="env_materials_id" defaultValue="${/parameter/@env_materials_id}"/>
+                    <a:field name="unit" defaultValue="ppm"/>
+                    <a:field name="material_code"/>
+                    <a:field name="material_name" autoComplete="true" autoCompleteField="vendor_code_name" lovGridHeight="360" lovHeight="500" lovService="cux.KINWONG.qms.qms2010.qms2010_ham_materials_lov" lovWidth="500" title="有害物质查询">
+                        <a:mapping>
+                            <a:map from="ham_id" to="material_code"/>
+                            <a:map from="ham_name" to="material_name"/>
+                            <a:map from="ham_standard" to="general_standard"/>
+                            <a:map from="limit_value" to="limit_value"/>
+                        </a:mapping>
+                    </a:field>
+                    <a:field name="limit_value" required="true"/>
+                    <a:field name="test_result" defaultValue="0" required="true"/>
+                    <a:field name="general_standard" required="true"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="update" handler="qms2010_harmfulSubstancesUpdateFcn"/>
+                    <a:event name="submitsuccess" handler="qms2010_harmfulSubstancesSubmitFcn"/>
+                </a:events>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:tabPanel height="250" width="820">
+                <a:tabs>
+                    <a:tab prompt="环保报告以及MSDS报告" width="150">
+                        <a:grid id="qms2010_env_materials_report_gird" bindTarget="qms2010_env_materials_report_ds" height="180" navBar="true" showRowNumber="true" style="margin-top:5px;margin-left:2px;" width="1000">
+                            <a:toolBar>
+                                <a:button type="add"/>
+                                <a:button click="qms2010_env_materials_report_save" text="保存"/>
+                                <a:button type="delete"/>
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="report_type_name" align="left" editorFunction="qms2010_envMaterialReportEditor" prompt="报告名称" width="75"/>
+                                <a:column name="report_num" align="left" editor="qms2010_env_materials_report_tf" prompt="报告编号" width="95"/>
+                                <a:column name="test_unit" align="left" editor="qms2010_env_materials_report_tf" prompt="测试单位" width="60"/>
+                                <a:column name="report_trade_name" align="left" editor="qms2010_env_materials_report_tf" prompt="报告厂商名称" width="80"/>
+                                <a:column name="explain" align="left" editor="qms2010_env_materials_report_tf" prompt="说明" width="80"/>
+                                <a:column name="available_time" align="left" editor="qms2010_env_materials_report_dp" prompt="生效时间" renderer="Aurora.formatDate" width="80"/>
+                                <a:column name="disable_time" align="left" prompt="失效日期" renderer="Aurora.formatDate" width="80"/>
+                                <a:column name="report_file" align="left" prompt="报告文件" renderer="qms2010_envReportRenderer" width="70"/>
+                                <a:column name="status_display" align="center" prompt="状态" renderer="qms2010_envReportRenderer" width="80"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:comboBox id="qms2010_env_materials_report_cbb"/>
+                                <a:datePicker id="qms2010_env_materials_report_dp"/>
+                                <a:textField id="qms2010_env_materials_report_tf"/>
+                                <a:lov id="qms2010_env_materials_report_lv"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+            <a:tabPanel height="300" width="820">
+                <a:tabs>
+                    <a:tab prompt="有害物质信息" width="100">
+                        <a:hBox>
+                            <div style="color:red;font-size:10px;"><![CDATA[注：测试结果如果为ND时，请写0！]]></div>
+                        </a:hBox>
+                        <a:grid id="qms2010_harmful_substances_gird" bindTarget="qms2010_harmful_substances_ds" height="250" navBar="true" showRowNumber="true" style="margin-top:5px;margin-left:2px;" width="1000">
+                            <a:toolBar>
+                                <a:button type="add"/>
+                                <a:button type="save"/>
+                                <a:button type="delete"/>
+                            </a:toolBar>
+                            <a:columns>
+                                <a:column name="material_name" align="left" editorFunction="qms2010_envMaterialReportEditor" prompt="物料成分" width="80"/>
+                                <a:column name="limit_value" align="left" editor="qms2010_harmful_substances_nf" prompt="侦测极限值" width="80"/>
+                                <a:column name="test_result" align="left" editor="qms2010_harmful_substances_nf" prompt="测试结果" width="100"/>
+                                <a:column name="unit" align="left" prompt="单位" width="50"/>
+                                <a:column name="overproof_flag_display" align="left" prompt="是否超标" width="80"/>
+                                <a:column name="overproof_reason" align="left" editor="qms2010_harmful_substances_tf" prompt="超标原因" width="160"/>
+                                <a:column name="general_standard" align="left" prompt="一般标准" width="70"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:checkBox id="qms2010_harmful_substances_cb"/>
+                                <a:comboBox id="qms2010_harmful_substances_cbb"/>
+                                <a:datePicker id="qms2010_harmful_substances_dp"/>
+                                <a:textField id="qms2010_harmful_substances_tf"/>
+                                <a:lov id="qms2010_harmful_substances_lv"/>
+                                <a:numberField id="qms2010_harmful_substances_nf"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+    </a:view>
+</a:screen>

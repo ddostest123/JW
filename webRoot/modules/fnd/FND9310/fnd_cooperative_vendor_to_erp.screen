@@ -1,0 +1,696 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wangcheng6595
+    $Date: 2015-10-20
+    $Revision: 1.0  
+    $Purpose: 供应商导入ERP
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query fetchAll="true" model="fnd.FND9310.fnd_bg_external_system_type" rootPath="fnd9310_bg_external_system_type"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="fnd9310_cooperativeVendorClass_link" url="${/request/@context_path}/modules/fnd/FND9310/fnd_cooperative_vendor_class.screen"/>
+        <a:link id="fnd9310_cooperativeVendorPurFin_link" url="${/request/@context_path}/modules/fnd/FND9310/fnd_cooperative_vendor_pur_fin.screen"/>
+        <a:link id="fnd9310_excel_import_link" url="${/request/@context_path}/modules/fnd/FND9310/fnd_cooperative_vendor_import_iframe.screen"/>
+        <a:link id="fnd9310_importInfoSapSubmit_link" url="${/request/@context_path}/modules/fnd/FND9310/fnd_cooperative_vendor_to_erp.svc"/>
+        <a:link id="fnd9310_importInfoEbsSubmit_link" url="${/request/@context_path}/modules/fnd/FND9310/fnd_cooperative_vendor_to_ebs.svc"/>
+        <script><![CDATA[
+            function fnd9310_cooperativeVendorUnSapResultQueryFun() {
+                $('fnd9310_cooperative_vendor_unsap_result_ds').query();
+            }
+            
+            function fnd9310_cooperativeVendorSapResultQueryFun() {
+                $('fnd9310_cooperative_vendor_sap_result_ds').query();
+            }
+            
+            function fnd9310_cooperativeVendorUnEbsResultQueryFun() {
+                $('fnd9310_cooperative_vendor_unebs_result_ds').query();
+            }
+            
+            function fnd9310_cooperativeVendorEbsResultQueryFun() {
+                $('fnd9310_cooperative_vendor_ebs_result_ds').query();
+            }
+            
+            function fnd9310_importGoBackFunction() {
+                $('fnd9310_importVendorToErp_window').close();
+            }
+            
+            function fnd9310_cooperativeVendorUnsapGridRenderer(value, record, name) {
+                var import_id = record.get('import_id');
+                if (name == 'vendor_class') {
+                    return '<a href="javascript:fnd9310_cooperativeVendorClass(' + record.get('coop_company_id') + ')">供应商分类</a>';
+                }
+                if (name == 'purchase_finance') {
+                    if (Aurora.isEmpty(import_id) || import_id == 'undefined') {
+                        return '-';
+                    } else {
+                        return '<a href="javascript:fnd9310_cooperativeVendorPurFin(' + import_id + ')">采购/财务</a>';
+                    }
+                }
+            }
+            
+            function fnd9310_cooperativeVendorUnebsGridRenderer(value, record, name) {
+                var import_id = record.get('import_id');
+                if (name == 'vendor_class') {
+                    return '<a href="javascript:fnd9310_cooperativeVendorClass(' + record.get('coop_company_id') + ')">供应商分类</a>';
+                }
+                if (name == 'purchase_finance') {
+                    if (Aurora.isEmpty(import_id) || import_id == 'undefined') {
+                        return '-';
+                    } else {
+                        return '<a href="javascript:fnd9310_cooperativeVendorPurFin(' + import_id + ')">采购/财务</a>';
+                    }
+                }
+            }
+            
+            function fnd9310_cooperativeVendorClass(coop_company_id) {
+                new Aurora.Window({
+                    id: 'fnd9310_cooperativeVendorClass_window',
+                    url: $('fnd9310_cooperativeVendorClass_link').getUrl() + '?coop_company_id=' + coop_company_id,
+                    title: '供应商分类',
+                    height: 300,
+                    width: 520
+                });
+            }
+            
+            function fnd9310_cooperativeVendorPurFin(import_id) {
+                new Aurora.Window({
+                    id: 'fnd9310_cooperativeVendorPurFin_window',
+                    url: $('fnd9310_cooperativeVendorPurFin_link').getUrl() + '?import_id=' + import_id,
+                    title: '采购/财务',
+                    height: 400,
+                    width: 550
+                });
+            }
+            
+            function fnd9310_excelImportFunction() {
+                new Aurora.Window({
+                    id: 'fnd9310_excel_import_window',
+                    url: $('fnd9310_excel_import_link').getUrl(),
+                    title: '批量导入',
+                    width: 450,
+                    height: 300
+                });
+            }
+            
+            
+            function fnd9310_cooperativeVendorUnsapGridEditorFunction(record, name) {
+                var process_status = record.get('process_status');
+                if (process_status == 'SUCCESSFUL' || process_status == 'WAITING') {
+                    return '';
+                } else {
+                    if (name == 'abandon_flag') {
+                        return 'fnd9310_cooperative_vendor_upsap_grid_cb';
+                    } else if (name == 'payment_terms') {
+                        return 'fnd9310_cooperative_vendor_upsap_grid_lov';
+                    } else {
+                        return 'fnd9310_cooperative_vendor_upsap_grid_tf';
+                    }
+                }
+            }
+            
+            function fnd9310_cooperativeVendorUnebsGridEditorFunction(record, name) {
+                var process_status = record.get('process_status');
+                if (process_status == 'SUCCESSFUL' || process_status == 'WAITING') {
+                    return '';
+                } else {
+                    if (name == 'abandon_flag') {
+                        return 'fnd9310_cooperative_vendor_upebs_grid_cb';
+                    } else {
+                        return 'fnd9310_cooperative_vendor_upebs_grid_tf';
+                    }
+                }
+            }
+            
+            //提交到SAP
+            
+            function fnd9310_importInfoSapSubmitFunction() {
+                var records = $('fnd9310_cooperative_vendor_unsap_result_ds').getSelected();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PUR5611.AT_LEAST_CHOICE_ONE}');
+                    return;
+                }
+            
+                Aurora.showConfirm("${l:PROMPT}", "确认导入勾选的供应商", function() {
+                    var datas = [];
+                    for (var i = 0;i < records.length;i++) {
+                        if (records[i].get('process_status') == 'WAITING') {
+                            Aurora.showMessage('${l:PROMPT}', '导入中，请等待');
+                            return;
+                        } else if (records[i].get('process_status') == 'SUCCESSFUL') {
+                            Aurora.showMessage('${l:PROMPT}', '已经导入成功的供应商无法再次导入');
+                            return;
+                        } else if (records[i].get('abandon_flag') == 'Y') {
+                            Aurora.showMessage('${l:PROMPT}', '已经勾选放弃导入的供应商无法导入');
+                            return;
+                        } else if (records[i].dirty) {
+                            Aurora.showMessage('${l:PROMPT}', '请先保存数据');
+                            return;
+                        } else if (Aurora.isEmpty(records[i].get('erp_type_code')) || Aurora.isEmpty(records[i].get('vendor_name'))) {
+                            records[i].getField('erp_type_code').setRequired(true);
+                            records[i].getField('vendor_name').setRequired(true);
+                            Aurora.showMessage('${l:PROMPT}', '数据不完整，无法提交，请先维护数据');
+                            return;
+                        } else {
+                            var data = {
+                                'import_id': records[i].get('import_id'),
+                                'external_system_id': records[i].get('external_system_id')
+                            };
+                            datas.push(data);
+                            records[i].set('process_status', 'WAITING');
+                            records[i].set('process_status_display', '${l:FND_COOP_VENDOR_IMPORT_STATUS.WAITING}');
+                            records[i].set('process_message', '');
+                        }
+                    }
+            
+                    Aurora.Masker.mask($('fnd9310_importVendorToErp_window').wrap, '${l:PROMPT.SUBMITING}');
+            
+                    Aurora.request({
+                        url: $('fnd9310_importInfoSapSubmit_link').getUrl(),
+                        para: datas,
+                        success: function(res) {
+                            Aurora.Masker.unmask($('fnd9310_importVendorToErp_window').wrap);
+                            $('fnd9310_cooperative_vendor_unsap_result_ds').query();
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask($('fnd9310_importVendorToErp_window').wrap);
+                            $('fnd9310_cooperative_vendor_unsap_result_ds').query();
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask($('fnd9310_importVendorToErp_window').wrap);
+                            $('fnd9310_cooperative_vendor_unsap_result_ds').query();
+                        },
+                        scope: this
+                    });
+                });
+            }
+            
+            //冻结提交到SAP
+            
+            function fnd9310_importInfoSapReSubmitFunction() {
+                var records = $('fnd9310_cooperative_vendor_sap_result_ds').getSelected();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PUR5611.AT_LEAST_CHOICE_ONE}');
+                    return;
+                }
+            
+                Aurora.showConfirm("${l:PROMPT}", "确认导入勾选的供应商", function() {
+                    var datas = [];
+                    for (var i = 0;i < records.length;i++) {
+                        if (records[i].get('process_status') == 'WAITING') {
+                            Aurora.showMessage('${l:PROMPT}', '导入中，请等待');
+                            return;
+                        } else if (records[i].get('abandon_flag') == 'Y') {
+                            Aurora.showMessage('${l:PROMPT}', '已经勾选放弃导入的供应商无法导入');
+                            return;
+                        } else if (records[i].dirty) {
+                            Aurora.showMessage('${l:PROMPT}', '请先保存数据');
+                            return;
+                        } else if (Aurora.isEmpty(records[i].get('erp_type_code')) || Aurora.isEmpty(records[i].get('vendor_name'))) {
+                            records[i].getField('erp_type_code').setRequired(true);
+                            records[i].getField('vendor_name').setRequired(true);
+                            Aurora.showMessage('${l:PROMPT}', '数据不完整，无法提交，请先维护数据');
+                            return;
+                        } else {
+                            var data = {
+                                'import_id': records[i].get('import_id'),
+                                'update_flag': 'Y',
+                                'external_system_id': records[i].get('external_system_id')
+                            };
+                            datas.push(data);
+                            records[i].set('process_status', 'WAITING');
+                            records[i].set('process_status_display', '${l:FND_COOP_VENDOR_IMPORT_STATUS.WAITING}');
+                            records[i].set('process_message', '');
+                        }
+                    }
+            
+                    Aurora.Masker.mask($('fnd9310_importVendorToErp_window').wrap, '${l:PROMPT.SUBMITING}');
+            
+                    Aurora.request({
+                        url: $('fnd9310_importInfoSapSubmit_link').getUrl(),
+                        para: datas,
+                        success: function(res) {
+                            Aurora.Masker.unmask($('fnd9310_importVendorToErp_window').wrap);
+                            $('fnd9310_cooperative_vendor_sap_result_ds').query();
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask($('fnd9310_importVendorToErp_window').wrap);
+                            $('fnd9310_cooperative_vendor_sap_result_ds').query();
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask($('fnd9310_importVendorToErp_window').wrap);
+                            $('fnd9310_cooperative_vendor_sap_result_ds').query();
+                        },
+                        scope: this
+                    });
+                });
+            }
+            //更新到EBS
+            
+            
+            function fnd9310_importInfoEbsUpdateFunction() {
+                var records = $('fnd9310_cooperative_vendor_ebs_result_ds').getSelected();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PUR5611.AT_LEAST_CHOICE_ONE}');
+                    return;
+                }
+            
+                Aurora.showConfirm("${l:PROMPT}", "确认更新勾选的供应商", function() {
+                    var datas = [];
+            
+            
+            
+                    for (var i = 0;i < records.length;i++) {
+                        if (records[i].get('process_status') == 'WAITING') {
+                            Aurora.showMessage('${l:PROMPT}', '导入中，请等待');
+                            return;
+                        } else if (records[i].get('process_status') != 'SUCCESSFUL') {
+                            Aurora.showMessage('${l:PROMPT}', '只有导入成功的供应商才能进行更新！');
+                            return;
+                        } else {
+                            var data = {
+                                'import_id': records[i].get('import_id'),
+                                'update_flag': 'Y'
+                            };
+                            datas.push(data);
+                            records[i].set('process_status', 'WAITING');
+                            records[i].set('process_status_display', '${l:FND_COOP_VENDOR_IMPORT_STATUS.WAITING}');
+                            records[i].set('process_message', '');
+                        }
+                    }
+            
+                    Aurora.Masker.mask($('fnd9310_importVendorToErp_window').wrap, '${l:PROMPT.SUBMITING}');
+            
+                    Aurora.request({
+                        url: $('fnd9310_importInfoEbsSubmit_link').getUrl(),
+                        para: datas,
+                        success: function(res) {
+                            Aurora.Masker.unmask($('fnd9310_importVendorToErp_window').wrap);
+                            $('fnd9310_cooperative_vendor_ebs_result_ds').query();
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask($('fnd9310_importVendorToErp_window').wrap);
+                            $('fnd9310_cooperative_vendor_ebs_result_ds').query();
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask($('fnd9310_importVendorToErp_window').wrap);
+                            $('fnd9310_cooperative_vendor_ebs_result_ds').query();
+                        },
+                        scope: this
+                    });
+                });
+            }
+            
+            //提交到EBS
+            
+            function fnd9310_importInfoEbsSubmitFunction() {
+                var records = $('fnd9310_cooperative_vendor_unebs_result_ds').getSelected();
+                if (records.length == 0) {
+                    Aurora.showMessage('${l:PROMPT}', '${l:PUR5611.AT_LEAST_CHOICE_ONE}');
+                    return;
+                }
+            
+                Aurora.showConfirm("${l:PROMPT}", "确认导入勾选的供应商", function() {
+                    var datas = [];
+            
+                    for (var j = 0;j < records.length;j++) {
+                        if (Aurora.isEmpty(records[j].get('import_id'))) {
+                            records[j].set('dirty_flag', 'Y');
+                        }
+                    }
+            
+                    for (var i = 0;i < records.length;i++) {
+                        if (records[i].get('process_status') == 'WAITING') {
+                            Aurora.showMessage('${l:PROMPT}', '导入中，请等待');
+                            return;
+                        } else if (records[i].get('process_status') == 'SUCCESSFUL') {
+                            Aurora.showMessage('${l:PROMPT}', '已经导入成功的供应商无法再次导入');
+                            return;
+                        } else if (records[i].get('abandon_flag') == 'Y') {
+                            Aurora.showMessage('${l:PROMPT}', '已经勾选放弃导入的供应商无法导入');
+                            return;
+                        } else if (records[i].dirty || Aurora.isEmpty(records[i].get('import_id'))) {
+                            Aurora.showMessage('${l:PROMPT}', '请先保存数据');
+                            return;
+                        } else if (Aurora.isEmpty(records[i].get('vendor_name'))) {
+                            records[i].getField('vendor_name').setRequired(true);
+                            Aurora.showMessage('${l:PROMPT}', '数据不完整，无法提交，请先维护数据');
+                            return;
+                        } else {
+                            var data = {
+                                'import_id': records[i].get('import_id')
+                            };
+                            datas.push(data);
+                            records[i].set('process_status', 'WAITING');
+                            records[i].set('process_status_display', '${l:FND_COOP_VENDOR_IMPORT_STATUS.WAITING}');
+                            records[i].set('process_message', '');
+                        }
+                    }
+            
+                    Aurora.Masker.mask($('fnd9310_importVendorToErp_window').wrap, '${l:PROMPT.SUBMITING}');
+            
+                    Aurora.request({
+                        url: $('fnd9310_importInfoEbsSubmit_link').getUrl(),
+                        para: datas,
+                        success: function(res) {
+                            Aurora.Masker.unmask($('fnd9310_importVendorToErp_window').wrap);
+                            $('fnd9310_cooperative_vendor_unebs_result_ds').query();
+                        },
+                        failure: function() {
+                            Aurora.Masker.unmask($('fnd9310_importVendorToErp_window').wrap);
+                            $('fnd9310_cooperative_vendor_unebs_result_ds').query();
+                        },
+                        error: function() {
+                            Aurora.Masker.unmask($('fnd9310_importVendorToErp_window').wrap);
+                            $('fnd9310_cooperative_vendor_unebs_result_ds').query();
+                        },
+                        scope: this
+                    });
+                });
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="fnd9310_coop_vendor_import_status" lookupCode="FND_COOP_VENDOR_IMPORT_STATUS"/>
+            <a:dataSet id="pur2620_externalSystemList_ds" fetchAll="true" loadData="true" model="public.fnd_bg_external_system_query"/>
+            <!-- SAP 待导入 -->
+            <a:dataSet id="fnd9310_cooperative_vendor_unsap_query_ds">
+                <a:fields>
+                    <a:field name="external_system_id"/>
+                    <a:field name="external_system_name" displayField="external_system_name" options="pur2620_externalSystemList_ds" prompt="PUR2620.EXTERNAL_SYSTEM" returnField="external_system_id" valueField="external_system_id"/>
+                    <a:field name="abandon_display_none" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="fnd9310_cooperative_vendor_unsap_result_ds" autoCount="true" autoPageSize="true" model="fnd.FND9310.fnd_cooperative_vendor_to_erp" queryDataSet="fnd9310_cooperative_vendor_unsap_query_ds" queryUrl="${/request/@context_path}/autocrud/fnd.FND9310.fnd_cooperative_vendor_to_erp/query?system_type=SAP&amp;success_flag=N" selectable="true">
+                <a:fields>
+                    <a:field name="abandon_flag" checkedValue="Y" defaultValue="Y" unCheckedValue="N"/>
+                    <a:field name="process_status_display" displayField="code_value_name" options="fnd9310_coop_vendor_import_status" returnField="process_status" valueField="code_value"/>
+                    <a:field name="erp_type_code"/>
+                    <a:field name="vendor_name"/>
+                    <a:field name="payment_terms" autoComplete="true" autoCompleteField="code_name" lovHeight="480" lovService="public.csh_payment_terms_lov" lovWidth="500" title="CSH_PAYMENT_TERMS_VL.PAYMENT_TERM_ID">
+                        <a:mapping>
+                            <a:map from="payment_term_id" to="payment_term_id"/>
+                            <a:map from="payment_term_code" to="payment_term_code"/>
+                            <a:map from="payment_term_name" to="payment_terms"/>
+                        </a:mapping>
+                    </a:field>
+                </a:fields>
+                <a:events>
+                    <a:event name="submitsuccess" handler="fnd9310_cooperativeVendorUnSapResultQueryFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- SAP 导入成功 -->
+            <a:dataSet id="fnd9310_cooperative_vendor_sap_query_ds">
+                <a:fields>
+                    <a:field name="external_system_id"/>
+                    <a:field name="external_system_name" displayField="external_system_name" options="pur2620_externalSystemList_ds" prompt="PUR2620.EXTERNAL_SYSTEM" returnField="external_system_id" valueField="external_system_id"/>
+                    <a:field name="abandon_display_none" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="fnd9310_cooperative_vendor_sap_result_ds" autoCount="true" autoPageSize="true" model="fnd.FND9310.fnd_cooperative_vendor_to_erp" queryDataSet="fnd9310_cooperative_vendor_sap_query_ds" queryUrl="${/request/@context_path}/autocrud/fnd.FND9310.fnd_cooperative_vendor_to_erp/query?system_type=SAP&amp;success_flag=Y" selectable="true">
+                <a:fields>
+                    <a:field name="abandon_flag" checkedValue="Y" defaultValue="Y" unCheckedValue="N"/>
+                    <a:field name="frozen_flag" checkedValue="Y" defaultValue="N" unCheckedValue="N"/>
+                    <a:field name="process_status_display" displayField="code_value_name" options="fnd9310_coop_vendor_import_status" returnField="process_update_status" valueField="code_value"/>
+                </a:fields>
+            </a:dataSet>
+            <!-- EBS 待导入 -->
+            <a:dataSet id="fnd9310_cooperative_vendor_unebs_query_ds">
+                <a:fields>
+                    <a:field name="external_system_id"/>
+                    <a:field name="external_system_name" displayField="external_system_name" options="pur2620_externalSystemList_ds" prompt="PUR2620.EXTERNAL_SYSTEM" returnField="external_system_id" valueField="external_system_id"/>
+                    <a:field name="abandon_display_none" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="fnd9310_cooperative_vendor_unebs_result_ds" autoCount="true" autoPageSize="true" model="fnd.FND9310.fnd_cooperative_vendor_to_erp" queryDataSet="fnd9310_cooperative_vendor_unebs_query_ds" queryUrl="${/request/@context_path}/autocrud/fnd.FND9310.fnd_cooperative_vendor_to_erp/query?system_type=EBS&amp;success_flag=N" selectable="true">
+                <a:fields>
+                    <a:field name="abandon_flag" checkedValue="Y" defaultValue="Y" unCheckedValue="N"/>
+                    <a:field name="process_status_display" displayField="code_value_name" options="fnd9310_coop_vendor_import_status" returnField="process_status" valueField="code_value"/>
+                    <a:field name="erp_type_code"/>
+                    <a:field name="vendor_name"/>
+                </a:fields>
+                <a:events>
+                    <a:event name="submitsuccess" handler="fnd9310_cooperativeVendorUnEbsResultQueryFun"/>
+                </a:events>
+            </a:dataSet>
+            <!-- EBS 导入成功 -->
+            <a:dataSet id="fnd9310_cooperative_vendor_ebs_query_ds">
+                <a:fields>
+                    <a:field name="external_system_id"/>
+                    <a:field name="external_system_name" displayField="external_system_name" options="pur2620_externalSystemList_ds" prompt="PUR2620.EXTERNAL_SYSTEM" returnField="external_system_id" valueField="external_system_id"/>
+                    <a:field name="abandon_display_none" checkedValue="Y" defaultValue="Y" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="fnd9310_cooperative_vendor_ebs_result_ds" autoCount="true" autoPageSize="true" model="fnd.FND9310.fnd_cooperative_vendor_to_erp" queryDataSet="fnd9310_cooperative_vendor_ebs_query_ds" queryUrl="${/request/@context_path}/autocrud/fnd.FND9310.fnd_cooperative_vendor_to_erp/query?system_type=EBS&amp;success_flag=Y" selectable="true">
+                <a:fields>
+                    <a:field name="abandon_flag" checkedValue="Y" defaultValue="Y" unCheckedValue="N"/>
+                    <a:field name="frozen_flag" checkedValue="Y" defaultValue="N" unCheckedValue="N"/>
+                    <a:field name="process_update_status_display" displayField="code_value_name" options="fnd9310_coop_vendor_import_status" returnField="process_update_status" valueField="code_value"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:tabPanel id="fnd9310_externalSystemTabPanel" marginHeight="90" marginWidth="100">
+                <a:tabs>
+                    <a:tab prompt="SAP" width="150">
+                        <a:tabPanel marginHeight="140" marginWidth="100">
+                            <a:tabs>
+                                <a:tab prompt="待导入" width="100">
+                                    <a:screenTopToolbar>
+                                        <!-- <a:toolbarButton click="fnd9310_excelImportFunction" text="导入" width="100"/>
+                                        <a:gridButton bind="fnd9310_cooperative_vendor_grid" type="excel" width="100"/> -->
+                                        <a:gridButton bind="fnd9310_cooperative_vendor_unsap_grid" type="save" width="100"/>
+                                        <a:toolbarButton click="fnd9310_importInfoSapSubmitFunction" text="提交" width="100"/>
+                                        <a:toolbarButton click="fnd9310_importGoBackFunction" text="返回" width="100"/>
+                                    </a:screenTopToolbar>
+                                    <a:queryForm bindTarget="fnd9310_cooperative_vendor_unsap_query_ds" resultTarget="fnd9310_cooperative_vendor_unsap_result_ds" style="width:100%;border:none">
+                                        <a:formToolBar>
+                                            <a:hBox labelWidth="120">
+                                                <a:textField name="erp_type_code" prompt="账户组">
+                                                    <a:events>
+                                                        <a:event name="enterdown" handler="fnd9310_cooperativeVendorUnSapResultQueryFun"/>
+                                                    </a:events>
+                                                </a:textField>
+                                                <a:textField name="coop_company_code" prompt="合作企业代码">
+                                                    <a:events>
+                                                        <a:event name="enterdown" handler="fnd9310_cooperativeVendorUnSapResultQueryFun"/>
+                                                    </a:events>
+                                                </a:textField>
+                                                <a:textField name="coop_company_name" prompt="合作企业名称">
+                                                    <a:events>
+                                                        <a:event name="enterdown" handler="fnd9310_cooperativeVendorUnSapResultQueryFun"/>
+                                                    </a:events>
+                                                </a:textField>
+                                            </a:hBox>
+                                        </a:formToolBar>
+                                        <a:formBody>
+                                            <a:hBox labelWidth="120">
+                                                <a:comboBox name="external_system_name" prompt="外部系统">
+                                                    <a:events>
+                                                        <a:event name="enterdown" handler="fnd9310_cooperativeVendorUnSapResultQueryFun"/>
+                                                    </a:events>
+                                                </a:comboBox>
+                                                <a:checkBox name="abandon_display_none" label="不显示放弃导入" style="margin-left:120px"/>
+                                            </a:hBox>
+                                        </a:formBody>
+                                    </a:queryForm>
+                                    <a:grid id="fnd9310_cooperative_vendor_unsap_grid" autoAppend="false" bindTarget="fnd9310_cooperative_vendor_unsap_result_ds" height="300" navBar="true" width="1200">
+                                        <a:columns>
+                                            <a:column name="process_status_display" align="center" forExport="false" prompt="导入状态" width="70"/>
+                                            <a:column name="process_message" align="center" forExport="false" prompt="错误信息" width="80"/>
+                                            <a:column name="erp_type_code" editorFunction="fnd9310_cooperativeVendorUnsapGridEditorFunction" prompt="账户组" width="70"/>
+                                            <a:column name="vendor_code" editorFunction="fnd9310_cooperativeVendorUnsapGridEditorFunction" forExport="false" prompt="供应商编码" width="100"/>
+                                            <a:column name="vendor_name" editorFunction="fnd9310_cooperativeVendorUnsapGridEditorFunction" prompt="供应商名称" width="120"/>
+                                            <a:column name="coop_company_code" prompt="合作企业代码" width="100"/>
+                                            <a:column name="coop_company_name" prompt="合作企业名称" width="120"/>
+                                            <a:column name="frozen_flag" prompt="是否冻结" width="80"/>
+                                            <a:column name="purchase_finance" align="center" prompt="采购/财务" renderer="fnd9310_cooperativeVendorUnsapGridRenderer" width="70"/>
+                                            <a:column name="payment_terms" editorFunction="fnd9310_cooperativeVendorUnsapGridEditorFunction" prompt="付款条件" width="100"/>
+                                            <a:column name="external_system_code" forExport="true" hidden="true" prompt="外部系统编码" width="120"/>
+                                            <a:column name="external_system_name" prompt="外部系统" width="120"/>
+                                            <a:column name="stage_desc" align="center" forExport="false" prompt="生命阶段" width="70"/>
+                                            <a:column name="vendor_class" align="center" forExport="false" prompt="供应商分类" renderer="fnd9310_cooperativeVendorUnsapGridRenderer" width="80"/>
+                                            <a:column name="abandon_flag" editorFunction="fnd9310_cooperativeVendorUnsapGridEditorFunction" forExport="false" prompt="放弃导入" width="60"/>
+                                        </a:columns>
+                                        <a:editors>
+                                            <a:textField id="fnd9310_cooperative_vendor_upsap_grid_tf"/>
+                                            <a:checkBox id="fnd9310_cooperative_vendor_upsap_grid_cb"/>
+                                            <a:lov id="fnd9310_cooperative_vendor_upsap_grid_lov"/>
+                                        </a:editors>
+                                    </a:grid>
+                                </a:tab>
+                                <a:tab prompt="导入成功" width="100">
+                                    <a:screenTopToolbar>
+                                        <a:gridButton bind="fnd9310_cooperative_vendor_sap_grid" type="save" width="100"/>
+                                        <a:toolbarButton click="fnd9310_importInfoSapReSubmitFunction" text="提交" width="100"/>
+                                        <a:toolbarButton click="fnd9310_importGoBackFunction" text="返回" width="100"/>
+                                    </a:screenTopToolbar>
+                                    <a:queryForm bindTarget="fnd9310_cooperative_vendor_sap_query_ds" resultTarget="fnd9310_cooperative_vendor_sap_result_ds" style="width:100%;border:none">
+                                        <a:formToolBar>
+                                            <a:hBox labelWidth="120">
+                                                <a:textField name="erp_type_code" prompt="账户组">
+                                                    <a:events>
+                                                        <a:event name="enterdown" handler="fnd9310_cooperativeVendorSapResultQueryFun"/>
+                                                    </a:events>
+                                                </a:textField>
+                                                <a:textField name="coop_company_code" prompt="合作企业代码">
+                                                    <a:events>
+                                                        <a:event name="enterdown" handler="fnd9310_cooperativeVendorSapResultQueryFun"/>
+                                                    </a:events>
+                                                </a:textField>
+                                                <a:textField name="coop_company_name" prompt="合作企业名称">
+                                                    <a:events>
+                                                        <a:event name="enterdown" handler="fnd9310_cooperativeVendorSapResultQueryFun"/>
+                                                    </a:events>
+                                                </a:textField>
+                                            </a:hBox>
+                                        </a:formToolBar>
+                                        <a:formBody>
+                                            <a:hBox labelWidth="120">
+                                                <a:comboBox name="external_system_name" prompt="外部系统">
+                                                    <a:events>
+                                                        <a:event name="enterdown" handler="fnd9310_cooperativeVendorSapResultQueryFun"/>
+                                                    </a:events>
+                                                </a:comboBox>
+                                            </a:hBox>
+                                        </a:formBody>
+                                    </a:queryForm>
+                                    <a:grid id="fnd9310_cooperative_vendor_sap_grid" bindTarget="fnd9310_cooperative_vendor_sap_result_ds" height="300" navBar="true" width="1200">
+                                        <a:columns>
+                                            <a:column name="process_status_display" align="center" forExport="false" prompt="更新状态" width="70"/>
+                                            <a:column name="process_update_message" align="center" forExport="false" prompt="错误信息" width="80"/>
+                                            <a:column name="erp_type_code" prompt="账户组" width="80"/>
+                                            <a:column name="vendor_code" prompt="供应商编码" width="100"/>
+                                            <a:column name="vendor_name" prompt="供应商名称" width="180"/>
+                                            <a:column name="coop_company_code" prompt="合作企业代码" width="120"/>
+                                            <a:column name="coop_company_name" prompt="合作企业名称" width="180"/>
+                                            <a:column name="frozen_flag" editor="fnd9310_cooperative_vendor_sap_grid_cb" prompt="是否冻结" width="80"/>
+                                            <a:column name="purchase_finance" align="center" prompt="采购/财务" renderer="fnd9310_cooperativeVendorUnsapGridRenderer" width="70"/>
+                                            <a:column name="external_system_name" prompt="外部系统" width="180"/>
+                                            <a:column name="stage_desc" align="center" prompt="生命阶段" width="80"/>
+                                            <a:column name="vendor_class" align="center" prompt="供应商分类" renderer="fnd9310_cooperativeVendorUnsapGridRenderer" width="100"/>
+                                        </a:columns>
+                                        <a:editors>
+                                            <a:checkBox id="fnd9310_cooperative_vendor_sap_grid_cb"/>
+                                        </a:editors>
+                                    </a:grid>
+                                </a:tab>
+                            </a:tabs>
+                        </a:tabPanel>
+                    </a:tab>
+                    <a:tab prompt="EBS" width="150">
+                        <a:tabPanel marginHeight="140" marginWidth="100">
+                            <a:tabs>
+                                <a:tab prompt="待导入" width="100">
+                                    <a:screenTopToolbar>
+                                        <a:gridButton bind="fnd9310_cooperative_vendor_unebs_grid" type="save" width="100"/>
+                                        <a:toolbarButton click="fnd9310_importInfoEbsSubmitFunction" text="提交" width="100"/>
+                                        <a:toolbarButton click="fnd9310_importGoBackFunction" text="返回" width="100"/>
+                                    </a:screenTopToolbar>
+                                    <a:queryForm bindTarget="fnd9310_cooperative_vendor_unebs_query_ds" resultTarget="fnd9310_cooperative_vendor_unebs_result_ds" style="width:100%;border:none">
+                                        <a:formToolBar>
+                                            <a:hBox labelWidth="120">
+                                                <a:textField name="coop_company_code" prompt="合作企业代码">
+                                                    <a:events>
+                                                        <a:event name="enterdown" handler="fnd9310_cooperativeVendorUnEbsResultQueryFun"/>
+                                                    </a:events>
+                                                </a:textField>
+                                                <a:textField name="coop_company_name" prompt="合作企业名称">
+                                                    <a:events>
+                                                        <a:event name="enterdown" handler="fnd9310_cooperativeVendorUnEbsResultQueryFun"/>
+                                                    </a:events>
+                                                </a:textField>
+                                                <a:comboBox name="external_system_name" prompt="外部系统">
+                                                    <a:events>
+                                                        <a:event name="enterdown" handler="fnd9310_cooperativeVendorUnEbsResultQueryFun"/>
+                                                    </a:events>
+                                                </a:comboBox>
+                                            </a:hBox>
+                                        </a:formToolBar>
+                                        <a:formBody>
+                                            <a:hBox labelWidth="120">
+                                                <a:checkBox name="abandon_display_none" label="不显示放弃导入" style="margin-left:120px"/>
+                                            </a:hBox>
+                                        </a:formBody>
+                                    </a:queryForm>
+                                    <a:grid id="fnd9310_cooperative_vendor_unebs_grid" autoAppend="false" bindTarget="fnd9310_cooperative_vendor_unebs_result_ds" height="300" navBar="true" width="1200">
+                                        <a:columns>
+                                            <a:column name="process_status_display" align="center" forExport="false" prompt="导入状态" width="70"/>
+                                            <a:column name="process_message" align="center" forExport="false" prompt="错误信息" width="80"/>
+                                            <!-- <a:column name="erp_type_code" editorFunction="fnd9310_cooperativeVendorUnebsGridEditorFunction" prompt="账户组" width="70"/> -->
+                                            <a:column name="vendor_code" editorFunction="fnd9310_cooperativeVendorUnebsGridEditorFunction" forExport="false" prompt="供应商编码" width="100"/>
+                                            <a:column name="vendor_name" editorFunction="fnd9310_cooperativeVendorUnebsGridEditorFunction" prompt="供应商名称" width="120"/>
+                                            <a:column name="coop_company_code" prompt="合作企业代码" width="100"/>
+                                            <a:column name="coop_company_name" prompt="合作企业名称" width="120"/>
+                                            <!-- <a:column name="purchase_finance" align="center" prompt="采购/财务" renderer="fnd9310_cooperativeVendorUnebsGridRenderer" width="70"/> -->
+                                            <a:column name="external_system_code" forExport="true" hidden="true" prompt="外部系统编码" width="120"/>
+                                            <a:column name="external_system_name" prompt="外部系统" width="120"/>
+                                            <a:column name="stage_desc" align="center" forExport="false" prompt="生命阶段" width="70"/>
+                                            <a:column name="vendor_class" align="center" forExport="false" prompt="供应商分类" renderer="fnd9310_cooperativeVendorUnebsGridRenderer" width="80"/>
+                                            <a:column name="abandon_flag" editorFunction="fnd9310_cooperativeVendorUnsapGridEditorFunction" forExport="false" prompt="放弃导入" width="60"/>
+                                        </a:columns>
+                                        <a:editors>
+                                            <a:textField id="fnd9310_cooperative_vendor_upebs_grid_tf"/>
+                                            <a:checkBox id="fnd9310_cooperative_vendor_upebs_grid_cb"/>
+                                        </a:editors>
+                                    </a:grid>
+                                </a:tab>
+                                <a:tab prompt="导入成功" width="100">
+                                    <a:screenTopToolbar>
+                                        <a:toolbarButton click="fnd9310_importInfoEbsUpdateFunction" text="更新" width="100"/>
+                                        <a:toolbarButton click="fnd9310_importGoBackFunction" text="返回" width="100"/>
+                                    </a:screenTopToolbar>
+                                    <a:queryForm bindTarget="fnd9310_cooperative_vendor_ebs_query_ds" resultTarget="fnd9310_cooperative_vendor_ebs_result_ds" style="width:100%;border:none">
+                                        <a:formToolBar>
+                                            <a:hBox labelWidth="120">
+                                                <a:textField name="coop_company_code" prompt="合作企业代码">
+                                                    <a:events>
+                                                        <a:event name="enterdown" handler="fnd9310_cooperativeVendorEbsResultQueryFun"/>
+                                                    </a:events>
+                                                </a:textField>
+                                                <a:textField name="coop_company_name" prompt="合作企业名称">
+                                                    <a:events>
+                                                        <a:event name="enterdown" handler="fnd9310_cooperativeVendorEbsResultQueryFun"/>
+                                                    </a:events>
+                                                </a:textField>
+                                                <a:comboBox name="external_system_name" prompt="外部系统">
+                                                    <a:events>
+                                                        <a:event name="enterdown" handler="fnd9310_cooperativeVendorEbsResultQueryFun"/>
+                                                    </a:events>
+                                                </a:comboBox>
+                                            </a:hBox>
+                                        </a:formToolBar>
+                                    </a:queryForm>
+                                    <a:grid id="fnd9310_cooperative_vendor_ebs_grid" bindTarget="fnd9310_cooperative_vendor_ebs_result_ds" height="300" navBar="true" width="1200">
+                                        <a:columns>
+                                            <a:column name="process_update_status_display" align="center" forExport="false" prompt="更新状态" width="70"/>
+                                            <a:column name="process_update_message" align="center" forExport="false" prompt="错误信息" width="80"/>
+                                            <!-- <a:column name="erp_type_code" prompt="账户组" width="80"/> -->
+                                            <a:column name="vendor_code" prompt="供应商编码" width="100"/>
+                                            <a:column name="vendor_name" prompt="供应商名称" width="180"/>
+                                            <a:column name="coop_company_code" prompt="合作企业代码" width="120"/>
+                                            <a:column name="coop_company_name" prompt="合作企业名称" width="180"/>
+                                            <a:column name="external_system_name" prompt="外部系统" width="180"/>
+                                            <a:column name="stage_desc" align="center" prompt="生命阶段" width="80"/>
+                                            <a:column name="vendor_class" align="center" prompt="供应商分类" renderer="fnd9310_cooperativeVendorUnebsGridRenderer" width="100"/>
+                                        </a:columns>
+                                    </a:grid>
+                                </a:tab>
+                            </a:tabs>
+                        </a:tabPanel>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+        <script><![CDATA[
+            Aurora.onReady(function() {
+                var system_type = '${/model/fnd9310_bg_external_system_type/record/@system_type}';
+                if (system_type == 'SAP') {
+                    $('fnd9310_externalSystemTabPanel').setDisabled(1);
+                } else if (system_type == 'EBS') {
+                    $('fnd9310_externalSystemTabPanel').setDisabled(0);
+                }
+            });
+        ]]></script>
+    </a:view>
+</a:screen>

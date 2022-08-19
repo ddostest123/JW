@@ -1,0 +1,508 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: DJ  
+    $Date: 2012-9-13 上午10:42:00  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:a="http://www.aurora-framework.org/application">
+    <a:init-procedure>
+        <a:model-query model="mtl.MTL1070.b2b_set_upload_picture_size" rootPath="required_size"/>
+        <a:model-query model="mtl.MTL1070.b2b_product_picture_get_compress_size_count" rootPath="count"/>
+    </a:init-procedure>
+    <a:view>
+        <style><![CDATA[
+		.hide
+		{
+		    display:none;
+		}
+		.display
+		{
+		    display:block;
+		}
+		.l2r
+		{
+		    float:left;
+		    margin-right:10px;
+		}
+		.newLine
+		{
+		    clear:both;
+		}
+		.space
+		{
+		    margin-top:10px;
+		}
+		]]></style>
+        <script><![CDATA[
+            function callBack(id, success, msg) {
+                controller.response(id, success, msg);
+            }
+            
+            function View(id, container, action) {
+                this.id = id;
+                this.container = container;
+                this.action = action;
+                this.inputFile = {};
+                this.iframe = {};
+                this.statusMsg = {};
+                this.errMsg = {};
+                this.fileMsg = {};
+                this.form = {};
+                this.init();
+            }
+            View.prototype = {
+                init: function() {
+                    this.createUploadConponent();
+                },
+                createInputFile: function() {
+                    var self = this;
+                    var input = document.createElement('input');
+                    input.type = 'file';
+                    input.id = 'inputFile_' + this.id;
+                    input.name = 'inputFile_' + this.id;
+                    this.inputFile = input;
+                    return input;
+                },
+                createUploadConponent: function() {
+                    var div = this.createDiv('uploadComponent');
+                    div.appendChild(this.createDisplayPart());
+                    div.appendChild(this.createHidePart());
+                    this.container.appendChild(div);
+                },
+                createHidePart: function() {
+                    var div = document.createElement('div');
+                    div.id = 'hideDiv_' + this.id;
+                    //div.className = 'hide';
+                    div.appendChild(this.createIframe());
+                    div.appendChild(this.createForm());
+                    return div;
+                },
+                createDisplayPart: function() {
+                    var div = this.createDiv('displayDiv');
+                    div.className = 'space';
+                    this.fileName = this.createDiv('fileName');
+                    this.fileName.className = 'l2r';
+                    div.appendChild(this.fileName);
+                    this.statusMsg = this.createDiv('statusMsg');
+                    this.statusMsg.className = 'l2r';
+                    div.appendChild(this.statusMsg);
+                    this.cancelButton = this.createCancelButton();
+                    this.cancelButton.className = 'l2r';
+                    this.hideCancelButton();
+                    div.appendChild(this.cancelButton);
+                    this.fileMsg = this.createDiv('fileMsg');
+                    this.fileMsg.className = 'newLine';
+                    div.appendChild(this.fileMsg);
+                    this.errMsg = this.createDiv('errMsg');
+                    this.errMsg.className = 'newLine';
+                    div.appendChild(this.errMsg);
+                    return div;
+            
+                },
+                createInputText: function(name, value) {
+                    var input = document.createElement('input');
+                    input.type = 'text';
+                    input.name = name;
+                    input.value = value;
+                    return input;
+                },
+                createDiv: function(name) {
+                    var div = document.createElement('div');
+                    div.id = name + '_' + this.id;
+                    return div;
+                },
+                createIframe: function() {
+                    var iframe = document.createElement('iframe');
+                    iframe.name = 'iframe_' + this.id;
+                    iframe.className = 'hide';
+                    this.iframe = iframe;
+                    return iframe;
+                },
+                createForm: function() {
+                    var form = document.createElement('form');
+                    form.id = 'form_' + this.id;
+                    form.encoding = 'multipart/form-data';
+                    form.enctype = 'multipart/form-data';
+                    form.target = 'iframe_' + this.id;
+                    form.method = 'post';
+                    form.action = this.action + '&request_id=' + this.id;
+                    form.appendChild(this.createInputFile());
+                    this.form = form;
+                    return form;
+                },
+                createCancelButton: function() {
+                    var input = document.createElement('input');
+                    input.type = 'button';
+                    input.value = '取消上传';
+                    input.id = 'cancel_' + this.id;
+                    return input;
+                },
+                cancelUpload: function(event) {
+                    this.iframe.src = '';
+                },
+                selectFile: function() {
+                    this.inputFile.click();
+                },
+                hideCancelButton: function() {
+                    this.hideHtml(this.cancelButton);
+                },
+                diplayCancelButton: function() {
+                    this.displayHtml(this.cancelButton);
+                },
+                hideHtml: function(obj) {
+                    obj.className = 'hide';
+                },
+                displayHtml: function(obj) {
+                    obj.className = 'display';
+                },
+                setStatusMsg: function(msg) {
+                    this.statusMsg.innerHTML = msg;
+                },
+                setErrMsg: function(msg) {
+                    this.errMsg.innerHTML = msg;
+                },
+                setFileMsg: function(msg) {
+                    this.fileMsg.innerHTML = msg;
+                },
+                setFileName: function(fileName) {
+                    this.fileName.innerHTML = fileName;
+                },
+                submit_upload: function() {
+                    this.form.submit();
+                }
+            };
+            
+            
+            
+            function Handler(controller, id, imgLimit) {
+                this.id = id;
+                //内部变量
+                var imgObj = new Image(); //建立一个图像对象
+                var fileObj;
+                var fileExt; //文件后缀名
+                var imgFileSize;
+                var imgWidth;
+                var imgHeight;
+                var allImgExt = ".jpg|.jpeg|.png|"; //全部图片格式类型
+                var allowImgFileSize = imgLimit['allowImgFileSize']; //允许上传图片文件的大小 单位：KB
+                var allowImgWidth = imgLimit['allowImgWidth']; //允许上传的图片的宽度 px单位：(像素)
+                var allowImgHeight = imgLimit['allowImgHeight']; //允许上传的图片的高度 单位：px(像素)
+                var hasChecked = false;
+                var space;
+            
+                var set_space = function() {
+                        space = '&nbsp;';
+                        for (var i = 0;i < 2;i++) {
+                            space = space + space;
+                        }
+                    };
+                this.fileMsg = '';
+                this.errMsg = ''; //显示错误的对象
+                this.statusMsg = ''; //显示状态的对象
+                this.fileName = ''; //显示文件名称的对象
+            
+                var self = this;
+                //构造方法
+                (function() {
+                    set_space();
+                }());
+            
+                this.startUpload = function(obj) {
+                    controller.setSubmit(true, this);
+                    fileObj = obj;
+                    setFileName(obj.value.substr(obj.value.lastIndexOf("\\") + 1));
+            
+                    if (checkImgExt(obj)) {
+                        loadImage();
+                    }
+                };
+                //校验图片扩展名
+                var checkImgExt = function(obj) {
+                        //setStatusMsg('正在校验文件格式...');
+                        fileExt = obj.value.substr(obj.value.lastIndexOf(".")).toLowerCase();
+            
+                        if (allImgExt.indexOf(fileExt + "|") != -1) //如果图片文件，则进行图片信息处理
+                        {
+                            return true;
+                        } else {
+                            setErrMsg('错误消息：' + space + '文件格式错误：' + fileExt);
+                        }
+                    };
+                var circle_count = 0;
+                var error = false;
+                //私有方法
+                var IEready = function() {
+                        circle_count++;
+                        if (circle_count < 32) {
+                            if (error) {
+                                return;
+                            }
+                            if (imgObj.readyState != 'complete') //如果图像是未加载完成进行循环检测
+                            {
+                                setTimeout(IEready, 1000);
+                                return false;
+                            }
+                            imgFileSize = imgObj.fileSize;
+                            imgOnloadFinish();
+                        } else {
+                            imgOnloadError();
+            
+                        }
+                    };
+                var imgOnloadFinish = function() {
+                        getImgInfo();
+                        setFileMsg();
+                        validateImg();
+                        upload();
+                    };
+                var imgOnloadError = function() {
+                        error = true;
+                        setErrMsg('错误消息：' + space + '加载图片失败！');
+            
+                    };
+                //加载图片
+                var loadImage = function() {
+            
+                        setStatusMsg('正在读取图片...');
+            
+                        if (typeof FileReader === 'undefined') {
+                            imgObj.src = fileObj.value;
+                            IEready();
+                        } else {
+                            var file = fileObj.files[0];
+                            var reader = new FileReader();
+                            reader.onload = function(event) {
+                                imgFileSize = file.size;
+                                imgObj.src = event.target.result;
+                                imgObj.onload = imgOnloadFinish;
+                            };
+                            reader.readAsDataURL(file);
+                        }
+                        imgObj.onerror = function() {
+                            imgOnloadError();
+                        };
+                    };
+                var setFileName = function(fileName) {
+                        self.fileName = fileName;
+                        controller.setFileName(self);
+                    };
+                var setStatusMsg = function(msg) {
+                        self.statusMsg = msg;
+                        controller.setStatusMsg(self);
+                    };
+                var setErrMsg = function(msg) {
+                        self.errMsg = msg;
+                        self.statusMsg = '上传取消！';
+                        controller.setErrMsg(self);
+                    };
+                var setFileMsg = function() {
+                        self.fileMsg = '图片信息：' + space + '图片像素：' + imgWidth + '*' + imgHeight + space + '大小：' + imgFileSize + 'KB';
+                        controller.setFileMsg(self);
+                    };
+                //获取读取的图片信息
+                var getImgInfo = function() {
+                        //setStatusMsg('正在获取图片信息...');
+            
+                        imgFileSize = Math.round(imgFileSize / 1024 * 100) / 100; //取得图片文件的大小
+                        imgWidth = imgObj.width; //取得图片的宽度
+                        imgHeight = imgObj.height; //取得图片的高度
+            
+                    };
+                //校验读取的图片信息
+                var validateImg = function() {
+                        //setStatusMsg('正在校验图片信息...');
+                        
+                        var errMsg = '<ul>';
+                        // if (allowImgWidth > imgWidth || allowImgHeight > imgHeight) {
+                            // errMsg = errMsg + '<li>${l:B2B_PRODUCT_PICTURE_UPDATE.ERROR_MESSAGE}' + space + '${l:B2B_PRODUCT_PICTURE_UPDATE.PICTURE_PIXELS_CANNOT_SMALLER_THAN}' + allowImgWidth + '*' + allowImgHeight + "px</li>";
+                        // }
+                        // if ((imgWidth / imgHeight).toFixed(2) != (allowImgWidth / allowImgHeight).toFixed(2)) {
+                            // errMsg = errMsg + '<li>${l:B2B_PRODUCT_PICTURE_UPDATE.ERROR_MESSAGE}' + space + '${l:B2B_PRODUCT_PICTURE_UPDATE.PICTURE_PIXELS_RATIO}' + allowImgWidth + '/' + allowImgHeight + '</li>';
+                        // }
+                        // if (allowImgFileSize < imgFileSize) {
+                            // errMsg = errMsg + '<li>${l:B2B_PRODUCT_PICTURE_UPDATE.ERROR_MESSAGE}' + space + '${l:B2B_PRODUCT_PICTURE_UPDATE.PICTURE_SIZE_CANNOT_LARGER_THAN}' + allowImgFileSize + 'KB</li>';
+                        // }
+                        errMsg = errMsg + '</ul>';
+                        if (errMsg == '<ul></ul>') {
+                            hasChecked = true;
+                        } else {
+                            setErrMsg(errMsg);
+                        }
+                    };
+                var upload = function() {
+                        if (hasChecked) {
+                            setStatusMsg('正在上传图片...');
+                            controller.upload(self);
+                        }
+                    };
+                this.cancelUpload = function() {
+                    controller.cancelUpload(self);
+                    setStatusMsg('已取消!');
+                    controller.destroy(self);
+            
+                };
+                this.response = function(success, msg) {
+                    if (success) {
+                        uploadSuccess();
+                    } else {
+                        uploadFail(msg);
+                    }
+                };
+                var uploadSuccess = function() {
+                        controller.uploadSuccess(self);
+                        setStatusMsg('上传成功！');
+                        controller.destroy(self);
+            
+                    };
+                var uploadFail = function(msg) {
+                        self.errMsg = msg;
+                        controller.uploadFail(self);
+                        setStatusMsg('上传失败！');
+                        controller.destroy(self);
+                    };
+            }
+            
+            //container页面容器
+            //imgLimit对象属性
+            //allowImgFileSize 允许上传图片文件的大小 0为无限制 单位：KB
+            //allowImgWidth 允许上传的图片的宽度  单位：px(像素)
+            //allowImgHeight 允许上传的图片的高度  单位：px(像素);
+            
+            function Controller(container, action, imgLimit) {
+                var viewList = {};
+                var handlerList = {};
+                var sequence = 0;
+                var submit = true;
+                this.createFileUpload = function() {
+                    if (submit) {
+                        ++sequence;
+                        viewList[sequence] = new View(sequence, container, action);
+            
+                        handlerList[sequence] = new Handler(this, sequence, imgLimit);
+            
+                        var that_handler = handlerList[sequence];
+            
+                        viewList[sequence].inputFile.onchange = function(e) {
+                            var file_obj;
+                            if (e == undefined) {
+                                file_obj = event.srcElement;
+                            } else {
+                                file_obj = e.target;
+                            }
+                            that_handler.startUpload(file_obj);
+                        };
+            
+                        viewList[sequence].cancelButton.onclick = function(e) {
+                            that_handler.cancelUpload();
+                        };
+            
+                        submit = false;
+            
+                    }
+                };
+                this.setSubmit = function(bool, handler) {
+                    var view = viewList[handler.id];
+                    view.hideHtml(view.inputFile);
+                    submit = bool;
+                    this.createFileUpload();
+                };
+                this.getView = function(id) {
+                    return viewList[id];
+                };
+                this.setFileName = function(handler) {
+                    viewList[handler.id].setFileName(handler.fileName);
+                };
+                this.setStatusMsg = function(handler) {
+                    viewList[handler.id].setStatusMsg(handler.statusMsg);
+                };
+                this.setErrMsg = function(handler) {
+                    var view = viewList[handler.id];
+                    view.setErrMsg(handler.errMsg);
+                    view.setStatusMsg(handler.statusMsg);
+                    this.destroy(handler);
+                };
+                this.setFileMsg = function(handler) {
+                    viewList[handler.id].setFileMsg(handler.fileMsg);
+                };
+                this.response = function(id, success, msg) {
+                    handlerList[id].response(success, msg);
+                };
+                this.upload = function(handler) {
+                    var view = viewList[handler.id];
+                    view.diplayCancelButton();
+                    view.submit_upload();
+            
+                };
+                this.uploadSuccess = function(handler) {
+                    var view = viewList[handler.id];
+                    view.hideCancelButton();
+                };
+                this.uploadFail = function(handler) {
+                    var view = viewList[handler.id];
+                    view.hideCancelButton();
+                    view.setErrMsg(handler.errMsg);
+                };
+                this.cancelUpload = function(handler) {
+                    var view = viewList[handler.id];
+                    view.cancelUpload();
+                    view.hideCancelButton();
+                };
+                this.destroy = function(handler) {
+                    delete viewList[handler.id];
+                    delete handlerList[handler.id];
+                };
+            }
+        ]]></script>
+        <a:screenBody>
+            <div>
+                <span style="font-family:微软雅黑; color:red; "><![CDATA[温馨提示：为提高商品图片显示效果，请上传图片分辨率为  200*200 / 400*400 / 800*800]]></span>
+            </div>
+            <div id="imgRestrict"/>
+            <div id="container"/>
+            <script><![CDATA[
+                function check_data() {
+                    var length = '${/model/required_size/record/@length}';
+                    var width = '${/model/required_size/record/@width}';
+                     // var length = 800;
+                    // var width = 800;
+                    var count = '${/model/count/record/@size_count}';
+                    // var count = 1;
+                    var size = '2048KB';
+                
+                    if (length == '' || width == '') {
+                        Aurora.showMessage('提示', '系统未设置图片大小，请联系系统管理员！');
+                        return false;
+                    }
+                
+                    if (count == 0) {
+                        Aurora.showMessage('提示', '系统未设置显示图片大小，请联系系统管理员！');
+                        return false;
+                    }
+                
+                    var space = '&nbsp;';
+                    for (var i = 0;i < 2;i++) {
+                        space = space + space;
+                    }
+                    // var imgRestrict = document.getElementById('imgRestrict');
+                    // imgRestrict.innerHTML = '${l:B2B_PRODUCT_PICTURE_UPDATE.UPLOAD_IMG_RESTRICT}' + space + '${l:B2B_PRODUCT_PICTURE_UPDATE.PICTURE_PIXELS_CANNOT_SMALLER_THAN}' + length + '*' + width + space + '${l:B2B_PRODUCT_PICTURE_UPDATE.PICTURE_PIXELS_RATIO}' + length + '/' + width + space + '${l:B2B_PRODUCT_PICTURE_UPDATE.PICTURE_SIZE_CANNOT_LARGER_THAN}' + size;
+                
+                    return true;
+                
+                
+                }
+                
+                if (check_data()) {
+                    var controller = new Controller(document.getElementById('container'), '${/request/@context_path}/modules/mtl/MTL1070/mtl_b2b_sys_item_picture_update.svc?product_id=${/parameter/@product_id}', {
+                        allowImgFileSize: 2048,
+                        allowImgWidth: '${/model/required_size/record/@length}',
+                        allowImgHeight: '${/model/required_size/record/@width}'
+                    });
+                
+                    controller.createFileUpload();
+                
+                }
+            ]]></script>
+        </a:screenBody>
+    </a:view>
+</a:screen>

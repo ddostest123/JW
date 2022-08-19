@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: WangQiaosen  
+    $Date: 2014年1月26日 下午4:10:56  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="bill_number desc, line_num">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*
+                FROM
+                    (SELECT
+                        wis.bill_line_id,
+                        wis.bill_header_id,
+                        wis.bill_detail_id,
+                        wis.bill_number,
+                        wis.line_num,
+                        wis.company_id,
+                        wis.company_code,
+                        wis.company_desc,
+                        wis.vendor_id,
+                        wis.vendor_code,
+                        wis.vendor_desc,
+                        wis.item_id,
+                        wis.item_code,
+                        wis.item_desc,
+                        (SELECT
+                            t.partner_item_id
+                        FROM
+                            mtl_item_partners t
+                        WHERE
+                            t.business_group = wis.coop_business_group AND
+                            t.company_id     = wis.coop_company_id AND
+                            t.partner_way    = 'SUPPLY' AND
+                            t.item_id        = wis.item_id
+                        ) vendor_item_id,
+                        (SELECT
+                            NVL(siv.display_item_code, siv.item_code)
+                        FROM
+                            mtl_system_items_vl siv,
+                            mtl_item_partners t
+                        WHERE
+                            siv.item_id      = t.partner_item_id AND
+                            t.business_group = wis.coop_business_group AND
+                            t.company_id     = wis.coop_company_id AND
+                            t.partner_way    = 'SUPPLY' AND
+                            t.item_id        = wis.item_id
+                        ) vendor_item_code,
+                        (SELECT
+                            siv.item_name
+                        FROM
+                            mtl_system_items_vl siv,
+                            mtl_item_partners t
+                        WHERE
+                            siv.item_id      = t.partner_item_id AND
+                            t.business_group = wis.coop_business_group AND
+                            t.company_id     = wis.coop_company_id AND
+                            t.partner_way    = 'SUPPLY' AND
+                            t.item_id        = wis.item_id
+                        ) vendor_item_name,
+                        -- wis.unit_price,
+                        fnd_document_control_pkg.get_reality_value(p_rule_code => 'PRICE_SECRECY', p_role_id => ${/session/@role_id}, p_foundation_code => 'AP_CSGN_BILL', p_document_id => wis.bill_header_id, p_control_area => 'EXTERNAL', p_business_group => ${/session/@business_group}, p_value => wis.unit_price) unit_price,
+                        wis.uom,
+                        wis.quantity,
+                        wis.quantity_left,
+                        wis.currency_code,
+                        wis.tax_rate,
+                        wis.tax_type_id,
+                        wis.tax_type_code,
+                        --wis.amount,
+                        fnd_document_control_pkg.get_reality_value(p_rule_code => 'PRICE_SECRECY', p_role_id => ${/session/@role_id}, p_foundation_code => 'AP_CSGN_BILL', p_document_id => wis.bill_header_id, p_control_area => 'EXTERNAL', p_business_group => ${/session/@business_group}, p_value => wis.amount) amount,
+                        wis.invoiced_quantity,
+                        wis.confirmed_date,
+                        TO_CHAR(wis.confirmed_date,'YYYY-MM-DD HH24:MI') confirmed_date_desc,
+                        wis.vendor_site_id,
+                        wis.vendor_site_code,
+                        wis.vendor_site_desc,
+                        wis.data_source,
+                        wis.data_source_id,
+                        wis.owner_business_group,
+                        wis.owner_company_id,
+                        wis.coop_business_group,
+                        wis.coop_company_id,
+                        NULL AS useless_id,
+                        wis.business_unit_id,
+                        wis.business_unit_code,
+                        wis.business_unit_name,
+                        wis.external_system_id,
+                        wis.inv_org_id,
+                        wis.inv_org_code,
+                        wis.inv_org_name,
+                        wis.trx_header_id,
+                        wis.trx_line_num,
+                        wis.trx_date,
+                        (SELECT es.external_system_name FROM fnd_bg_external_system_vl es WHERE es.external_system_id = wis.external_system_id) external_system_name,
+                        (wis.quantity - wis.invoiced_quantity) AS invoice_quantity, --本次开票数量
+                        --本次开票单价
+                        DECODE(fnd_document_control_pkg.get_reality_value(p_rule_code => 'PRICE_SECRECY', p_role_id => ${/session/@role_id}, p_foundation_code => 'AP_CSGN_BILL', p_document_id => wis.bill_header_id, p_control_area => 'EXTERNAL', p_business_group => ${/session/@business_group}, p_value => wis.unit_price),'***',NULL,wis.unit_price) invoice_price,
+                        --本次开票金额
+                        DECODE(fnd_document_control_pkg.get_reality_value(p_rule_code => 'PRICE_SECRECY', p_role_id => ${/session/@role_id}, p_foundation_code => 'AP_CSGN_BILL', p_document_id => wis.bill_header_id, p_control_area => 'EXTERNAL', p_business_group => ${/session/@business_group}, p_value => (wis.quantity - wis.invoiced_quantity) * wis.unit_price),'***',NULL,(wis.quantity - wis.invoiced_quantity) * wis.unit_price ) invoice_amount,
+                        fnd_config_cnt_get_pkg.get_bg_item_value_invoice_10(p_business_group	=> wis.owner_business_group) AS invoice10_item_value,
+                        fnd_config_cnt_get_pkg.get_bg_item_value_invoice_11(p_business_group	=> wis.owner_business_group) AS invoice11_item_value,
+                        fnd_config_cnt_get_pkg.get_bg_item_det_invoice_11_01(p_business_group	=> wis.owner_business_group) AS invoice11_01_item_value
+                    FROM
+                        acp_csgn_web_invoice_srcs_vl wis
+                    WHERE
+                        wis.coop_business_group = ${/session/@business_group}
+                        AND (EXISTS (SELECT 1
+                              FROM fnd_config_center_bg_item_dtl ccbid
+                             WHERE ccbid.config_classify_code = 'PO'
+                                   AND ccbid.config_item_code = 'PO_02'
+                                   AND ccbid.config_item_detail_code = 'PO_02_03'
+                                   AND ccbid.business_group =wis.owner_business_group
+                                   AND ccbid.bg_config_item_value = 'Y') OR NOT EXISTS
+                (SELECT 1
+                       FROM fnd_config_center_bg_item_dtl ccbid
+                      WHERE ccbid.config_classify_code = 'PO'
+                            AND ccbid.config_item_code = 'PO_02'
+                            AND ccbid.config_item_detail_code = 'PO_02_03'
+                            AND ccbid.business_group = wis.owner_business_group))
+                    ) v #AUTHORIY_FROM# #WHERE_CLAUSE# #AUTHORIY_WHERE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter expression="1=1"/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field name="bill_number" queryExpression="bill_number like &apos;%&apos; || ${@bill_number} ||&apos;%&apos;"/>
+        <bm:query-field name="company_id" queryExpression="company_id = ${@company_id}"/>
+        <bm:query-field name="item_id" queryExpression="item_id = ${@item_id}"/>
+        <bm:query-field name="vendor_item_id" queryExpression="vendor_item_id = ${@vendor_item_id}"/>
+        <bm:query-field name="confirm_date_from" queryExpression="trunc(v.confirmed_date) &gt;= to_date(${@confirm_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="confirm_date_to" queryExpression="trunc(v.confirmed_date) &lt;= to_date(${@confirm_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="trx_date_from" queryExpression="trunc(v.trx_date) &gt;= to_date(${@trx_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="trx_date_to" queryExpression="trunc(v.trx_date) &lt;= to_date(${@trx_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="business_unit_id" queryExpression="v.business_unit_id = ${@business_unit_id}"/>
+        <bm:query-field name="inv_organization_name" queryExpression="v.inv_org_name like &apos;%&apos;||trim(${@inv_organization_name})||&apos;%&apos;"/>
+    </bm:query-fields>
+    <authority foundation_code="AP_CSGN_INVOICE">
+        <authority-segment source_alias="v" source_name="useless_id" type="CREATER"/>
+        <authority-segment source_alias="v" source_name="coop_company_id" type="COMPANY"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="RECEIVER"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="BUSINESS_UNIT"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="PUR_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="INV_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="SD_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="VENDOR"/>
+        <authority-segment source_alias="v" source_name="owner_company_id" type="CLIENT"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="PURHASE_MATERIAL"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="SALES_PRODUCTION"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="CLIENT_SITE"/>
+        <authority-segment source_alias="v" source_name="useless_id" type="VENDOR_SITE"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+            var cx = Packages.aurora.javascript.Context.getCurrentContext();
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

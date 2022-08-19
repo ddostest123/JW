@@ -1,0 +1,386 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao
+    $Date: 2013-2-19 下午04:50:10  
+    $Revision: 1.0  
+    $Purpose: 非寄销网上发票创建(供)，开票单信息查询BM
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="v.bill_number ASC,v.receipt_num ASC,v.receipt_line_num ASC">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        d.rcv_trx_line_id,
+                        d.detail_id AS bill_detail_id,
+                        l.line_id AS bill_line_id,
+                        h.header_id AS bill_header_id,
+                        d.detail_num AS bill_detail_num,
+                        h.bill_number,
+                        h.owner_business_group,
+                        h.owner_company_id,
+                        h.coop_business_group,
+                        h.coop_company_id,
+                        l.bill_line_num,
+                        (SELECT
+                            io.business_unit_id
+                        FROM
+                            acp_bill_details bd,
+                            inv_organizations io
+                        WHERE
+                            bd.organization_id = io.inv_organization_id AND
+                            bd.detail_id       = d.detail_id
+                        ) AS business_unit_id,
+                        (SELECT
+                            buv.business_unit_name
+                        FROM
+                            acp_bill_details bd,
+                            inv_organizations io,
+                            fnd_business_units_vl buv
+                        WHERE
+                            bd.organization_id  = io.inv_organization_id AND
+                            io.business_unit_id = buv.business_unit_id AND
+                            bd.detail_id        = d.detail_id
+                        ) AS business_unit_name,
+                        d.po_header_id,
+                        d.po_line_id,
+                        d.po_line_location_id,
+                        d.distribution_id AS po_distribution_id,
+                        d.bill_type,
+                        d.pur_type,
+                        d.term_name,
+                        d.trade_method,
+                        d.receipt_date,
+                        d.no_tax_amount,
+                        d.tax_amount tax_amount_lines,
+                        d.invoice_num,
+                        d.invoice_date,
+                        d.gl_date,
+                        d.com_subject,
+                        d.com_subject_desc,
+                        d.segment1,
+                        d.line_num,
+                        d.shipment_num,
+                        d.release_num,
+                        d.distribution_num,
+                        l.item_id,
+                        l.item_code,
+                        l.item_name,
+                        (SELECT
+                            msi.used_item_code
+                        FROM
+                            mtl_system_items msi
+                        WHERE
+                            msi.item_id = l.item_id
+                        ) used_item_code,
+                        l.unit_meas_lookup_code,
+                        --added by wangmengling 15656 2018年3月02日 修改单位描述效果
+                        NVL(
+                        (SELECT
+                            vl.uom_code
+                            || '/'
+                            || vl.uom_desc
+                        FROM
+                            fnd_uom_codes_vl vl
+                        WHERE
+                            l.unit_meas_lookup_code = vl.uom_code AND
+                            vl.business_group       = h.owner_business_group AND
+                            ROWNUM                  = 1
+                        ), l.unit_meas_lookup_code) unit_meas_lookup_code_desc,
+                        h.currency_code,
+                        d.quantity,
+                        (d.quantity - d.billed_quantity) AS bill_quantity,
+                        l.unit_price,
+                        l.tax_unit_price,
+                        (d.quantity * l.unit_price) AS line_amount,
+                        (d.quantity - d.billed_quantity) AS transaction_quantity,
+                        fnd_document_control_pkg.get_reality_value(p_rule_code => 'PRICE_SECRECY', p_role_id => ${/session/@role_id}, p_foundation_code => 'AP_BILL', p_document_id => h.header_id, p_control_area => 'EXTERNAL', p_business_group => ${/session/@business_group}, p_value => l.unit_price) AS display_unit_price,
+                        fnd_document_control_pkg.get_reality_value(p_rule_code => 'PRICE_SECRECY', p_role_id => ${/session/@role_id}, p_foundation_code => 'AP_BILL', p_document_id => h.header_id, p_control_area => 'EXTERNAL', p_business_group => ${/session/@business_group}, p_value => (d.quantity * l.unit_price)) AS display_line_amount,
+                        fnd_document_control_pkg.get_reality_value(p_rule_code => 'PRICE_SECRECY', p_role_id => ${/session/@role_id}, p_foundation_code => 'AP_BILL', p_document_id => h.header_id, p_control_area => 'EXTERNAL', p_business_group => ${/session/@business_group}, p_value => l.tax_unit_price) AS display_tax_unit_price,
+                        fnd_document_control_pkg.get_reality_value(p_rule_code => 'PRICE_SECRECY', p_role_id => ${/session/@role_id}, p_foundation_code => 'AP_BILL', p_document_id => h.header_id, p_control_area => 'EXTERNAL', p_business_group => ${/session/@business_group}, p_value => l.unit_price) AS display_transaction_price,
+                        DECODE(fnd_config_center_pkg.get_bg_item_value(h.owner_business_group, 'INVOICE', 'INVOICE_08', 1), 'Y', (fnd_document_control_pkg.get_reality_value(p_rule_code => 'PRICE_SECRECY', p_role_id => ${/session/@role_id}, p_foundation_code => 'AP_BILL', p_document_id => h.header_id, p_control_area => 'EXTERNAL', p_business_group => ${/session/@business_group}, p_value => ROUND(((l.tax_unit_price / (1+
+                        (SELECT
+                            tcb.tax_type_rate / 100
+                        FROM
+                            fnd_tax_type_codes_bg_v tcb,
+                            pur_lines_all pla
+                        WHERE
+                            tcb.enabled_flag    = 'Y' AND
+                            tcb.bg_enabled_flag = 'Y' AND
+                            tcb.default_flag    = 'Y' AND
+                            pla.tax_code_id     = tcb.tax_type_id AND
+                            pla.pur_line_id     = d.po_line_id AND
+                            rownum              = 1
+                        ))) * (d.quantity - d.billed_quantity)),2))), (fnd_document_control_pkg.get_reality_value(p_rule_code => 'PRICE_SECRECY', p_role_id => ${/session/@role_id}, p_foundation_code => 'AP_BILL', p_document_id => h.header_id, p_control_area => 'EXTERNAL', p_business_group => ${/session/@business_group}, p_value => ROUND((d.quantity - d.billed_quantity) * l.unit_price, 2)))) AS display_bill_amount,
+                        d.organization_id,
+                        (SELECT
+                            iov.description
+                        FROM
+                            inv_organizations_vl iov
+                        WHERE
+                            iov.inv_organization_id = d.organization_id
+                        ) AS organization_name,
+                        h.company_id,
+                        (SELECT
+                            fcv.company_code
+                        FROM
+                            fnd_companies_vl fcv
+                        WHERE
+                            fcv.company_id = h.company_id
+                        ) AS company_code,
+                        (SELECT
+                            fcv.company_full_name
+                        FROM
+                            fnd_companies_vl fcv
+                        WHERE
+                            fcv.company_id = h.company_id
+                        ) AS company_name,
+                        h.vendor_id,
+                        (SELECT
+                            NVL(pvv.display_vendor_code, pvv.vendor_code)
+                        FROM
+                            pur_vendors_v pvv
+                        WHERE
+                            pvv.vendor_id = h.vendor_id
+                        ) AS vendor_code,
+                        (SELECT
+                            pvv.full_name
+                        FROM
+                            pur_vendors_v pvv
+                        WHERE
+                            pvv.vendor_id = h.vendor_id
+                        ) AS vendor_name,
+                        h.vendor_site_id,
+                        (SELECT
+                            NVL(pvs.display_site_code, pvs.vendor_site_code)
+                        FROM
+                            pur_vendor_sites_vl pvs
+                        WHERE
+                            pvs.vendor_site_id = h.vendor_site_id
+                        ) AS vendor_site_code,
+                        (SELECT
+                            pvs.site_name
+                        FROM
+                            pur_vendor_sites_vl pvs
+                        WHERE
+                            pvs.vendor_site_id = h.vendor_site_id
+                        ) AS vendor_site_name,
+                        d.terms_id,
+                        d.rate_type,
+                        d.rate_date,
+                        d.rate,
+                        d.erp_transaction_id,
+                        d.transaction_date,
+                        d.organization_code,
+                        h.status,
+                        (SELECT
+                            B.CODE_VALUE_NAME
+                        FROM
+                            SYS_CODES_VL A,
+                            SYS_CODE_VALUES_VL B
+                        WHERE
+                            A.CODE_ID    = B.CODE_ID AND
+                            A.CODE       = 'BILL_STATUS' AND
+                            B.CODE_VALUE = h.status
+                        ) status_desc,
+                        h.tax_total_amount,
+                        h.loan_month,
+                        TO_CHAR(d.transaction_date, 'yyyy-mm-dd hh24:mi:ss') AS transaction_date_fmt,
+                        h.confirm_date,
+                        TO_CHAR(h.confirm_date, 'yyyy-mm-dd hh24:mi:ss') AS confirm_date_fmt,
+                        l.request_date,
+                        TO_CHAR(l.request_date, 'yyyy-mm-dd hh24:mi:ss') AS request_date_fmt,
+                        d.receipt_num,
+                        to_number(d.receipt_line_num) AS receipt_line_num,
+                        (SELECT
+                            tcb.tax_type_id
+                        FROM
+                            fnd_tax_type_codes_bg_v tcb,
+                            pur_lines_all pla
+                        WHERE
+                            tcb.enabled_flag    = 'Y' AND
+                            tcb.bg_enabled_flag = 'Y' AND
+                            tcb.default_flag    = 'Y' AND
+                            pla.tax_code_id     = tcb.tax_type_id AND
+                            pla.pur_line_id     = d.po_line_id AND
+                            rownum              = 1
+                        ) AS tax_type_id,
+                        l.tax_rate,
+                        (SELECT DISTINCT(l.remark) FROM acp_bill_lines l WHERE l.line_id = d.line_id
+                        ) remark,
+                        d.billed_quantity,
+                        fnd_config_cnt_get_pkg.get_bg_item_value_invoice_06(p_business_group => h.owner_business_group, p_vendor_id => h.vendor_id) AS invoice_06_exists_flag,
+                        fnd_config_cnt_get_pkg.get_bg_item_value_invoice_08(p_business_group => h.owner_business_group) AS invoice08_item_value,
+                        fnd_config_cnt_get_pkg.get_bg_item_value_invoice_10(p_business_group => h.owner_business_group) AS invoice10_item_value,
+                        (SELECT
+                            pha.type_lookup_code
+                        FROM
+                            pur_headers_all pha
+                        WHERE
+                            pha.pur_header_id = d.po_header_id
+                        ) type_lookup_code,
+                        (SELECT
+                            pha.pur_organization_id
+                        FROM
+                            pur_headers_all pha
+                        WHERE
+                            pha.pur_header_id = d.po_header_id
+                        ) pur_organization_id,
+                        (SELECT
+                            pov.description
+                        FROM
+                            pur_headers_all pha,
+                            pur_organizations_vl pov
+                        WHERE
+                            pha.pur_organization_id = pov.pur_organization_id AND
+                            pha.pur_header_id       = d.po_header_id
+                        ) pur_organization_name,
+                        (SELECT
+                            pha.agent_id
+                        FROM
+                            pur_headers_all pha
+                        WHERE
+                            pha.pur_header_id = d.po_header_id
+                        ) pur_buyer_id,
+                        (SELECT
+                            pbv.buyer_desc
+                        FROM
+                            pur_headers_all pha ,
+                            pur_buyers_vl pbv
+                        WHERE
+                            pha.pur_header_id = d.po_header_id AND
+                            pha.agent_id      = pbv.buyer_id
+                        ) pur_buyer_name,
+                        (SELECT
+                            NVL(pha.type_lookup_desc,pha.erp_po_type_desc)
+                        FROM
+                            pur_headers_all pha
+                        WHERE
+                            pha.pur_header_id = d.po_header_id
+                        ) type_lookup_desc,
+                        (SELECT
+                            ttv.description1
+                        FROM
+                            pur_rcv_trx_types_vl ttv,
+                            pur_rcv_trx_lines tl
+                        WHERE
+                            ttv.rcv_trx_type   = tl.rcv_trx_type AND
+                            tl.rcv_trx_line_id = d.rcv_trx_line_id
+                        ) AS rcv_trx_type_desc,
+                        (SELECT
+                            pop.vendor_id
+                        FROM
+                            pur_po_partners pop
+                        WHERE
+                            pop.pur_header_id     = d.po_header_id AND
+                            pop.partner_type_code = 'RS' AND
+                            rownum                < 2
+                        ) invoice_vendor_id,
+                        (SELECT
+                            pvv.full_name
+                        FROM
+                            pur_po_partners pop,
+                            pur_vendors_vl pvv
+                        WHERE
+                            pvv.vendor_id         = pop.vendor_id AND
+                            pop.pur_header_id     = d.po_header_id AND
+                            pop.partner_type_code = 'RS' AND
+                            rownum                < 2
+                        ) invoice_vendor_desc,
+                        NULL AS useless_id_1,
+                        NULL AS useless_id_2,
+                        NULL AS useless_id_3,
+                        NULL AS useless_id_4,
+                        NULL AS useless_id_5,
+                        NULL AS useless_id_6,
+                        NULL AS useless_id_7,
+                        NULL AS useless_id_8,
+                        NULL AS useless_id_9,
+                        NULL AS useless_id_10,
+                        NULL AS useless_id_11,
+                        NULL AS useless_id_12
+                    FROM
+                        acp_bill_headers h,
+                        acp_bill_lines l,
+                        acp_bill_details d
+                    WHERE
+                        h.header_id    = l.header_id AND
+                        l.line_id      = d.line_id AND
+                        d.header_id    = h.header_id AND
+                        h.status       = 'CONFIRMED' AND
+                        d.invoice_flag = 'Y' AND
+                        (
+                            EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                fnd_config_center_bg_item_dtl ccbid
+                            WHERE
+                                ccbid.config_classify_code    = 'PO' AND
+                                ccbid.config_item_code        = 'PO_02' AND
+                                ccbid.config_item_detail_code = 'PO_02_03' AND
+                                ccbid.business_group          = h.owner_business_group AND
+                                ccbid.bg_config_item_value    = 'Y'
+                            ) OR
+                            NOT EXISTS
+                            (SELECT
+                                1
+                            FROM
+                                fnd_config_center_bg_item_dtl ccbid
+                            WHERE
+                                ccbid.config_classify_code    = 'PO' AND
+                                ccbid.config_item_code        = 'PO_02' AND
+                                ccbid.config_item_detail_code = 'PO_02_03' AND
+                                ccbid.business_group          = h.owner_business_group
+                            )
+                        )
+                    ) v #AUTHORIY_FROM# #WHERE_CLAUSE# #AUTHORIY_WHERE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter expression="1=1"/>
+        <bm:data-filter expression="v.coop_business_group = ${/session/@business_group}"/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field name="header_id" queryExpression="v.header_id = ${@bill_header_id}"/>
+        <bm:query-field name="company_id" queryExpression="v.owner_company_id = ${@company_id}"/>
+        <bm:query-field name="line_id" queryExpression="v.line_id = ${@bill_line_id}"/>
+        <bm:query-field name="pur_organization_name" queryExpression="v.pur_organization_name like &apos;%&apos;||trim(${@pur_organization_name})||&apos;%&apos;"/>
+        <bm:query-field name="pur_buyer_name" queryExpression="v.pur_buyer_name like &apos;%&apos;||trim(${@pur_buyer_name})||&apos;%&apos;"/>
+        <bm:query-field name="bill_number" queryExpression="v.bill_number like &apos;%&apos;||trim(${@bill_number})||&apos;%&apos;"/>
+        <bm:query-field name="po_number" queryExpression="v.segment1 like &apos;%&apos;||trim(${@po_number})||&apos;%&apos;"/>
+        <bm:query-field name="confirm_date_from" queryExpression="v.confirm_date &gt;= to_date(${@confirm_date_from},&apos;yyyy-mm-dd hh24:mi:ss&apos;)"/>
+        <bm:query-field name="confirm_date_to" queryExpression="v.confirm_date &lt;= to_date(${@confirm_date_to},&apos;yyyy-mm-dd hh24:mi:ss&apos;)"/>
+        <bm:query-field name="business_unit_id" queryExpression="v.business_unit_id = ${@business_unit_id}"/>
+        <bm:query-field name="receipt_num" queryExpression="v.receipt_num like &apos;%&apos;||trim(${@receipt_num})||&apos;%&apos;"/>
+        <bm:query-field name="inv_organization_name" queryExpression="v.organization_name like &apos;%&apos;||trim(${@inv_organization_name})||&apos;%&apos;"/>
+        <!-- <bm:query-field name="off_free_flag" queryExpression="((${@off_free_flag} = &apos;Y&apos; and is_free_flag = &apos;N&apos;) or ${@off_free_flag} = &apos;N&apos;)"/> -->
+        <bm:query-field name="type_lookup_desc" queryExpression="v.type_lookup_desc like &apos;%&apos;||trim(${@type_lookup_desc})||&apos;%&apos;"/>
+        <bm:query-field name="item_code_name" queryExpression="(v.item_code like &apos;%&apos;||trim(${@item_code_name})||&apos;%&apos; or v.used_item_code like &apos;%&apos;||trim(${@item_code_name})||&apos;%&apos; or v.item_name like &apos;%&apos;||trim(${@item_code_name})||&apos;%&apos;)"/>
+    </bm:query-fields>
+    <authority foundation_code="AP_INVOICE">
+        <authority-segment source_alias="v" source_name="coop_company_id" type="COMPANY"/>
+        <authority-segment source_alias="v" source_name="useless_id_1" type="CREATER"/>
+        <authority-segment source_alias="v" source_name="useless_id_2" type="RECEIVER"/>
+        <authority-segment source_alias="v" source_name="owner_company_id" type="CLIENT"/>
+        <authority-segment source_alias="v" source_name="useless_id_4" type="CLIENT_SITE"/>
+        <authority-segment source_alias="v" source_name="useless_id_5" type="PUR_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id_6" type="SD_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id_7" type="PURHASE_MATERIAL"/>
+        <authority-segment source_alias="v" source_name="useless_id_8" type="SALES_PRODUCTION"/>
+        <authority-segment source_alias="v" source_name="useless_id_9" type="VENDOR"/>
+        <authority-segment source_alias="v" source_name="useless_id_10" type="VENDOR_SITE"/>
+        <authority-segment source_alias="v" source_name="useless_id_11" type="BUSINESS_UNIT"/>
+        <authority-segment source_alias="v" source_name="useless_id_12" type="INV_ORGANIZATION"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+        	var cx = Packages.aurora.javascript.Context.getCurrentContext();
+			Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+        	Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

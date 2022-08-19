@@ -1,0 +1,263 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Wanq  
+    $Date: 2012-10-29 下午2:03:06  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:f="aurora.database.features" xmlns:bm="http://www.aurora-framework.org/schema/bm" alias="t1" baseTable="erpinv_document_os_lns_tmp" needAccessControl="true">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*,
+                    (SELECT ERPFND_PRECISION_PKG.GET_QUANTITY_PRECISION (v.company_id) FROM dual
+                    ) quantity
+                FROM
+                    (SELECT
+                        t.line_number,
+                        t.insert_flag,
+                        t.os_ln_tmp_id,
+                        t.warehouse_id,
+                        (SELECT
+                            w.warehouse_code
+                            ||'-'
+                            ||w.warehouse_name
+                        FROM
+                            erpinv_warehouses w
+                        WHERE
+                            w.company_id   = t.company_id AND
+                            w.warehouse_id = t.warehouse_id
+                        ) warehouse_code_name,
+                        t.item_id,
+                        (SELECT
+                            b.item_code
+                            ||'-'
+                            || b.item_name
+                        FROM
+                            erpinv_items_basics b
+                        WHERE
+                            b.company_id = t.company_id AND
+                            b.item_id    = t.item_id
+                        ) item_code_name,
+                        t.write_off_num,
+                        erpinv_quantities_onhand_pkg.get_inv_quantity(t.company_id,t.warehouse_id,t.item_id,t.business_partner_id) primary_quantity,
+                        t.primary_uom,
+                        (SELECT
+                            c.uom_description
+                        FROM
+                            erpinv_uom_codes c
+                        WHERE
+                            c.company_id = t.company_id AND
+                            c.uom_code   = t.primary_uom
+                        ) primary_uom_name,
+                        t.description,
+                        t.purchase_order_line_id,
+                        t.session_id,
+                        t.company_id,
+                        t.business_partner_id
+                    FROM
+                        erpinv_document_os_lns_tmp t
+                    WHERE
+                        t.session_id             = ${/session/@session_id} AND
+                        t.line_number            = ${/parameter/@line_number} AND
+                        t.purchase_order_line_id = ${/parameter/@pur_line_id}
+                    UNION
+                    SELECT
+                        NULL line_number,
+                        'A' insert_flag,
+                        NULL os_ln_tmp_id,
+                        w.warehouse_id,
+                        w.warehouse_code
+                        || '-'
+                        || w.warehouse_name warehouse_code_name,
+                        b.item_id,
+                        b.item_code
+                        || '-'
+                        || b.item_name item_code_name,
+                        0 write_off_num,
+                        erpinv_quantities_onhand_pkg.get_inv_quantity(b.company_id, w.warehouse_id, b.item_id, p.partner_id) primary_quantity,
+                        b.primary_uom,
+                        c.uom_description primary_uom_name,
+                        NULL description,
+                        to_number(${/parameter/@pur_line_id}) purchase_order_line_id,
+                        NULL session_id,
+                        NULL company_id,
+                        p.partner_id
+                    FROM
+                        inv_onhand_quantities o,
+                        erpinv_items_basics b,
+                        erpinv_warehouses w,
+                        erpinv_uom_codes c,
+                        erpfnd_business_partners p,
+                        inv_warehouses iw
+                    WHERE
+                        o.warehouse_id = iw.warehouse_id AND
+                        (
+                            w.warehouse_code
+                            || w.company_id
+                        )
+                                         = iw.warehouse_code AND
+                        o.item_id        = b.srm_item_id AND
+                        b.primary_uom    = c.uom_code AND
+                        b.company_id     = w.company_id AND
+                        p.srm_vender_id  = o.vendor_id AND
+                        o.business_group = p.business_group AND
+                        p.partner_id     = ${/parameter/@vender_id} AND
+                        b.company_id     = ${/parameter/@company_id} AND
+                        w.warehouse_type = 'OUTSOURCE' AND
+                        b.company_id     = c.company_id AND
+                        (
+                            o.quantity <> 0 AND
+                            o.quantity IS NOT NULL
+                        )
+                        AND
+                        (
+                            w.warehouse_id
+                            || '-'
+                            || b.item_id
+                        )
+                        NOT IN
+                        (SELECT
+                            tm.warehouse_id
+                            || '-'
+                            || tm.item_id
+                        FROM
+                            erpinv_document_os_lns_tmp tm
+                        WHERE
+                            tm.session_id             = ${/session/@session_id} AND
+                            tm.line_number            = ${/parameter/@line_number} AND
+                            tm.purchase_order_line_id = ${/parameter/@pur_line_id}
+                        )
+                    ) v #WHERE_CLAUSE#
+                ORDER BY
+                    warehouse_code_name,
+                    item_id
+            ]]></bm:query-sql>
+            <!-- (SELECT
+                            o.primary_quantity
+                        FROM
+                            erpinv_quantities_onhand o
+                        WHERE
+                            o.warehouse_id        = t.warehouse_id AND
+                            o.company_id          = t.company_id AND
+                            o.business_partner_id = t.business_partner_id AND
+                            o.item_id             = t.item_id
+                        )  -->
+        </bm:operation>
+        <!-- 
+        SELECT
+                        NULL line_number,
+                        'A' insert_flag,
+                        NULL os_ln_tmp_id,
+                        o.warehouse_id,
+                        w.warehouse_code
+                        ||'-'
+                        ||w.warehouse_name warehouse_code_name,
+                        o.item_id,
+                        b.item_code
+                        || '-'
+                        || b.item_name item_code_name,
+                        0 write_off_num,
+                        erpinv_quantities_onhand_pkg.get_inv_quantity(o.company_id,o.warehouse_id,o.item_id,o.business_partner_id) primary_quantity,
+                        b.primary_uom,
+                        c.uom_description primary_uom_name,
+                        NULL description,
+                        to_number(${/parameter/@pur_line_id}) purchase_order_line_id,
+                        NULL session_id,
+                        NULL company_id,
+                        o.business_partner_id
+                    FROM
+                        erpinv_quantities_onhand o,
+                        erpinv_items_basics b,
+                        erpinv_warehouses w,
+                        erpinv_uom_codes c
+                    WHERE
+                        o.warehouse_id        = w.warehouse_id AND
+                        o.item_id             = b.item_id AND
+                        b.primary_uom         = c.uom_code AND
+                        o.business_partner_id = ${/parameter/@vender_id} AND
+                        b.company_id          = ${/parameter/@company_id} AND
+                        b.company_id          = w.company_id AND
+                        w.warehouse_type      ='OUTSOURCE' AND
+                        b.company_id          = c.company_id AND
+                        (
+                            o.primary_quantity <> 0 AND
+                            o.primary_quantity IS NOT NULL
+                        )
+                        AND
+                        (
+                            o.warehouse_id
+                            ||'-'
+                            ||o.item_id
+                        )
+                        NOT IN
+                        (SELECT
+                            tm.warehouse_id
+                            ||'-'
+                            ||tm.item_id
+                        FROM
+                            erpinv_document_os_lns_tmp tm
+                        WHERE
+                            tm.session_id             = ${/session/@session_id} AND
+                            tm.line_number            = ${/parameter/@line_number} AND
+                            tm.purchase_order_line_id = ${/parameter/@pur_line_id}
+                        )
+                    
+         -->
+        <bm:operation name="insert">
+            <bm:update-sql><![CDATA[
+        	begin
+        	erpinv_doc_outsourcing_pkg.update_outsourcing_tmp(p_os_ln_tmp_id			 =>${@os_ln_tmp_id},
+        														p_session_id             =>${/session/@session_id},
+							                                    p_company_id             =>${@company_id},
+							                                    p_line_number			 =>${@line_number},
+							                                    p_warehouse_id           =>${@warehouse_id},
+							                                    p_item_id                =>${@item_id},
+							                                    p_business_partner_id    =>${@business_partner_id},
+							                                    p_write_off_num          =>${@write_off_num},
+							                                    p_primary_uom            =>${@primary_uom},
+							                                    p_purchase_order_line_id =>${@purchase_order_line_id},
+							                                    p_description            =>${@description},
+							                                    p_insert_flag			 =>${@insert_flag},
+							                                    p_user_id                =>${/session/@user_id},
+							                                    p_business_group         =>${/session/@business_group});
+        	end;
+        	]]></bm:update-sql>
+            <bm:parameters>
+                <bm:parameter name="os_ln_tmp_id" output="true"/>
+            </bm:parameters>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+        	begin
+        	erpinv_doc_outsourcing_pkg.update_outsourcing_tmp(p_os_ln_tmp_id			 =>${@os_ln_tmp_id},
+        														p_session_id             =>${/session/@session_id},
+							                                    p_company_id             =>${@company_id},
+							                                    p_line_number			 =>${@line_number},
+							                                    p_warehouse_id           =>${@warehouse_id},
+							                                    p_item_id                =>${@item_id},
+							                                    p_business_partner_id    =>${@business_partner_id},
+							                                    p_write_off_num          =>${@write_off_num},
+							                                    p_primary_uom            =>${@primary_uom},
+							                                    p_purchase_order_line_id =>${@purchase_order_line_id},
+							                                    p_description            =>${@description},
+							                                    p_insert_flag			 =>${@insert_flag},
+							                                    p_user_id                =>${/session/@user_id},
+							                                    p_business_group         =>${/session/@business_group});
+        	end;
+        	]]></bm:update-sql>
+            <bm:parameters>
+                <bm:parameter name="os_ln_tmp_id" output="true"/>
+            </bm:parameters>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+        	begin
+        	erpinv_doc_outsourcing_pkg.delete_outsourcing_tmp(p_os_ln_tmp_id			 =>${@os_ln_tmp_id},
+							                                   	p_user_id                =>${/session/@user_id});
+        	end;
+        	]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

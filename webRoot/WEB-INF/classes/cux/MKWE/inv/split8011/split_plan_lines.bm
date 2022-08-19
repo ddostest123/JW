@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*,
+                    (v.need_del_quantity - v.trx_amount1 - v.trx_amount2 ) un_trx_amount, --未交货数量
+                    (v.trx_amount1 + v.trx_amount2) trx_amount,
+                    (SELECT
+                        MAX(v.del_plan_line_num) AS max_del_line_num
+                    FROM
+                        pur_del_plan_lines pl
+                    WHERE
+                        pl.header_id = v.header_id
+                    ) AS max_del_line_num,
+                    (v.remain_split_quantity_all) remain_split_quantity
+                FROM
+                    (SELECT
+                    	h.del_plan_status,
+                        lt.line_id,
+                        lt.header_id,
+                        lt.del_plan_line_num,
+                        lt.source_header_id,
+                        lt.source_line_id,
+                        lt.segment1,
+                        lt.line_num,
+                        lt.source_po_header_id,
+                        lt.source_po_line_id,
+                        lt.item_code,
+                        lt.item_name,
+                        lt.unit_meas_lookup_code,
+                        lt.quantity,
+                        lt.need_del_quantity,
+                        TO_CHAR(lt.po_need_date,'YYYY-MM-DD') po_need_date,
+                        NVL(TO_CHAR(lt.need_arrive_date,'YYYY-MM-DD'),'待通知') need_arrive_date,
+                        lt.created_by,
+                        TO_CHAR(lt.creation_date,'YYYY-MM-DD HH24:MI:SS') creation_date,
+                        lt.last_updated_by,
+                        TO_CHAR(lt.last_update_date,'YYYY-MM-DD HH24:MI:SS') last_update_date,
+                        lt.is_split_line,
+                        TO_CHAR(lt.supplier_reply_date,'YYYY-MM-DD') supplier_reply_date,
+                        lt.supplier_comment,
+                        lt.arrive_num,
+                        lt.item_specs,
+                        lt.business_unit_id,
+                        lt.business_unit_name,
+                        lt.send_address ,
+                           (SELECT iol.description 
+          		           FROM inv_organizations_vl iol
+                          WHERE ((lt.received_inv_org IS NULL AND
+                                 iol.business_unit_id = h.business_unit_id) OR
+                         (lt.received_inv_org IS NOT NULL AND
+                          iol.es_inv_org_id = lt.received_inv_org)) 
+                          AND rownum = 1) received_inv_org,
+                        (SELECT
+                            NVL(SUM(DECODE(rcv_trx_type, 'RETRUN_TO_VENDOR', prtl.trx_quantity * -1, prtl.trx_quantity)),0) trx_amount
+                        FROM
+                            pur_rcv_trx_lines prtl,
+                            pur_rcv_trx_headers prth,
+                            inv_asn_headers ih,
+                            inv_asn_lines il
+                        WHERE
+                            prtl.rcv_trx_header_id        = prth.rcv_trx_header_id AND
+                            prth.processed_flag           = 'Y' AND
+                            prtl.from_po_line_id          = lt.source_po_line_id AND
+                            prtl.rcv_trx_type            IN ('RECEIVE_STANDARD','RETRUN_TO_VENDOR') AND
+                            ih.asn_number                 = prtl.from_asn_display_number AND
+                            ih.asn_header_id              = il.asn_header_id AND
+                            il.asn_line_num               = prtl.from_asn_line_num AND
+                            il.del_plan_line_id           = lt.line_id AND
+                            prtl.from_po_line_location_id = lt.source_po_line_location_id
+                        ) trx_amount1,
+                        (SELECT
+                            NVL(SUM(DECODE(rcv_trx_type, 'RETRUN_TO_VENDOR', prtl.trx_quantity * -1, prtl.trx_quantity)),0) trx_amount
+                        FROM
+                            pur_rcv_trx_lines prtl,
+                            pur_rcv_trx_headers prth
+                        WHERE
+                            prtl.rcv_trx_header_id        = prth.rcv_trx_header_id AND
+                            prth.processed_flag           = 'Y' AND
+                            prtl.from_po_line_id          = lt.source_po_line_id AND
+                            prtl.rcv_trx_type            IN ('RECEIVE_STANDARD','RETRUN_TO_VENDOR') AND
+                            prtl.from_asn_line_num       IS NULL AND
+                            prtl.from_po_line_location_id = lt.source_po_line_location_id
+                        ) trx_amount2,
+                        (
+                        (SELECT
+                            NVL(pa.quantity,0)
+                        FROM
+                            pur_headers_all h,
+                            pur_lines_all la,
+                            pur_line_locations_all pa
+                        WHERE
+                            h.pur_header_id         = la.pur_header_id AND
+                            h.display_po_number     = lt.segment1 AND
+                            la.line_num             = lt.line_num AND
+                            pa.pur_line_location_id = lt.source_po_line_location_id
+                        ) -
+                        (SELECT
+                            NVL(SUM(pl.need_del_quantity), 0)
+                        FROM
+                            pur_del_plan_lines pl
+                        WHERE
+                            pl.segment1                   = lt.segment1 AND
+                            pl.line_num                   = lt.line_num AND
+                            pl.source_po_line_location_id = lt.source_po_line_location_id AND
+                            NVL(PL.CANCEL_FLAG,'N')       = 'N'
+                        )) remain_split_quantity_all, --剩余可拆数量,
+                        lt.source_po_line_location_id,
+                        lt.source_po_line_location_num,
+                        (SELECT
+                            pla.quantity
+                        FROM
+                            pur_line_locations_all pla
+                        WHERE
+                            pla.pur_line_location_id = lt.source_po_line_location_id
+                        ) location_quantity,
+                        lt.source_po_line_loc_new_num,
+                        (SELECT
+                            MAX(l.source_po_line_loc_new_num)
+                        FROM
+                            pur_del_plan_lines l
+                        WHERE
+                            l.line_num  = lt.line_num AND
+                            l.header_id = lt.header_id
+                        ) max_location_num,
+                        lt.mrp_locked_flag,
+                        (select ph.srm_status 
+                           from pur_headers_all ph 
+                          where ph.pur_header_id = h.source_header_id) srm_status
+                    FROM
+                        pur_del_plan_lines lt,
+                        pur_del_plan_headers h  #WHERE_CLAUSE#
+                    ORDER BY
+                        lt.segment1,
+                        lt.line_num,
+                        lt.del_plan_line_num
+                    ) v
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="insert">
+            <bm:update-sql><![CDATA[
+        	 begin
+            pur_delivery_plan_pkg.vendor_insert_delivery_plan_ln(
+            						p_header_id => ${@delivery_header_id},
+            						p_source_header_id => ${@source_header_id},
+            						p_source_line_id => ${@source_line_id},
+            						p_del_plan_line_num => ${@del_plan_line_num},
+									p_segment1 => ${@segment1},
+				            	    p_line_num => ${@line_num},
+				            	    p_source_po_header_id => ${@source_po_header_id},
+       								p_source_po_line_id => ${@source_po_line_id},
+				            	    p_item_code => ${@item_code},
+				            	    p_item_name => ${@item_name},
+				            	    p_quantity => ${@quantity},
+				            	    p_unit_meas_lookup_code => ${@unit_meas_lookup_code},
+				            	    p_can_split_quantity => ${@need_del_quantity},
+				            	    p_need_del_quantity => ${@need_del_quantity},
+				            	    p_po_need_date => to_date(${@po_need_date},'YYYY-MM-DD'),
+				            	    p_need_arrive_date => to_date(${@need_arrive_date},'YYYY-MM-DD'),
+				            	    p_is_split_line => ${@is_split_line},
+				            	    p_item_specs            => ${@item_specs},
+                                    p_item_model            => ${@item_model},
+                                    p_business_unit_id      => ${@business_unit_id},
+                                    p_business_unit_name    => ${@business_unit_name},
+                                    p_arrive_num            => ${@arrive_num},
+                                    p_send_address			=> ${@send_address},
+                                    p_supplier_comment		=> ${@supplier_comment},
+                                    p_supplier_reply_date	=> to_date(${@supplier_reply_date},'yyyy-mm-dd'),
+				            	    p_user_id => ${/session/@user_id}
+            );
+            end;
+        	]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+        	BEGIN
+        		pur_delivery_plan_pkg.vendor_update_delivery_plan_ln(
+									p_line_id 				=> ${@line_id},
+									p_quantity				=> ${@need_del_quantity},
+									p_supplier_comment 		=> ${@supplier_comment},
+									p_supplier_reply_date	=> to_date(${@supplier_reply_date},'yyyy-mm-dd'),
+									p_mrp_lock_flg	        => ${@mrp_lock_flg},
+									p_user_id 				=> ${/session/@user_id}
+        							);
+        	END;
+        	]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="delete">
+            <bm:update-sql><![CDATA[
+        		begin
+        		delete from pur_del_plan_lines l where l.line_id = ${@line_id};
+        		end;
+        	]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter expression="lt.header_id = h.header_id"/>
+        <!-- <bm:data-filter expression="exists (select 1 from pur_lines_all l where l.pur_line_id = lt.source_po_line_id and l.cancel_flag = &apos;N&apos; and l.closed_flag = &apos;N&apos;)"/>-->
+        <bm:data-filter expression="exists (select 1 from pur_lines_all l,pur_line_locations_all pa where l.pur_line_id = lt.source_po_line_id and pa.pur_line_location_id = lt.source_po_line_location_id and l.pur_line_id = pa.pur_line_id and l.cancel_flag = &apos;N&apos; and l.closed_flag = &apos;N&apos; and (pa.closed_code =  &apos;OPEN&apos; or (pa.consigned_flag = &apos;Y&apos; and pa.closed_code = &apos;CLOSED FOR INVOICE&apos; )) and pa.cancel_flag = &apos;N&apos;)"/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field name="header_id" queryExpression="lt.header_id = ${@header_id}"/>
+    </bm:query-fields>
+</bm:model>

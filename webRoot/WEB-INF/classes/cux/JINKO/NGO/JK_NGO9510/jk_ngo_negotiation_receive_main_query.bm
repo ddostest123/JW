@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: tululu  
+    $Date: 2017-11-6 上午9:46  
+    $Revision: 1.0  
+    $Purpose: 保密协议单签收管理，界面数据查询
+-->
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    *
+                FROM
+                    (SELECT
+                        p.negotiation_id,
+                        p.negotiation_number,
+                        p.negotiation_title,
+                        NVL(r.receive_flag,'N') receive_flag,
+                        r.receive_date,
+                        TO_CHAR(r.receive_date, 'yyyy-mm-dd') receive_date_desc,
+                        p.release_date,
+                        TO_CHAR(p.release_date, 'yyyy-mm-dd') release_date_desc,
+                        (SELECT su.description FROM sys_user su WHERE su.user_id =r.received_by
+                        ) AS receive_name,
+                        NVL(p.approve_status,'UNAPPROVAL') approve_status,
+                        p.approve_date,
+                        TO_CHAR(p.approve_date, 'yyyy-mm-dd') approve_date_desc,
+                        p.negotiation_content,
+                        r.note,
+                        r.receive_company_id,
+                        p.business_unit_id,
+                        (SELECT
+                            buv.business_unit_name
+                        FROM
+                            fnd_business_units_vl buv
+                        WHERE
+                            buv.business_unit_id = p.business_unit_id
+                        ) AS business_unit_name,
+                        p.company_id,
+                        (SELECT
+                            fcv.company_full_name
+                        FROM
+                            fnd_companies_vl fcv
+                        WHERE
+                            fcv.company_id = p.company_id
+                        ) AS owner_company_name
+                    FROM
+                        jk_ngo_receive_negotiation r,
+                        jk_ngo_purchaser_negotiation p
+                    WHERE
+                        r.negotiation_id(+)      = p.negotiation_id AND
+                        p.release_flag           ='Y' AND
+                        r.receive_business_group = ${/session/@business_group}
+                    ) v #AUTHORIY_FROM# #WHERE_CLAUSE# #AUTHORIY_WHERE# 
+                ORDER BY
+                    negotiation_number DESC
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+                BEGIN
+                    jk_purchaser_negotiation_pkg.receive_negotiation 
+                    ( p_negotiation_id  => ${@negotiation_id}, 
+                      p_note            => ${/parameter/@note}, 
+                      p_session_user_id => ${/session/@user_id} 
+                    );
+                END;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="negotiation_id" queryExpression="v.negotiation_id = ${@negotiation_id}"/>
+        <bm:query-field name="company_id" queryExpression="v.company_id=${@company_id}"/>
+        <bm:query-field name="negotiation_title" queryExpression="v.negotiation_title like &apos;%&apos;||trim(${@negotiation_title})||&apos;%&apos;"/>
+        <bm:query-field name="receive_date_from" queryExpression="v.receive_date &gt;= to_date(${@receive_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="receive_date_to" queryExpression="trunc(v.receive_date) &lt;= to_date(${@receive_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="release_date_from" queryExpression="v.release_date &gt;= to_date(${@release_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="release_date_to" queryExpression="trunc(v.release_date) &lt;= to_date(${@release_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="approve_status" queryExpression="nvl(v.approve_status,&apos;UNAPPROVAL&apos;) = ${@approve_status}"/>
+        <bm:query-field name="receive_flag" queryExpression="nvl(v.receive_flag,&apos;N&apos;) = ${@receive_flag}"/>
+        <bm:query-field name="negotiation_number" queryExpression="v.negotiation_number like &apos;%&apos;||trim(${@negotiation_number})||&apos;%&apos;"/>
+    </bm:query-fields>
+    <!-- <bm:data-filters>
+        <bm:data-filter expression="exists(select 1 from fnd_user_authority user_auth_0 where user_auth_0.user_id = ${/session/@user_id} and user_auth_0.authority_type = &apos;COMPANY&apos; and user_auth_0.assign_id = v.receive_company_id)"/>
+    </bm:data-filters> -->
+    <bm:data-filters>
+        <bm:data-filter expression="1=1"/>
+    </bm:data-filters>
+    <authority only_user_authority="Y">
+        <authority-segment source_alias="v" source_name="receive_company_id" type="COMPANY"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+        	var cx = Packages.aurora.javascript.Context.getCurrentContext();
+      		Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+          	Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: wanghaitao  
+    $Date: 2014-10-31 下午04:38:31  
+    $Revision: 1.0  
+    $Purpose: APP，登录后订单，送货单详情
+-->
+<a:service xmlns:s="aurora.plugin.script" xmlns:a="http://www.aurora-framework.org/application" xmlns:p="uncertain.proc" trace="true">
+    <a:init-procedure>
+        <p:echo/>
+        <s:server-script><![CDATA[
+            /**
+             *read me
+             *1.bm部分需改为相应系统的逻辑，此处逻辑为hr系统，仅供参考
+             *2.session、cookie部分不用修改，如果出现session、cookie方面的问题，可检查此处的session、cookie(如'/session/@session_id'是否有值)
+             *3.调试函数:println(Object);会将Object打印在控制台（如应用服务器tomcat的控制台）。例如：println($session.toXML());会将session对象以xml格式打印出来。
+             */
+            try {
+            
+                var parameter = $ctx.parameter;
+            
+                // println('--------------------------------------------');
+                // println('--------------------------------------------');
+                // println('parameter.list_id is :' + parameter.list_id);
+                
+                if (parameter.list_id) {
+                    var message_info_bm = new ModelService('weixin.interface.public.get_message_info');
+                    var message_info_records = message_info_bm.queryAsMap({
+                        list_id: parameter.list_id
+                    }).getChildren();
+                    if (message_info_records.length > 0) {
+                        var message_info_record = message_info_records[0];
+                    }
+            
+                    if (message_info_record) {
+                        
+                        var url = 'http://srmtest.haidilao.com/hdltrain/modules/weixin/client/indexMessageDetailByURL.screen?state=purchase&bulletin_id=' + message_info_record.bulletin_id;
+                        
+                        // println('url is :' + url);
+                        
+                        var pushStr = {
+                            // "touser": "1287254|1285624",
+                            "touser": "18986280153",
+                            "msgtype": "news",
+                            "agentid": "3",
+                            "news": {
+                                "articles": [{
+                                    "title": message_info_record.title,
+                                    "description": message_info_record.push_contents_view,
+                                    "url": url
+                                }]
+                            }
+                        };
+                        result = Packages.aurora.plugin.weixin.QiyeWeixinNetworkUtil.sendNewsMessage("group1", JSON.stringify(pushStr), $ctx.sso.getObjectRegistry());
+                        
+                        var push_success_bm = new ModelService('weixin.interface.message.message_push_success');
+                        push_success_bm.execute({
+                            list_id: parameter.list_id
+                        });
+                    }
+                }
+            
+            } catch (e) {
+                var serviceContext = Packages.aurora.service.ServiceContext.createServiceContext($ctx.getData());
+                var ed = $instance('aurora.service.exception.IExceptionDescriptor');
+                var map = new CompositeMap(ed.process(serviceContext, e.javaException));
+                result = {
+                    head: {
+                        message: map.message,
+                        code: 'failure'
+                    },
+                    body: {}
+                };
+                var push_failed_bm = new ModelService('weixin.interface.message.message_push_failed');
+                push_failed_bm.execute({
+                    list_id: parameter.list_id
+                });
+            } finally {
+                //执行finally代码，将result对象回写
+                $ctx.parameter.json = String(result);
+            }
+        ]]></s:server-script>
+    </a:init-procedure>
+    <a:service-output output="/parameter/@json"/>
+</a:service>

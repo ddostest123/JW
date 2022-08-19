@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            	SELECT *
+				  FROM (SELECT h.asn_header_id,
+				               h.asn_number,
+				               h.owner_business_group,
+				               h.coop_business_group,
+				               h.creation_date,
+				               to_char(h.creation_date,
+				                       'yyyy-mm-dd') AS creation_date_display,
+				               to_char(h.ship_date,
+				                       'yyyy-mm-dd') AS ship_date_display,
+				               to_char(h.expected_date,
+				                       'yyyy-mm-dd') AS expected_date_display,
+				               (SELECT iov.description
+				                  FROM inv_organizations_vl iov
+				                 WHERE iov.inv_organization_id = h.ship_to_organization_id) AS ship_to_organization_name,
+				               jk_inv_asn_barcode_pkg.get_asn_po_number(h.asn_header_id) AS po_number,
+				               (SELECT pl.line_num
+				                  FROM inv_asn_lines          al,
+				                       pur_line_locations_all pll,
+				                       pur_lines_all          pl
+				                 WHERE pll.pur_line_id = pl.pur_line_id
+				                       AND pll.pur_line_location_id = al.line_location_id
+				                       AND al.asn_header_id = h.asn_header_id
+				                       AND rownum = 1) AS po_line_num,
+				               nvl((SELECT ab.barcode_status
+				                      FROM jk_inv_asn_barcode ab
+				                     WHERE ab.asn_header_id = h.asn_header_id
+				                           AND rownum = 1),
+				                   'NEW') AS barcode_status,
+				               nvl((SELECT cvv.code_value_name
+				                      FROM jk_inv_asn_barcode ab,
+				                           sys_code_values_v  cvv
+				                     WHERE ab.barcode_status = cvv.code_value
+				                           AND cvv.code = 'JINKO_BARCODE_STATUS'
+				                           AND ab.asn_header_id = h.asn_header_id
+				                           AND rownum = 1),
+				                    '新建') AS barcode_status_display,
+				               (SELECT cvv.code_value_name
+				                  FROM sys_code_values_v cvv
+				                 WHERE cvv.code = 'INV_ASN_HEADERS_STATUS'
+				                       AND cvv.code_value = h.status) AS asn_status,
+				               h.coop_business_unit_id,
+				               (SELECT buv.business_unit_name
+				                  FROM fnd_business_units_vl buv
+				                 WHERE buv.business_unit_id = h.coop_business_unit_id) AS client_business_unit_name
+				          FROM inv_asn_headers h
+				         WHERE h.status NOT IN ('NEW',
+				                                'ALL_CLOSE')) v
+				 #WHERE_CLAUSE#
+				 ORDER BY v.asn_header_id DESC
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter expression="v.owner_business_group = ${/session/@business_group}"/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field name="asn_header_id" queryExpression="v.asn_header_id = ${@asn_header_id}"/>
+        <bm:query-field name="asn_number" queryExpression="v.asn_number like &apos;%&apos;||trim(${@asn_number})||&apos;%&apos;"/>
+        <bm:query-field name="po_number" queryExpression="v.po_number like &apos;%&apos;||trim(${@po_number})||&apos;%&apos;"/>
+        <bm:query-field name="barcode_status" queryExpression="v.barcode_status = ${@barcode_status}"/>
+        <bm:query-field name="creation_date_from" queryExpression="trunc(v.creation_date) &gt;= to_date(${@creation_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="creation_date_to" queryExpression="trunc(v.creation_date) &lt;= to_date(${@creation_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="coop_business_unit_id" queryExpression="v.coop_business_unit_id = ${@coop_business_unit_id}"/>
+    </bm:query-fields>
+</bm:model>

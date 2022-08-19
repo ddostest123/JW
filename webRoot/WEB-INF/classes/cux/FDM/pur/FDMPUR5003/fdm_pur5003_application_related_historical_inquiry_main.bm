@@ -1,0 +1,231 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:s="aurora.plugin.script" xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+				SELECT *
+				  FROM (SELECT dp.demand_pool_id,
+				               dp.req_header_id,
+				               dp.req_line_id,
+				               nvl(dp.es_req_number,
+				                   dp.req_number) AS req_number,
+				               dp.line_num,
+				               (SELECT su.description || '(' || su.user_name || ')' FROM sys_user su WHERE su.user_id = dp.assigned_to) AS assigned_to_desc,
+   		                        NVL(
+		                        (SELECT
+		                            ph.srm_status
+		                        FROM
+		                            pur_purchase_info_record_po rp,
+		                            pur_headers_all ph
+		                        WHERE
+		                            rp.req_header_id = dp.req_header_id AND
+		                            rp.req_line_id   = dp.req_line_id AND
+		                            rp.pur_header_id = ph.pur_header_id AND
+		                            rownum           =1
+		                        ), dp.req_status ) req_status,		
+				               decode((SELECT ph.srm_status
+				                        FROM pur_purchase_info_record_po rp,
+				                             pur_headers_all             ph
+				                       WHERE rp.req_header_id = dp.req_header_id
+				                             AND rp.req_line_id = dp.req_line_id
+				                             AND rp.pur_header_id = ph.pur_header_id
+				                             AND rownum = 1),
+				                      'SUBMITTED',
+				                      '订单审批',
+				                      'APPROVED',
+				                      '订单完成',
+				                      'RELEASED',
+				                      '订单完成',
+				                      'CONFIRMED',
+				                      '订单完成',
+				                      'CLOSED',
+				                      '订单完成',
+				                      (SELECT scv.code_value_name
+				                         FROM sys_code_values_vl scv,
+				                              sys_codes_vl       sc
+				                        WHERE sc.code_id = scv.code_id
+				                              AND scv.code_value = dp.req_status
+				                              AND sc.code = 'PUR_DEMAND_POOL_STATUS')) req_status_desc,
+				               nvl((SELECT siv.display_item_code FROM mtl_system_items_vl siv WHERE siv.item_id = dp.item_id),
+				                   dp.item_code) AS item_code,
+				               nvl((SELECT siv.item_name FROM mtl_system_items_vl siv WHERE siv.item_id = dp.item_id),
+				                   dp.item_description) AS item_desc,
+				               dp.quantity,
+						       (SELECT (SELECT pv.descriptions FROM pur_vendors pv WHERE pv.vendor_id = ir.vendor_id) descriptions
+						          FROM pur_purchase_info_records ir
+						         WHERE ir.info_record_id = dpir.info_record_id) descriptions,
+						       (SELECT (SELECT pv.display_vendor_code FROM pur_vendors pv WHERE pv.vendor_id = ir.vendor_id) display_vendor_code
+						          FROM pur_purchase_info_records ir
+						         WHERE ir.info_record_id = dpir.info_record_id) display_vendor_code,
+						       (SELECT ir.vendor_id FROM pur_purchase_info_records ir WHERE ir.info_record_id = dpir.info_record_id) vendor_id,
+						       (SELECT ir.unit_price FROM pur_purchase_info_records ir WHERE ir.info_record_id = dpir.info_record_id) unit_price,
+						       (SELECT ir.tax_type_rate FROM pur_purchase_info_records ir WHERE ir.info_record_id = dpir.info_record_id) tax_type_rate,
+				               (SELECT unit_meas_lookup_code FROM pur_req_lines WHERE req_line_id = dp.req_line_id) AS unit_meas_lookup_code,
+				               (SELECT to_char(need_by_date,
+				                               'yyyy-mm-dd') AS need_by_date
+				                  FROM pur_req_lines
+				                 WHERE req_line_id = dp.req_line_id) AS need_by_date,
+				               (SELECT huv.unit_desc
+				                  FROM hrm_units_vl    huv,
+				                       pur_req_headers prh
+				                 WHERE huv.unit_id = prh.unit_id
+				                       AND prh.req_header_id = dp.req_header_id) unit_desc,
+				               (SELECT prh.erp_create_desc FROM pur_req_headers prh WHERE prh.req_header_id = dp.req_header_id) erp_create_desc,
+				               dp.sourcing_doc_number,
+				               (SELECT to_char(nvl(prl.erp_creation_date,
+				                                   prl.creation_date),
+				                               'yyyy-mm-dd') AS creation_date
+				                  FROM pur_req_lines prl
+				                 WHERE prl.req_header_id = dp.req_header_id
+				                       AND prl.req_line_id = dp.req_line_id) AS creation_date1,
+				               (SELECT MAX(to_char(h.creation_date,
+				                                   'yyyy-mm-dd')) AS allocation_date
+				                  FROM pur_req_operation_records h
+				                 WHERE h.operation_table = 'pur_demand_pool'
+				                       AND h.operation_table_id = dp.demand_pool_id
+				                 GROUP BY h.operation_table_id) allocation_date,
+				               (SELECT MAX(to_char(pla.release_date,
+				                                   'yyyy-mm-dd')) release_date
+				                  FROM pur_lines_all               pla,
+				                       pur_purchase_info_record_po irp
+				                 WHERE irp.pur_header_id = pla.pur_header_id
+				                       AND irp.pur_line_id = pla.pur_line_id
+				                       AND irp.req_header_id = dp.req_header_id
+				                       AND irp.req_line_id = dp.req_line_id
+				                 GROUP BY dp.req_header_id,
+				                          dp.req_line_id) release_date,
+	                           dp.assigned_comment,
+				               dp.comments,
+				               dp.notes,
+				               dp.assigned_date,
+				               nvl(dp.assigned_flag,
+				                   'N') AS assigned_flag,
+				               nvl(dp.pause_flag,
+				                   'N') AS pause_flag,
+				               (CASE
+				                 WHEN ${/session/@user_id} = dp.created_by THEN
+				                  dp.created_by
+				                 ELSE
+				                  dp.assigned_to
+				               END) created_by_receiver,
+				               (SELECT bu.company_id
+				                  FROM fnd_business_units bu
+				                 WHERE bu.business_unit_id =
+				                       (SELECT ov.business_unit_id
+				                          FROM inv_organizations_vl ov
+				                         WHERE ov.inv_organization_id = dp.destination_organization_id)) AS company_id,
+				               (SELECT ov.business_unit_id
+				                  FROM inv_organizations_vl ov
+				                 WHERE ov.inv_organization_id = dp.destination_organization_id) business_unit_id,
+				               (SELECT rh.pur_organization_id FROM pur_req_headers rh WHERE rh.req_header_id = dp.req_header_id) pur_organization_id,
+				               NULL useless_id_5,
+				               NULL useless_id_6,
+				               NULL useless_id_7,
+				               NULL useless_id_8,
+				               NULL useless_id_9,
+				               NULL useless_id_10,
+				               NULL useless_id_11,
+				               NULL useless_id_12,
+				               NULL useless_id_13,
+				               (SELECT decode(nvl(COUNT(1),0),
+						                      0,
+						                      '否',
+						                      '是') relevance_flag
+						          FROM pur_demand_pool_pur_info dppi
+						         WHERE dppi.demand_pool_id = dp.demand_pool_id) relevance_flag,
+						        dpir.info_record_id,
+				               (SELECT h.display_po_number
+				                  FROM pur_headers_all h
+				                 WHERE h.pur_header_id = (SELECT MAX(irp.pur_header_id)
+				                                            FROM pur_purchase_info_record_po irp
+				                                           WHERE dp.req_header_id = irp.req_header_id
+				                                                 AND dp.req_line_id = irp.req_line_id
+				                                           GROUP BY dp.demand_pool_id)) display_po_number
+				        
+				          FROM pur_demand_pool dp,
+						       (SELECT dp.demand_pool_id,
+						               nvl((SELECT MAX(irp.info_record_id)
+						                     FROM pur_purchase_info_record_po irp
+						                    WHERE irp.req_header_id = dp.req_header_id
+						                          AND irp.req_line_id = dp.req_line_id
+						                    GROUP BY dp.req_header_id,
+						                             dp.req_line_id),
+						                   (SELECT dppi.info_record_id
+						                      FROM pur_demand_pool_pur_info dppi
+						                     WHERE dppi.demand_pool_id = dp.demand_pool_id)) info_record_id
+						          FROM pur_demand_pool dp) dpir
+				         WHERE dp.business_group = ${/session/@business_group}
+				               AND (nvl(dp.create_po_flag,
+				                        'N') = 'N' OR
+				               nvl(dp.create_po_flag,
+				                        'N') = 'Y' AND nvl(dp.po_release_flag,
+				                                                'Y') = 'Y')
+				               AND nvl(dp.delete_flag,
+				                       'N') = 'N'
+				               AND nvl(dp.pause_flag,
+				                       'N') = 'N'
+				               AND nvl(dp.assigned_flag,
+				                       'N') = 'Y'
+		                       AND dp.demand_pool_id = dpir.demand_pool_id(+)) v #AUTHORIY_FROM# #WHERE_CLAUSE# #AUTHORIY_WHERE# 
+		                       ORDER　BY decode(req_status_desc,'已分配',1,'寻源中',2,'寻源结束',3,'订单审批',4,'订单完成',5,6),allocation_date desc,release_date desc
+		 ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+                BEGIN
+                    cux_fdm_pur_pkg.save_demand_pur_note(p_demand_pool_id		=> ${@demand_pool_id},
+                    									 p_notes => ${@notes},
+                                                         p_user_id => ${/session/@user_id});
+                END;
+            ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="req_number" queryExpression="req_number like &apos;%&apos;||${@req_number}||&apos;%&apos;"/>
+        <bm:query-field name="line_num" queryExpression="line_num like &apos;%&apos;||${@line_num}||&apos;%&apos;"/>
+        <bm:query-field name="item_code" queryExpression="item_code like &apos;%&apos;||${@item_code}||&apos;%&apos;"/>
+        <bm:query-field name="item_desc" queryExpression="item_desc like &apos;%&apos;||${@item_desc}||&apos;%&apos;"/>
+        <bm:query-field name="req_status_code" queryExpression="req_status = ${@req_status_code}"/>
+        <bm:query-field name="req_status_desc" queryExpression="req_status_desc = ${@code_value_name}"/>
+        <bm:query-field name="assigned_to_desc" queryExpression="assigned_to_desc like &apos;%&apos;||${@assigned_to_desc}||&apos;%&apos;"/>
+        <bm:query-field name="sourcing_doc_number" queryExpression="sourcing_doc_number like &apos;%&apos;||${@sourcing_doc_number}||&apos;%&apos;"/>
+        <bm:query-field name="need_by_date_from" queryExpression="to_date(need_by_date,&apos;yyyy-mm-dd&apos;) &gt;= to_date(${@need_by_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="need_by_date_to" queryExpression="to_date(need_by_date,&apos;yyyy-mm-dd&apos;) &lt;= to_date(${@need_by_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="creation_date_from" queryExpression="to_date(creation_date1,&apos;yyyy-mm-dd&apos;) &gt;= to_date(${@creation_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="creation_date_to" queryExpression="to_date(creation_date1,&apos;yyyy-mm-dd&apos;) &lt;= to_date(${@creation_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="allocation_date_from" queryExpression="to_date(allocation_date,&apos;yyyy-mm-dd&apos;) &gt;= to_date(${@allocation_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="allocation_date_to" queryExpression="to_date(allocation_date,&apos;yyyy-mm-dd&apos;) &lt;= to_date(${@allocation_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="release_date_from" queryExpression="to_date(release_date,&apos;yyyy-mm-dd&apos;) &gt;= to_date(${@release_date_from},&apos;yyyy-mm-dd&apos;)"/>
+        <bm:query-field name="release_date_to" queryExpression="to_date(release_date,&apos;yyyy-mm-dd&apos;) &lt;= to_date(${@release_date_to},&apos;yyyy-mm-dd&apos;)"/>
+        <!-- <bm:query-field name="vendor_id" queryExpression="v.vendor_id = ${@vendor_id}"/> -->
+        <bm:query-field name="display_vendor_code" queryExpression="v.display_vendor_code like &apos;%&apos;||${@display_vendor_code}||&apos;%&apos;"/>
+        <bm:query-field name="descriptions" queryExpression="v.descriptions like &apos;%&apos;||${@descriptions}||&apos;%&apos;"/>
+        <bm:query-field name="erp_create_desc" queryExpression="v.erp_create_desc like &apos;%&apos;||${@erp_create_desc}||&apos;%&apos;"/>
+    </bm:query-fields>
+    <bm:data-filters>
+        <bm:data-filter expression="1 = 1"/>
+    </bm:data-filters>
+    <authority foundation_code="PUR_REQUISITION">
+        <authority-segment source_alias="v" source_name="created_by_receiver" type="CREATER"/>
+        <authority-segment source_alias="v" source_name="company_id" type="COMPANY"/>
+        <authority-segment source_alias="v" source_name="created_by_receiver" type="RECEIVER"/>
+        <authority-segment source_alias="v" source_name="business_unit_id" type="BUSINESS_UNIT"/>
+        <authority-segment source_alias="v" source_name="pur_organization_id" type="PUR_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id_5" type="PUR_BUYER"/>
+        <authority-segment source_alias="v" source_name="useless_id_6" type="INV_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id_7" type="SD_ORGANIZATION"/>
+        <authority-segment source_alias="v" source_name="useless_id_8" type="VENDOR"/>
+        <authority-segment source_alias="v" source_name="useless_id_9" type="CLIENT"/>
+        <authority-segment source_alias="v" source_name="useless_id_10" type="PURHASE_MATERIAL"/>
+        <authority-segment source_alias="v" source_name="useless_id_11" type="SALES_PRODUCTION"/>
+        <authority-segment source_alias="v" source_name="useless_id_12" type="CLIENT_SITE"/>
+        <authority-segment source_alias="v" source_name="useless_id_13" type="VENDOR_SITE"/>
+    </authority>
+    <bm:features>
+        <s:bm-script><![CDATA[
+            var cx = Packages.aurora.javascript.Context.getCurrentContext();
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_flex_dynamic_tools.js");
+            Packages.aurora.plugin.script.engine.ScriptImportor.defineExternScript(cx, this, $ctx.getData(), "fnd_dynamic_authority.js");
+        ]]></s:bm-script>
+    </bm:features>
+</bm:model>

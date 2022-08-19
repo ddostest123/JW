@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" defaultOrderBy="t1.inspection_code desc">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+				WITH t AS
+ (select * from (SELECT qh.vendor_id,
+         qh.inv_organization_id,
+         mi.category_udf_id,
+         qh.evalutataion_result_code,
+         qh.inspection_count,
+         qh.defect_count,
+         qh.start_date,
+         qh.end_date
+    FROM qms_inspection_headers      qh,
+         mtl_category_classify_items mi,
+         fnd_user_authority          fa
+   WHERE mi.item_id = qh.item_id
+         AND qh.vendor_id IS NOT NULL
+         AND fa.authority_type = 'INV_ORGANIZATION'
+         AND fa.assign_id = qh.inv_organization_id
+         AND fa.user_id = ${/session/@user_id}
+         AND qh.owner_business_group = ${/session/@business_group}
+         ) t1
+         #WHERE_CLAUSE#
+         )
+SELECT m.*,
+       decode(m.inspect_count,'0','100%',round(m.inspect_qualified_count / m.inspect_count * 100,2) || '%' ) qualified_count_ratio,
+       decode(m.inspect_amount,'0','100%',round((m.inspect_amount - m.inspect_defect_amount) / m.inspect_amount * 100,2) || '%') qualified_amount_ratio
+  FROM (SELECT v.vendor_id,
+  			   (SELECT pvv.display_vendor_code FROM pur_vendors_vl pvv WHERE pvv.vendor_id = v.vendor_id) vendor_code,
+               (SELECT pvv.full_name FROM pur_vendors_vl pvv WHERE pvv.vendor_id = v.vendor_id) vendor_name,
+               v.inv_organization_id,
+               (SELECT iov.description
+                  FROM inv_organizations_vl iov
+                 WHERE iov.inv_organization_id = v.inv_organization_id) inv_organization_name,
+               v.category_udf_id,
+               (SELECT mcv.category_name
+                  FROM mtl_categories_user_defined_vl mcv
+                 WHERE mcv.category_udf_id = v.category_udf_id) category_udf_name,
+               (SELECT COUNT(*)
+                  FROM t
+                 WHERE t.vendor_id = v.vendor_id
+                       AND t.inv_organization_id = v.inv_organization_id
+                       AND t.category_udf_id = v.category_udf_id) inspect_count,
+               (SELECT COUNT(*)
+                  FROM t
+                 WHERE t.vendor_id = v.vendor_id
+                       AND t.inv_organization_id = v.inv_organization_id
+                       AND t.category_udf_id = v.category_udf_id
+                       AND t.evalutataion_result_code = 'A') inspect_qualified_count,
+               (SELECT SUM(nvl(t.inspection_count,
+                               0))
+                  FROM t
+                 WHERE t.vendor_id = v.vendor_id
+                       AND t.inv_organization_id = v.inv_organization_id
+                       AND t.category_udf_id = v.category_udf_id) inspect_amount,
+               (SELECT nvl(SUM(nvl(t.defect_count,
+                               0)),0)
+                  FROM t
+                 WHERE t.vendor_id = v.vendor_id
+                       AND t.inv_organization_id = v.inv_organization_id
+                       AND t.category_udf_id = v.category_udf_id) inspect_defect_amount
+          FROM (SELECT DISTINCT t.vendor_id,
+                                t.inv_organization_id,
+                                t.category_udf_id
+                  FROM t) v) m
+			]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="vendor_id" queryExpression="t1.vendor_id = ${@vendor_id}"/>
+        <bm:query-field name="category_udf_id" queryExpression="t1.category_udf_id = ${@category_udf_id}"/>
+        <bm:query-field name="inv_organization_id" queryExpression="t1.inv_organization_id = ${@inv_organization_id}"/>
+        <bm:query-field name="start_date" queryExpression="t1.start_date &gt;= to_date(${@start_date}, &apos;yyyy-mm-dd hh24:mi:ss&apos; )"/>
+        <bm:query-field name="end_date" queryExpression="t1.end_date &lt; to_date(${@end_date}, &apos;yyyy-mm-dd hh24:mi:ss&apos;) + 1"/>
+    </bm:query-fields>
+</bm:model>

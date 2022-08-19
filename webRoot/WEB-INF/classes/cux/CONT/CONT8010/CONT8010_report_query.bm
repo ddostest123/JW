@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm" needAccessControl="false">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+            select *
+            from (
+                SELECT fc.company_id,
+                       nvl((select pv.display_vendor_code
+							  from pur_vendors pv
+							 where pv.coop_company_id = fc.company_id),fc.company_code) company_code,
+						(select (SELECT t.flex_desc
+								  FROM fnd_flex_values_v t
+								 WHERE t.value_set_enabled_flag = 'Y'
+								   AND t.values_enabled_flag = 'Y'
+								   and t.flex_value_set_code = 'PUR_VENDOR_LIFE_CYCLE'
+								   and t.flex_value = pc.stage_code)
+	                     from pur_vendor_life_cycle pc
+	                     where pc.coop_company_id = fc.COMPANY_ID
+	                       and pc.current_flag = 'Y') stage_code,
+                       fc.company_full_name                  AS vendor_name,
+                       fc.vendor_catagory                    AS vendor_category,
+                       fc.kw_main_category                   AS kw_main_category,
+                       fd.DESCRIPTION_TEXT,
+                       pvsa.REQUIRED_FLAG,
+                       case when (select count(*) from fnd_atm_attachment_multi fam
+                            where fam.table_name = 'PUR_VENDOR_SURVEY_ATTACHMENT' and fam.table_pk_value=pvsa.attachment_id) > 0 then 'Y' else 'N' end AS ATTACHMENT_UPLOADED,
+                       pvsa.INVALID_DATE,
+                       nvl2(fc.COMMENTS, fc.COMMENTS, 'Y')   AS COMMENTS,
+                       nvl2(fc.STATUS, fc.STATUS, case
+                                          when sum(case when pvsa.REQUIRED_FLAG = 'Y' then 1 else 0 end) over ( partition by COMPANY_ID) =
+                                               sum(case
+                                                       when pvsa.REQUIRED_FLAG = 'Y' and pvsa.LAST_UPDATE_DATE is not null and
+                                                            (pvsa.INVALID_DATE is null or pvsa.INVALID_DATE >= sysdate) then 1
+                                                       else 0 end)
+                                                   over (partition by COMPANY_ID) then '完整'
+                                          else '待补充' end) AS STATUS,
+                       (select min(creation_date) from FND_COOP_VENDOR_IMPORTS vi where vi.coop_company_id = fc.company_id and vi.process_status='SUCCESSFUL') as ebs_import_time
+                FROM fnd_companies_vl fc
+                         inner join (select SUPPLIER_COMPANY_ID, max(SURVEY_HEADER_ID) SURVEY_HEADER_ID
+                                     from PUR_VENDOR_SURVEY_HEADERS pvsh
+                                     where pvsh.STATUS = '40_APPROVED'
+                                       and exists
+                                         (select 1
+                                          from pur_vendor_survey_contacts pvsc
+                                          where pvsc.survey_header_id = pvsh.survey_header_id)
+                                     group by SUPPLIER_COMPANY_ID) sh
+                                    on sh.SUPPLIER_COMPANY_ID = fc.COMPANY_ID
+                         inner join PUR_VENDOR_SURVEY_ATTACHMENT pvsa on sh.SURVEY_HEADER_ID = pvsa.SURVEY_HEADER_ID
+                         inner join FND_FLEX_VALUES ffv
+                                    on pvsa.ATTACHMENT_TYPE = ffv.FLEX_VALUE and ffv.FLEX_VALUE_SET_ID = 742 and
+                                       ffv.ENABLED_FLAG = 'Y'
+                         inner join FND_DESCRIPTIONS fd
+                                    on ffv.DESCRIPTION_ID = fd.DESCRIPTION_ID and fd.LANGUAGE = 'ZHS'
+                where fc.company_full_name like '%'||nvl(${@vendor_name}, fc.company_full_name)||'%'
+                  and (fc.vendor_catagory = nvl(${@flex_value}, fc.vendor_catagory) or fc.vendor_catagory is null)
+                  and exists(select 1
+                             from pur_vendor_life_cycle pc
+                             where pc.coop_company_id = fc.COMPANY_ID
+                               and pc.stage_code not in ('ELIMINATED','REGISTER')
+                               and pc.current_flag = 'Y')
+            ) pivot (LISTAGG(REQUIRED_FLAG || ',' || to_char(INVALID_DATE, 'yyyy-MM-dd') || ',' || ATTACHMENT_UPLOADED, ';')
+                             within group ( order by DESCRIPTION_TEXT) for DESCRIPTION_TEXT in ( '物料采购合同','品质保证协议','廉政协议','保密协议','环保协议','供应商须知','供应商送货要求','不使用冲突地区矿物质声明书','不使用禁止物质声明书','供应商社会责任、环境健康安全承诺书','供应商知识产权声明','供应商环境管理调查表','ISO9001','ISO14001','QC080000','IATF16949' ))
+            #WHERE_CLAUSE#
+            order by company_id desc
+            ]]></bm:query-sql>
+        </bm:operation>
+        <bm:operation name="update">
+            <bm:update-sql><![CDATA[
+                update FND_COMPANIES
+                set status = ${@status},
+                    comments = ${@comments}
+                where company_id = ${@company_id}
+                ]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="comments" queryExpression="comments = ${@comments}"/>
+        <bm:query-field name="vendor_code" queryExpression="company_code like &apos;%&apos;||trim(${@vendor_code})||&apos;%&apos;"/>
+        <bm:query-field name="status" queryExpression="status = ${@attachment_status}"/>
+    </bm:query-fields>
+</bm:model>

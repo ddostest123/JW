@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lianghuihao
+    $Date: 2018-9-28 19:45:51 
+    $Revision: 1.0  
+    $Purpose: 获取配置的评估项
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.*,
+                    dense_rank() OVER(PARTITION BY v.version, v.equipment_name_id ORDER BY v.scores DESC) rank_id
+                FROM
+                    (SELECT
+                        kw.equipment_name_id,
+                        kw.version,
+                        kw.survey_header_id,
+                        (SELECT
+                            fcv.company_code
+                        FROM
+                            pur_equipment_survey_headers ph,
+                            fnd_companies_vl fcv
+                        WHERE
+                            ph.supplier_company_id = fcv.company_id AND
+                            ph.survey_header_id    = kw.survey_header_id
+                        ) vendor_code,
+                        (SELECT
+                            fcv.company_full_name
+                        FROM
+                            pur_equipment_survey_headers ph,
+                            fnd_companies_vl fcv
+                        WHERE
+                            ph.supplier_company_id = fcv.company_id AND
+                            ph.survey_header_id    = kw.survey_header_id
+                        ) vendor_name,
+                        (SELECT
+                            kn.equipment_name
+                        FROM
+                            kw_equipment_name kn
+                        WHERE
+                            kn.equipment_name_id =
+                            (SELECT
+                                ph.equipment_name_id
+                            FROM
+                                pur_equipment_survey_headers ph
+                            WHERE
+                                ph.survey_header_id = kw.survey_header_id
+                            )
+                        ) equipment_name,
+                        SUM(kw.score) scores,
+                        (SELECT
+                            (SELECT
+                                v.flex_desc
+                            FROM
+                                fnd_flex_values_v v
+                            WHERE
+                                v.flex_value_set_code = 'PUR_VENDOR_LIFE_CYCLE' AND
+                                v.flex_value          = l.stage_code
+                            )
+                        FROM
+                            pur_vendor_life_cycle l
+                        WHERE
+                            l.coop_company_id =
+                            (SELECT
+                                fcv.company_id
+                            FROM
+                                pur_equipment_survey_headers ph,
+                                fnd_companies_vl fcv
+                            WHERE
+                                ph.supplier_company_id = fcv.company_id AND
+                                ph.survey_header_id    = kw.survey_header_id
+                            ) AND
+                            l.current_flag = 'Y'
+                        ) stage_desc,
+                        (SELECT
+                            l.stage_code
+                        FROM
+                            pur_vendor_life_cycle l
+                        WHERE
+                            l.coop_company_id =
+                            (SELECT
+                                fcv.company_id
+                            FROM
+                                pur_equipment_survey_headers ph,
+                                fnd_companies_vl fcv
+                            WHERE
+                                ph.supplier_company_id = fcv.company_id AND
+                                ph.survey_header_id    = kw.survey_header_id
+                            ) AND
+                            l.current_flag = 'Y'
+                        ) stage_code
+                    FROM
+                        kw_equip_survey_compare_score kw
+                    GROUP BY
+                        kw.equipment_name_id,
+                        kw.version,
+                        kw.survey_header_id
+                    ) v #WHERE_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:query-fields>
+        <bm:query-field name="stage_code" queryExpression="v.stage_code = ${@stage_code}"/>
+        <bm:query-field name="version" queryExpression="v.version = ${@version}"/>
+        <bm:query-field name="equipment_name_id" queryExpression="v.equipment_name_id = ${@equipment_name_id}"/>
+        <bm:query-field name="vendor_code" queryExpression="v.vendor_code = ${@vendor_code}"/>
+        <bm:query-field name="vendor_name" queryExpression="v.vendor_name like &apos;%&apos;||${@vendor_name}||&apos;%&apos;"/>
+    </bm:query-fields>
+</bm:model>

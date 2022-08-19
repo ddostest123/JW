@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:update-sql><![CDATA[
+			SELECT v.po_num,
+				   v.barcode,
+				   v.line_num,
+			       v.current_print_index_str,
+			       v.require_item_code,
+			       v.require_item_name,
+			       v.production_batch,
+			       v.environmental_batch,
+			       v.require_item_site,
+			       v.packet_quantity,
+			       v.uom_desc,
+			       (CASE
+			         WHEN v.packet_weight LIKE '.%' THEN
+			          '0' || v.packet_weight
+			         ELSE
+			          v.packet_weight
+			       END) packet_weight,
+			       (CASE
+			         WHEN v.all_weight LIKE '.%' THEN
+			          '0' || v.all_weight
+			         ELSE
+			          v.all_weight
+			       END) all_weight,
+			       nvl(wl_code, vendor_code) supplier_code,
+			       rownum unique_id,
+			       (SELECT COUNT(1)
+			          FROM inv_asn_outside_print i
+			         WHERE i.print_user_id = ${/session/@user_id}) all_count,
+			       CASE
+			         WHEN display_code IN ('1100', '1120') THEN
+			          display_code
+			         ELSE
+			          source_display_code
+			       END detail_code
+			  FROM (SELECT h.display_po_number po_num,
+			               p.current_print_index || '/' || p.print_quantity current_print_index_str,
+			               nvl((SELECT m.display_item_code
+			                     FROM mtl_system_items_vl m
+			                    WHERE m.item_id = l.item_id),
+			                   l.item_code) AS require_item_code,
+			               inv_asn_outside_barcode_pkg.get_print_item_name(nvl((SELECT m.item_name
+			                                                                     FROM mtl_system_items_vl m
+			                                                                    WHERE m.item_id = l.item_id),
+			                                                                   l.item_code)) require_item_name,
+			               b.production_batch,
+			               b.environmental_batch,
+			               '无' require_item_site,
+			               b.packet_quantity,
+			               nvl((SELECT vl.uom_desc
+			                     FROM fnd_uom_codes_vl vl
+			                    WHERE b.uom_code = vl.uom_code
+			                      AND vl.business_group = h.owner_business_group),
+			                   b.uom_code) uom_desc,
+			               decode(nvl(b.packet_weight, -1), -1, '无', nvl(b.packet_weight, -1) || 'KG') packet_weight,
+			               decode((nvl(b.packet_weight, 0) + nvl(b.box_weight, 0)), 0, '无', (nvl(b.packet_weight, 0) + nvl(b.box_weight, 0)) || 'KG') all_weight,
+			               b.barcode,
+			               l.line_num,
+			               (SELECT p.partner_code
+			                  FROM pur_po_partners p
+			                 WHERE p.pur_header_id = h.pur_header_id
+			                   AND p.partner_type_code = 'WL') wl_code,
+			               h.vendor_code,
+			               bu.display_code,
+			               (SELECT bu.display_code
+			                  FROM pur_headers_all    ph,
+			                       fnd_business_units bu
+			                 WHERE ph.display_po_number = l.c_attribute1
+			                   AND ph.business_unit_id = bu.business_unit_id) source_display_code
+			          FROM inv_asn_outside_print p,
+			               pur_outside_barcode   b,
+			               pur_headers_all       h,
+			               pur_lines_all         l,
+			               fnd_business_units    bu
+			         WHERE p.print_user_id = ${/session/@user_id}
+			           AND p.asn_outside_barcode_id = b.pur_outside_barcode_id
+			           AND h.pur_header_id = b.pur_header_id
+			           AND b.pur_line_id = l.pur_line_id
+			           AND h.business_unit_id = bu.business_unit_id
+			           AND (b.final_item_code IS NULL AND b.final_order_number IS NULL)) v
+            ]]></bm:update-sql>
+        </bm:operation>
+        <bm:operation name="execute">
+            <bm:update-sql><![CDATA[
+    			begin
+    			   pur_outside_barcode_pkg.print_pur_outside_barcode(p_pur_line_id => ${@pur_line_id},
+                                                          	 p_user_id => ${/session/@user_id});
+                end;
+    		]]></bm:update-sql>
+        </bm:operation>
+    </bm:operations>
+</bm:model>

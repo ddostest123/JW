@@ -1,0 +1,295 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<a:screen xmlns:a="http://www.aurora-framework.org/application" trace="true">
+    <a:init-procedure>
+        <a:model-query autoCount="false" defaultWhereClause="invoice_header_id=${/parameter/@invoice_header_id}" fetchAll="true" model="acp.ACP5320.acp_web_invoice_headers" rootPath="acp5320_lines_record"/>
+        <a:model-query defaultWhereClause="cbi.config_classify_code = &apos;INVOICE&apos; AND cbi.config_item_code = &apos;INVOICE_01&apos;" fetchAll="true" model="public.get_fnd_config_center_bg_item_value" rootPath="bg_item_invoice_01"/>
+    </a:init-procedure>
+    <a:view>
+        <a:link id="acp5320_line_approve_link" url="${/request/@context_path}/modules/acp/ACP5320/acp_web_invoice_line_approve.svc"/>
+        <a:link id="acp5320_line_return_link" url="${/request/@context_path}/modules/acp/ACP5320/acp_web_invoice_line_return.svc"/>
+        <a:link id="acp_web_invoice_lines_upload_link" url="${/request/@context_path}/modules/pur/PUR7270/attachment_file_view.screen"/>
+        <script><![CDATA[
+
+            // 复审审批
+            function acp5320_lines_approve() {
+            
+                Aurora.showConfirm('${l:PROMPT}', '${l:ACP_WEB_INVOICE.REVIEW_CONFIRM_PASS_INVOICE}', function() {
+                    var headers_ds = $('acp5320_header_ds');
+                    var header_record = headers_ds.getCurrentRecord();
+            
+                    var datas;
+                    datas = {
+                        invoice_header_id: ${/parameter/@invoice_header_id},
+                        approve_comments: header_record.get('review_comments')
+                    };
+            
+                    Aurora.Masker.mask($('acp5320_web_invoice_line_window').wrap,'${l:LOADING}');
+                    Aurora.request({
+                        url: $('acp5320_line_approve_link').getUrl(),
+                        para: datas,
+                        success: function(res) {
+                            Aurora.Masker.unmask($('acp5320_web_invoice_line_window').wrap);
+                            acp5320_back();
+                            acp5320_query();
+                            $('acp5320_selected_list_ds').removeAll();
+                        },
+                        failure: function(res) {
+                            Aurora.Masker.unmask($('acp5320_web_invoice_line_window').wrap);
+            
+                        },
+                        error: function(res) {
+                            Aurora.Masker.unmask($('acp5320_web_invoice_line_window').wrap);
+                        },
+                        scope: this
+                    });
+            
+                });
+            }
+            
+            // 复审退回
+            function acp5320_lines_return() {
+                Aurora.showConfirm('${l:PROMPT}', '${l:ACP_WEB_INVOICE.REVIEW_CONFIRM_RETURNED_INVOICE}', function() {
+                    var headers_ds = $('acp5320_header_ds');
+                    var header_record = headers_ds.getCurrentRecord();
+                    var lines_ds = $('acp5320_line_ds');
+                    var lines_records = lines_ds.getAll();
+            
+                    var datas;
+                    datas = {
+                        invoice_header_id: ${/parameter/@invoice_header_id},
+                        approve_comments: header_record.get('review_comments')
+                    };
+                    var data_lines = [];
+                    for(var i=0;i<lines_records.length;i++){
+                        if(lines_records[i].get('approve_return_flag') == 'Y'){
+                            data_lines.push(lines_records[i].data);
+                        }
+                    }
+                    datas['data_lines'] = data_lines; 
+                    Aurora.Masker.mask($('acp5320_web_invoice_line_window').wrap,'${l:LOADING}');
+                    Aurora.request({
+                        url: $('acp5320_line_return_link').getUrl(),
+                        para: datas,
+                        success: function(res) {
+                            Aurora.Masker.unmask($('acp5320_web_invoice_line_window').wrap);
+                            acp5320_back();
+                            acp5320_query();
+                            $('acp5320_selected_list_ds').removeAll();
+                        },
+                        failure: function(res) {
+                            Aurora.Masker.unmask($('acp5320_web_invoice_line_window').wrap);
+            
+                        },
+                        error: function(res) {
+                            Aurora.Masker.unmask($('acp5320_web_invoice_line_window').wrap);
+                        },
+                        scope: this
+                    });
+            
+                });
+            }
+            
+            
+            function acp5320_operation_record() {
+            
+                new Aurora.Window({
+                    id: 'acp_operation_record_win',
+                    url: $('acp5320_header_operation_record_link').getUrl() + '?operation_table_id=' + ${/parameter/@invoice_header_id} + '&operation_table=ACP_WEB_INVOICE_HEADERS',
+                    title: '${l:ACP_BILL.OPERATION_RECORD}',
+                    height: 450,
+                    width: 600
+                });
+            
+            }
+            
+            function acp5320_back() {
+                $('acp5320_web_invoice_line_window').close();
+            }
+            
+            function acp5320_lineGridRenderer(value, record, name){
+                if (name == 'price_difference_message') {
+                    if (record.get('price_difference_flag') == 'Y') {
+                        return '<div style="background:#FF0000;color:#FFFFFF;">' + value + '<div>';
+                    }else if(record.get('price_difference_flag') == 'N'){
+                        return '<div style="background:#00FF00;">' + value + '<div>';
+                    }
+                }
+                
+                if(name == 'unit_price' || name == 'contract_price' || name == 'invoice_price' || name == 'bill_amount' || name == 'tax_invoice_price' || name == 'tax_bill_amount'){
+                    if (value == '***') {
+                        return value;
+                    } else {
+                        return Aurora.formatNumber(value);
+                    }
+                }
+            }
+            
+            function acp5320_lineGridEditorFunction(record, name){
+                record.dirty = false;
+                if(name == 'comments'){
+                    if(record.get('approve_return_flag') == 'Y'){
+                        return 'acp5320_line_grid_textField';
+                    }else{
+                        record.set('comments',null);
+                        return '';
+                    }
+                }
+            }
+            
+            //附件查看
+            function acp_web_invoice_lines_uploadFun() {
+                var header_record = $('acp5320_line_ds').getCurrentRecord();
+			    var invoice_header_id = header_record.get('invoice_header_id');
+                new Aurora.Window({
+                    id: 'acp_web_invoice_lines_upload_link_window',
+                    title: '${l:PROMPT.VIEW_ATTACHMENT}',
+                    url: $('acp_web_invoice_lines_upload_link').getUrl() + '?pkvalue=' + invoice_header_id + '&table_name=ACP_WEB_INVOICE_HEADER',
+                    width: 610,
+                    height: 500
+                });
+            }
+        ]]></script>
+        <a:dataSets>
+            <a:dataSet id="acp5320_header_ds">
+                <a:datas dataSource="/model/acp5320_lines_record"/>
+                <a:fields>
+                    <a:field name="invoice_header_id"/>
+                    <a:field name="invoice_num" readOnly="true"/>
+                    <a:field name="company_name" readOnly="true"/>
+                    <a:field name="vendor_site_name" readOnly="true"/>
+                    <a:field name="currency_code" readOnly="true"/>
+                    <a:field name="tax_total_amount" readOnly="true"/>
+                    <a:field name="tax_amount" readOnly="true"/>
+                    <a:field name="invoice_amount"/>
+                    <a:field name="invoice_tax_amount"/>
+                    <a:field name="tax_invoice_num"/>
+                    <a:field name="invoice_status"/>
+                    <a:field name="data_source"/>
+                    <a:field name="vendor_comments"/>
+                    <a:field name="approve_comments"/>
+                    <a:field name="review_comments"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="acp5320_line_query_ds">
+                <a:fields>
+                    <a:field name="invoice_header_id" defaultValue="${/parameter/@invoice_header_id}"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="acp5320_line_ds" autoCount="true" autoPageSize="true" autoQuery="true" fetchAll="false" model="acp.ACP5320.acp_web_invoice_lines" queryDataSet="acp5320_line_query_ds">
+                <a:fields>
+                    <a:field name="approve_return_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+            <a:dataSet id="acp5320_subject_ds" autoPageSize="true" autoQuery="true" model="acp.ACP5320.acp_bill_line_subject" queryUrl="${/request/@context_path}/autocrud/acp.ACP5320.acp_bill_line_subject/query?invoice_header_id=${/parameter/@invoice_header_id}" selectable="false">
+                <a:fields>
+                    <a:field name="tax_included_flag" checkedValue="Y" defaultValue="N" uncheckedValue="N"/>
+                </a:fields>
+            </a:dataSet>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="acp5320_lines_approve" text="ACP_WEB_INVOICE.APPROVE" width="100"/>
+                <a:toolbarButton click="acp5320_lines_return" text="ACP_WEB_INVOICE.RETURN" width="100"/>
+                <a:toolbarButton click="acp5320_operation_record" text="ACP_BILL.OPERATION_RECORD" width="100"/>
+                <a:toolbarButton click="acp5320_back" text="ACP_BILL.BACK" width="100"/>
+                <a:toolbarButton id="acp_web_invoice_lines_uploadFun_btn" click="acp_web_invoice_lines_uploadFun" text="ACP_ENCLOSURE.ORDER_LINES"/>
+            </a:screenTopToolbar>
+            <a:form marginWidth="80">
+                <a:hBox labelWidth="100">
+                    <a:label name="invoice_num" bindTarget="acp5320_header_ds" prompt="ACP_WEB_INVOICE.WEB_INVOICE_NUM" width="200"/>
+                    <a:label name="company_name" bindTarget="acp5320_header_ds" prompt="ACP_WEB_INVOICE.COMPANY_NAME" width="200"/>
+                    <a:label name="business_unit_name" bindTarget="acp5320_header_ds" prompt="ACP_WEB_INVOICE.BUSINESS_UNIT_ID" width="200"/>
+                    <a:label name="vendor_name" bindTarget="acp5320_header_ds" prompt="ACP_BILL_SOURCE.VENDOR_NAME" width="200"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:label name="tax_total_amount" bindTarget="acp5320_header_ds" prompt="ACP_WEB_INVOICE.TAX_TOTAL_AMOUNT" width="200"/>
+                    <a:label name="tax_amount" bindTarget="acp5320_header_ds" prompt="ACP_WEB_INVOICE.TAX_AMOUNT" width="200"/>
+                    <a:label name="currency_code" bindTarget="acp5320_header_ds" prompt="ACP_BILL_SOURCE.CURRENCY_CODE" width="200"/>
+                    <a:label name="pur_buyer_name" bindTarget="acp5320_header_ds" prompt="PUR_HEADERS_ALL.PUR_BUYER" width="200"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:label name="invoice_amount" bindTarget="acp5320_header_ds" prompt="ACP_WEB_INVOICE.INVOICE_AMOUNT" width="200"/>
+                    <a:label name="invoice_tax_amount" bindTarget="acp5320_header_ds" prompt="ACP_WEB_INVOICE.INVOICE_TAX_AMOUNT" width="200"/>
+                    <a:label name="tax_invoice_num" bindTarget="acp5320_header_ds" prompt="ACP_WEB_INVOICE.TAX_INVOICE_NUM" width="200"/>
+                    <a:label name="pur_organization_name" bindTarget="acp5320_header_ds" prompt="PUR_ORGANIZATIONS.PUR_ORGANIZATION" width="200"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:label name="invoice_vendor_desc" bindTarget="acp5320_header_ds" prompt="ACP_WEB_INVOICE_HEADERS.INVOICE_PARTNER" readOnly="true" width="200"/>
+                    <a:label name="invoice_status_display" bindTarget="acp5320_header_ds" prompt="ACP_WEB_INVOICE.INVOICE_STATUS" width="200"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:label name="vendor_comments" bindTarget="acp5320_header_ds" prompt="ACP_WEB_INVOICE.VENDOR_COMMENTS" width="505"/>
+                    <a:label name="approve_comments" bindTarget="acp5320_header_ds" prompt="ACP_WEB_INVOICE_HEADERS.APPROVE_COMMENTS" width="400"/>
+                </a:hBox>
+                <a:hBox labelWidth="100">
+                    <a:textField name="review_comments" bindTarget="acp5320_header_ds" prompt="ACP_WEB_INVOICE_HEADERS.REVIEW_COMMENTS" width="600"/>
+                </a:hBox>
+            </a:form>
+            <a:tabPanel marginHeight="180" marginWidth="80">
+                <a:tabs>
+                    <a:tab prompt="ACP_INVOICE.INVOICE_INFO" width="130">
+                        <a:grid id="acp5320_line_grid" bindTarget="acp5320_line_ds" marginHeight="230" marginWidth="100" navBar="true" style="margin-top:10px;">
+                            <a:columns>
+                                <a:column name="approve_return_flag" align="left" editor="acp5320_line_grid_checkBox" prompt="ACP_WEB_INVOICE.RETURN" width="30"/>
+                                <a:column name="comments" align="left" editorFunction="acp5320_lineGridEditorFunction" prompt="ACP_WEB_INVOICE.COMMENTS" width="80"/>
+                                <a:column name="price_difference_message" align="center" prompt="ACP_WEB_INVOICE.CHECK_RESULT" renderer="acp5320_lineGridRenderer" width="50"/>
+                                <a:column name="invoice_line_num" align="center" prompt="ACP_WEB_INVOICE.INVOICE_LINE_NUM" width="50"/>
+                                <a:column name="recept_num" align="center" prompt="ACP_WEB_INVOICE.PO_RECEPT_NUM" width="60"/>
+                                <a:column name="recept_line_num" align="center" prompt="ACP_WEB_INVOICE.RECEIPT_LINE_NUM" width="40"/>
+                                <a:column name="item_code" align="center" prompt="ACP_BILL_SOURCE.ITEM_CODE" width="80"/>
+                                <a:column name="item_name" align="center" prompt="ACP_BILL_SOURCE.ITEM_NAME" width="100"/>
+                                <a:column name="unit_meas_lookup_code_desc" align="center" prompt="ACP_BILL_SOURCE.UNIT_MEAS_LOOKUP_CODE" width="60"/>
+                                <a:column name="currency_code" align="center" prompt="ACP_WEB_INVOICE.CURRENCY_CODE" width="50"/>
+                                <a:column name="unit_price" align="right" prompt="ACP_BILL_SOURCE.UNIT_PRICE" renderer="acp5320_lineGridRenderer" width="60"/>
+                                <a:column name="contract_price" align="right" prompt="ACP_WEB_INVOICE_LINES.CONTRACT_PRICE" renderer="acp5320_lineGridRenderer" width="60"/>
+                                <a:column name="invoice_price" align="right" prompt="ACP_WEB_INVOICE.TRANSACTION_PRICE" renderer="acp5320_lineGridRenderer" width="60"/>
+                                <a:column name="bill_quantity" align="right" prompt="ACP_WEB_INVOICE.BILL_QUANTITY" width="60"/>
+                                <a:column name="bill_amount" align="right" prompt="ACP_WEB_INVOICE.NET_BILL_AMOUNT" renderer="acp5320_lineGridRenderer" width="60"/>
+                                <a:column name="tax_rate" align="center" prompt="ACP_WEB_INVOICE.TAX_RATE" width="60"/>
+                                <a:column name="tax_invoice_price" align="right" prompt="ACP_WEB_INVOICE.TAX_INVOICE_PRICE" renderer="acp5320_lineGridRenderer" sortable="true" width="60"/>
+                                <a:column name="tax_bill_amount" align="right" prompt="ACP_WEB_INVOICE.TAX_BILL_AMOUNT" renderer="acp5320_lineGridRenderer" width="60"/>
+                                <a:column name="used_item_code" align="center" prompt="MTL2060.USED_ITEM_CODE" width="60"/>
+                                <a:column name="segment1" align="center" prompt="ACP_WEB_INVOICE.PO_NUMBER" width="50"/>
+                                <a:column name="release_num" align="center" prompt="ACP_BILL_DETAILS.PO_RELEASE_NUM" width="50"/>
+                                <a:column name="line_num" align="center" prompt="ACP_BILL_DETAILS.PO_LINE_NUM" width="50"/>
+                                <a:column name="shipment_num" align="center" prompt="ACP_BILL_DETAILS.PO_SHIPMENT_NUM" width="50"/>
+                                <a:column name="distribution_num" align="center" prompt="ACP_BILL_DETAILS.PO_DISTRIBUTION_NUM" width="50"/>
+                                <a:column name="transaction_id" align="center" prompt="ACP_BILL_DETAILS.TRANSACTION_ID" width="60"/>
+                                <a:column name="transaction_date" align="center" prompt="ACP_BILL_DETAILS.TRANSACTION_DATE" width="120"/>
+                            </a:columns>
+                            <a:editors>
+                                <a:checkBox id="acp5320_line_grid_checkBox"/>
+                                <a:textField id="acp5320_line_grid_textField"/>
+                            </a:editors>
+                        </a:grid>
+                    </a:tab>
+                    <a:tab prompt="ACP_BILL.SUBJECT_NAME" width="100">
+                        <a:grid id="acp5320_subject_ds_grid" autoAppend="false" bindTarget="acp5320_subject_ds" marginHeight="230" marginWidth="100" navBar="true" style="margin-top:10px;">
+                            <a:columns>
+                                <a:column name="bill_number" align="center" prompt="ACP_BILL_HEADERS.BILL_NUMBER" width="80"/>
+                                <a:column name="line_num" align="center" prompt="ACP_BILL_SOURCE.LINE_NUM" width="40"/>
+                                <a:column name="subject_document_number" align="center" prompt="ACP_SUBJECT_DOCUMENTS.SUBJECT_DOCUMENT_NUMBER" width="100"/>
+                                <a:column name="subject_name" align="center" prompt="ACP_BILL.SUBJECT_NAME" width="70"/>
+                                <a:column name="debit_credit_name" align="center" prompt="ACP_BILL.DEBIT_CREDIT" width="70"/>
+                                <a:column name="voucher_money" align="right" prompt="ACP_BILL.VOUCHER_MONEY" renderer="Aurora.formatMoney" width="60"/>
+                                <a:column name="standard_money" align="right" prompt="ACP_BILL.STANDARD_MONEY" renderer="Aurora.formatMoney" width="60"/>
+                                <a:column name="tax_included_flag" align="center" prompt="ACP_INVOICE_LINES.TAX_INCLUDED_FLAG" width="40"/>
+                                <a:column name="tax_type_rate" align="right" prompt="ACP_WEB_INVOICE.TAX_RATE" width="40"/>
+                                <a:column name="amount_include_tax" align="right" prompt="ACP_SUBJECT_DOCUMENTS.AMOUNT_INCLUDE_TAX" renderer="Aurora.formatMoney" width="60"/>
+                                <a:column name="note" align="left" prompt="ACP_BILL.SUBJECT_NOTE" width="70"/>
+                            </a:columns>
+                        </a:grid>
+                    </a:tab>
+                </a:tabs>
+            </a:tabPanel>
+        </a:screenBody>
+        <script><![CDATA[
+        	Aurora.onReady(function(){
+        	    var item_value = '${/model/bg_item_invoice_01/record/@bg_config_item_value}'; //发票，开启价格屏蔽
+        	    if(!Aurora.isEmpty(item_value) && item_value == "Y"){
+        	        $('acp_web_invoice_lines_uploadFun_btn').disable();
+        	    }
+        	});
+        ]]></script>
+    </a:view>
+</a:screen>

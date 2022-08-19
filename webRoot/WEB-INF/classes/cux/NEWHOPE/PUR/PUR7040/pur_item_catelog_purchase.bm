@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Lin.Chen
+    $Date: 2017-04-17  
+    $Revision: 1.0  
+    $Purpose: 商品目录化选买
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+				select t.item_id,
+				       t.display_item_code,
+				       t.data_source,
+				       t.item_name,
+				       t.item_model,
+				       t.image_url,
+				       t.brand,
+				       t.item_category_id,
+				       t.price,
+				       t.vendor_name,
+				       (select m.display_item_code || '-' || m.item_name
+				          from mtl_system_items_vl m
+				         where m.item_id =
+				               pur_item_mapping_pkg.get_item_id(p_data_source    => 'SRM',
+				                                                p_data_source_id => to_char(t.item_id),
+				                                                p_company_id     => ${@company_id})) item_desc,
+				       t.rn
+				  from (select v.item_id,
+				               v.display_item_code,
+				               v.data_source,
+				               v.item_name,
+				               v.item_model,
+				               v.image_url,
+				               v.brand,
+				               v.item_category_id,
+				               v.price,
+				               v.vendor_name,
+				               rownum rn
+				          from pur_catelog_shopping_mall v
+				        #WHERE_CLAUSE# 
+				         and (v.data_source = 'SRM' and exists
+				              (select 1
+				                 from pur_catelog_items i
+				                where i.business_group = ${/session/@business_group}
+				                  and i.item_id = v.item_id
+				                  and nvl(i.srm_enabled_flag, 'N') = 'Y'
+				                  and sysdate between nvl(i.start_date, sysdate) and
+				                      nvl(i.end_date, sysdate)
+				                  and i.inventory_item_status_code = 'ON_SHELF'
+				                  and exists
+				                (select 1
+				                         from pur_catelog_item_company c, fnd_user_authority a
+				                        where c.item_id = i.item_id
+				                          and c.assign_id = a.assign_id
+				                          and c.assign_type = a.authority_type
+				                          and c.assign_type = 'COMPANY'
+				                          and a.user_id = ${/session/@user_id})))) t
+				 where t.rn > (${@page_num} - 1) * 20 and t.rn <= ${@page_num} * 20
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter expression="v.stage = 1"/>
+    </bm:data-filters>
+    <bm:query-fields>
+        <bm:query-field name="vendor_name" queryExpression="(upper(v.vendor_name) like &apos;%&apos;||upper(${@vendor_name})||&apos;%&apos;)"/>
+        <bm:query-field name="item_detail" queryExpression="(upper(v.display_item_code) like &apos;%&apos;||upper(${@item_detail})||&apos;%&apos; or upper(v.item_name) like &apos;%&apos;||upper(${@item_detail})||&apos;%&apos; or upper(v.brand) like &apos;%&apos;||upper(${@item_detail}))"/>
+        <bm:query-field name="item_detail2" queryExpression="(upper(v.display_item_code) like &apos;%&apos;||upper(${@item_detail2})||&apos;%&apos; or upper(v.item_name) like &apos;%&apos;||upper(${@item_detail2})||&apos;%&apos; or upper(v.brand) like &apos;%&apos;||upper(${@item_detail2})||&apos;%&apos;)"/>
+        <bm:query-field name="catelog_udf_id" queryExpression="(${@catelog_udf_id} = -1 or exists (select 1 from pur_catelogs_user_defined md where md.catelog_udf_id = v.item_category_id and md.company_id = ${@company_id} start with md.catelog_udf_id = ${@catelog_udf_id} connect by md.parent_catelog_udf_id = prior md.catelog_udf_id))"/>
+        <bm:query-field name="price_from" queryExpression="v.price &gt;= ${@price_from}"/>
+        <bm:query-field name="price_to" queryExpression="v.price &lt;= ${@price_to}"/>
+    </bm:query-fields>
+</bm:model>

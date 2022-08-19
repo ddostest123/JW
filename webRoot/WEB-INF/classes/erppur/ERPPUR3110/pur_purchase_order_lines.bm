@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: Wanq  
+    $Date: 2012-11-5 下午1:50:18  
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<bm:model xmlns:f="aurora.database.features" xmlns:bm="http://www.aurora-framework.org/schema/bm" alias="t1" baseTable="ERPPUR_PURCHASE_ORDER_L" defaultOrderBy="vender_code_name,item_code_name,trade_quantity,received_trade_quantity,primary_quantity,received_primary_quantity,amount" needAccessControl="true">
+    <bm:query-fields>
+        <bm:query-field name="company_id" queryExpression="v.company_id=${@company_id}"/>
+        <bm:query-field name="vender_id" queryExpression="v.vender_id = ${@vender_id}"/>
+        <bm:query-field name="item_id" queryExpression="b.item_id = ${@item_id}"/>
+        <bm:query-field name="currency_code" queryExpression="v.currency_code = ${@currency_code}"/>
+        <bm:query-field name="buyer_employee_id" queryExpression="v.agent_id = ${@buyer_employee_id}"/>
+    </bm:query-fields>
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[
+                SELECT
+                    v.vender_id,
+                    v.company_id,
+                    (SELECT
+                        f.company_full_name
+                    FROM
+                        fnd_companies_vl f
+                    WHERE
+                        f.company_id = v.company_id
+                    ) AS company_name,
+                    (SELECT erpfnd_precision_pkg.get_price_precision(v.company_id) FROM dual
+                    ) AS value,
+                    (SELECT erpfnd_precision_pkg.get_amount_precision(v.company_id) FROM dual
+                    ) AS value1,
+                    (SELECT erpfnd_precision_pkg.get_quantity_precision(v.company_id) FROM dual
+                    ) AS value2,
+                    p.partner_name vender_name,
+                    p.partner_code
+                    || '-'
+                    || p.partner_name vender_code_name,
+                    v.item_id,
+                    b.item_code
+                    || '-'
+                    || b.item_name item_code_name,
+                    v.trade_quantity,
+                    NVL(v.received_trade_quantity, 0) received_trade_quantity,
+                    v.trade_uom,
+                    (SELECT
+                        c.uom_description
+                    FROM
+                        erpinv_uom_codes c
+                    WHERE
+                        c.uom_code   = v.trade_uom AND
+                        c.company_id = v.company_id
+                    ) trade_uom_name,
+                    v.primary_quantity,
+                    NVL(v.received_primary_quantity, 0) received_primary_quantity,
+                    v.primary_uom,
+                    (SELECT
+                        c.uom_description
+                    FROM
+                        erpinv_uom_codes c
+                    WHERE
+                        c.uom_code   = v.primary_uom AND
+                        c.company_id = v.company_id
+                    ) primary_uom_name,
+                    v.currency_code,
+                    (SELECT
+                        gc.currency_name
+                    FROM
+                        erpgld_currency gc
+                    WHERE
+                        gc.currency_code = v.currency_code AND
+                        gc.company_id    = v.company_id
+                    ) currency_name,
+                    v.amount,
+                    NVL(v.receiving_cost, 0) receiving_cost,
+                    v.company_id ,
+                    v.agent_name,
+                    v.agent_id
+                FROM
+                    erpfnd_business_partners p,
+                    erpinv_items_basics b,
+                    (SELECT
+                        h.vendor_id vender_id,
+                        l.item_id,
+                        SUM(l.quantity) trade_quantity,
+                        SUM(pll.quantity_received) received_trade_quantity,
+                        l.unit_meas_lookup_code trade_uom,
+                        SUM(l.secondary_quantity) primary_quantity,
+                        SUM(pll.secondary_quantity_received) received_primary_quantity,
+                        l.secondary_unit_of_measure primary_uom,
+                        h.currency_code,
+                        SUM(l.amount) amount,
+                        SUM(DECODE(l.taxable_flag, 'N', pll.quantity_received * l.unit_price, 'Y', pll.quantity_received * l.unit_price / (1 +
+                        (SELECT
+                            aa.tax_type_rate
+                        FROM
+                            fnd_tax_type_codes aa
+                        WHERE
+                            aa.tax_type_id = l.tax_code_id
+                        ) / 100), pll.quantity_received * l.unit_price)) receiving_cost,
+                        h.company_id,
+                        h.agent_name,
+                        h.agent_id
+                    FROM
+                        pur_headers_all h,
+                        pur_lines_all l,
+                        pur_line_locations_all pll
+                    WHERE
+                        h.pur_header_id             = l.pur_header_id AND
+                        pll.pur_line_id             = l.pur_line_id AND
+                        h.owner_business_group      = ${/session/@business_group} AND
+                        TRUNC(h.erp_creation_date) >= to_date(NVL(${/parameter/@order_date_from}, '1000-01-01'),'yyyy-mm-dd') AND
+                        TRUNC(h.erp_creation_date) <= to_date(NVL(${/parameter/@order_date_to}, '9999-12-31'),'yyyy-mm-dd')
+                    GROUP BY
+                        h.vendor_id,
+                        l.item_id,
+                        l.unit_meas_lookup_code,
+                        h.currency_code,
+                        l.secondary_unit_of_measure,
+                        h.company_id,
+                        h.agent_name,
+                        h.agent_id
+                    ) v #WHERE_CLAUSE# #ORDER_BY_CLAUSE#
+            ]]></bm:query-sql>
+        </bm:operation>
+    </bm:operations>
+    <bm:data-filters>
+        <bm:data-filter enforceOperations="query" expression="p.srm_vender_id = v.vender_id and b.srm_item_id = v.item_id"/>
+    </bm:data-filters>
+</bm:model>

@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: lianghuihao 
+    $Date: 2019年3月19日10:25:19
+    $Revision: 1.0  
+    $Purpose: 
+-->
+<a:screen xmlns:c="aurora.application.action" xmlns:p="uncertain.proc" xmlns:a="http://www.aurora-framework.org/application" xmlns:s="aurora.plugin.script" trace="true">
+    <a:init-procedure>
+        <a:model-query autoCount="true" fetchAll="true" model="cux.KINWONG.ps.ps1010.ps1010_prescheme_sum_vendors" rootpath="vendors_list"/>
+        <s:server-script><![CDATA[
+            var logger = $logger('server-script');
+            
+            function log(msg) {
+                logger.info(msg);
+            }
+            log($ctx.toXML());
+            var array = $ctx.get('/model/vendors_list').getChildren();
+            var config = $config(); //取到config对象
+            
+            var columns = CompositeUtil.findChild(config, 'grid', 'id', 'ps1010_prescheme_rpt_result_grid').getChild('columns');
+            
+            var fields = CompositeUtil.findChild(config, 'dataSet', 'id', 'pur1010_compare_result_ds').getChild('fields');
+            for (var i = 0;i < array.length;i++) {
+                if (i == 0 || array[i]['vendor_name'] != array[i - 1]['vendor_name']) {
+                    var column = new CompositeMap('column');
+                    column['name'] = 'vendor_name_' + i;
+                    column['prompt'] = array[i]['vendor_name'];
+                    column['align'] = "center";
+                    column['width'] = "120";
+                    column['resizable'] = "true";
+                    column['autoAdjust'] = "true";
+                    columns.addChild(column.getData());
+                }
+            }
+        ]]></s:server-script>
+    </a:init-procedure>
+    <a:view>
+        <script src="${/request/@context_path}/javascripts/xlsx.full.min.js"/>
+        <script><![CDATA[
+            function ps1010_prescheme_rpt_back2() {
+                $('ps1010_prescheme_rpt_query_win2').close();
+            }
+            
+            function saveAs(obj, fileName) { //当然可以自定义简单的下载文件实现方式
+                var tmpa = document.createElement("a");
+                tmpa.download = fileName;
+                tmpa.href = URL.createObjectURL(obj); //绑定a标签
+                tmpa.click(); //模拟点击实现下载
+                setTimeout(function() { //延时释放
+                    URL.revokeObjectURL(obj); //用URL.revokeObjectURL()来释放这个object URL
+                }, 100);
+            }
+            
+            var wopts = {
+                bookType: 'xlsx',
+                bookSST: false,
+                type: 'binary'
+            };
+            
+            function export_excel(data, file_name, type) {
+                var wb = {
+                    SheetNames: ['Sheet1'],
+                    Sheets: {},
+                    Props: {}
+                };
+                wb.Sheets['Sheet1'] = XLSX.utils.json_to_sheet(data); //通过json_to_sheet转成单页(Sheet)数据
+                saveAs(new Blob([s2ab(XLSX.write(wb, wopts))], {
+                    type: "application/octet-stream"
+                }), file_name + '.' + (wopts.bookType == "biff2" ? "xls" : wopts.bookType));
+            }
+            
+            function s2ab(s) {
+                if (typeof ArrayBuffer !== 'undefined') {
+                    var buf = new ArrayBuffer(s.length);
+                    var view = new Uint8Array(buf);
+                    for (var i = 0;i != s.length;++i) view[i] = s.charCodeAt(i) & 0xFF;
+                    return buf;
+                } else {
+                    var buf = new Array(s.length);
+                    for (var i = 0;i != s.length;++i) buf[i] = s.charCodeAt(i) & 0xFF;
+                    return buf;
+                }
+            }
+            
+            function pur1010_compare_result_export() {
+                debugger;
+                var promts = $('ps1010_vendors_list_ds').getAll();
+                var records = $('pur1010_compare_result_ds').getAll();
+            
+                var data = {
+                    'project_name': '项目名称',
+                    'company_name': '景旺'
+                };
+                var datas = [];
+                for (var name in data) {
+                    var temp_data = {};
+                    temp_data['name'] = name;
+                    temp_data['prompt'] = data[name];
+                    datas.push(temp_data);
+                }
+                for (var i = 0;i < promts.length;i++) {
+                    var temp_data = {};
+                    temp_data['name'] = 'vendor_name_' + i;
+                    temp_data['prompt'] = promts[i].get('vendor_name');
+                    datas.push(temp_data);
+                }
+            
+                var para = [];
+                //组织数据
+                for (var i = 0;i < records.length;i++) {
+                    var detail_data = {};
+                    for (var j = 0;j < datas.length;j++) {
+                        detail_data[datas[j].prompt] = records[i].get(datas[j].name);
+                    }
+            
+                    para.push(detail_data);
+                }
+            
+                export_excel(para, '报表明细');
+            
+            }
+        ]]></script>
+        <a:dataSet id="ps1010_vendors_list_ds">
+            <a:datas dataSource="vendors_list"/>
+        </a:dataSet>
+        <a:dataSet id="ps1010_prescheme_query_ds" autoCreate="false">
+            <a:fields>
+                <a:field name="prescheme_code"/>
+            </a:fields>
+        </a:dataSet>
+        <a:dataSets>
+            <a:dataSet id="pur1010_compare_result_ds" autoQuery="true" queryUrl="${/request/@context_path}/modules/cux/KINWONG/ps/ps1010/ps1010_prescheme_sum_rpt_result.svc?header_id=${/parameter/@prescheme_id}"/>
+        </a:dataSets>
+        <a:screenBody>
+            <a:screenTopToolbar>
+                <a:toolbarButton click="pur1010_compare_result_export" text="导出" width="100"/>
+                <a:toolbarButton click="ps1010_prescheme_rpt_back2" text="返回" width="100"/>
+            </a:screenTopToolbar>
+            <a:grid id="ps1010_prescheme_rpt_result_grid" autoAppend="false" bindTarget="pur1010_compare_result_ds" marginHeight="120" marginWidth="45" navBar="true" width="1000">
+                <a:columns>
+                    <a:column name="project_name" align="center" prompt="项目名称" width="250"/>
+                    <a:column name="company_name" align="center" prompt="景旺" width="80"/>
+                </a:columns>
+            </a:grid>
+        </a:screenBody>
+    </a:view>
+</a:screen>

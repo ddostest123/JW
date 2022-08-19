@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    $Author: FelixDru
+    $Date: 2017-05-03
+    $Revision: 1.0  
+    $Purpose: 工作流审批记录
+-->
+<bm:model xmlns:bm="http://www.aurora-framework.org/schema/bm">
+    <bm:operations>
+        <bm:operation name="query">
+            <bm:query-sql><![CDATA[SELECT record_id,
+       node_name,
+       operate_by_name,
+       operate_desc,
+       operate_result_desc,
+       operate_date,
+       operate_comments
+  FROM (SELECT v.*,
+               ceil(rownum / nvl(${/parameter/@page_size},
+                                 5)) AS page_num
+          FROM (SELECT *
+                  FROM (SELECT v.record_id,
+                               (SELECT NAME FROM wfl_workflow_node_vl WHERE node_id = v.node_id) node_name,
+                               v.user_name operate_by_name,
+                               v.action_title operate_desc,
+                               '' operate_result_desc,
+                               to_char(v.creation_date,
+                                       'yyyy-mm-dd HH24:MI') AS operate_date,
+                               decode((SELECT nvl(a.is_comment_access_control,
+                                                 0)
+                                        FROM wfl_workflow_node a
+                                       WHERE node_id = v.node_id),
+                                      0,
+                                      v.comment_text,
+                                      1,
+                                      (SELECT decode(COUNT(*),
+                                                     0,
+                                                     '',
+                                                     v.comment_text)
+                                         FROM wfl_node_comment_access b
+                                        WHERE b.node_id = v.node_id
+                                              AND b.can_access_node_id IN
+                                              (SELECT node_id
+                                                     FROM wfl_approve_record a
+                                                    WHERE a.instance_id = v.instance_id
+                                                          AND created_by = ${/session/@user_id}
+                                                   UNION ALL
+                                                   SELECT node_id
+                                                     FROM wfl_instance_node_recipient
+                                                    WHERE user_id = ${/session/@user_id}
+                                                          AND instance_id = v.instance_id)),
+                                      '') operate_comments
+                          FROM wfl_approve_record_v v
+                         WHERE exists(select 1 from wfl_workflow_instance wwi where v.workflow_id = wwi.workflow_id and v.instance_param = wwi.instance_param and wwi.instance_id = v.instance_id)
+                               AND v.instance_id = ${@instance_id}
+                               AND ${@workflow_type} = 'WORKFLOW'
+                        UNION ALL
+                        SELECT ar.record_id,
+                               '' node_name,
+                               (SELECT su.description FROM sys_user su WHERE su.user_id = ar.operate_by) operate_by_name,
+                               (SELECT scv.code_value_name
+                                  FROM sys_code_values_vl scv,
+                                       sys_codes_vl       sc
+                                 WHERE sc.code_id = scv.code_id
+                                       AND scv.code_value = ar.operate_code
+                                       AND sc.code = 'WFL_FUNCTION_APPROVAL_ACTION') operate_desc,
+                               (SELECT scv.code_value_name
+                                  FROM sys_code_values_vl scv,
+                                       sys_codes_vl       sc
+                                 WHERE sc.code_id = scv.code_id
+                                       AND scv.code_value = ar.operate_result
+                                       AND sc.code = 'WFL_FUNCTION_APPROVAL_STATUS') operate_result_desc,
+                               to_char(ar.operate_date,
+                                       'yyyy-mm-dd hh24:mi:ss') AS operate_date,
+                               ar.operate_comments
+                          FROM wfl_function_approve_record ar
+                         WHERE ar.list_id = ${@instance_id}
+                               AND ${@workflow_type} = 'FUNCTION_APPROVE')
+                 ORDER BY record_id) v)
+ WHERE ((${@page_num} IS NOT NULL AND ${@page_num} = page_num) OR (${@page_num} IS NULL AND 1 = 1))
+]]></bm:query-sql>
+            <bm:parameters>
+                <bm:parameter inputPath="/parameter/@page_size"/>
+                <bm:parameter inputPath="/session/@user_id"/>
+                <bm:parameter name="record_id"/>
+                <bm:parameter name="instance_id"/>
+                <bm:parameter name="workflow_type"/>
+                <bm:parameter name="page_num"/>
+            </bm:parameters>
+        </bm:operation>
+    </bm:operations>
+</bm:model>
